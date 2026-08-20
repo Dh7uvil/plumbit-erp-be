@@ -27,6 +27,12 @@ cp .env.example .env
 Fill `.env` with local development credentials. Never commit that file or use production
 credentials locally.
 
+Generate the `JWT_SECRET` value with:
+
+```bash
+uv run generate-jwt-secret --env
+```
+
 Start the API after the application entry point is available:
 
 ```bash

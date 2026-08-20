@@ -19,6 +19,26 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "name": "Health",
         "description": "Process liveness and dependency readiness probes.",
     },
+    {
+        "name": "Tenants",
+        "description": "Public tenant discovery for the login screen.",
+    },
+    {
+        "name": "Auth",
+        "description": "Authentication, session rotation, and the current-user profile.",
+    },
+    {
+        "name": "Users",
+        "description": "Tenant user management and role assignment.",
+    },
+    {
+        "name": "Roles",
+        "description": "Role management and permission assignment.",
+    },
+    {
+        "name": "Permissions",
+        "description": "Permission catalog for the current tenant.",
+    },
 ]
 APP_DESCRIPTION = "Multi-tenant ERP backend API."
 
@@ -46,9 +66,9 @@ def create_app() -> FastAPI:
     application.add_middleware(
         CORSMiddleware,
         allow_origins=[str(origin).rstrip("/") for origin in settings.cors_origins],
-        allow_credentials=settings.cors_allow_credentials,
-        allow_methods=settings.cors_allow_methods,
-        allow_headers=settings.cors_allow_headers,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     application.add_middleware(RequestContextMiddleware)
 
