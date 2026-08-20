@@ -1,13 +1,15 @@
 """Access-management ORM models."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
+    Index,
     String,
     Text,
     UniqueConstraint,
@@ -18,7 +20,7 @@ from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.db.mixins import TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.mixins import SoftDeleteMixin, TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class Tenant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -58,6 +60,7 @@ class User(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
 
     employee_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="SET NULL"),
         nullable=True,
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -181,4 +184,150 @@ class RefreshToken(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base)
     revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+
+
+class Address(
+    UUIDPrimaryKeyMixin,
+    TenantScopedMixin,
+    TimestampMixin,
+    SoftDeleteMixin,
+    Base,
+):
+    """Postal address used by branches and other org records."""
+
+    __tablename__ = "addresses"
+
+    address_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    address_line_1: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    address_line_2: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    postal_code: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
+
+class Branch(
+    UUIDPrimaryKeyMixin,
+    TenantScopedMixin,
+    TimestampMixin,
+    SoftDeleteMixin,
+    Base,
+):
+    """Physical operating location within a tenant."""
+
+    __tablename__ = "branches"
+    __table_args__ = (
+        Index(
+            "uq_branches_tenant_id_code_active",
+            "tenant_id",
+            "code",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
+
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    address_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("addresses.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    default_currency_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        nullable=True,
+    )
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        server_default=text("'ACTIVE'"),
+    )
+
+
+class Department(
+    UUIDPrimaryKeyMixin,
+    TenantScopedMixin,
+    TimestampMixin,
+    SoftDeleteMixin,
+    Base,
+):
+    """Org unit belonging to a branch."""
+
+    __tablename__ = "departments"
+    __table_args__ = (
+        Index(
+            "uq_departments_tenant_id_code_active",
+            "tenant_id",
+            "code",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
+
+    branch_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("branches.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    manager_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+
+class Employee(
+    UUIDPrimaryKeyMixin,
+    TenantScopedMixin,
+    TimestampMixin,
+    SoftDeleteMixin,
+    Base,
+):
+    """HR profile optionally linked to a login user."""
+
+    __tablename__ = "employees"
+    __table_args__ = (
+        Index(
+            "uq_employees_tenant_id_employee_code_active",
+            "tenant_id",
+            "employee_code",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
+
+    user_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    employee_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    branch_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("branches.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    department_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("departments.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    designation: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    joining_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        server_default=text("'ACTIVE'"),
     )

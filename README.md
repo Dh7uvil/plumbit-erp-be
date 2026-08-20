@@ -7,13 +7,14 @@ Pydantic v2, async SQLAlchemy 2.x, PostgreSQL, and Alembic.
 
 ```text
 app/
+├── auth/       Identity, organization settings, and audit-log APIs
 ├── core/       Configuration and cross-cutting application primitives
 ├── db/         Async SQLAlchemy and Alembic integration
 └── common/     Shared schemas, dependencies, repositories, and utilities
 alembic/        Database migration environment and revisions
+docs/openapi/   Per-tag OpenAPI snapshots generated from the live FastAPI app
+tests/          Unit and API tests
 ```
-
-Feature modules will live directly under `app/` and expose their routes through `/api/v1`.
 
 ## Local setup
 
