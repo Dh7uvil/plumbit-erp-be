@@ -25,7 +25,10 @@ or WhatsApp credentials. Use environment variables or a secrets manager.
 `.env.example` contains placeholders only, never real values:
 
 ```env
-DATABASE_URL=
+DATABASE_HOST=
+DATABASE_NAME=
+DATABASE_USER=
+DATABASE_PASSWORD=
 JWT_SECRET=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=

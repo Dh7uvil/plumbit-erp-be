@@ -42,7 +42,21 @@ async def get_db() -> AsyncIterator[AsyncSession]:
 
 @asynccontextmanager
 async def transaction(session: AsyncSession) -> AsyncIterator[AsyncSession]:
-    """Open a service-owned transaction and roll it back on failure."""
+    """Open a service-owned transaction and roll it back on failure.
+
+    Request-scoped sessions often autobegin on the first SELECT (for example
+    while loading the current user). Reuse that transaction when present so a
+    later ``session.begin()`` does not fail.
+    """
+
+    if session.in_transaction():
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        return
 
     async with session.begin():
         yield session

@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from typing import Annotated, Any, Literal
+from urllib.parse import quote
 
 from pydantic import AnyHttpUrl, Field, PostgresDsn, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -29,7 +30,11 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
 
     # Database
-    database_url: PostgresDsn
+    database_host: str
+    database_port: int = Field(default=5432, ge=1, le=65535)
+    database_name: str
+    database_user: str
+    database_password: SecretStr
     database_pool_size: int = Field(default=10, ge=1)
     database_max_overflow: int = Field(default=20, ge=0)
     database_pool_timeout_seconds: int = Field(default=30, ge=1)
@@ -43,13 +48,6 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: Annotated[list[AnyHttpUrl], NoDecode] = Field(default_factory=list)
-    cors_allow_credentials: bool = True
-    cors_allow_methods: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
-    )
-    cors_allow_headers: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["Authorization", "Content-Type", "X-Request-ID"]
-    )
 
     # Rate limiting
     rate_limit_requests: int = Field(default=100, ge=1)
@@ -94,13 +92,19 @@ class Settings(BaseSettings):
     feature_background_workers_enabled: bool = False
     feature_ai_forecasting_enabled: bool = False
 
-    @field_validator(
-        "cors_origins",
-        "cors_allow_methods",
-        "cors_allow_headers",
-        "allowed_upload_mime_types",
-        mode="before",
-    )
+    @property
+    def database_url(self) -> PostgresDsn:
+        """Assemble the async PostgreSQL DSN from the individual connection settings."""
+        return PostgresDsn.build(
+            scheme="postgresql+asyncpg",
+            username=quote(self.database_user, safe=""),
+            password=quote(self.database_password.get_secret_value(), safe=""),
+            host=self.database_host,
+            port=self.database_port,
+            path=self.database_name,
+        )
+
+    @field_validator("cors_origins", "allowed_upload_mime_types", mode="before")
     @classmethod
     def parse_list_setting(cls, value: Any) -> Any:
         """Accept comma-separated environment values while preserving native list inputs."""
