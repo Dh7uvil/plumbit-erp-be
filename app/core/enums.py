@@ -102,6 +102,29 @@ class AuditAction(StrEnum):
     LOGOUT = "LOGOUT"
 
 
+class AuditStatus(StrEnum):
+    SUCCESS = "SUCCESS"
+    FAILED = "FAILED"
+
+
+class BranchStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+
+
+class EmployeeStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+
+
+class AddressType(StrEnum):
+    BRANCH = "BRANCH"
+    HEADQUARTERS = "HEADQUARTERS"
+    BILLING = "BILLING"
+    SHIPPING = "SHIPPING"
+    OTHER = "OTHER"
+
+
 class SortOrder(StrEnum):
     ASC = "asc"
     DESC = "desc"

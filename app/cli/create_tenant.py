@@ -12,8 +12,8 @@ from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 
-from app.auth.catalog import SYSTEM_ADMIN_ROLE_NAME, seed_tenant_permissions
-from app.auth.models import Role, RolePermission, Tenant, User, UserRole
+from app.auth.catalog import SYSTEM_ADMIN_ROLE_NAME, grant_catalog_to_role
+from app.auth.models import Role, Tenant, User, UserRole
 from app.common.utils.validators import normalize_required_text
 from app.core.enums import TenantStatus, UserStatus
 from app.core.exceptions import DuplicateResourceError, ValidationError
@@ -98,7 +98,6 @@ async def provision_tenant(
         if tenant is None:
             raise DuplicateResourceError("Could not allocate a unique tenant code")
 
-        permissions = await seed_tenant_permissions(session, tenant.id)
         role = Role(
             tenant_id=tenant.id,
             name=SYSTEM_ADMIN_ROLE_NAME,
@@ -107,15 +106,7 @@ async def provision_tenant(
         )
         session.add(role)
         await session.flush()
-
-        for permission in permissions:
-            session.add(
-                RolePermission(
-                    tenant_id=tenant.id,
-                    role_id=role.id,
-                    permission_id=permission.id,
-                )
-            )
+        await grant_catalog_to_role(session, tenant.id, role.id)
 
         user = User(
             tenant_id=tenant.id,

@@ -10,13 +10,23 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.models import Role, User
+from app.auth.catalog import IDENTITY_MODULE, SYSTEM_ADMIN_ROLE_NAME, seed_tenant_permissions
+from app.auth.models import Employee, Role, User
+from app.auth.org_repository import OrganizationRepository
 from app.auth.repository import AccessRepository
 from app.auth.schemas import (
     AssignRolesRequest,
+    BranchSummary,
     ChangePasswordRequest,
+    DepartmentSummary,
+    EmployeeSummary,
+    EmployeeUpsert,
     LoginRequest,
     MeResponse,
+    PermissionMatrixAction,
+    PermissionMatrixModule,
+    PermissionMatrixResource,
+    PermissionMatrixResponse,
     PermissionResponse,
     RoleCreate,
     RoleDetailResponse,
@@ -28,22 +38,26 @@ from app.auth.schemas import (
     TokenPairResponse,
     UserCreate,
     UserDetailResponse,
+    UserFilter,
     UserResponse,
     UserUpdate,
 )
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.services.audit import AuditWriter
 from app.common.utils.datetime import utcnow
 from app.core.config import get_settings
-from app.core.enums import TenantStatus, UserStatus
+from app.core.enums import AuditAction, AuditStatus, EmployeeStatus, TenantStatus, UserStatus
 from app.core.exceptions import (
     DuplicateResourceError,
     InvalidCredentialsError,
+    InvalidStatusTransitionError,
     InvalidTokenError,
     ResourceNotFoundError,
     TokenExpiredError,
     ValidationError,
 )
+from app.core.permissions import build_permission
 from app.core.security import (
     PasswordTooLongError,
     TokenClaims,
@@ -58,44 +72,92 @@ from app.db.session import transaction
 logger = logging.getLogger(__name__)
 
 
+def _user_snapshot(user: User) -> dict[str, object]:
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "phone": user.phone,
+        "status": user.status,
+        "employee_id": user.employee_id,
+    }
+
+
+def _role_snapshot(role: Role) -> dict[str, object]:
+    return {
+        "id": role.id,
+        "name": role.name,
+        "description": role.description,
+        "is_system_role": role.is_system_role,
+    }
+
+
 class AuthService:
     """Authentication, session, and identity-management use cases."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repo = AccessRepository(session)
+        self.org = OrganizationRepository(session)
+        self.audit = AuditWriter(session)
 
     async def list_active_tenants(self) -> list[TenantPublicResponse]:
         rows = await self.repo.list_active_tenants()
         return [TenantPublicResponse(tenant_id=tenant_id, name=name) for tenant_id, name in rows]
 
     async def login(self, payload: LoginRequest) -> TokenPairResponse:
-        async with transaction(self.session):
-            tenant = await self.repo.get_tenant(payload.tenant_id)
-            user = (
-                await self.repo.get_user_by_email(payload.tenant_id, payload.email)
-                if tenant is not None and tenant.status == TenantStatus.ACTIVE
-                else None
-            )
-            password_hash = user.password_hash if user is not None else None
-            credentials_ok = (
-                user is not None
-                and user.status == UserStatus.ACTIVE
-                and password_hash is not None
-                and verify_password(payload.password, password_hash)
-            )
-            if not credentials_ok or user is None:
-                logger.warning("login_failed", extra={"tenant_id": str(payload.tenant_id)})
-                raise InvalidCredentialsError()
+        failed_user_id: UUID | None = None
+        tenant_exists = False
+        try:
+            async with transaction(self.session):
+                tenant = await self.repo.get_tenant(payload.tenant_id)
+                tenant_exists = tenant is not None
+                user = (
+                    await self.repo.get_user_by_email(payload.tenant_id, payload.email)
+                    if tenant is not None and tenant.status == TenantStatus.ACTIVE
+                    else None
+                )
+                password_hash = user.password_hash if user is not None else None
+                credentials_ok = (
+                    user is not None
+                    and user.status == UserStatus.ACTIVE
+                    and password_hash is not None
+                    and verify_password(payload.password, password_hash)
+                )
+                if not credentials_ok or user is None:
+                    failed_user_id = user.id if user is not None else None
+                    logger.warning("login_failed", extra={"tenant_id": str(payload.tenant_id)})
+                    raise InvalidCredentialsError()
 
-            user.last_login_at = utcnow()
-            tokens = await self._issue_token_pair(user)
-
-        logger.info(
-            "user_logged_in",
-            extra={"user_id": str(user.id), "tenant_id": str(user.tenant_id)},
-        )
-        return tokens
+                user.last_login_at = utcnow()
+                tokens = await self._issue_token_pair(user)
+                await self.audit.write(
+                    tenant_id=user.tenant_id,
+                    user_id=user.id,
+                    action=AuditAction.LOGIN,
+                    module=IDENTITY_MODULE,
+                    entity_type="user",
+                    entity_id=user.id,
+                    status=AuditStatus.SUCCESS,
+                )
+                logger.info(
+                    "user_logged_in",
+                    extra={"user_id": str(user.id), "tenant_id": str(user.tenant_id)},
+                )
+                return tokens
+        except InvalidCredentialsError:
+            if tenant_exists:
+                async with transaction(self.session):
+                    await self.audit.write(
+                        tenant_id=payload.tenant_id,
+                        user_id=failed_user_id,
+                        action=AuditAction.LOGIN,
+                        module=IDENTITY_MODULE,
+                        entity_type="user",
+                        entity_id=failed_user_id,
+                        status=AuditStatus.FAILED,
+                    )
+            raise
 
     async def refresh(self, refresh_token: str) -> TokenPairResponse:
         claims = self._decode_refresh(refresh_token)
@@ -136,16 +198,20 @@ class AuthService:
             if stored.tenant_id != tenant_id or stored.user_id != user_id:
                 raise InvalidTokenError()
             await self.repo.revoke_refresh_token(stored)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                action=AuditAction.LOGOUT,
+                module=IDENTITY_MODULE,
+                entity_type="user",
+                entity_id=user_id,
+            )
 
     async def me(self, *, tenant_id: UUID, user_id: UUID) -> MeResponse:
         user = await self._require_user(tenant_id, user_id)
-        roles = await self.repo.list_user_roles(tenant_id, user_id)
+        detail = await self._user_detail(tenant_id, user)
         permissions = await self.repo.list_user_permission_strings(tenant_id, user_id)
-        return MeResponse(
-            **UserResponse.model_validate(user).model_dump(),
-            roles=[RoleSummary.model_validate(role) for role in roles],
-            permissions=sorted(permissions),
-        )
+        return MeResponse(**detail.model_dump(), permissions=sorted(permissions))
 
     async def change_password(
         self,
@@ -164,6 +230,15 @@ class AuthService:
                 raise InvalidCredentialsError()
             user.password_hash = new_hash
             await self.repo.revoke_user_refresh_tokens(tenant_id, user_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                action=AuditAction.UPDATE,
+                module=IDENTITY_MODULE,
+                entity_type="user",
+                entity_id=user.id,
+                new_values={"password_changed": True},
+            )
             return await self._issue_token_pair(user)
 
     async def list_users(
@@ -171,19 +246,51 @@ class AuthService:
         tenant_id: UUID,
         *,
         page: PageParams,
-        common_filter: BaseFilter | None = None,
-        status: str | None = None,
+        user_filter: UserFilter,
     ) -> tuple[list[UserResponse], int]:
+        status = user_filter.status.value if user_filter.status is not None else None
         filters = {"status": status} if status is not None else None
         users, total = await self.repo.list_users(
             tenant_id,
             page=page,
-            common_filter=common_filter,
+            common_filter=user_filter,
             filters=filters,
+            user_filter=user_filter,
         )
-        return [UserResponse.model_validate(user) for user in users], total
+        user_list = list(users)
+        roles_by_user = await self.repo.list_roles_for_users(
+            tenant_id,
+            [user.id for user in user_list],
+        )
+        employees_by_id = await self.org.get_employees_by_ids(
+            tenant_id,
+            [user.employee_id for user in user_list if user.employee_id is not None],
+        )
+        employee_summaries = await self._employee_summaries(
+            tenant_id,
+            list(employees_by_id.values()),
+        )
+        responses: list[UserResponse] = []
+        for user in user_list:
+            employee = (
+                employee_summaries.get(user.employee_id) if user.employee_id is not None else None
+            )
+            responses.append(
+                self._to_user_response(
+                    user,
+                    roles=roles_by_user.get(user.id, []),
+                    employee=employee,
+                )
+            )
+        return responses, total
 
-    async def create_user(self, tenant_id: UUID, payload: UserCreate) -> UserDetailResponse:
+    async def create_user(
+        self,
+        tenant_id: UUID,
+        payload: UserCreate,
+        *,
+        actor_user_id: UUID,
+    ) -> UserDetailResponse:
         password_hash = self._hash_password(payload.password)
         async with transaction(self.session):
             try:
@@ -200,6 +307,17 @@ class AuthService:
             except IntegrityError as exc:
                 raise DuplicateResourceError("A user with this email already exists") from exc
             await self._replace_user_roles(tenant_id, user.id, payload.role_ids)
+            if payload.employee is not None:
+                await self._upsert_employee(tenant_id, user, payload.employee)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.CREATE,
+                module=IDENTITY_MODULE,
+                entity_type="user",
+                entity_id=user.id,
+                new_values=_user_snapshot(user),
+            )
             return await self._user_detail(tenant_id, user)
 
     async def get_user(self, tenant_id: UUID, user_id: UUID) -> UserDetailResponse:
@@ -215,6 +333,7 @@ class AuthService:
         actor_user_id: UUID,
     ) -> UserDetailResponse:
         values = payload.model_dump(exclude_unset=True)
+        employee_payload = values.pop("employee", None)
         status = values.get("status")
         if status == UserStatus.DISABLED and user_id == actor_user_id:
             raise ValidationError("You cannot deactivate your own account")
@@ -223,12 +342,29 @@ class AuthService:
 
         async with transaction(self.session):
             user = await self._require_user(tenant_id, user_id)
+            old_values = _user_snapshot(user)
             for name, value in values.items():
                 setattr(user, name, value)
             try:
                 await self.session.flush()
             except IntegrityError as exc:
                 raise DuplicateResourceError("A user with this email already exists") from exc
+            if employee_payload is not None:
+                await self._upsert_employee(
+                    tenant_id,
+                    user,
+                    EmployeeUpsert.model_validate(employee_payload),
+                )
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=IDENTITY_MODULE,
+                entity_type="user",
+                entity_id=user.id,
+                old_values=old_values,
+                new_values=_user_snapshot(user),
+            )
             return await self._user_detail(tenant_id, user)
 
     async def deactivate_user(
@@ -242,9 +378,46 @@ class AuthService:
             raise ValidationError("You cannot deactivate your own account")
         async with transaction(self.session):
             user = await self._require_user(tenant_id, user_id)
+            old_status = user.status
             user.status = UserStatus.DISABLED
             await self.repo.revoke_user_refresh_tokens(tenant_id, user_id)
             await self.session.flush()
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=IDENTITY_MODULE,
+                entity_type="user",
+                entity_id=user.id,
+                old_values={"status": old_status},
+                new_values={"status": user.status},
+            )
+            return await self._user_detail(tenant_id, user)
+
+    async def activate_user(
+        self,
+        tenant_id: UUID,
+        user_id: UUID,
+        *,
+        actor_user_id: UUID,
+    ) -> UserDetailResponse:
+        async with transaction(self.session):
+            user = await self._require_user(tenant_id, user_id)
+            if user.status != UserStatus.DISABLED:
+                raise InvalidStatusTransitionError("Only disabled users can be activated")
+            old_status = user.status
+            user.status = UserStatus.ACTIVE
+            await self.session.flush()
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=IDENTITY_MODULE,
+                entity_type="user",
+                entity_id=user.id,
+                old_values={"status": old_status},
+                new_values={"status": user.status},
+            )
             return await self._user_detail(tenant_id, user)
 
     async def assign_roles(
@@ -252,10 +425,21 @@ class AuthService:
         tenant_id: UUID,
         user_id: UUID,
         payload: AssignRolesRequest,
+        *,
+        actor_user_id: UUID,
     ) -> UserDetailResponse:
         async with transaction(self.session):
             user = await self._require_user(tenant_id, user_id)
             await self._replace_user_roles(tenant_id, user.id, payload.role_ids)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=IDENTITY_MODULE,
+                entity_type="user",
+                entity_id=user.id,
+                new_values={"role_ids": [str(role_id) for role_id in payload.role_ids]},
+            )
             return await self._user_detail(tenant_id, user)
 
     async def list_roles(
@@ -270,9 +454,22 @@ class AuthService:
             page=page,
             common_filter=common_filter,
         )
-        return [RoleResponse.model_validate(role) for role in roles], total
+        role_list = list(roles)
+        counts = await self.repo.count_users_by_role_ids(tenant_id, [role.id for role in role_list])
+        return [
+            RoleResponse.model_validate(role).model_copy(
+                update={"user_count": counts.get(role.id, 0)}
+            )
+            for role in role_list
+        ], total
 
-    async def create_role(self, tenant_id: UUID, payload: RoleCreate) -> RoleDetailResponse:
+    async def create_role(
+        self,
+        tenant_id: UUID,
+        payload: RoleCreate,
+        *,
+        actor_user_id: UUID,
+    ) -> RoleDetailResponse:
         async with transaction(self.session):
             try:
                 role = await self.repo.create_role(
@@ -286,6 +483,15 @@ class AuthService:
             except IntegrityError as exc:
                 raise DuplicateResourceError("A role with this name already exists") from exc
             await self._replace_role_permissions(tenant_id, role.id, payload.permission_ids)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.CREATE,
+                module=IDENTITY_MODULE,
+                entity_type="role",
+                entity_id=role.id,
+                new_values=_role_snapshot(role),
+            )
             return await self._role_detail(tenant_id, role)
 
     async def get_role(self, tenant_id: UUID, role_id: UUID) -> RoleDetailResponse:
@@ -297,26 +503,57 @@ class AuthService:
         tenant_id: UUID,
         role_id: UUID,
         payload: RoleUpdate,
+        *,
+        actor_user_id: UUID,
     ) -> RoleDetailResponse:
         values = payload.model_dump(exclude_unset=True)
         async with transaction(self.session):
             role = await self._require_role(tenant_id, role_id)
             if role.is_system_role and "name" in values and values["name"] != role.name:
                 raise ValidationError("System role names cannot be changed")
+            old_values = _role_snapshot(role)
             for name, value in values.items():
                 setattr(role, name, value)
             try:
                 await self.session.flush()
             except IntegrityError as exc:
                 raise DuplicateResourceError("A role with this name already exists") from exc
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=IDENTITY_MODULE,
+                entity_type="role",
+                entity_id=role.id,
+                old_values=old_values,
+                new_values=_role_snapshot(role),
+            )
             return await self._role_detail(tenant_id, role)
 
-    async def delete_role(self, tenant_id: UUID, role_id: UUID) -> RoleResponse:
+    async def delete_role(
+        self,
+        tenant_id: UUID,
+        role_id: UUID,
+        *,
+        actor_user_id: UUID,
+    ) -> RoleResponse:
         async with transaction(self.session):
             role = await self._require_role(tenant_id, role_id)
             if role.is_system_role:
                 raise ValidationError("System roles cannot be deleted")
-            response = RoleResponse.model_validate(role)
+            counts = await self.repo.count_users_by_role_ids(tenant_id, [role.id])
+            response = RoleResponse.model_validate(role).model_copy(
+                update={"user_count": counts.get(role.id, 0)}
+            )
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.DELETE,
+                module=IDENTITY_MODULE,
+                entity_type="role",
+                entity_id=role.id,
+                old_values=_role_snapshot(role),
+            )
             await self.repo.delete_role(role)
         return response
 
@@ -325,10 +562,53 @@ class AuthService:
         tenant_id: UUID,
         role_id: UUID,
         payload: SetRolePermissionsRequest,
+        *,
+        actor_user_id: UUID,
     ) -> RoleDetailResponse:
         async with transaction(self.session):
             role = await self._require_role(tenant_id, role_id)
             await self._replace_role_permissions(tenant_id, role.id, payload.permission_ids)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=IDENTITY_MODULE,
+                entity_type="role",
+                entity_id=role.id,
+                new_values={
+                    "permission_ids": [
+                        str(permission_id) for permission_id in payload.permission_ids
+                    ]
+                },
+            )
+            return await self._role_detail(tenant_id, role)
+
+    async def reset_role_permissions(
+        self,
+        tenant_id: UUID,
+        role_id: UUID,
+        *,
+        actor_user_id: UUID,
+    ) -> RoleDetailResponse:
+        async with transaction(self.session):
+            role = await self._require_role(tenant_id, role_id)
+            if not role.is_system_role or role.name != SYSTEM_ADMIN_ROLE_NAME:
+                raise ValidationError("Only the system Admin role can be reset to the catalog")
+            permissions = await seed_tenant_permissions(self.session, tenant_id)
+            await self.repo.replace_role_permissions(
+                tenant_id,
+                role.id,
+                [permission.id for permission in permissions],
+            )
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=IDENTITY_MODULE,
+                entity_type="role",
+                entity_id=role.id,
+                new_values={"permissions_reset": True},
+            )
             return await self._role_detail(tenant_id, role)
 
     async def list_permissions(
@@ -348,6 +628,43 @@ class AuthService:
         )
         return [PermissionResponse.model_validate(item) for item in permissions], total
 
+    async def permission_matrix(
+        self,
+        tenant_id: UUID,
+        *,
+        role_id: UUID | None = None,
+    ) -> PermissionMatrixResponse:
+        granted_ids: set[UUID] = set()
+        if role_id is not None:
+            role = await self._require_role(tenant_id, role_id)
+            granted = await self.repo.list_role_permissions(tenant_id, role.id)
+            granted_ids = {item.id for item in granted}
+
+        catalog = await self.repo.list_all_permissions(tenant_id)
+        modules: dict[str, dict[str, list[PermissionMatrixAction]]] = {}
+        for item in catalog:
+            code = build_permission(item.module, item.resource, item.action)
+            modules.setdefault(item.module, {}).setdefault(item.resource, []).append(
+                PermissionMatrixAction(
+                    id=item.id,
+                    action=item.action,
+                    code=code,
+                    granted=item.id in granted_ids,
+                )
+            )
+        return PermissionMatrixResponse(
+            modules=[
+                PermissionMatrixModule(
+                    module=module_name,
+                    resources=[
+                        PermissionMatrixResource(resource=resource_name, actions=actions)
+                        for resource_name, actions in resources.items()
+                    ],
+                )
+                for module_name, resources in modules.items()
+            ]
+        )
+
     async def _require_user(self, tenant_id: UUID, user_id: UUID) -> User:
         user = await self.repo.get_user(tenant_id, user_id)
         if user is None:
@@ -361,16 +678,114 @@ class AuthService:
         return role
 
     async def _user_detail(self, tenant_id: UUID, user: User) -> UserDetailResponse:
+        await self.session.refresh(user)
         roles = await self.repo.list_user_roles(tenant_id, user.id)
-        return UserDetailResponse(
-            **UserResponse.model_validate(user).model_dump(),
-            roles=[RoleSummary.model_validate(role) for role in roles],
+        employee = None
+        if user.employee_id is not None:
+            employees = await self.org.get_employees_by_ids(tenant_id, [user.employee_id])
+            summaries = await self._employee_summaries(tenant_id, list(employees.values()))
+            employee = summaries.get(user.employee_id)
+        return UserDetailResponse.model_validate(
+            self._to_user_response(user, roles=list(roles), employee=employee)
         )
 
+    def _to_user_response(
+        self,
+        user: User,
+        *,
+        roles: Sequence[Role],
+        employee: EmployeeSummary | None,
+    ) -> UserResponse:
+        return UserResponse.model_validate(user).model_copy(
+            update={
+                "roles": [RoleSummary.model_validate(role) for role in roles],
+                "employee": employee,
+            }
+        )
+
+    async def _employee_summaries(
+        self,
+        tenant_id: UUID,
+        employees: Sequence[Employee],
+    ) -> dict[UUID, EmployeeSummary]:
+        branch_ids = [item.branch_id for item in employees if item.branch_id is not None]
+        department_ids = [
+            item.department_id for item in employees if item.department_id is not None
+        ]
+        branches = await self.org.get_branches_by_ids(tenant_id, branch_ids)
+        departments = await self.org.get_departments_by_ids(tenant_id, department_ids)
+        summaries: dict[UUID, EmployeeSummary] = {}
+        for employee in employees:
+            summaries[employee.id] = EmployeeSummary(
+                id=employee.id,
+                employee_code=employee.employee_code,
+                designation=employee.designation,
+                joining_date=employee.joining_date,
+                status=EmployeeStatus(employee.status),
+                branch=BranchSummary.model_validate(branches[employee.branch_id])
+                if employee.branch_id is not None and employee.branch_id in branches
+                else None,
+                department=DepartmentSummary.model_validate(departments[employee.department_id])
+                if employee.department_id is not None and employee.department_id in departments
+                else None,
+            )
+        return summaries
+
+    async def _upsert_employee(
+        self,
+        tenant_id: UUID,
+        user: User,
+        payload: EmployeeUpsert,
+    ) -> Employee:
+        branch_id = payload.branch_id
+        department_id = payload.department_id
+        if branch_id is not None:
+            branch = await self.org.get_branch(tenant_id, branch_id)
+            if branch is None:
+                raise ResourceNotFoundError("Branch not found")
+        if department_id is not None:
+            department = await self.org.get_department(tenant_id, department_id)
+            if department is None:
+                raise ResourceNotFoundError("Department not found")
+            if branch_id is None:
+                branch_id = department.branch_id
+            elif department.branch_id != branch_id:
+                raise ValidationError("Department does not belong to the selected branch")
+
+        values: dict[str, object] = {
+            "employee_code": payload.employee_code,
+            "branch_id": branch_id,
+            "department_id": department_id,
+            "designation": payload.designation,
+            "joining_date": payload.joining_date,
+            "user_id": user.id,
+        }
+        try:
+            if user.employee_id is None:
+                values["status"] = EmployeeStatus.ACTIVE.value
+                employee = await self.org.create_employee(tenant_id, values)
+                user.employee_id = employee.id
+                await self.session.flush()
+                return employee
+            updated = await self.org.update_employee(tenant_id, user.employee_id, values)
+            if updated is None:
+                values["status"] = EmployeeStatus.ACTIVE.value
+                created = await self.org.create_employee(tenant_id, values)
+                user.employee_id = created.id
+                await self.session.flush()
+                return created
+            return updated
+        except IntegrityError as exc:
+            raise DuplicateResourceError("An employee with this code already exists") from exc
+
     async def _role_detail(self, tenant_id: UUID, role: Role) -> RoleDetailResponse:
+        await self.session.refresh(role)
         permissions = await self.repo.list_role_permissions(tenant_id, role.id)
+        counts = await self.repo.count_users_by_role_ids(tenant_id, [role.id])
         return RoleDetailResponse(
-            **RoleResponse.model_validate(role).model_dump(),
+            **RoleResponse.model_validate(role)
+            .model_copy(update={"user_count": counts.get(role.id, 0)})
+            .model_dump(),
             permissions=[PermissionResponse.model_validate(item) for item in permissions],
         )
 

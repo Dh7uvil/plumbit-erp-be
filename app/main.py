@@ -21,7 +21,7 @@ OPENAPI_TAGS: list[dict[str, str]] = [
     },
     {
         "name": "Tenants",
-        "description": "Public tenant discovery for the login screen.",
+        "description": "Public tenant discovery and the current organization's settings.",
     },
     {
         "name": "Auth",
@@ -29,7 +29,7 @@ OPENAPI_TAGS: list[dict[str, str]] = [
     },
     {
         "name": "Users",
-        "description": "Tenant user management and role assignment.",
+        "description": "Tenant user management, role assignment, and nested employee profiles.",
     },
     {
         "name": "Roles",
@@ -37,7 +37,19 @@ OPENAPI_TAGS: list[dict[str, str]] = [
     },
     {
         "name": "Permissions",
-        "description": "Permission catalog for the current tenant.",
+        "description": "Permission catalog (`identity.<resource>.<action>`) and the role matrix.",
+    },
+    {
+        "name": "Branches",
+        "description": "Tenant operating locations.",
+    },
+    {
+        "name": "Departments",
+        "description": "Departments belonging to a branch.",
+    },
+    {
+        "name": "Audit Logs",
+        "description": "Append-only audit trail for identity and organization changes.",
     },
 ]
 APP_DESCRIPTION = "Multi-tenant ERP backend API."
