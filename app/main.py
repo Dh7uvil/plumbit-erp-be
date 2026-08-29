@@ -55,6 +55,14 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "name": "Attachments",
         "description": "Generic document uploads stored in MinIO locally and S3 in production.",
     },
+    {
+        "name": "Currencies",
+        "description": "Tenant currency master including the AED base.",
+    },
+    {
+        "name": "Exchange Rates",
+        "description": "Org-level daily user-entered rates versus the base currency.",
+    },
 ]
 APP_DESCRIPTION = "Multi-tenant ERP backend API."
 

@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.auth.router import router as auth_router
 from app.common.attachments.router import router as attachments_router
+from app.erp.router import router as erp_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -11,3 +12,4 @@ api_router = APIRouter(prefix="/api/v1")
 # version prefix.
 api_router.include_router(auth_router)
 api_router.include_router(attachments_router)
+api_router.include_router(erp_router)
