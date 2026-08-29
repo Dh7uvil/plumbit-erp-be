@@ -40,4 +40,5 @@ import app.common.attachments.models as _attachments  # noqa: E402, F401
 import app.common.models.audit_log as _audit_log  # noqa: E402, F401
 import app.erp.accounting.models as _accounting  # noqa: E402, F401
 import app.erp.exchange_rates.models as _exchange_rates  # noqa: E402, F401
+import app.inventory_management.categories.models as _categories  # noqa: E402, F401
 import app.inventory_management.units.models as _units  # noqa: E402, F401
