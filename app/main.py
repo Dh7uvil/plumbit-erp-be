@@ -83,6 +83,10 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "name": "Units",
         "description": "Unit of measure master used on products and quote lines.",
     },
+    {
+        "name": "Categories",
+        "description": "Hierarchical product category master.",
+    },
 ]
 APP_DESCRIPTION = "Multi-tenant ERP backend API."
 
