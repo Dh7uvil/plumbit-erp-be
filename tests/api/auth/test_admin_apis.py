@@ -381,6 +381,7 @@ async def test_reset_admin_permissions_restores_catalog(client: AsyncClient) -> 
     headers = await login_headers(client, tenant_id, email, password)
     roles = await client.get("/api/v1/roles", headers=headers)
     admin = next(item for item in roles.json()["data"] if item["is_system_role"])
+    assert admin["name"] == "Superadmin"
     reset = await client.post(
         f"/api/v1/roles/{admin['id']}/permissions/reset",
         headers=headers,
@@ -519,4 +520,80 @@ async def test_current_tenant_round_trip(client: AsyncClient) -> None:
     assert data["default_currency"] == "AED"
     assert data["headquarters"]["city"] == "Dubai"
     assert "users_count" in data
+    assert data["logo_url"] is None
+    fetched = await client.get("/api/v1/tenants/current", headers=headers)
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["data"]["logo_url"] is None
     assert "warehouses_count" not in data
+
+
+@pytest.mark.asyncio
+async def test_current_tenant_accepts_org_settings_form_payload(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    current = await client.get("/api/v1/tenants/current", headers=headers)
+    assert current.status_code == 200, current.text
+    currency_id = current.json()["data"]["default_currency_id"]
+
+    company = await client.patch(
+        "/api/v1/tenants/current",
+        headers=headers,
+        json={
+            "name": "Plumb It",
+            "industry": "Plumbing",
+            "website": "https://plumbit.example",
+            "contact_email": "hello@plumbit.example",
+            "phone": None,
+            "founded": None,
+            "headquarters": None,
+        },
+    )
+    assert company.status_code == 200, company.text
+
+    regional = await client.patch(
+        "/api/v1/tenants/current",
+        headers=headers,
+        json={
+            "timezone": "Asia/Kolkata",
+            "fiscal_year_start": "April 1",
+            "default_currency": "INR",
+            "default_currency_id": currency_id,
+            "quotation_requires_approval": True,
+        },
+    )
+    assert regional.status_code == 200, regional.text
+    data = regional.json()["data"]
+    assert data["timezone"] == "Asia/Kolkata"
+    assert data["fiscal_year_start"] == "April 1"
+    assert data["default_currency"] == "INR"
+    assert data["quotation_requires_approval"] is True
+
+    cleared = await client.patch(
+        "/api/v1/tenants/current",
+        headers=headers,
+        json={
+            "timezone": "",
+            "fiscal_year_start": "  ",
+            "default_currency": "  ",
+            "default_currency_id": "none",
+        },
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["data"]["timezone"] == "Asia/Kolkata"
+    assert cleared.json()["data"]["fiscal_year_start"] is None
+    assert cleared.json()["data"]["default_currency_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_current_tenant_rejects_invalid_contact_email(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    rejected = await client.patch(
+        "/api/v1/tenants/current",
+        headers=headers,
+        json={"contact_email": "not-an-email"},
+    )
+    assert rejected.status_code == 422, rejected.text
+    error = rejected.json()["error"]
+    assert error["code"] == "VALIDATION_ERROR"
+    assert "contact_email" in error["details"]

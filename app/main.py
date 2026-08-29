@@ -51,6 +51,10 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "name": "Audit Logs",
         "description": "Append-only audit trail for identity and organization changes.",
     },
+    {
+        "name": "Attachments",
+        "description": "Generic document uploads stored in MinIO locally and S3 in production.",
+    },
 ]
 APP_DESCRIPTION = "Multi-tenant ERP backend API."
 

@@ -14,6 +14,7 @@ env/
 .env
 .env.*
 !.env.example
+!.env.test.example
 
 # Test, lint, and type-check caches
 .pytest_cache/
@@ -36,3 +37,6 @@ dist/
 # Logs and local runtime data
 *.log
 tmp/
+
+docs/
+ 

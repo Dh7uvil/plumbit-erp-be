@@ -19,11 +19,10 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base
-from app.db.mixins import SoftDeleteMixin, TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.base import SoftDeleteTenantModel, TenantModel, TimestampedModel
 
 
-class Tenant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+class Tenant(TimestampedModel):
     """Top-level tenant; not itself tenant-scoped."""
 
     __tablename__ = "tenants"
@@ -31,6 +30,7 @@ class Tenant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     code: Mapped[str] = mapped_column(String(50), nullable=False)
+    logo_storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
@@ -43,6 +43,7 @@ class Tenant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     default_currency_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
+        ForeignKey("currencies.id", ondelete="SET NULL"),
         nullable=True,
     )
     status: Mapped[str] = mapped_column(
@@ -52,7 +53,7 @@ class Tenant(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
-class User(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
+class User(TenantModel):
     """Tenant-owned login identity."""
 
     __tablename__ = "users"
@@ -78,7 +79,7 @@ class User(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     )
 
 
-class Role(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
+class Role(TenantModel):
     """Named bundle of permissions within a tenant."""
 
     __tablename__ = "roles"
@@ -94,7 +95,7 @@ class Role(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     )
 
 
-class Permission(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
+class Permission(TenantModel):
     """Canonical ``module.resource.action`` grant stored per tenant."""
 
     __tablename__ = "permissions"
@@ -113,7 +114,7 @@ class Permission(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     action: Mapped[str] = mapped_column(String(30), nullable=False)
 
 
-class UserRole(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
+class UserRole(TenantModel):
     """Assignment of a role to a user within a tenant."""
 
     __tablename__ = "user_roles"
@@ -140,7 +141,7 @@ class UserRole(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
     )
 
 
-class RolePermission(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
+class RolePermission(TenantModel):
     """Assignment of a permission to a role within a tenant."""
 
     __tablename__ = "role_permissions"
@@ -167,7 +168,7 @@ class RolePermission(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Bas
     )
 
 
-class RefreshToken(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base):
+class RefreshToken(TenantModel):
     """Persisted refresh-token identifier used for rotation and logout."""
 
     __tablename__ = "refresh_tokens"
@@ -187,13 +188,7 @@ class RefreshToken(UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Base)
     )
 
 
-class Address(
-    UUIDPrimaryKeyMixin,
-    TenantScopedMixin,
-    TimestampMixin,
-    SoftDeleteMixin,
-    Base,
-):
+class Address(SoftDeleteTenantModel):
     """Postal address used by branches and other org records."""
 
     __tablename__ = "addresses"
@@ -208,13 +203,7 @@ class Address(
     postal_code: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
 
-class Branch(
-    UUIDPrimaryKeyMixin,
-    TenantScopedMixin,
-    TimestampMixin,
-    SoftDeleteMixin,
-    Base,
-):
+class Branch(SoftDeleteTenantModel):
     """Physical operating location within a tenant."""
 
     __tablename__ = "branches"
@@ -238,6 +227,7 @@ class Branch(
     )
     default_currency_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
+        ForeignKey("currencies.id", ondelete="SET NULL"),
         nullable=True,
     )
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -249,13 +239,7 @@ class Branch(
     )
 
 
-class Department(
-    UUIDPrimaryKeyMixin,
-    TenantScopedMixin,
-    TimestampMixin,
-    SoftDeleteMixin,
-    Base,
-):
+class Department(SoftDeleteTenantModel):
     """Org unit belonging to a branch."""
 
     __tablename__ = "departments"
@@ -285,13 +269,7 @@ class Department(
     )
 
 
-class Employee(
-    UUIDPrimaryKeyMixin,
-    TenantScopedMixin,
-    TimestampMixin,
-    SoftDeleteMixin,
-    Base,
-):
+class Employee(SoftDeleteTenantModel):
     """HR profile optionally linked to a login user."""
 
     __tablename__ = "employees"

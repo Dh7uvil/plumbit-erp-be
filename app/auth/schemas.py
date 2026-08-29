@@ -7,7 +7,12 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.schemas.filters import BaseFilter
-from app.common.utils.validators import normalize_currency_code, normalize_required_text
+from app.common.utils.validators import (
+    blank_to_none,
+    normalize_currency_code,
+    normalize_required_text,
+    optional_uuid_input,
+)
 from app.core.enums import BranchStatus, EmployeeStatus, UserStatus
 
 MIN_PASSWORD_LENGTH = 8
@@ -35,6 +40,7 @@ class TenantPublicResponse(BaseModel):
 
     tenant_id: UUID
     name: str
+    logo_url: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -480,6 +486,7 @@ class TenantSettings(BaseModel):
     founded: str | None = Field(default=None, max_length=20)
     fiscal_year_start: str | None = Field(default=None, max_length=50)
     default_currency: str | None = Field(default=None, max_length=3)
+    quotation_requires_approval: bool = True
     headquarters: AddressPayload | None = None
 
     @field_validator("industry", "website", "founded", "fiscal_year_start", "phone")
@@ -519,6 +526,7 @@ class TenantCurrentResponse(BaseModel):
     code: str
     timezone: str
     status: str
+    logo_url: str | None = None
     industry: str | None = None
     website: str | None = None
     contact_email: str | None = None
@@ -526,6 +534,8 @@ class TenantCurrentResponse(BaseModel):
     founded: str | None = None
     fiscal_year_start: str | None = None
     default_currency: str | None = None
+    default_currency_id: UUID | None = None
+    quotation_requires_approval: bool = True
     headquarters: AddressPayload | None = None
     users_count: int
     departments_count: int
@@ -544,7 +554,29 @@ class TenantCurrentUpdate(BaseModel):
     founded: str | None = Field(default=None, max_length=20)
     fiscal_year_start: str | None = Field(default=None, max_length=50)
     default_currency: str | None = Field(default=None, max_length=3)
+    default_currency_id: UUID | None = None
+    quotation_requires_approval: bool | None = None
     headquarters: AddressPayload | None = None
+
+    @field_validator(
+        "timezone",
+        "industry",
+        "website",
+        "contact_email",
+        "phone",
+        "founded",
+        "fiscal_year_start",
+        "default_currency",
+        mode="before",
+    )
+    @classmethod
+    def coerce_blank_optional_text(cls, value: object) -> object:
+        return blank_to_none(value)
+
+    @field_validator("default_currency_id", mode="before")
+    @classmethod
+    def coerce_optional_currency_id(cls, value: object) -> object:
+        return optional_uuid_input(value)
 
     @field_validator("name")
     @classmethod
@@ -598,6 +630,7 @@ class BranchCreate(BaseModel):
     status: BranchStatus = BranchStatus.ACTIVE
     phone: str | None = Field(default=None, max_length=50)
     timezone: str | None = Field(default=None, max_length=100)
+    default_currency_id: UUID | None = None
     address: AddressPayload | None = None
 
     @field_validator("name")
@@ -625,6 +658,7 @@ class BranchUpdate(BaseModel):
     status: BranchStatus | None = None
     phone: str | None = Field(default=None, max_length=50)
     timezone: str | None = Field(default=None, max_length=100)
+    default_currency_id: UUID | None = None
     address: AddressPayload | None = None
 
     @field_validator("name")
@@ -658,6 +692,7 @@ class BranchResponse(BaseModel):
     status: BranchStatus
     phone: str | None
     timezone: str | None
+    default_currency_id: UUID | None = None
     address: AddressResponse | None = None
     employee_count: int = 0
     created_at: datetime

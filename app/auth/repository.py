@@ -134,16 +134,16 @@ class AccessRepository:
         total = await self.session.scalar(count_statement)
         return result.scalars().all(), int(total or 0)
 
-    async def list_active_tenants(self) -> list[tuple[UUID, str]]:
-        """Return ``(id, name)`` for active tenants only."""
+    async def list_active_tenants(self) -> list[tuple[UUID, str, str | None]]:
+        """Return ``(id, name, logo_storage_key)`` for active tenants only."""
 
         statement = (
-            select(Tenant.id, Tenant.name)
+            select(Tenant.id, Tenant.name, Tenant.logo_storage_key)
             .where(Tenant.status == TenantStatus.ACTIVE)
             .order_by(Tenant.name.asc())
         )
         result = await self.session.execute(statement)
-        return [(row.id, row.name) for row in result.all()]
+        return [(row.id, row.name, row.logo_storage_key) for row in result.all()]
 
     async def get_tenant(self, tenant_id: UUID) -> Tenant | None:
         statement = select(Tenant).where(Tenant.id == tenant_id)

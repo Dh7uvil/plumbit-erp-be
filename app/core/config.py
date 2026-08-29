@@ -1,5 +1,6 @@
 """Centralized, environment-backed application configuration."""
 
+import os
 from functools import lru_cache
 from typing import Annotated, Any, Literal
 from urllib.parse import quote
@@ -8,11 +9,19 @@ from pydantic import AnyHttpUrl, Field, PostgresDsn, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
+def _settings_env_file() -> str:
+    """Prefer `.env.test` when the process is already marked as testing."""
+
+    if os.environ.get("ENV", "").strip().lower() == "testing":
+        return ".env.test"
+    return ".env"
+
+
 class Settings(BaseSettings):
     """Validated settings loaded from environment variables and an optional local `.env` file."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_settings_env_file(),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -60,7 +69,17 @@ class Settings(BaseSettings):
         default_factory=lambda: [
             "text/csv",
             "application/json",
+            "application/pdf",
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+            "application/msword",
+            "application/vnd.ms-excel",
+            "application/vnd.ms-powerpoint",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         ]
     )
 
@@ -73,6 +92,7 @@ class Settings(BaseSettings):
     aws_secret_access_key: SecretStr | None = None
     s3_bucket_name: str | None = None
     s3_endpoint_url: AnyHttpUrl | None = None
+    s3_presign_ttl_seconds: int = Field(default=300, ge=1, le=86_400)
 
     # Amazon SES
     ses_from_email: str | None = None

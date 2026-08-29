@@ -12,10 +12,10 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.utils.datetime import utcnow
-from app.db.base import Base
+from app.db.base import SoftDeleteTenantModel
 
 
-class BaseRepository[ModelT: Base]:
+class BaseRepository[ModelT: SoftDeleteTenantModel]:
     """Database-only operations for tenant-owned, soft-deletable models."""
 
     _immutable_fields = frozenset({"id", "tenant_id", "created_at", "updated_at", "deleted_at"})
@@ -174,6 +174,7 @@ class BaseRepository[ModelT: Base]:
             self._column(name)
             self._set_attribute(entity, name, value)
         await self.session.flush()
+        await self.session.refresh(entity, attribute_names=["updated_at"])
         return entity
 
     async def soft_delete(

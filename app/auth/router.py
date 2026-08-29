@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
 from app.auth.catalog import (
     AUDIT_LOG_READ,
@@ -32,6 +32,7 @@ from app.auth.dependencies import (
     AuthServiceDependency,
     OrganizationServiceDependency,
 )
+from app.auth.org_service import LOGO_MAX_SIZE_MB
 from app.auth.schemas import (
     AssignRolesRequest,
     AuditLogFilter,
@@ -75,6 +76,8 @@ from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
+from app.common.utils.files import max_upload_bytes
+from app.core.exceptions import ValidationError
 
 router = APIRouter()
 
@@ -132,6 +135,45 @@ async def update_current_tenant(
         actor_user_id=tenant.user_id,
     )
     return ApiResponse(data=data, message="Organization updated successfully")
+
+
+@tenants_router.post(
+    "/current/logo",
+    response_model=ApiResponse[TenantCurrentResponse],
+    summary="Upload current organization logo",
+    description=(
+        "Requires `identity.organization.update`. Replaces the existing logo if one is set."
+    ),
+)
+async def upload_current_tenant_logo(
+    tenant: TenantContextDependency,
+    service: OrganizationServiceDependency,
+    file: Annotated[UploadFile, File()],
+    _: Annotated[CurrentUser, Depends(require_permission(ORGANIZATION_UPDATE))],
+) -> ApiResponse[TenantCurrentResponse]:
+    content = await _read_upload(file, max_bytes=max_upload_bytes(LOGO_MAX_SIZE_MB))
+    data = await service.upload_logo(
+        tenant.tenant_id,
+        filename=file.filename,
+        content=content,
+        actor_user_id=tenant.user_id,
+    )
+    return ApiResponse(data=data, message="Organization logo updated successfully")
+
+
+@tenants_router.delete(
+    "/current/logo",
+    response_model=ApiResponse[TenantCurrentResponse],
+    summary="Delete current organization logo",
+    description="Requires `identity.organization.update`.",
+)
+async def delete_current_tenant_logo(
+    tenant: TenantContextDependency,
+    service: OrganizationServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(ORGANIZATION_UPDATE))],
+) -> ApiResponse[TenantCurrentResponse]:
+    data = await service.delete_logo(tenant.tenant_id, actor_user_id=tenant.user_id)
+    return ApiResponse(data=data, message="Organization logo deleted successfully")
 
 
 @auth_router.post(
@@ -500,10 +542,10 @@ async def set_role_permissions(
 @roles_router.post(
     "/{role_id}/permissions/reset",
     response_model=ApiResponse[RoleDetailResponse],
-    summary="Reset Admin role permissions",
+    summary="Reset Superadmin role permissions",
     description=(
-        "Requires `identity.role.update`. Restores the system Admin role to the full seeded "
-        "catalog. Non-system roles are rejected."
+        "Requires `identity.role.update`. Restores the system Superadmin role to the full "
+        "seeded catalog. Non-system roles are rejected."
     ),
 )
 async def reset_role_permissions(
@@ -804,6 +846,26 @@ async def list_audit_logs(
         user_id=filters.user_id,
     )
     return paginated_response(rows, params=page, total=total)
+
+
+_READ_CHUNK_SIZE = 64 * 1024
+
+
+async def _read_upload(file: UploadFile, *, max_bytes: int) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(_READ_CHUNK_SIZE)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise ValidationError(
+                "File exceeds the maximum upload size",
+                details={"max_bytes": max_bytes},
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 router.include_router(tenants_router)

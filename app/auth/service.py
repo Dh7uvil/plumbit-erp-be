@@ -68,6 +68,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db.session import transaction
+from app.integrations.storage.client import S3Storage, presign_logo_url
 
 logger = logging.getLogger(__name__)
 
@@ -95,15 +96,25 @@ def _role_snapshot(role: Role) -> dict[str, object]:
 class AuthService:
     """Authentication, session, and identity-management use cases."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, storage: S3Storage | None = None) -> None:
         self.session = session
+        self.storage = storage
         self.repo = AccessRepository(session)
         self.org = OrganizationRepository(session)
         self.audit = AuditWriter(session)
 
     async def list_active_tenants(self) -> list[TenantPublicResponse]:
         rows = await self.repo.list_active_tenants()
-        return [TenantPublicResponse(tenant_id=tenant_id, name=name) for tenant_id, name in rows]
+        tenants: list[TenantPublicResponse] = []
+        for tenant_id, name, logo_storage_key in rows:
+            tenants.append(
+                TenantPublicResponse(
+                    tenant_id=tenant_id,
+                    name=name,
+                    logo_url=await presign_logo_url(self.storage, logo_storage_key),
+                )
+            )
+        return tenants
 
     async def login(self, payload: LoginRequest) -> TokenPairResponse:
         failed_user_id: UUID | None = None
@@ -593,7 +604,7 @@ class AuthService:
         async with transaction(self.session):
             role = await self._require_role(tenant_id, role_id)
             if not role.is_system_role or role.name != SYSTEM_ADMIN_ROLE_NAME:
-                raise ValidationError("Only the system Admin role can be reset to the catalog")
+                raise ValidationError("Only the system Superadmin role can be reset to the catalog")
             permissions = await seed_tenant_permissions(self.session, tenant_id)
             await self.repo.replace_role_permissions(
                 tenant_id,

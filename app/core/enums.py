@@ -15,6 +15,59 @@ class DocumentStatus(StrEnum):
     COMPLETED = "COMPLETED"
 
 
+class QuotationStatus(StrEnum):
+    DRAFT = "DRAFT"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    SENT = "SENT"
+    ACCEPTED = "ACCEPTED"
+    DECLINED = "DECLINED"
+    EXPIRED = "EXPIRED"
+    CANCELLED = "CANCELLED"
+    CONVERTED = "CONVERTED"
+
+
+class TaxTreatment(StrEnum):
+    REGISTERED = "REGISTERED"
+    UNREGISTERED = "UNREGISTERED"
+    EXPORT = "EXPORT"
+    GCC = "GCC"
+    EXEMPT = "EXEMPT"
+
+
+class TaxCategory(StrEnum):
+    STANDARD = "STANDARD"
+    ZERO_RATED = "ZERO_RATED"
+    EXEMPT = "EXEMPT"
+    OUT_OF_SCOPE = "OUT_OF_SCOPE"
+
+
+class PlaceOfSupply(StrEnum):
+    ABU_DHABI = "ABU_DHABI"
+    DUBAI = "DUBAI"
+    SHARJAH = "SHARJAH"
+    AJMAN = "AJMAN"
+    UMM_AL_QUWAIN = "UMM_AL_QUWAIN"
+    RAS_AL_KHAIMAH = "RAS_AL_KHAIMAH"
+    FUJAIRAH = "FUJAIRAH"
+    OUTSIDE_UAE = "OUTSIDE_UAE"
+
+
+class DiscountType(StrEnum):
+    PERCENTAGE = "PERCENTAGE"
+    AMOUNT = "AMOUNT"
+
+
+class PriceListType(StrEnum):
+    PERCENT = "PERCENT"
+    CUSTOM_RATES = "CUSTOM_RATES"
+
+
+class DocumentType(StrEnum):
+    QUOTATION = "QUOTATION"
+
+
 class CompanyType(StrEnum):
     CUSTOMER = "CUSTOMER"
     SUPPLIER = "SUPPLIER"
@@ -96,6 +149,11 @@ class AuditAction(StrEnum):
     DELETE = "DELETE"
     APPROVE = "APPROVE"
     REJECT = "REJECT"
+    SUBMIT = "SUBMIT"
+    SEND = "SEND"
+    ACCEPT = "ACCEPT"
+    DECLINE = "DECLINE"
+    CLONE = "CLONE"
     POST = "POST"
     CANCEL = "CANCEL"
     LOGIN = "LOGIN"
@@ -122,7 +180,17 @@ class AddressType(StrEnum):
     HEADQUARTERS = "HEADQUARTERS"
     BILLING = "BILLING"
     SHIPPING = "SHIPPING"
+    WAREHOUSE = "WAREHOUSE"
     OTHER = "OTHER"
+
+
+class AttachmentEntityType(StrEnum):
+    CUSTOMER = "CUSTOMER"
+    CONTACT = "CONTACT"
+    PRODUCT = "PRODUCT"
+    QUOTATION = "QUOTATION"
+    BRANCH = "BRANCH"
+    EMPLOYEE = "EMPLOYEE"
 
 
 class SortOrder(StrEnum):

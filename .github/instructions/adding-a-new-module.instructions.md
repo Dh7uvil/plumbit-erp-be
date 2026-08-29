@@ -169,6 +169,30 @@ modules own a similar concept, name the resource for what it actually is rather 
 prefixing it with the module: `/customer-payments` and `/supplier-payments`, not
 `/sales/payments` and `/purchasing/payments`.
 
+## Model bases
+
+New tables inherit an abstract base from `app/db/base.py` instead of repeating mixins:
+
+```python
+from app.db.base import SoftDeleteTenantModel, TenantModel
+from app.db.mixins import AuditUserMixin, IsActiveMixin
+
+# Default for masters and documents
+class Customer(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
+    __tablename__ = "customers"
+    ...
+
+# Child / line / identity rows that must not soft-delete
+class QuotationLine(TenantModel):
+    __tablename__ = "quotation_lines"
+    ...
+```
+
+Default to `SoftDeleteTenantModel`. Use `TenantModel` only when the row must not have
+`deleted_at` (join tables, document lines, login identity). Use `TimestampedModel` only for
+rows that are not tenant-scoped (`Tenant`). Extra mixins stay before the abstract base so they
+sit above `DeclarativeBase` in the MRO.
+
 ## Model registration
 
 Slice models must be imported by `app/db/base.py`, otherwise Alembic autogenerate will not see
