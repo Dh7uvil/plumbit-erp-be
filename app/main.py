@@ -63,6 +63,22 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "name": "Exchange Rates",
         "description": "Org-level daily user-entered rates versus the base currency.",
     },
+    {
+        "name": "Taxes",
+        "description": "UAE VAT tax master with a single default rate per tenant.",
+    },
+    {
+        "name": "Payment Terms",
+        "description": "Named payment terms copied onto commercial documents.",
+    },
+    {
+        "name": "Terms Templates",
+        "description": "Reusable terms-and-conditions bodies for quotations.",
+    },
+    {
+        "name": "Document Sequences",
+        "description": "Locked counters that allocate human-readable document numbers.",
+    },
 ]
 APP_DESCRIPTION = "Multi-tenant ERP backend API."
 
