@@ -44,3 +44,4 @@ import app.inventory_management.categories.models as _categories  # noqa: E402, 
 import app.inventory_management.price_lists.models as _price_lists  # noqa: E402, F401
 import app.inventory_management.products.models as _products  # noqa: E402, F401
 import app.inventory_management.units.models as _units  # noqa: E402, F401
+import app.inventory_management.warehouses.models as _warehouses  # noqa: E402, F401
