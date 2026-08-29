@@ -103,6 +103,10 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "name": "Customers",
         "description": "Quote-ready customer master with billing, shipping, and extra addresses.",
     },
+    {
+        "name": "Contacts",
+        "description": "People belonging to a customer. One contact may be primary per customer.",
+    },
 ]
 APP_DESCRIPTION = "Multi-tenant ERP backend API."
 
