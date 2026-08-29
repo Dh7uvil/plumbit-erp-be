@@ -53,7 +53,7 @@ async def test_warehouse_second_default_unsets_first(client: AsyncClient) -> Non
     first = await client.post(
         "/api/v1/warehouses",
         headers=headers,
-        json={"code": f"WH-{suffix}-1", "name": f"First {suffix}"},
+        json={"code": f"WH-{suffix}-1", "name": f"First {suffix}", "is_default": True},
     )
     assert first.status_code == 201, first.text
     first_row = first.json()["data"]
