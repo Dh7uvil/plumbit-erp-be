@@ -55,26 +55,41 @@ async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
 
 
 async def validation_error_handler(
-    _request: Request,
+    request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
     errors: list[dict[str, object]] = []
+    field_errors: dict[str, str] = {}
     for error in exc.errors():
         location = [
             item if isinstance(item, (str, int)) else str(item) for item in error.get("loc", ())
         ]
+        message = str(error.get("msg", "Invalid value"))
         errors.append(
             {
+                "loc": location,
                 "location": location,
-                "message": str(error.get("msg", "Invalid value")),
+                "msg": message,
+                "message": message,
                 "type": str(error.get("type", "validation_error")),
             }
         )
+        field_name = ".".join(str(part) for part in location if part != "body")
+        if field_name:
+            field_errors[field_name] = message
+    logger.info(
+        "request_validation_failed",
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+            "errors": errors,
+        },
+    )
     return _error_response(
         status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
         code=ErrorCode.VALIDATION_ERROR,
         message="Request validation failed",
-        details={"errors": errors},
+        details={"errors": errors, **field_errors},
     )
 
 

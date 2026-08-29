@@ -101,7 +101,7 @@ async def provision_tenant(
         role = Role(
             tenant_id=tenant.id,
             name=SYSTEM_ADMIN_ROLE_NAME,
-            description="System administrator with all catalog permissions",
+            description="Superadmin with all catalog permissions",
             is_system_role=True,
         )
         session.add(role)

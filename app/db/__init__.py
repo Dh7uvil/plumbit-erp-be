@@ -1,6 +1,6 @@
 """Database infrastructure exports."""
 
-from app.db.base import Base
+from app.db.base import Base, SoftDeleteTenantModel, TenantModel, TimestampedModel
 from app.db.mixins import (
     AuditUserMixin,
     IsActiveMixin,
@@ -15,7 +15,10 @@ __all__ = [
     "Base",
     "IsActiveMixin",
     "SoftDeleteMixin",
+    "SoftDeleteTenantModel",
+    "TenantModel",
     "TenantScopedMixin",
     "TimestampMixin",
+    "TimestampedModel",
     "UUIDPrimaryKeyMixin",
 ]

@@ -65,8 +65,18 @@ Important entities should also carry:
 created_by  updated_by  deleted_at
 ```
 
-Shared columns belong in mixins under `app/db/mixins.py` rather than being retyped per model.
-Every tenant-owned model composes the tenant and timestamp mixins instead of redeclaring them.
+Shared columns belong in mixins under `app/db/mixins.py`. Compose them once via the abstract
+bases in `app/db/base.py` rather than listing mixins on every model:
+
+```text
+TimestampedModel         UUID + timestamps — not tenant-scoped (Tenant)
+TenantModel              UUID + tenant_id + timestamps — no deleted_at
+SoftDeleteTenantModel    TenantModel + deleted_at — default for new models
+```
+
+Inherit the matching base. Extra mixins (`AuditUserMixin`, `IsActiveMixin`) stay on the class
+**before** the abstract base. Use `TenantModel` only for child, line, or identity rows that
+must not soft-delete. `AuditLog` is the exception: append-only with a custom `created_at`.
 
 ## Naming
 

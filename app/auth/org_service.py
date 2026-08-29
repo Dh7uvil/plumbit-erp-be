@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -29,9 +30,19 @@ from app.auth.schemas import (
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
+from app.common.utils.files import MIME_JPEG, MIME_PNG, MIME_WEBP, validate_upload
 from app.core.enums import AddressType, AuditAction, BranchStatus
-from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
+from app.core.exceptions import (
+    DuplicateResourceError,
+    IntegrationError,
+    ResourceNotFoundError,
+    ValidationError,
+)
 from app.db.session import transaction
+from app.integrations.storage.client import S3Storage, build_org_logo_key, presign_logo_url
+
+LOGO_MAX_SIZE_MB = 2
+LOGO_ALLOWED_MIME_TYPES = (MIME_JPEG, MIME_PNG, MIME_WEBP)
 
 _SETTINGS_FIELDS = (
     "industry",
@@ -41,6 +52,7 @@ _SETTINGS_FIELDS = (
     "founded",
     "fiscal_year_start",
     "default_currency",
+    "quotation_requires_approval",
     "headquarters",
 )
 
@@ -84,8 +96,9 @@ def _department_snapshot(department: Department) -> dict[str, object]:
 class OrganizationService:
     """Tenant, branch, and department use cases."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, storage: S3Storage | None = None) -> None:
         self.session = session
+        self.storage = storage
         self.access = AccessRepository(session)
         self.org = OrganizationRepository(session)
         self.audit = AuditWriter(session)
@@ -109,6 +122,8 @@ class OrganizationService:
                 tenant.name = values["name"]
             if "timezone" in values and values["timezone"] is not None:
                 tenant.timezone = values["timezone"]
+            if "default_currency_id" in values:
+                tenant.default_currency_id = values["default_currency_id"]
             settings = TenantSettings.model_validate(tenant.settings or {})
             settings_update = {key: values[key] for key in _SETTINGS_FIELDS if key in values}
             if settings_update:
@@ -117,6 +132,77 @@ class OrganizationService:
                 ).model_dump(mode="json")
             await self.session.flush()
             await self.session.refresh(tenant)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=IDENTITY_MODULE,
+                entity_type="tenant",
+                entity_id=tenant.id,
+                old_values=old_values,
+                new_values=self._tenant_snapshot(tenant),
+            )
+            return await self._tenant_response(tenant)
+
+    async def upload_logo(
+        self,
+        tenant_id: UUID,
+        *,
+        filename: str | None,
+        content: bytes,
+        actor_user_id: UUID,
+    ) -> TenantCurrentResponse:
+        storage = self._require_storage()
+        validated = validate_upload(
+            content,
+            filename=filename,
+            max_upload_size_mb=LOGO_MAX_SIZE_MB,
+            allowed_mime_types=LOGO_ALLOWED_MIME_TYPES,
+        )
+        new_key = build_org_logo_key(tenant_id=tenant_id, filename=validated.filename)
+        async with transaction(self.session):
+            tenant = await self._require_tenant(tenant_id)
+            old_key = tenant.logo_storage_key
+            old_values = self._tenant_snapshot(tenant)
+            tenant.logo_storage_key = new_key
+            await self.session.flush()
+            await self.session.refresh(tenant)
+            await storage.upload(
+                key=new_key,
+                body=validated.content,
+                content_type=validated.content_type,
+            )
+            if old_key and old_key != new_key:
+                await storage.delete(key=old_key)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=IDENTITY_MODULE,
+                entity_type="tenant",
+                entity_id=tenant.id,
+                old_values=old_values,
+                new_values=self._tenant_snapshot(tenant),
+            )
+            return await self._tenant_response(tenant)
+
+    async def delete_logo(
+        self,
+        tenant_id: UUID,
+        *,
+        actor_user_id: UUID,
+    ) -> TenantCurrentResponse:
+        storage = self._require_storage()
+        async with transaction(self.session):
+            tenant = await self._require_tenant(tenant_id)
+            old_key = tenant.logo_storage_key
+            if not old_key:
+                raise ResourceNotFoundError("Organization logo not found")
+            old_values = self._tenant_snapshot(tenant)
+            tenant.logo_storage_key = None
+            await self.session.flush()
+            await self.session.refresh(tenant)
+            await storage.delete(key=old_key)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -165,6 +251,7 @@ class OrganizationService:
                         "status": payload.status.value,
                         "phone": payload.phone,
                         "timezone": payload.timezone,
+                        "default_currency_id": payload.default_currency_id,
                         "address_id": address_id,
                     },
                 )
@@ -400,6 +487,8 @@ class OrganizationService:
         tenant_id: UUID,
         address_id: UUID | None,
         payload: AddressPayload | None,
+        *,
+        address_type: AddressType = AddressType.BRANCH,
     ) -> UUID | None:
         if payload is None:
             return address_id
@@ -410,7 +499,7 @@ class OrganizationService:
             address = await self.org.create_address(
                 tenant_id,
                 values,
-                address_type=AddressType.BRANCH,
+                address_type=address_type,
             )
             return address.id
         updated = await self.org.update_address(tenant_id, address_id, values)
@@ -418,7 +507,7 @@ class OrganizationService:
             address = await self.org.create_address(
                 tenant_id,
                 values,
-                address_type=AddressType.BRANCH,
+                address_type=address_type,
             )
             return address.id
         return updated.id
@@ -438,7 +527,10 @@ class OrganizationService:
             founded=settings.founded,
             fiscal_year_start=settings.fiscal_year_start,
             default_currency=settings.default_currency,
+            default_currency_id=tenant.default_currency_id,
+            quotation_requires_approval=settings.quotation_requires_approval,
             headquarters=settings.headquarters,
+            logo_url=await presign_logo_url(self.storage, tenant.logo_storage_key),
             users_count=await self.org.count_users(tenant.id),
             departments_count=await self.org.count_departments(tenant.id),
             branches_count=await self.org.count_branches(tenant.id),
@@ -452,7 +544,13 @@ class OrganizationService:
             "name": tenant.name,
             "timezone": tenant.timezone,
             "settings": tenant.settings,
+            "logo_storage_key": tenant.logo_storage_key,
         }
+
+    def _require_storage(self) -> S3Storage:
+        if self.storage is None:
+            raise IntegrationError("Object storage is not configured")
+        return self.storage
 
     async def _branch_responses(
         self,
@@ -474,6 +572,7 @@ class OrganizationService:
                 status=BranchStatus(branch.status),
                 phone=branch.phone,
                 timezone=branch.timezone,
+                default_currency_id=branch.default_currency_id,
                 address=_address_response(addresses.get(branch.address_id))
                 if branch.address_id is not None
                 else None,
@@ -519,3 +618,59 @@ class OrganizationService:
             )
             for department in departments
         ]
+
+    async def require_branch(self, tenant_id: UUID, branch_id: UUID) -> UUID:
+        """Validate that a branch exists in the tenant and return its id."""
+
+        branch = await self._require_branch(tenant_id, branch_id)
+        return branch.id
+
+    async def require_employee(self, tenant_id: UUID, employee_id: UUID) -> UUID:
+        """Validate that an employee exists in the tenant and return its id."""
+
+        employee = await self.org.get_employee(tenant_id, employee_id)
+        if employee is None:
+            raise ResourceNotFoundError("Employee not found")
+        return employee.id
+
+    async def get_timezone(self, tenant_id: UUID) -> str:
+        tenant = await self._require_tenant(tenant_id)
+        return tenant.timezone
+
+    async def get_default_currency_id(self, tenant_id: UUID) -> UUID | None:
+        tenant = await self._require_tenant(tenant_id)
+        return tenant.default_currency_id
+
+    async def quotation_requires_approval(self, tenant_id: UUID) -> bool:
+        tenant = await self._require_tenant(tenant_id)
+        settings = TenantSettings.model_validate(tenant.settings or {})
+        return settings.quotation_requires_approval
+
+    async def upsert_address(
+        self,
+        tenant_id: UUID,
+        address_id: UUID | None,
+        payload: AddressPayload | None,
+        *,
+        address_type: AddressType,
+    ) -> UUID | None:
+        """Create or update an address owned by this tenant."""
+
+        return await self._upsert_address(
+            tenant_id,
+            address_id,
+            payload,
+            address_type=address_type,
+        )
+
+    async def get_address(self, tenant_id: UUID, address_id: UUID) -> AddressResponse | None:
+        address = await self.org.get_address(tenant_id, address_id)
+        return _address_response(address)
+
+    async def get_addresses(
+        self,
+        tenant_id: UUID,
+        address_ids: Sequence[UUID],
+    ) -> dict[UUID, AddressResponse]:
+        rows = await self.org.get_addresses_by_ids(tenant_id, list(address_ids))
+        return {key: AddressResponse.model_validate(value) for key, value in rows.items()}

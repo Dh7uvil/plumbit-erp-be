@@ -4,6 +4,29 @@ import re
 from uuid import UUID
 
 _CURRENCY_CODE_PATTERN = re.compile(r"^[A-Z]{3}$")
+_OPTIONAL_UUID_SENTINELS = frozenset({"none", "null"})
+
+
+def blank_to_none(value: object) -> object:
+    """Trim strings and treat blanks as omitted optional values."""
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    return value
+
+
+def optional_uuid_input(value: object) -> object:
+    """Accept blank strings and UI sentinels as a missing UUID."""
+
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped or stripped.lower() in _OPTIONAL_UUID_SENTINELS:
+            return None
+        return stripped
+    return value
 
 
 def normalize_required_text(value: str, *, field_name: str = "value") -> str:

@@ -1,16 +1,45 @@
-"""Shared pytest fixtures."""
+"""Shared pytest fixtures.
+
+Loads `.env.test` before any application import so tests cannot connect to the
+development database. The process then fails fast unless `DATABASE_NAME` is
+exactly `plumb_it_test`.
+"""
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from uuid import uuid4
+from pathlib import Path
 
-import pytest
-from httpx import ASGITransport, AsyncClient
+from dotenv import load_dotenv
 
-from app.cli.create_tenant import provision_tenant
-from app.core.security import hash_password
-from app.main import create_app
+_TEST_ENV_PATH = Path(__file__).resolve().parents[1] / ".env.test"
+if not _TEST_ENV_PATH.is_file():
+    raise RuntimeError(
+        f"pytest requires {_TEST_ENV_PATH}. Copy .env.test.example to .env.test "
+        "and set DATABASE_NAME=plumb_it_test."
+    )
+if not load_dotenv(_TEST_ENV_PATH, override=True):
+    raise RuntimeError(f"Failed to load pytest environment file {_TEST_ENV_PATH}")
+
+from collections.abc import AsyncIterator  # noqa: E402
+from uuid import uuid4  # noqa: E402
+
+import pytest  # noqa: E402
+from httpx import ASGITransport, AsyncClient  # noqa: E402
+
+from app.cli.create_tenant import provision_tenant  # noqa: E402
+from app.core.config import get_settings  # noqa: E402
+from app.core.security import hash_password  # noqa: E402
+from app.main import create_app  # noqa: E402
+
+get_settings.cache_clear()
+_SETTINGS = get_settings()
+if _SETTINGS.env != "testing":
+    raise RuntimeError("pytest requires ENV=testing in .env.test")
+if _SETTINGS.database_name != "plumb_it_test":
+    raise RuntimeError(
+        f"pytest refuses to run against database {_SETTINGS.database_name!r}; "
+        "set DATABASE_NAME=plumb_it_test in .env.test"
+    )
 
 ADMIN_PASSWORD = "password12"
 
