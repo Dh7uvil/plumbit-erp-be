@@ -99,6 +99,10 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "name": "Warehouses",
         "description": "Inventory location master. One warehouse may be the tenant default.",
     },
+    {
+        "name": "Customers",
+        "description": "Quote-ready customer master with billing, shipping, and extra addresses.",
+    },
 ]
 APP_DESCRIPTION = "Multi-tenant ERP backend API."
 
