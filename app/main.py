@@ -79,6 +79,10 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "name": "Document Sequences",
         "description": "Locked counters that allocate human-readable document numbers.",
     },
+    {
+        "name": "Units",
+        "description": "Unit of measure master used on products and quote lines.",
+    },
 ]
 APP_DESCRIPTION = "Multi-tenant ERP backend API."
 
