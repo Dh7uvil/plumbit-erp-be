@@ -18,6 +18,7 @@ from app.common.utils.validators import normalize_required_text
 from app.core.enums import TenantStatus, UserStatus
 from app.core.exceptions import DuplicateResourceError, ValidationError
 from app.core.security import PasswordTooLongError, hash_password
+from app.db.seeds import seed_on_tenant_create
 from app.db.session import async_session_factory, transaction
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
@@ -123,6 +124,7 @@ async def provision_tenant(
 
         session.add(UserRole(tenant_id=tenant.id, user_id=user.id, role_id=role.id))
         await session.flush()
+        await seed_on_tenant_create(session, tenant.id)
 
         return TenantProvisionResult(
             tenant_id=tenant.id,

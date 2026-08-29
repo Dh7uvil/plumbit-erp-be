@@ -11,17 +11,9 @@ from tests.conftest import login_headers, provision_admin
 
 
 async def _create_customer(client: AsyncClient, headers: dict[str, str], suffix: str) -> str:
-    currency = await client.post(
-        "/api/v1/currencies",
-        headers=headers,
-        json={
-            "code": "AED",
-            "name": "UAE Dirham",
-            "symbol": "AED",
-            "is_base": True,
-        },
-    )
-    assert currency.status_code == 201, currency.text
+    currencies = await client.get("/api/v1/currencies?is_base=true", headers=headers)
+    assert currencies.status_code == 200, currencies.text
+    currency_id = currencies.json()["data"][0]["id"]
     created = await client.post(
         "/api/v1/customers",
         headers=headers,
@@ -29,7 +21,7 @@ async def _create_customer(client: AsyncClient, headers: dict[str, str], suffix:
             "name": f"Acme {suffix}",
             "code": f"C-{suffix}",
             "tax_treatment": "UNREGISTERED",
-            "currency_id": currency.json()["data"]["id"],
+            "currency_id": currency_id,
         },
     )
     assert created.status_code == 201, created.text
