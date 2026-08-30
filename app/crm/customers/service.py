@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.catalog import CRM_MODULE
+from app.auth.catalog import CRM_MODULE, ERP_MODULE
 from app.auth.org_service import OrganizationService
 from app.auth.schemas import AddressPayload, AddressResponse
 from app.common.schemas.filters import BaseFilter
@@ -30,10 +31,52 @@ from app.erp.exchange_rates.service import CurrencyService
 from app.inventory_management.price_lists.service import PriceListService
 
 
+@dataclass(frozen=True, slots=True)
+class PartyRole:
+    visible_types: frozenset[CompanyType]
+    allowed_write_types: frozenset[CompanyType]
+    default_create_type: CompanyType
+    not_found_message: str
+    duplicate_code_message: str
+    extra_address_not_found_message: str
+    audit_module: str
+    audit_entity_type: str
+
+
+CUSTOMER_PARTY_ROLE = PartyRole(
+    visible_types=frozenset({CompanyType.CUSTOMER, CompanyType.BOTH, CompanyType.OTHER}),
+    allowed_write_types=frozenset({CompanyType.CUSTOMER, CompanyType.BOTH, CompanyType.OTHER}),
+    default_create_type=CompanyType.CUSTOMER,
+    not_found_message="Customer not found",
+    duplicate_code_message="A customer with this code already exists",
+    extra_address_not_found_message="Customer address not found",
+    audit_module=CRM_MODULE,
+    audit_entity_type="customer",
+)
+
+SUPPLIER_PARTY_ROLE = PartyRole(
+    visible_types=frozenset({CompanyType.SUPPLIER, CompanyType.BOTH}),
+    allowed_write_types=frozenset({CompanyType.SUPPLIER, CompanyType.BOTH}),
+    default_create_type=CompanyType.SUPPLIER,
+    not_found_message="Supplier not found",
+    duplicate_code_message="A supplier with this code already exists",
+    extra_address_not_found_message="Supplier address not found",
+    audit_module=ERP_MODULE,
+    audit_entity_type="supplier",
+)
+
+
 class CustomerService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        role: PartyRole = CUSTOMER_PARTY_ROLE,
+        repo: CustomerRepository | None = None,
+    ) -> None:
         self.session = session
-        self.repo = CustomerRepository(session)
+        self.role = role
+        self.repo = repo or CustomerRepository(session)
         self.org = OrganizationService(session)
         self.currencies = CurrencyService(session)
         self.price_lists = PriceListService(session)
@@ -56,8 +99,7 @@ class CustomerService:
             filters["tax_treatment"] = tax_treatment
         if currency_id is not None:
             filters["currency_id"] = currency_id
-        if company_type is not None:
-            filters["company_type"] = company_type
+        filters["company_type"] = self._visible_company_type_filter(company_type)
         if is_active is not None:
             filters["is_active"] = is_active
         rows, total = await self.repo.list(
@@ -79,6 +121,7 @@ class CustomerService:
                 currency_id = (await self.currencies.get_base(tenant_id)).id
             else:
                 await self.currencies.require_id(tenant_id, currency_id)
+            self._assert_writable(payload.company_type)
             await self._validate_refs(
                 tenant_id,
                 price_list_id=payload.default_price_list_id,
@@ -119,13 +162,13 @@ class CustomerService:
                     },
                 )
             except IntegrityError as exc:
-                raise DuplicateResourceError("A customer with this code already exists") from exc
+                raise DuplicateResourceError(self.role.duplicate_code_message) from exc
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=CRM_MODULE,
-                entity_type="customer",
+                module=self.role.audit_module,
+                entity_type=self.role.audit_entity_type,
                 entity_id=row.id,
                 new_values={"code": row.code, "name": row.name},
             )
@@ -139,6 +182,12 @@ class CustomerService:
         shipping_payload = values.pop("shipping_address", None)
         if "tax_treatment" in values and values["tax_treatment"] is not None:
             values["tax_treatment"] = str(values["tax_treatment"])
+        if "company_type" in values:
+            if values["company_type"] is None:
+                raise ValidationError("company_type cannot be null")
+            requested = CompanyType(str(values["company_type"]))
+            self._assert_writable(requested)
+            values["company_type"] = requested.value
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
             row = await self._require(tenant_id, customer_id)
@@ -171,15 +220,15 @@ class CustomerService:
             try:
                 updated = await self.repo.update(tenant_id, customer_id, values)
             except IntegrityError as exc:
-                raise DuplicateResourceError("A customer with this code already exists") from exc
+                raise DuplicateResourceError(self.role.duplicate_code_message) from exc
             if updated is None:
-                raise ResourceNotFoundError("Customer not found")
+                raise ResourceNotFoundError(self.role.not_found_message)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=CRM_MODULE,
-                entity_type="customer",
+                module=self.role.audit_module,
+                entity_type=self.role.audit_entity_type,
                 entity_id=updated.id,
                 new_values={"name": updated.name},
             )
@@ -196,8 +245,8 @@ class CustomerService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=CRM_MODULE,
-                entity_type="customer",
+                module=self.role.audit_module,
+                entity_type=self.role.audit_entity_type,
                 entity_id=customer_id,
                 old_values={"code": row.code},
             )
@@ -235,8 +284,8 @@ class CustomerService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=CRM_MODULE,
-                entity_type="customer",
+                module=self.role.audit_module,
+                entity_type=self.role.audit_entity_type,
                 entity_id=customer_id,
                 new_values={"extra_address_id": extra.id},
             )
@@ -262,15 +311,15 @@ class CustomerService:
             await self._require(tenant_id, customer_id)
             extra = await self.repo.get_extra_address(tenant_id, customer_id, extra_id)
             if extra is None:
-                raise ResourceNotFoundError("Customer address not found")
+                raise ResourceNotFoundError(self.role.extra_address_not_found_message)
             address = await self.org.get_address(tenant_id, extra.address_id)
             await self.repo.soft_delete_extra_address(tenant_id, extra.id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=CRM_MODULE,
-                entity_type="customer",
+                module=self.role.audit_module,
+                entity_type=self.role.audit_entity_type,
                 entity_id=customer_id,
                 old_values={"extra_address_id": extra.id},
             )
@@ -351,8 +400,27 @@ class CustomerService:
             updated_at=row.updated_at,
         )
 
-    async def _require(self, tenant_id: UUID, customer_id: UUID) -> Customer:
-        row = await self.repo.get(tenant_id, customer_id)
+    def _visible_company_type_filter(self, company_type: str | None) -> object:
+        visible = tuple(item.value for item in self.role.visible_types)
+        if company_type is None:
+            return visible
+        if company_type in visible:
+            return company_type
+        return ()
+
+    def _assert_writable(self, company_type: CompanyType) -> None:
+        if company_type not in self.role.allowed_write_types:
+            allowed = ", ".join(sorted(item.value for item in self.role.allowed_write_types))
+            raise ValidationError(f"company_type must be one of: {allowed}")
+
+    async def require_party(self, tenant_id: UUID, party_id: UUID) -> Customer:
+        row = await self.repo.get(tenant_id, party_id)
         if row is None:
             raise ResourceNotFoundError("Customer not found")
+        return row
+
+    async def _require(self, tenant_id: UUID, customer_id: UUID) -> Customer:
+        row = await self.repo.get(tenant_id, customer_id)
+        if row is None or CompanyType(row.company_type) not in self.role.visible_types:
+            raise ResourceNotFoundError(self.role.not_found_message)
         return row

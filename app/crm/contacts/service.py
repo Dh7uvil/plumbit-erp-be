@@ -61,7 +61,7 @@ class ContactService:
         self, tenant_id: UUID, payload: ContactCreate, *, actor_user_id: UUID
     ) -> ContactResponse:
         async with transaction(self.session):
-            await self.customers.get(tenant_id, payload.customer_id)
+            await self.customers.require_party(tenant_id, payload.customer_id)
             if payload.is_primary:
                 await self.repo.clear_other_primaries(tenant_id, payload.customer_id)
             row = await self.repo.create(

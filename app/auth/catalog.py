@@ -38,6 +38,7 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "warehouse": ("create", "read", "update", "delete"),
     },
     ERP_MODULE: {
+        "supplier": ("create", "read", "update", "delete"),
         "currency": ("create", "read", "update", "delete"),
         "exchange_rate": ("create", "read", "update", "delete"),
         "tax": ("create", "read", "update", "delete"),
@@ -123,6 +124,10 @@ WAREHOUSE_READ = build_permission(INVENTORY_MODULE, "warehouse", "read")
 WAREHOUSE_UPDATE = build_permission(INVENTORY_MODULE, "warehouse", "update")
 WAREHOUSE_DELETE = build_permission(INVENTORY_MODULE, "warehouse", "delete")
 
+SUPPLIER_CREATE = build_permission(ERP_MODULE, "supplier", "create")
+SUPPLIER_READ = build_permission(ERP_MODULE, "supplier", "read")
+SUPPLIER_UPDATE = build_permission(ERP_MODULE, "supplier", "update")
+SUPPLIER_DELETE = build_permission(ERP_MODULE, "supplier", "delete")
 CURRENCY_CREATE = build_permission(ERP_MODULE, "currency", "create")
 CURRENCY_READ = build_permission(ERP_MODULE, "currency", "read")
 CURRENCY_UPDATE = build_permission(ERP_MODULE, "currency", "update")

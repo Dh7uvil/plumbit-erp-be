@@ -65,6 +65,7 @@ class CustomerCreate(BaseModel):
 
 class CustomerUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    company_type: CompanyType | None = None
     trn: str | None = Field(default=None, max_length=50)
     tax_treatment: TaxTreatment | None = None
     currency_id: UUID | None = None
