@@ -105,7 +105,7 @@ users_management        Auth, Users, Roles, Permissions, Tenants
 erp                     Quotation, Sales Orders, Purchase Invoices, Purchase Orders,
                         Accounting (Accounts, Journals, Receivables, Payables, Taxes),
                         Logistics (Imports, Exports, Shipments, Containers),
-                        Exchange Rates (daily user-entered rates)
+                        Exchange Rates (daily user-entered rates), Suppliers
 inventory_management    Products, Categories, Warehouses, Stock, Transfers, Adjustments
 crm                     Leads, Customers, Contacts, Opportunities, Activities
 communication_service   Email, WhatsApp, Chat, Meetings

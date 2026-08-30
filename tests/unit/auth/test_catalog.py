@@ -23,6 +23,10 @@ def test_catalog_includes_organization_and_audit_permissions() -> None:
 
 def test_catalog_includes_quote_ready_permissions() -> None:
     assert "crm.customer.create" in CATALOG_PERMISSIONS
+    assert "erp.supplier.create" in CATALOG_PERMISSIONS
+    assert "erp.supplier.read" in CATALOG_PERMISSIONS
+    assert "erp.supplier.update" in CATALOG_PERMISSIONS
+    assert "erp.supplier.delete" in CATALOG_PERMISSIONS
     assert "crm.contact.read" in CATALOG_PERMISSIONS
     assert "inventory.product.create" in CATALOG_PERMISSIONS
     assert "inventory.price_list.update" in CATALOG_PERMISSIONS

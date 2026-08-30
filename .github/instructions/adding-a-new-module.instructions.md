@@ -28,7 +28,7 @@ These are the only top-level modules. Everything belongs to exactly one of them.
 | Module                   | Owns                                                                     |
 | ------------------------ | ------------------------------------------------------------------------ |
 | `users_management`       | auth, users, roles, permissions, tenants                                  |
-| `erp`                    | quotation, sales, purchase_invoices, purchase_orders, accounting, logistics, exchange_rates |
+| `erp`                    | quotation, sales, purchase_invoices, purchase_orders, accounting, logistics, exchange_rates, suppliers |
 | `inventory_management`   | products, categories, warehouses, stock, transfers, adjustments           |
 | `crm`                    | leads, customers, contacts, opportunities, activities                     |
 | `communication_service`  | email, whatsapp, chat, meetings                                           |
@@ -66,7 +66,8 @@ erp-backend/
 │   │   ├── purchase_orders/
 │   │   ├── accounting/
 │   │   ├── logistics/
-│   │   └── exchange_rates/
+│   │   ├── exchange_rates/
+│   │   └── suppliers/
 │   ├── inventory_management/     products/ categories/ warehouses/ stock/
 │   │                             stock_transfers/ stock_adjustments/
 │   ├── crm/                      leads/ customers/ contacts/ opportunities/ activities/
@@ -108,9 +109,11 @@ app/crm/
 
 ```text
 app/erp/
-├── router.py                aggregates quotation, sales, purchase_invoices, ...
+├── router.py                aggregates quotation, suppliers, sales, purchase_invoices, ...
 ├── quotation/
 │   ├── router.py service.py repository.py schemas.py models.py dependencies.py
+├── suppliers/
+│   └── router.py service.py schemas.py dependencies.py
 ├── sales/
 │   └── (same six files)
 └── purchase_invoices/

@@ -5,6 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Select, func, or_, select
+from sqlalchemy import false as sql_false
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
@@ -71,7 +72,7 @@ class BaseRepository[ModelT: SoftDeleteTenantModel]:
                 fields = ", ".join(sorted(unknown))
                 msg = f"filter fields are not allowed: {fields}"
                 raise ValueError(msg)
-            criteria.extend(self._column(name) == value for name, value in filters.items())
+            criteria.extend(self._filter_clause(name, value) for name, value in filters.items())
 
         if common_filter is not None:
             if common_filter.date_from is not None:
@@ -88,6 +89,14 @@ class BaseRepository[ModelT: SoftDeleteTenantModel]:
                 )
 
         return criteria
+
+    def _filter_clause(self, name: str, value: object) -> ColumnElement[bool]:
+        column = self._column(name)
+        if isinstance(value, (list, tuple, set, frozenset)):
+            if not value:
+                return sql_false()
+            return column.in_(value)
+        return column == value
 
     def base_query(self, tenant_id: UUID) -> Select[tuple[ModelT]]:
         """Build the mandatory tenant and soft-delete scoped query."""

@@ -11,7 +11,7 @@ app/
 ├── common/                  Shared schemas, dependencies, attachments, and utilities
 ├── core/                    Configuration and cross-cutting application primitives
 ├── db/                      Async SQLAlchemy and Alembic integration
-├── erp/                     Quotations, accounting, and exchange rates
+├── erp/                     Quotations, accounting, exchange rates, and suppliers
 ├── crm/                     Customers and contacts
 ├── inventory_management/    Units, categories, products, price lists, warehouses
 ├── integrations/            S3-compatible storage (MinIO locally, AWS S3 in production)

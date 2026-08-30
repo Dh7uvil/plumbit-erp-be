@@ -108,8 +108,14 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "description": "People belonging to a customer. One contact may be primary per customer.",
     },
     {
+        "name": "Suppliers",
+        "description": "Purchase-side party master sharing customer rows via company_type.",
+    },
+    {
         "name": "Quotations",
-        "description": "Commercial quotations with server-side totals, UAE VAT, and status workflow.",
+        "description": (
+            "Commercial quotations with server-side totals, UAE VAT, and status workflow."
+        ),
     },
 ]
 APP_DESCRIPTION = "Multi-tenant ERP backend API."
