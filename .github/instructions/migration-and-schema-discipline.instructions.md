@@ -22,9 +22,9 @@ rows needs an explicit data migration step, not an implicit one.
 
 ## Where models live
 
-A slice owns its models in `app/<module>/<slice>/models.py`. Only genuinely
-cross-cutting models — `tenant`, `user`, `role`, `permission`, `audit_log` — live in
-`app/common/models/`.
+A slice owns its models in `app/<module>/<slice>/models.py`. Identity models —
+`tenant`, `user`, `role`, `permission` — live in `app/auth/models.py`. The
+append-only `audit_log` lives in `app/common/models/`.
 
 Every model module must be imported by `app/db/base.py`. A model that Alembic cannot see
 produces an empty migration at best and a table-dropping migration at worst. Adding a slice

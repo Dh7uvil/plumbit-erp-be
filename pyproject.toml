@@ -23,6 +23,7 @@ dependencies = [
 create-tenant = "app.cli.create_tenant:main"
 seed-tenants = "app.cli.seed_tenants:main"
 generate-jwt-secret = "app.cli.generate_jwt_secret:main"
+export-openapi = "app.cli.export_openapi:main"
 
 [build-system]
 requires = ["hatchling"]

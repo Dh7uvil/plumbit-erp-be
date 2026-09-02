@@ -42,6 +42,12 @@ def next_status(current: QuotationStatus, action: str) -> QuotationStatus:
     return target
 
 
+def transition_actions(current: QuotationStatus) -> list[str]:
+    """Return machine actions available from `current`, in definition order."""
+
+    return [action for (status, action) in _TRANSITIONS if status == current]
+
+
 def assert_editable(status: QuotationStatus) -> None:
     if status not in _EDITABLE:
         raise InvalidStatusTransitionError("Only draft quotations can be edited")

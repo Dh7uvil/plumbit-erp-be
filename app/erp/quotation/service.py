@@ -11,7 +11,14 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.catalog import ERP_MODULE
+from app.auth.catalog import (
+    ERP_MODULE,
+    QUOTATION_APPROVE,
+    QUOTATION_CREATE,
+    QUOTATION_DELETE,
+    QUOTATION_SEND,
+    QUOTATION_UPDATE,
+)
 from app.auth.org_service import OrganizationService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
@@ -27,7 +34,13 @@ from app.core.enums import (
     TaxCategory,
     TaxTreatment,
 )
-from app.core.exceptions import ResourceNotFoundError, ValidationError
+from app.core.exceptions import (
+    DocumentStaleError,
+    InvalidStatusTransitionError,
+    ResourceNotFoundError,
+    ValidationError,
+)
+from app.core.permissions import has_permission
 from app.crm.contacts.service import ContactService
 from app.crm.customers.service import CustomerService
 from app.db.session import transaction
@@ -55,18 +68,34 @@ from app.erp.quotation.totals import (
     place_of_supply_from_address,
     resolve_line_tax_category,
 )
-from app.erp.quotation.workflow import assert_editable, next_status
+from app.erp.quotation.workflow import assert_editable, next_status, transition_actions
 from app.inventory_management.price_lists.service import PriceListService
 from app.inventory_management.products.service import ProductService
 from app.inventory_management.units.service import UnitService
 
 _ZERO = Decimal("0")
 _QUOTE_SERIES = "QUO"
+_ACTION_PERMISSIONS: dict[str, str] = {
+    "submit": QUOTATION_UPDATE,
+    "approve": QUOTATION_APPROVE,
+    "reject": QUOTATION_APPROVE,
+    "reopen": QUOTATION_UPDATE,
+    "send": QUOTATION_SEND,
+    "accept": QUOTATION_UPDATE,
+    "decline": QUOTATION_UPDATE,
+    "cancel": QUOTATION_UPDATE,
+}
 
 
 class QuotationService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        actor_permissions: frozenset[str] = frozenset(),
+    ) -> None:
         self.session = session
+        self.actor_permissions = actor_permissions
         self.repo = QuotationRepository(session)
         self.org = OrganizationService(session)
         self.customers = CustomerService(session)
@@ -94,9 +123,8 @@ class QuotationService:
         currency_id: UUID | None = None,
     ) -> tuple[list[QuotationResponse], int]:
         today = await self._today(tenant_id)
+        requires_approval = await self.org.quotation_requires_approval(tenant_id)
         filters: dict[str, object] = {}
-        if status is not None:
-            filters["status"] = status
         if customer_id is not None:
             filters["customer_id"] = customer_id
         if branch_id is not None:
@@ -104,13 +132,24 @@ class QuotationService:
         if currency_id is not None:
             filters["currency_id"] = currency_id
         rows, total = await self.repo.list(
-            tenant_id, page=page, common_filter=common_filter, filters=filters or None
+            tenant_id,
+            page=page,
+            common_filter=common_filter,
+            filters=filters or None,
+            status=status,
+            today=today,
         )
-        return [self._to_response(row, today) for row in rows], total
+        return [
+            self._to_response(row, today, requires_approval=requires_approval) for row in rows
+        ], total
 
     async def get(self, tenant_id: UUID, quotation_id: UUID) -> QuotationResponse:
-        today = await self._today(tenant_id)
-        return self._to_response(await self._require(tenant_id, quotation_id), today)
+        today, requires_approval = await self._response_context(tenant_id)
+        return self._to_response(
+            await self._require(tenant_id, quotation_id),
+            today,
+            requires_approval=requires_approval,
+        )
 
     async def compose_defaults(
         self, tenant_id: UUID, customer_id: UUID
@@ -154,6 +193,7 @@ class QuotationService:
                     **header,
                     "quote_number": number,
                     "status": QuotationStatus.DRAFT.value,
+                    "version": 1,
                     "created_by": actor_user_id,
                     "updated_by": actor_user_id,
                 },
@@ -169,7 +209,8 @@ class QuotationService:
                 new_values={"quote_number": number},
             )
             loaded = await self._require(tenant_id, row.id)
-            return self._to_response(loaded, await self._today(tenant_id))
+            today, requires_approval = await self._response_context(tenant_id)
+            return self._to_response(loaded, today, requires_approval=requires_approval)
 
     async def update(
         self,
@@ -178,13 +219,17 @@ class QuotationService:
         payload: QuotationUpdate,
         *,
         actor_user_id: UUID,
+        expected_version: int,
     ) -> QuotationResponse:
         async with transaction(self.session):
-            existing = await self._require(tenant_id, quotation_id)
-            assert_editable(self._effective_status(existing, await self._today(tenant_id)))
+            existing = await self._require(tenant_id, quotation_id, for_update=True)
+            today, requires_approval = await self._response_context(tenant_id)
+            assert_editable(self._effective_status(existing, today))
+            self._assert_version(existing, expected_version)
             create_payload = await self._update_to_create(tenant_id, existing, payload)
             header, line_rows = await self._build_draft(tenant_id, create_payload)
             header["updated_by"] = actor_user_id
+            header["version"] = existing.version + 1
             await self.repo.update(tenant_id, quotation_id, header)
             await self.repo.replace_lines(tenant_id, quotation_id, line_rows)
             await self.audit.write(
@@ -194,46 +239,65 @@ class QuotationService:
                 module=ERP_MODULE,
                 entity_type="quotation",
                 entity_id=quotation_id,
-                new_values={"quote_number": existing.quote_number},
+                new_values={"quote_number": existing.quote_number, "version": header["version"]},
             )
             loaded = await self._require(tenant_id, quotation_id)
-            return self._to_response(loaded, await self._today(tenant_id))
+            return self._to_response(loaded, today, requires_approval=requires_approval)
 
     async def submit(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID
+        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
     ) -> QuotationResponse:
-        return await self._transition(tenant_id, quotation_id, "submit", actor_user_id)
+        return await self._transition(
+            tenant_id, quotation_id, "submit", actor_user_id, expected_version=expected_version
+        )
 
     async def approve(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID
+        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
     ) -> QuotationResponse:
-        return await self._transition(tenant_id, quotation_id, "approve", actor_user_id)
+        return await self._transition(
+            tenant_id, quotation_id, "approve", actor_user_id, expected_version=expected_version
+        )
 
     async def reject(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID
+        self,
+        tenant_id: UUID,
+        quotation_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        reason: str | None = None,
     ) -> QuotationResponse:
-        return await self._transition(tenant_id, quotation_id, "reject", actor_user_id)
+        return await self._transition(
+            tenant_id,
+            quotation_id,
+            "reject",
+            actor_user_id,
+            expected_version=expected_version,
+            reason=reason,
+        )
 
     async def reopen(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID
+        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
     ) -> QuotationResponse:
-        return await self._transition(tenant_id, quotation_id, "reopen", actor_user_id)
+        return await self._transition(
+            tenant_id, quotation_id, "reopen", actor_user_id, expected_version=expected_version
+        )
 
     async def send(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID
+        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
     ) -> QuotationResponse:
         async with transaction(self.session):
-            row = await self._require(tenant_id, quotation_id)
-            today = await self._today(tenant_id)
+            row = await self._require(tenant_id, quotation_id, for_update=True)
+            today, requires_approval = await self._response_context(tenant_id)
             current = self._effective_status(row, today)
-            if current == QuotationStatus.DRAFT and await self.org.quotation_requires_approval(
-                tenant_id
-            ):
+            self._assert_version(row, expected_version)
+            if current == QuotationStatus.DRAFT and requires_approval:
                 raise ValidationError(
                     "This organization requires approval before a quotation can be sent"
                 )
             target = next_status(current, "send")
             row.status = target.value
+            row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
             await self.session.refresh(row, attribute_names=["updated_at"])
@@ -244,24 +308,30 @@ class QuotationService:
                 module=ERP_MODULE,
                 entity_type="quotation",
                 entity_id=row.id,
-                new_values={"status": row.status},
+                new_values={"status": row.status, "version": row.version},
             )
-            return self._to_response(row, today)
+            return self._to_response(row, today, requires_approval=requires_approval)
 
     async def accept(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID
+        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
     ) -> QuotationResponse:
-        return await self._transition(tenant_id, quotation_id, "accept", actor_user_id)
+        return await self._transition(
+            tenant_id, quotation_id, "accept", actor_user_id, expected_version=expected_version
+        )
 
     async def decline(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID
+        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
     ) -> QuotationResponse:
-        return await self._transition(tenant_id, quotation_id, "decline", actor_user_id)
+        return await self._transition(
+            tenant_id, quotation_id, "decline", actor_user_id, expected_version=expected_version
+        )
 
     async def cancel(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID
+        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
     ) -> QuotationResponse:
-        return await self._transition(tenant_id, quotation_id, "cancel", actor_user_id)
+        return await self._transition(
+            tenant_id, quotation_id, "cancel", actor_user_id, expected_version=expected_version
+        )
 
     async def clone(
         self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID
@@ -316,6 +386,7 @@ class QuotationService:
                     **header,
                     "quote_number": number,
                     "status": QuotationStatus.DRAFT.value,
+                    "version": 1,
                     "created_by": actor_user_id,
                     "updated_by": actor_user_id,
                 },
@@ -331,7 +402,37 @@ class QuotationService:
                 new_values={"quote_number": number, "cloned_from": source.id},
             )
             loaded = await self._require(tenant_id, row.id)
-            return self._to_response(loaded, await self._today(tenant_id))
+            today, requires_approval = await self._response_context(tenant_id)
+            return self._to_response(loaded, today, requires_approval=requires_approval)
+
+    async def delete(
+        self,
+        tenant_id: UUID,
+        quotation_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+    ) -> QuotationResponse:
+        async with transaction(self.session):
+            row = await self._require(tenant_id, quotation_id, for_update=True)
+            today, requires_approval = await self._response_context(tenant_id)
+            current = self._effective_status(row, today)
+            if current != QuotationStatus.DRAFT:
+                raise InvalidStatusTransitionError("Only draft quotations can be deleted")
+            self._assert_version(row, expected_version)
+            quote_number = row.quote_number
+            response = self._to_response(row, today, requires_approval=requires_approval)
+            await self.repo.soft_delete(tenant_id, quotation_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.DELETE,
+                module=ERP_MODULE,
+                entity_type="quotation",
+                entity_id=quotation_id,
+                old_values={"quote_number": quote_number, "status": current.value},
+            )
+            return response
 
     async def _transition(
         self,
@@ -339,6 +440,9 @@ class QuotationService:
         quotation_id: UUID,
         action: str,
         actor_user_id: UUID,
+        *,
+        expected_version: int,
+        reason: str | None = None,
     ) -> QuotationResponse:
         action_map = {
             "submit": AuditAction.SUBMIT,
@@ -350,14 +454,19 @@ class QuotationService:
             "cancel": AuditAction.CANCEL,
         }
         async with transaction(self.session):
-            row = await self._require(tenant_id, quotation_id)
-            today = await self._today(tenant_id)
+            row = await self._require(tenant_id, quotation_id, for_update=True)
+            today, requires_approval = await self._response_context(tenant_id)
             current = self._effective_status(row, today)
+            self._assert_version(row, expected_version)
             target = next_status(current, action)
             row.status = target.value
+            row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
             await self.session.refresh(row, attribute_names=["updated_at"])
+            new_values: dict[str, object] = {"status": target.value, "version": row.version}
+            if action == "reject" and reason:
+                new_values["reason"] = reason
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -366,9 +475,9 @@ class QuotationService:
                 entity_type="quotation",
                 entity_id=row.id,
                 old_values={"status": current.value},
-                new_values={"status": target.value},
+                new_values=new_values,
             )
-            return self._to_response(row, today)
+            return self._to_response(row, today, requires_approval=requires_approval)
 
     async def _build_draft(
         self, tenant_id: UUID, payload: QuotationCreate
@@ -540,7 +649,7 @@ class QuotationService:
     async def _update_to_create(
         self, tenant_id: UUID, existing: Quotation, payload: QuotationUpdate
     ) -> QuotationCreate:
-        values = payload.model_dump(exclude_unset=True)
+        values = payload.model_dump(exclude_unset=True, exclude={"version"})
         lines = values.get("lines")
         line_inputs = (
             [QuotationLineInput.model_validate(item) for item in lines]
@@ -592,14 +701,38 @@ class QuotationService:
             return QuotationStatus.EXPIRED
         return status
 
-    def _to_response(self, row: Quotation, today: date) -> QuotationResponse:
+    def _available_actions(
+        self, status: QuotationStatus, *, requires_approval: bool
+    ) -> builtins.list[str]:
+        actions: builtins.list[str] = []
+        for action in transition_actions(status):
+            if action == "send" and status == QuotationStatus.DRAFT and requires_approval:
+                continue
+            required = _ACTION_PERMISSIONS[action]
+            if has_permission(self.actor_permissions, required):
+                actions.append(action)
+        if has_permission(self.actor_permissions, QUOTATION_CREATE):
+            actions.append("clone")
+        if status == QuotationStatus.DRAFT and has_permission(
+            self.actor_permissions, QUOTATION_DELETE
+        ):
+            actions.append("delete")
+        return actions
+
+    def _to_response(
+        self, row: Quotation, today: date, *, requires_approval: bool
+    ) -> QuotationResponse:
         status = self._effective_status(row, today)
         return QuotationResponse(
             id=row.id,
             tenant_id=row.tenant_id,
             quote_number=row.quote_number,
+            document_number=row.quote_number,
             status=status,
+            version=row.version,
+            is_posted=False,
             quote_date=row.quote_date,
+            document_date=row.quote_date,
             valid_until=row.valid_until,
             branch_id=row.branch_id,
             customer_id=row.customer_id,
@@ -630,16 +763,33 @@ class QuotationService:
             converted_at=row.converted_at,
             converted_document_type=row.converted_document_type,
             converted_document_id=row.converted_document_id,
+            available_actions=self._available_actions(status, requires_approval=requires_approval),
             lines=[QuotationLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
 
+    async def _response_context(self, tenant_id: UUID) -> tuple[date, bool]:
+        today = await self._today(tenant_id)
+        requires_approval = await self.org.quotation_requires_approval(tenant_id)
+        return today, requires_approval
+
     async def _today(self, tenant_id: UUID) -> date:
         return today_in_timezone(await self.org.get_timezone(tenant_id))
 
-    async def _require(self, tenant_id: UUID, quotation_id: UUID) -> Quotation:
-        row = await self.repo.get(tenant_id, quotation_id)
+    def _assert_version(self, row: Quotation, expected_version: int) -> None:
+        if row.version != expected_version:
+            raise DocumentStaleError(
+                details={
+                    "current_version": row.version,
+                    "provided_version": expected_version,
+                }
+            )
+
+    async def _require(
+        self, tenant_id: UUID, quotation_id: UUID, *, for_update: bool = False
+    ) -> Quotation:
+        row = await self.repo.get(tenant_id, quotation_id, for_update=for_update)
         if row is None:
             raise ResourceNotFoundError("Quotation not found")
         return row
