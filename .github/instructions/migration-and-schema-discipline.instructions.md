@@ -103,11 +103,19 @@ soft-deleted rows in the repository base query.
 Financial records are never deleted. Model their lifecycle with statuses instead:
 
 ```text
-draft  approved  posted  cancelled  void
+draft  posted  cancelled  void
 ```
 
 A posted financial transaction is corrected by reversal, credit note, debit note or
-adjustment — never by an UPDATE or DELETE of the original row.
+adjustment in the **open** period — never by an UPDATE or DELETE of the original row.
+
+Tenant operational settings (not environment variables) include:
+
+```text
+allow_negative_stock   default false
+lock_date              soft close for non-advisers
+hard_lock_date         close for every role
+```
 
 ## Money and time columns
 

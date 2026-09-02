@@ -13,8 +13,8 @@ the project — modules import the settings object.
 Configuration covers:
 
 ```text
-Application  Database  Authentication  Storage  Email  WhatsApp
-AWS  Redis  Workers  External APIs  Feature Flags
+Application  Database  Authentication  Storage  Email  WhatsApp  Agora
+AWS Lambda  API Gateway  Amplify  OpenAI  Forecast  Feature Flags
 ```
 
 ## Secrets
@@ -71,39 +71,43 @@ timezone only at the presentation/API boundary. Never rely on server local time.
 
 ## Caching
 
-Use Redis only where caching provides measurable value: permissions, configuration, the current
-day's exchange rate, dashboard summaries, frequently accessed reference data, rate limiting and
-sessions.
-
-Cache is never the source of truth for financial or inventory records.
+Cache is never the source of truth for financial or inventory records. Do not introduce Redis
+unless a measured need appears (rate limits, forecast job queue). The target production stack
+does not require it.
 
 ## Technology stack
 
+Platforms (not application libraries):
+
 ```text
-Backend:          Python 3.13.x, FastAPI, Uvicorn, Pydantic v2
-Database:         PostgreSQL, SQLAlchemy 2.x, Alembic
-Authentication:   JWT, secure password hashing
-Caching / Queue:  Redis, Celery / ARQ / equivalent worker system
-Testing:          Pytest, HTTPX
-Code Quality:     Ruff, MyPy, Pre-commit
-Infrastructure:   Docker, AWS
-Storage:          Amazon S3
+Local API:        Python 3.13, FastAPI on Uvicorn
+Production API:   AWS Lambda (same FastAPI app) behind API Gateway
+Frontend:         Next.js on AWS Amplify (local: next dev)
+Database:         PostgreSQL / Amazon RDS (single DB, multi-tenant)
+Storage:          MinIO locally, Amazon S3 in production
 Email:            Amazon SES
-Messaging:        WhatsApp provider
-Observability:    Structured logging, CloudWatch / equivalent monitoring
+Video:            Agora
+Messaging:        self-hosted WhatsApp (Go)
+AI:               OpenAI GPT-5.4 Mini (assistive only)
+Forecast:         Prophet · XGBoost · LightGBM · Statsmodels
+Observability:    Structured JSON logs, CloudWatch in production
 ```
 
 Do not introduce a new dependency unless the existing ones cannot solve the problem.
+Details: [docs/TECH_STACK.md](../../docs/TECH_STACK.md).
 
 ## Deployment topology
 
 ```text
-Internet → Load Balancer / API Gateway → FastAPI
-                                           ├── PostgreSQL
-                                           ├── Redis
-                                           ├── Object Storage
-                                           └── Background Workers
+Internet → AWS Amplify (Next.js)
+              → API Gateway → Lambda (FastAPI)
+                    ├── Amazon RDS PostgreSQL
+                    ├── Amazon S3
+                    ├── Amazon SES
+                    ├── Agora
+                    ├── WhatsApp Go (self-hosted)
+                    ├── OpenAI GPT-5.4 Mini
+                    └── Forecast ML
 ```
 
-Run separate worker processes per workload: emails, notifications, imports, exports, reports,
-AI and scheduled jobs.
+Run forecast, mail and import work on a separate Lambda/worker — not inside the user request.

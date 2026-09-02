@@ -96,7 +96,7 @@ application exceptions defined in `app/core/exceptions.py`.
   "success": false,
   "error": {
     "code": "INVENTORY_INSUFFICIENT_STOCK",
-    "message": "Insufficient stock available",
+    "message": "Insufficient physical stock. Post the purchase invoice / GRN first.",
     "details": {}
   }
 }
@@ -105,10 +105,11 @@ application exceptions defined in `app/core/exceptions.py`.
 Use stable application-specific error codes rather than relying on HTTP status alone:
 
 ```text
-AUTH_INVALID_CREDENTIALS   PERMISSION_DENIED     INSUFFICIENT_STOCK
-AUTH_TOKEN_EXPIRED         RESOURCE_NOT_FOUND    INVALID_STATUS_TRANSITION
-TENANT_ACCESS_DENIED       VALIDATION_ERROR      FINANCIAL_TRANSACTION_LOCKED
-DUPLICATE_RESOURCE         INTEGRATION_ERROR
+AUTH_INVALID_CREDENTIALS      PERMISSION_DENIED           INVENTORY_INSUFFICIENT_STOCK
+AUTH_TOKEN_EXPIRED            RESOURCE_NOT_FOUND          INVALID_STATUS_TRANSITION
+TENANT_ACCESS_DENIED          VALIDATION_ERROR            PERIOD_LOCKED
+DUPLICATE_RESOURCE            INTEGRATION_ERROR           FINANCIAL_TRANSACTION_LOCKED
+DRAFT_DOCUMENT_NOT_POSTED
 ```
 
 Error messages must not leak internal details such as SQL, stack traces, file paths or

@@ -73,6 +73,12 @@ Read the relevant file before working in that area — each one is the authority
 - Use UUIDs for public entity IDs.
 - Use `Decimal` for financial calculations. Store timestamps in UTC.
 - Use soft deletion where appropriate. Never delete posted financial transactions.
+- Never overwrite a posted voucher. Correct it with a credit note, debit note, reversal or
+  adjustment in the **open** period (double-entry, immutable history).
+- Respect tenant `allow_negative_stock`. When it is off, block dispatch/sale if physical stock
+  is insufficient — require GRN / purchase receipt first.
+- Respect tenant lock dates. Do not create, edit or delete a voucher dated on or before the lock.
+- Invoices stay `DRAFT` until explicit Confirm/Post. Drafts do not touch stock, AR, tax or GL.
 - Never allow invalid workflow status transitions.
 - Use database transactions for multi-step business operations; do not call `commit()` inside
   repositories.
@@ -100,7 +106,7 @@ Read the relevant file before working in that area — each one is the authority
 6. Identify existing schemas.
 7. Identify existing permissions.
 8. Identify tenant isolation requirements.
-9. Identify audit requirements.
+9. Identify audit, lock-date, negative-stock and posting (DRAFT vs POSTED) requirements.
 10. Identify transaction requirements.
 11. Implement the smallest clean solution.
 12. Add or update tests.
@@ -143,64 +149,33 @@ Validate everything on the backend.
 10. Never use float for financial calculations.
 11. Never silently modify posted financial transactions.
 12. Never physically delete critical financial records.
-13. Never allow arbitrary status transitions.
-14. Never perform large operations synchronously.
-15. Never allow unbounded list queries.
-16. Never directly couple ERP modules to third-party providers.
-17. Never allow AI to silently modify critical ERP data.
-18. Never modify deployed Alembic migrations.
-19. Never log credentials or tokens.
-20. Never allow one tenant to access another tenant's data.
+13. Never overwrite a posted amount in place — post a credit note / reversal in the open period.
+14. Never allow stock below zero when the tenant disallows negative stock.
+15. Never mutate a voucher whose date is on or before the tenant lock date.
+16. Never hit the ledger or stock from a DRAFT invoice.
+17. Never allow arbitrary status transitions.
+18. Never perform large operations synchronously.
+19. Never allow unbounded list queries.
+20. Never directly couple ERP modules to third-party providers.
+21. Never allow AI to silently modify critical ERP data. AI may recommend; a user confirms writes.
+22. Never modify deployed Alembic migrations.
+23. Never log credentials or tokens.
+24. Never allow one tenant to access another tenant's data.
 ```
 
 ## System overview
 
+Production: AWS Amplify (Next.js) → API Gateway → Lambda (FastAPI) → RDS PostgreSQL, S3,
+SES, Agora, self-hosted WhatsApp (Go), OpenAI GPT-5.4 Mini, Forecast ML.
+
+Local: Next.js → Uvicorn FastAPI → PostgreSQL + MinIO.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/TECH_STACK.md](docs/TECH_STACK.md).
+
 ```text
-                         ┌────────────────────┐
-                         │      Frontend      │
-                         │   Next.js / React  │
-                         └─────────┬──────────┘
-                                   ▼
-                         ┌────────────────────┐
-                         │     FastAPI API    │
-                         └─────────┬──────────┘
-                ┌──────────────────┼──────────────────┐
-                ▼                  ▼                  ▼
-          Authentication      Authorization      Tenant Context
-                └──────────────────┼──────────────────┘
-                                   ▼
-                         ┌────────────────────┐
-                         │      Modules       │
-                         │  users_management  │
-                         │  erp               │
-                         │  inventory_        │
-                         │    management      │
-                         │  crm               │
-                         │  communication_    │
-                         │    service         │
-                         │  notifications_    │
-                         │    service         │
-                         └─────────┬──────────┘
-                         ┌─────────▼──────────┐
-                         │    Repositories    │
-                         └─────────┬──────────┘
-                         ┌─────────▼──────────┐
-                         │    SQLAlchemy      │
-                         └─────────┬──────────┘
-                         ┌─────────▼──────────┐
-                         │    PostgreSQL      │
-                         │   Single Database  │
-                         │   Multi-Tenant     │
-                         └────────────────────┘
-
-External Integrations          Background Processing
-
-FastAPI                        FastAPI
-  ├── AWS S3                     ▼
-  ├── AWS SES                  Queue / Redis
-  ├── WhatsApp Provider          ▼
-  ├── Calendar Provider        Workers
-  ├── Video Provider             ├── Emails         ├── Exports
-  └── AI Provider                ├── Notifications  ├── Reports
-                                 ├── Imports        └── AI Forecasting
+Users → Amplify → API Gateway → Lambda / FastAPI
+                                      ├── RDS PostgreSQL (multi-tenant)
+                                      ├── S3
+                                      ├── SES · Agora · WhatsApp Go
+                                      └── OpenAI · Forecast ML
 ```

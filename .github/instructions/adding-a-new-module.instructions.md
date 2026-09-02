@@ -80,7 +80,7 @@ erp-backend/
 ├── alembic/  (versions/ env.py script.py.mako)
 ├── tests/    (conftest.py, unit/, integration/, api/ — mirroring the module packages)
 ├── scripts/  (seed_database.py, create_admin.py, health_check.py)
-├── docs/     (architecture.md, api.md, database.md, security.md, multi-tenancy.md, integrations.md)
+├── docs/     (ARCHITECTURE.md, TECH_STACK.md, plumbit-erp-architecture.drawio; openapi/ generated)
 │
 ├── .env.example  .gitignore  .dockerignore  Dockerfile  docker-compose.yml
 ├── alembic.ini   pyproject.toml  README.md  Makefile
@@ -247,12 +247,12 @@ calls into repositories and integrations, event publishing, and workflow managem
 ```python
 class OrderService:
     async def create_order(self, tenant_id: UUID, data: OrderCreate):
-        # Validate business rules
-        # Validate customer, products, inventory
-        # Calculate totals
-        # Create order
-        # Update inventory
-        # Create audit log
+        # Reject if document_date <= tenant lock_date / hard_lock_date
+        # Keep the order DRAFT — do not move stock or post ledgers on save
+        # On post/confirm: inventory service checks allow_negative_stock
+        # If false and qty unavailable → abort: post GRN first
+        # Post AR / tax in the same transaction as the stock movement
+        # Write audit log
         ...
 ```
 

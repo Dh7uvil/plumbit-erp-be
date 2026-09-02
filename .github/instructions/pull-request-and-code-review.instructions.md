@@ -56,7 +56,10 @@ Before requesting review, run the local gates: Ruff, Black, MyPy and Pytest.
 - `Decimal` used for money; no `float` in financial paths.
 - Timestamps stored in UTC.
 - Status transitions validated against the allowed state machine.
-- Posted financial records are not updated or deleted.
+- Posted financial records are not updated or deleted; corrections are new documents.
+- Draft invoices do not move stock or post ledgers.
+- Stock movements respect `allow_negative_stock` with a locked qty check.
+- Document dates are rejected when on or before the tenant lock date.
 - Document numbers generated through a concurrency-safe mechanism.
 
 **API surface**
@@ -99,12 +102,16 @@ A pull request that violates any of these is rejected regardless of its other me
 10. Never use float for financial calculations.
 11. Never silently modify posted financial transactions.
 12. Never physically delete critical financial records.
-13. Never allow arbitrary status transitions.
-14. Never perform large operations synchronously.
-15. Never allow unbounded list queries.
-16. Never directly couple ERP modules to third-party providers.
-17. Never allow AI to silently modify critical ERP data.
-18. Never modify deployed Alembic migrations.
-19. Never log credentials or tokens.
-20. Never allow one tenant to access another tenant's data.
+13. Never overwrite a posted amount in place — post a credit note / reversal in the open period.
+14. Never allow stock below zero when the tenant disallows negative stock.
+15. Never mutate a voucher whose date is on or before the tenant lock date.
+16. Never hit the ledger or stock from a DRAFT invoice.
+17. Never allow arbitrary status transitions.
+18. Never perform large operations synchronously.
+19. Never allow unbounded list queries.
+20. Never directly couple ERP modules to third-party providers.
+21. Never allow AI to silently modify critical ERP data. AI may recommend; a user confirms writes.
+22. Never modify deployed Alembic migrations.
+23. Never log credentials or tokens.
+24. Never allow one tenant to access another tenant's data.
 ```

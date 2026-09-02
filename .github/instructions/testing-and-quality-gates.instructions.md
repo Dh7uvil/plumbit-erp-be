@@ -44,11 +44,16 @@ Every one of these must be covered:
 User cannot access another tenant
 User cannot access an unauthorized module
 User cannot modify another user's restricted data
-Posted accounting transaction cannot be deleted
-Completed workflow cannot return to draft
+Posted accounting transaction cannot be deleted or overwritten in place
+Draft invoice does not move stock or hit AR / tax / GL
+Posted invoice deducts stock and posts ledgers in one transaction
+Sale / dispatch blocked when allow_negative_stock is false and qty is insufficient
+Concurrent stock updates remain consistent
+Voucher dated on or before lock_date is rejected
+Period lock is refused while any warehouse has negative on-hand
+Completed / posted workflow cannot return to draft
 Invalid imports are rejected
 Duplicate document numbers cannot occur
-Concurrent stock updates remain consistent
 ```
 
 ## The tenant isolation test
@@ -89,7 +94,7 @@ fix the behavior or the test's premise.
 
 - Test the business rule in the service, not through the router, when the rule is the subject.
 - Cover the failure paths: missing permission, wrong tenant, invalid status transition,
-  insufficient stock, duplicate document number.
+  insufficient stock, closed period, posting a draft twice, duplicate document number.
 - Assert on the application error code, not just the HTTP status.
 - Use factories/fixtures in `conftest.py` rather than hand-built objects repeated per test.
 - Keep tests independent and order-free; each test creates and cleans up its own data.

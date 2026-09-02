@@ -53,7 +53,7 @@ They are append-only and must not be editable by normal users. Any endpoint that
 ```text
 GET /health        liveness of the process
 GET /health/live   liveness probe
-GET /health/ready  readiness — verifies database, Redis and required external infrastructure
+GET /health/ready  readiness — PostgreSQL today; do not require Redis
 ```
 
 Health endpoints must not expose sensitive diagnostic information such as connection strings,
