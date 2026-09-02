@@ -84,7 +84,7 @@ class ProductService:
                 module=INVENTORY_MODULE,
                 entity_type="product",
                 entity_id=row.id,
-                new_values={"sku": row.sku},
+                new_values=await self._product_snapshot(tenant_id, row),
             )
             return ProductResponse.model_validate(row)
 
@@ -96,7 +96,8 @@ class ProductService:
             values["item_type"] = payload.item_type.value
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
-            await self._require(tenant_id, product_id)
+            existing = await self._require(tenant_id, product_id)
+            old_values = await self._product_snapshot(tenant_id, existing)
             await self._validate_refs(
                 tenant_id,
                 values.get("unit_id"),
@@ -116,7 +117,8 @@ class ProductService:
                 module=INVENTORY_MODULE,
                 entity_type="product",
                 entity_id=row.id,
-                new_values={"name": row.name},
+                old_values=old_values,
+                new_values=await self._product_snapshot(tenant_id, row),
             )
             return ProductResponse.model_validate(row)
 
@@ -134,9 +136,33 @@ class ProductService:
                 module=INVENTORY_MODULE,
                 entity_type="product",
                 entity_id=product_id,
-                old_values={"sku": row.sku},
+                old_values=await self._product_snapshot(tenant_id, row),
             )
             return response
+
+    async def _product_snapshot(self, tenant_id: UUID, row: Product) -> dict[str, object]:
+        unit_code: str | None = None
+        if row.unit_id is not None:
+            unit_code = (await self.units.get(tenant_id, row.unit_id)).code
+        category_name: str | None = None
+        if row.category_id is not None:
+            category_name = (await self.categories.get(tenant_id, row.category_id)).name
+        tax_name: str | None = None
+        if row.tax_id is not None:
+            tax_name = (await self.taxes.get(tenant_id, row.tax_id)).name
+        return {
+            "item_type": row.item_type,
+            "sku": row.sku,
+            "name": row.name,
+            "sales_description": row.sales_description,
+            "unit": unit_code,
+            "category": category_name,
+            "selling_rate": row.selling_rate,
+            "tax": tax_name,
+            "hs_code": row.hs_code,
+            "track_inventory": row.track_inventory,
+            "is_active": row.is_active,
+        }
 
     async def _validate_refs(
         self,

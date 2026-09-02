@@ -37,6 +37,46 @@ from app.erp.accounting.schemas import (
 )
 
 
+def _tax_snapshot(row: Tax) -> dict[str, object]:
+    return {
+        "name": row.name,
+        "tax_category": row.tax_category,
+        "rate": row.rate,
+        "is_default": row.is_default,
+        "is_active": row.is_active,
+    }
+
+
+def _payment_term_snapshot(row: PaymentTerm) -> dict[str, object]:
+    return {
+        "name": row.name,
+        "days": row.days,
+        "description": row.description,
+        "is_active": row.is_active,
+    }
+
+
+def _terms_template_snapshot(row: TermsTemplate) -> dict[str, object]:
+    return {
+        "name": row.name,
+        "body": row.body,
+        "is_default": row.is_default,
+        "is_active": row.is_active,
+    }
+
+
+def _document_sequence_snapshot(row: DocumentSequence) -> dict[str, object]:
+    return {
+        "document_type": row.document_type,
+        "series": row.series,
+        "fiscal_year": row.fiscal_year,
+        "prefix": row.prefix,
+        "next_number": row.next_number,
+        "padding": row.padding,
+        "is_active": row.is_active,
+    }
+
+
 class TaxService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -95,7 +135,11 @@ class TaxService:
             if row.is_default:
                 await self.repo.clear_default_except(tenant_id, row.id)
             await self._audit(
-                tenant_id, actor_user_id, AuditAction.CREATE, row.id, {"name": row.name}
+                tenant_id,
+                actor_user_id,
+                AuditAction.CREATE,
+                row.id,
+                new_values=_tax_snapshot(row),
             )
             return TaxResponse.model_validate(row)
 
@@ -107,7 +151,8 @@ class TaxService:
             values["tax_category"] = str(values["tax_category"])
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
-            await self._require(tenant_id, tax_id)
+            existing = await self._require(tenant_id, tax_id)
+            old_values = _tax_snapshot(existing)
             try:
                 row = await self.repo.update(tenant_id, tax_id, values)
             except IntegrityError as exc:
@@ -117,7 +162,12 @@ class TaxService:
             if row.is_default:
                 await self.repo.clear_default_except(tenant_id, row.id)
             await self._audit(
-                tenant_id, actor_user_id, AuditAction.UPDATE, row.id, {"name": row.name}
+                tenant_id,
+                actor_user_id,
+                AuditAction.UPDATE,
+                row.id,
+                old_values=old_values,
+                new_values=_tax_snapshot(row),
             )
             return TaxResponse.model_validate(row)
 
@@ -127,7 +177,11 @@ class TaxService:
             response = TaxResponse.model_validate(row)
             await self.repo.soft_delete(tenant_id, tax_id)
             await self._audit(
-                tenant_id, actor_user_id, AuditAction.DELETE, tax_id, {"name": row.name}
+                tenant_id,
+                actor_user_id,
+                AuditAction.DELETE,
+                tax_id,
+                old_values=_tax_snapshot(row),
             )
             return response
 
@@ -143,7 +197,9 @@ class TaxService:
         actor_user_id: UUID,
         action: AuditAction,
         entity_id: UUID,
-        values: dict[str, object],
+        *,
+        old_values: dict[str, object] | None = None,
+        new_values: dict[str, object] | None = None,
     ) -> None:
         await self.audit.write(
             tenant_id=tenant_id,
@@ -152,8 +208,8 @@ class TaxService:
             module=ERP_MODULE,
             entity_type="tax",
             entity_id=entity_id,
-            new_values=values if action != AuditAction.DELETE else None,
-            old_values=values if action == AuditAction.DELETE else None,
+            old_values=old_values,
+            new_values=new_values,
         )
 
 
@@ -208,7 +264,7 @@ class PaymentTermService:
                 module=ERP_MODULE,
                 entity_type="payment_term",
                 entity_id=row.id,
-                new_values={"name": row.name},
+                new_values=_payment_term_snapshot(row),
             )
             return PaymentTermResponse.model_validate(row)
 
@@ -218,7 +274,8 @@ class PaymentTermService:
         values = payload.model_dump(exclude_unset=True)
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
-            await self._require(tenant_id, term_id)
+            existing = await self._require(tenant_id, term_id)
+            old_values = _payment_term_snapshot(existing)
             try:
                 row = await self.repo.update(tenant_id, term_id, values)
             except IntegrityError as exc:
@@ -234,7 +291,8 @@ class PaymentTermService:
                 module=ERP_MODULE,
                 entity_type="payment_term",
                 entity_id=row.id,
-                new_values={"name": row.name},
+                old_values=old_values,
+                new_values=_payment_term_snapshot(row),
             )
             return PaymentTermResponse.model_validate(row)
 
@@ -252,7 +310,7 @@ class PaymentTermService:
                 module=ERP_MODULE,
                 entity_type="payment_term",
                 entity_id=term_id,
-                old_values={"name": row.name},
+                old_values=_payment_term_snapshot(row),
             )
             return response
 
@@ -323,7 +381,7 @@ class TermsTemplateService:
                 module=ERP_MODULE,
                 entity_type="terms_template",
                 entity_id=row.id,
-                new_values={"name": row.name},
+                new_values=_terms_template_snapshot(row),
             )
             return TermsTemplateResponse.model_validate(row)
 
@@ -338,7 +396,8 @@ class TermsTemplateService:
         values = payload.model_dump(exclude_unset=True)
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
-            await self._require(tenant_id, template_id)
+            existing = await self._require(tenant_id, template_id)
+            old_values = _terms_template_snapshot(existing)
             try:
                 row = await self.repo.update(tenant_id, template_id, values)
             except IntegrityError as exc:
@@ -356,7 +415,8 @@ class TermsTemplateService:
                 module=ERP_MODULE,
                 entity_type="terms_template",
                 entity_id=row.id,
-                new_values={"name": row.name},
+                old_values=old_values,
+                new_values=_terms_template_snapshot(row),
             )
             return TermsTemplateResponse.model_validate(row)
 
@@ -374,7 +434,7 @@ class TermsTemplateService:
                 module=ERP_MODULE,
                 entity_type="terms_template",
                 entity_id=template_id,
-                old_values={"name": row.name},
+                old_values=_terms_template_snapshot(row),
             )
             return response
 
@@ -440,7 +500,7 @@ class DocumentSequenceService:
                 module=ERP_MODULE,
                 entity_type="document_sequence",
                 entity_id=row.id,
-                new_values={"series": row.series, "fiscal_year": row.fiscal_year},
+                new_values=_document_sequence_snapshot(row),
             )
             return DocumentSequenceResponse.model_validate(row)
 
@@ -455,7 +515,8 @@ class DocumentSequenceService:
         values = payload.model_dump(exclude_unset=True)
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
-            await self._require(tenant_id, sequence_id)
+            existing = await self._require(tenant_id, sequence_id)
+            old_values = _document_sequence_snapshot(existing)
             row = await self.repo.update(tenant_id, sequence_id, values)
             if row is None:
                 raise ResourceNotFoundError("Document sequence not found")
@@ -466,7 +527,8 @@ class DocumentSequenceService:
                 module=ERP_MODULE,
                 entity_type="document_sequence",
                 entity_id=row.id,
-                new_values={"next_number": row.next_number},
+                old_values=old_values,
+                new_values=_document_sequence_snapshot(row),
             )
             return DocumentSequenceResponse.model_validate(row)
 
@@ -484,7 +546,7 @@ class DocumentSequenceService:
                 module=ERP_MODULE,
                 entity_type="document_sequence",
                 entity_id=sequence_id,
-                old_values={"series": row.series},
+                old_values=_document_sequence_snapshot(row),
             )
             return response
 

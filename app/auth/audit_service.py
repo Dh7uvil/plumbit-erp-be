@@ -1,5 +1,6 @@
 """Read APIs for the append-only audit trail."""
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,10 +8,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.audit_repository import AuditLogRepository
 from app.auth.models import User
 from app.auth.org_repository import OrganizationRepository
-from app.auth.schemas import AuditLogResponse, AuditLogSummaryResponse, AuditLogUserSummary
+from app.auth.schemas import (
+    AuditLogChange,
+    AuditLogDetailResponse,
+    AuditLogResponse,
+    AuditLogSummaryResponse,
+    AuditLogUserSummary,
+)
 from app.common.models.audit_log import AuditLog
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.services.audit import audit_field_changes
+from app.core.exceptions import ResourceNotFoundError
 
 
 class AuditLogService:
@@ -66,6 +75,14 @@ class AuditLogService:
             admin_actions=admin_actions,
         )
 
+    async def get_log(self, tenant_id: UUID, audit_log_id: UUID) -> AuditLogDetailResponse:
+        row = await self.repo.get(tenant_id, audit_log_id)
+        if row is None:
+            raise ResourceNotFoundError("Audit log not found")
+        user_ids = [row.user_id] if row.user_id is not None else []
+        users = await self.org.get_users_by_ids(tenant_id, user_ids)
+        return self._to_detail_response(row, users)
+
     @staticmethod
     def _to_response(row: AuditLog, users: dict[UUID, User]) -> AuditLogResponse:
         user = users.get(row.user_id) if row.user_id is not None else None
@@ -81,3 +98,29 @@ class AuditLogService:
             ip_address=row.ip_address,
             status=row.status,
         )
+
+    @classmethod
+    def _to_detail_response(cls, row: AuditLog, users: dict[UUID, User]) -> AuditLogDetailResponse:
+        base = cls._to_response(row, users)
+        old_values = _json_object(row.old_values)
+        new_values = _json_object(row.new_values)
+        return AuditLogDetailResponse(
+            **base.model_dump(),
+            user_agent=row.user_agent,
+            old_values=old_values,
+            new_values=new_values,
+            changes=[
+                AuditLogChange(
+                    field=change["field"],
+                    old_value=change["old_value"],
+                    new_value=change["new_value"],
+                )
+                for change in audit_field_changes(old_values, new_values)
+            ],
+        )
+
+
+def _json_object(value: object) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return value
+    return None

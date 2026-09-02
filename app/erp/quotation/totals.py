@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from app.auth.schemas import AddressResponse
+from app.auth.schemas import AddressResponse, format_address_label
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.core.enums import DiscountType, PlaceOfSupply, TaxCategory, TaxTreatment
 
@@ -114,15 +114,4 @@ def place_of_supply_from_address(address: AddressResponse | None) -> PlaceOfSupp
 
 
 def format_address_snapshot(address: AddressResponse | None) -> str | None:
-    if address is None:
-        return None
-    parts = [
-        address.address_line_1,
-        address.address_line_2,
-        address.city,
-        address.state,
-        address.postal_code,
-        address.country,
-    ]
-    text = ", ".join(part for part in parts if part)
-    return text or None
+    return format_address_label(address)

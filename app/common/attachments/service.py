@@ -21,6 +21,15 @@ from app.db.session import transaction
 from app.integrations.storage.client import S3Storage, build_object_key
 
 
+def _attachment_snapshot(row: Attachment) -> dict[str, object]:
+    return {
+        "entity_type": row.entity_type,
+        "original_filename": row.original_filename,
+        "content_type": row.content_type,
+        "size_bytes": row.size_bytes,
+    }
+
+
 class AttachmentService:
     def __init__(
         self,
@@ -103,13 +112,7 @@ class AttachmentService:
                 module=IDENTITY_MODULE,
                 entity_type="attachment",
                 entity_id=row.id,
-                new_values={
-                    "entity_type": entity_type.value,
-                    "entity_id": entity_id,
-                    "original_filename": validated.filename,
-                    "content_type": validated.content_type,
-                    "size_bytes": validated.size_bytes,
-                },
+                new_values=_attachment_snapshot(row),
             )
             return self._to_response(row)
 
@@ -128,12 +131,7 @@ class AttachmentService:
                 module=IDENTITY_MODULE,
                 entity_type="attachment",
                 entity_id=attachment_id,
-                old_values={
-                    "entity_type": row.entity_type,
-                    "entity_id": row.entity_id,
-                    "original_filename": row.original_filename,
-                    "storage_key": row.storage_key,
-                },
+                old_values=_attachment_snapshot(row),
             )
             return response
 

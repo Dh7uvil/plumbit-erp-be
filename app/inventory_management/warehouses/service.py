@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import INVENTORY_MODULE
 from app.auth.org_service import OrganizationService
-from app.auth.schemas import AddressPayload
+from app.auth.schemas import AddressPayload, format_address_label
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
@@ -95,7 +95,7 @@ class WarehouseService:
                 module=INVENTORY_MODULE,
                 entity_type="warehouse",
                 entity_id=row.id,
-                new_values={"code": row.code, "is_default": row.is_default},
+                new_values=await self._warehouse_snapshot(tenant_id, row),
             )
             return await self._to_response(tenant_id, row)
 
@@ -112,6 +112,7 @@ class WarehouseService:
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
             row = await self._require(tenant_id, warehouse_id)
+            old_values = await self._warehouse_snapshot(tenant_id, row)
             if address_payload is not None:
                 values["address_id"] = await self.org.upsert_address(
                     tenant_id,
@@ -134,7 +135,8 @@ class WarehouseService:
                 module=INVENTORY_MODULE,
                 entity_type="warehouse",
                 entity_id=updated.id,
-                new_values={"name": updated.name, "is_default": updated.is_default},
+                old_values=old_values,
+                new_values=await self._warehouse_snapshot(tenant_id, updated),
             )
             return await self._to_response(tenant_id, updated)
 
@@ -152,9 +154,23 @@ class WarehouseService:
                 module=INVENTORY_MODULE,
                 entity_type="warehouse",
                 entity_id=warehouse_id,
-                old_values={"code": row.code},
+                old_values=await self._warehouse_snapshot(tenant_id, row),
             )
             return response
+
+    async def _warehouse_snapshot(self, tenant_id: UUID, row: Warehouse) -> dict[str, object]:
+        snapshot: dict[str, object] = {
+            "code": row.code,
+            "name": row.name,
+            "phone": row.phone,
+            "is_default": row.is_default,
+            "is_active": row.is_active,
+        }
+        if row.address_id is not None:
+            address = format_address_label(await self.org.get_address(tenant_id, row.address_id))
+            if address is not None:
+                snapshot["address"] = address
+        return snapshot
 
     async def _to_response(self, tenant_id: UUID, row: Warehouse) -> WarehouseResponse:
         responses = await self._to_responses(tenant_id, (row,))

@@ -19,6 +19,14 @@ from app.inventory_management.units.repository import UnitRepository
 from app.inventory_management.units.schemas import UnitCreate, UnitResponse, UnitUpdate
 
 
+def _unit_snapshot(row: Unit) -> dict[str, object]:
+    return {
+        "code": row.code,
+        "name": row.name,
+        "is_active": row.is_active,
+    }
+
+
 class UnitService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -68,7 +76,7 @@ class UnitService:
                 module=INVENTORY_MODULE,
                 entity_type="unit",
                 entity_id=row.id,
-                new_values={"code": row.code},
+                new_values=_unit_snapshot(row),
             )
             return UnitResponse.model_validate(row)
 
@@ -78,7 +86,8 @@ class UnitService:
         values = payload.model_dump(exclude_unset=True)
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
-            await self._require(tenant_id, unit_id)
+            existing = await self._require(tenant_id, unit_id)
+            old_values = _unit_snapshot(existing)
             row = await self.repo.update(tenant_id, unit_id, values)
             if row is None:
                 raise ResourceNotFoundError("Unit not found")
@@ -89,7 +98,8 @@ class UnitService:
                 module=INVENTORY_MODULE,
                 entity_type="unit",
                 entity_id=row.id,
-                new_values={"name": row.name},
+                old_values=old_values,
+                new_values=_unit_snapshot(row),
             )
             return UnitResponse.model_validate(row)
 
@@ -105,7 +115,7 @@ class UnitService:
                 module=INVENTORY_MODULE,
                 entity_type="unit",
                 entity_id=unit_id,
-                old_values={"code": row.code},
+                old_values=_unit_snapshot(row),
             )
             return response
 

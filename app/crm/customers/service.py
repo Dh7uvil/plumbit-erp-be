@@ -10,13 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import CRM_MODULE, ERP_MODULE
 from app.auth.org_service import OrganizationService
-from app.auth.schemas import AddressPayload, AddressResponse
+from app.auth.schemas import AddressPayload, AddressResponse, format_address_label
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
 from app.core.enums import AddressType, AuditAction, CompanyType, TaxTreatment
 from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
-from app.crm.customers.models import Customer
+from app.crm.customers.models import Customer, CustomerAddress
 from app.crm.customers.repository import CustomerRepository
 from app.crm.customers.schemas import (
     CustomerCreate,
@@ -53,6 +53,7 @@ CUSTOMER_PARTY_ROLE = PartyRole(
     audit_module=CRM_MODULE,
     audit_entity_type="customer",
 )
+
 
 SUPPLIER_PARTY_ROLE = PartyRole(
     visible_types=frozenset({CompanyType.SUPPLIER, CompanyType.BOTH}),
@@ -170,7 +171,7 @@ class CustomerService:
                 module=self.role.audit_module,
                 entity_type=self.role.audit_entity_type,
                 entity_id=row.id,
-                new_values={"code": row.code, "name": row.name},
+                new_values=await self._customer_snapshot(tenant_id, row),
             )
             return await self._to_response(tenant_id, row)
 
@@ -191,6 +192,7 @@ class CustomerService:
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
             row = await self._require(tenant_id, customer_id)
+            old_values = await self._customer_snapshot(tenant_id, row)
             treatment = TaxTreatment(values.get("tax_treatment", row.tax_treatment))
             trn = values.get("trn", row.trn)
             if treatment == TaxTreatment.REGISTERED and not trn:
@@ -230,7 +232,8 @@ class CustomerService:
                 module=self.role.audit_module,
                 entity_type=self.role.audit_entity_type,
                 entity_id=updated.id,
-                new_values={"name": updated.name},
+                old_values=old_values,
+                new_values=await self._customer_snapshot(tenant_id, updated),
             )
             return await self._to_response(tenant_id, updated)
 
@@ -248,7 +251,7 @@ class CustomerService:
                 module=self.role.audit_module,
                 entity_type=self.role.audit_entity_type,
                 entity_id=customer_id,
-                old_values={"code": row.code},
+                old_values=await self._customer_snapshot(tenant_id, row),
             )
             return response
 
@@ -280,6 +283,8 @@ class CustomerService:
                     "is_default_shipping": payload.is_default_shipping,
                 },
             )
+            address = await self.org.get_address(tenant_id, address_id)
+            assert address is not None
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -287,10 +292,8 @@ class CustomerService:
                 module=self.role.audit_module,
                 entity_type=self.role.audit_entity_type,
                 entity_id=customer_id,
-                new_values={"extra_address_id": extra.id},
+                new_values=self._extra_address_snapshot(extra, address),
             )
-            address = await self.org.get_address(tenant_id, address_id)
-            assert address is not None
             return CustomerExtraAddressResponse(
                 id=extra.id,
                 label=extra.label,
@@ -321,7 +324,7 @@ class CustomerService:
                 module=self.role.audit_module,
                 entity_type=self.role.audit_entity_type,
                 entity_id=customer_id,
-                old_values={"extra_address_id": extra.id},
+                old_values=self._extra_address_snapshot(extra, address),
             )
             return CustomerExtraAddressResponse(
                 id=extra.id,
@@ -340,6 +343,60 @@ class CustomerService:
                     postal_code=None,
                 ),
             )
+
+    async def _customer_snapshot(self, tenant_id: UUID, row: Customer) -> dict[str, object]:
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        price_list_name: str | None = None
+        if row.default_price_list_id is not None:
+            price_list = await self.price_lists.get(tenant_id, row.default_price_list_id)
+            price_list_name = price_list.name
+        payment_term_name: str | None = None
+        if row.payment_terms_id is not None:
+            payment_term = await self.payment_terms.get(tenant_id, row.payment_terms_id)
+            payment_term_name = payment_term.name
+        addresses = await self.org.get_addresses(
+            tenant_id,
+            [item for item in (row.billing_address_id, row.shipping_address_id) if item],
+        )
+        snapshot: dict[str, object] = {
+            "name": row.name,
+            "code": row.code,
+            "company_type": row.company_type,
+            "trn": row.trn,
+            "tax_treatment": row.tax_treatment,
+            "currency": currency.code,
+            "price_list": price_list_name,
+            "payment_terms": payment_term_name,
+            "credit_limit": row.credit_limit,
+            "salesperson": await self.org.employee_audit_label(tenant_id, row.salesperson_id),
+            "notes": row.notes,
+            "is_active": row.is_active,
+        }
+        billing = format_address_label(
+            addresses.get(row.billing_address_id) if row.billing_address_id else None
+        )
+        shipping = format_address_label(
+            addresses.get(row.shipping_address_id) if row.shipping_address_id else None
+        )
+        if billing is not None:
+            snapshot["billing_address"] = billing
+        if shipping is not None:
+            snapshot["shipping_address"] = shipping
+        return snapshot
+
+    @staticmethod
+    def _extra_address_snapshot(
+        extra: CustomerAddress, address: AddressResponse | None
+    ) -> dict[str, object]:
+        snapshot: dict[str, object] = {
+            "label": extra.label,
+            "is_default_billing": extra.is_default_billing,
+            "is_default_shipping": extra.is_default_shipping,
+        }
+        formatted = format_address_label(address)
+        if formatted is not None:
+            snapshot["address"] = formatted
+        return snapshot
 
     async def _validate_refs(
         self,

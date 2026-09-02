@@ -35,6 +35,7 @@ from app.auth.dependencies import (
 from app.auth.org_service import LOGO_MAX_SIZE_MB
 from app.auth.schemas import (
     AssignRolesRequest,
+    AuditLogDetailResponse,
     AuditLogFilter,
     AuditLogResponse,
     AuditLogSummaryResponse,
@@ -851,6 +852,24 @@ async def list_audit_logs(
         user_id=filters.user_id,
     )
     return paginated_response(rows, params=page, total=total)
+
+
+@audit_logs_router.get(
+    "/{audit_log_id}",
+    response_model=ApiResponse[AuditLogDetailResponse],
+    summary="Get audit log",
+    description=(
+        "Requires `identity.audit_log.read`. Tenant-scoped; includes snapshots and a field diff."
+    ),
+)
+async def get_audit_log(
+    audit_log_id: UUID,
+    tenant: TenantContextDependency,
+    service: AuditLogServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(AUDIT_LOG_READ))],
+) -> ApiResponse[AuditLogDetailResponse]:
+    data = await service.get_log(tenant.tenant_id, audit_log_id)
+    return ApiResponse(data=data)
 
 
 _READ_CHUNK_SIZE = 64 * 1024

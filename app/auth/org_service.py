@@ -26,6 +26,7 @@ from app.auth.schemas import (
     TenantCurrentUpdate,
     TenantSettings,
     UserSummary,
+    format_address_label,
 )
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
@@ -69,28 +70,6 @@ def _address_response(address: Address | None) -> AddressResponse | None:
     if address is None:
         return None
     return AddressResponse.model_validate(address)
-
-
-def _branch_snapshot(branch: Branch) -> dict[str, object]:
-    return {
-        "id": branch.id,
-        "name": branch.name,
-        "code": branch.code,
-        "status": branch.status,
-        "phone": branch.phone,
-        "timezone": branch.timezone,
-        "address_id": branch.address_id,
-    }
-
-
-def _department_snapshot(department: Department) -> dict[str, object]:
-    return {
-        "id": department.id,
-        "name": department.name,
-        "code": department.code,
-        "branch_id": department.branch_id,
-        "manager_id": department.manager_id,
-    }
 
 
 class OrganizationService:
@@ -264,7 +243,7 @@ class OrganizationService:
                 module=IDENTITY_MODULE,
                 entity_type="branch",
                 entity_id=branch.id,
-                new_values=_branch_snapshot(branch),
+                new_values=await self._branch_snapshot(tenant_id, branch),
             )
             await self.session.refresh(branch)
             return (await self._branch_responses(tenant_id, [branch]))[0]
@@ -287,7 +266,7 @@ class OrganizationService:
             values["status"] = str(values["status"])
         async with transaction(self.session):
             branch = await self._require_branch(tenant_id, branch_id)
-            old_values = _branch_snapshot(branch)
+            old_values = await self._branch_snapshot(tenant_id, branch)
             if address_payload is not None:
                 values["address_id"] = await self._upsert_address(
                     tenant_id,
@@ -308,7 +287,7 @@ class OrganizationService:
                 entity_type="branch",
                 entity_id=branch.id,
                 old_values=old_values,
-                new_values=_branch_snapshot(branch),
+                new_values=await self._branch_snapshot(tenant_id, branch),
             )
             await self.session.refresh(branch)
             return (await self._branch_responses(tenant_id, [branch]))[0]
@@ -337,7 +316,7 @@ class OrganizationService:
                 module=IDENTITY_MODULE,
                 entity_type="branch",
                 entity_id=branch.id,
-                old_values=_branch_snapshot(branch),
+                old_values=await self._branch_snapshot(tenant_id, branch),
             )
             return response
 
@@ -388,7 +367,7 @@ class OrganizationService:
                 module=IDENTITY_MODULE,
                 entity_type="department",
                 entity_id=department.id,
-                new_values=_department_snapshot(department),
+                new_values=await self._department_snapshot(tenant_id, department),
             )
             await self.session.refresh(department)
             return (await self._department_responses(tenant_id, [department]))[0]
@@ -408,7 +387,7 @@ class OrganizationService:
         values = payload.model_dump(exclude_unset=True)
         async with transaction(self.session):
             department = await self._require_department(tenant_id, department_id)
-            old_values = _department_snapshot(department)
+            old_values = await self._department_snapshot(tenant_id, department)
             if "branch_id" in values and values["branch_id"] is not None:
                 await self._require_branch(tenant_id, values["branch_id"])
             if "manager_id" in values:
@@ -427,7 +406,7 @@ class OrganizationService:
                 entity_type="department",
                 entity_id=department.id,
                 old_values=old_values,
-                new_values=_department_snapshot(department),
+                new_values=await self._department_snapshot(tenant_id, department),
             )
             await self.session.refresh(department)
             return (await self._department_responses(tenant_id, [department]))[0]
@@ -452,7 +431,7 @@ class OrganizationService:
                 module=IDENTITY_MODULE,
                 entity_type="department",
                 entity_id=department.id,
-                old_values=_department_snapshot(department),
+                old_values=await self._department_snapshot(tenant_id, department),
             )
             return response
 
@@ -540,12 +519,45 @@ class OrganizationService:
 
     def _tenant_snapshot(self, tenant: Tenant) -> dict[str, object]:
         return {
-            "id": tenant.id,
             "name": tenant.name,
             "timezone": tenant.timezone,
             "settings": tenant.settings,
-            "logo_storage_key": tenant.logo_storage_key,
+            "has_logo": tenant.logo_storage_key is not None,
         }
+
+    async def _branch_snapshot(self, tenant_id: UUID, branch: Branch) -> dict[str, object]:
+        snapshot: dict[str, object] = {
+            "name": branch.name,
+            "code": branch.code,
+            "status": branch.status,
+            "phone": branch.phone,
+            "timezone": branch.timezone,
+        }
+        if branch.address_id is not None:
+            address = format_address_label(await self.get_address(tenant_id, branch.address_id))
+            if address is not None:
+                snapshot["address"] = address
+        return snapshot
+
+    async def _department_snapshot(
+        self, tenant_id: UUID, department: Department
+    ) -> dict[str, object]:
+        branch = await self.org.get_branch(tenant_id, department.branch_id)
+        manager_name: str | None = None
+        if department.manager_id is not None:
+            users = await self.org.get_users_by_ids(tenant_id, [department.manager_id])
+            manager = users.get(department.manager_id)
+            if manager is not None:
+                manager_name = manager.name
+        return {
+            "name": department.name,
+            "code": department.code,
+            "branch": branch.name if branch is not None else None,
+            "manager": manager_name,
+        }
+
+    async def employee_audit_label(self, tenant_id: UUID, employee_id: UUID | None) -> str | None:
+        return await self.org.audit_employee_label(tenant_id, employee_id)
 
     def _require_storage(self) -> S3Storage:
         if self.storage is None:
