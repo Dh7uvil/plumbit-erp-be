@@ -74,6 +74,22 @@ class DocumentType(StrEnum):
     GOODS_RECEIPT = "GOODS_RECEIPT"
     PURCHASE_INVOICE = "PURCHASE_INVOICE"
     DEBIT_NOTE = "DEBIT_NOTE"
+    STOCK_TRANSFER = "STOCK_TRANSFER"
+    STOCK_ADJUSTMENT = "STOCK_ADJUSTMENT"
+
+
+class StockDocumentStatus(StrEnum):
+    DRAFT = "DRAFT"
+    POSTED = "POSTED"
+    CANCELLED = "CANCELLED"
+
+
+class StockAdjustmentReason(StrEnum):
+    OPENING_STOCK = "OPENING_STOCK"
+    COUNT = "COUNT"
+    DAMAGE = "DAMAGE"
+    FOUND = "FOUND"
+    OTHER = "OTHER"
 
 
 class CompanyType(StrEnum):

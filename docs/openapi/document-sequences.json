@@ -657,7 +657,9 @@
           "PURCHASE_ORDER",
           "GOODS_RECEIPT",
           "PURCHASE_INVOICE",
-          "DEBIT_NOTE"
+          "DEBIT_NOTE",
+          "STOCK_TRANSFER",
+          "STOCK_ADJUSTMENT"
         ],
         "title": "DocumentType"
       },

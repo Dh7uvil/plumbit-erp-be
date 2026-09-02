@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import builtins
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -11,8 +13,8 @@ from app.auth.catalog import INVENTORY_MODULE
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
-from app.core.enums import AuditAction
-from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError
+from app.core.enums import AuditAction, ItemType
+from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
 from app.db.session import transaction
 from app.erp.accounting.service import TaxService
 from app.inventory_management.categories.service import CategoryService
@@ -62,6 +64,26 @@ class ProductService:
     async def get(self, tenant_id: UUID, product_id: UUID) -> ProductResponse:
         return ProductResponse.model_validate(await self._require(tenant_id, product_id))
 
+    async def get_many(
+        self, tenant_id: UUID, product_ids: Sequence[UUID]
+    ) -> dict[UUID, ProductResponse]:
+        rows = await self.repo.get_many(tenant_id, product_ids)
+        return {row.id: ProductResponse.model_validate(row) for row in rows}
+
+    async def search_ids(self, tenant_id: UUID, search: str) -> builtins.list[UUID]:
+        return await self.repo.search_ids(tenant_id, search)
+
+    async def ids_by_category(self, tenant_id: UUID, category_id: UUID) -> builtins.list[UUID]:
+        return await self.repo.ids_by_category(tenant_id, category_id)
+
+    async def require_stockable(self, tenant_id: UUID, product_id: UUID) -> ProductResponse:
+        product = await self.get(tenant_id, product_id)
+        if product.item_type == ItemType.SERVICE:
+            raise ValidationError("Service products cannot be stocked")
+        if not product.track_inventory:
+            raise ValidationError("Inventory tracking is disabled for this product")
+        return product
+
     async def create(
         self, tenant_id: UUID, payload: ProductCreate, *, actor_user_id: UUID
     ) -> ProductResponse:
@@ -97,6 +119,13 @@ class ProductService:
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
             existing = await self._require(tenant_id, product_id)
+            if values.get("track_inventory") is False and existing.track_inventory:
+                from app.inventory_management.stock.service import StockService
+
+                if await StockService(self.session).product_has_activity(tenant_id, product_id):
+                    raise ValidationError(
+                        "Cannot turn off inventory tracking after stock movements or balances exist"
+                    )
             old_values = await self._product_snapshot(tenant_id, existing)
             await self._validate_refs(
                 tenant_id,

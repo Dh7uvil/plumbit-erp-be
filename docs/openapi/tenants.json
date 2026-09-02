@@ -498,6 +498,35 @@
             "title": "Quotation Requires Approval",
             "default": true
           },
+          "allow_negative_stock": {
+            "type": "boolean",
+            "title": "Allow Negative Stock",
+            "default": false
+          },
+          "lock_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lock Date"
+          },
+          "hard_lock_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hard Lock Date"
+          },
           "headquarters": {
             "anyOf": [
               {
@@ -680,6 +709,17 @@
               }
             ],
             "title": "Quotation Requires Approval"
+          },
+          "allow_negative_stock": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Negative Stock"
           },
           "headquarters": {
             "anyOf": [

@@ -51,6 +51,14 @@ class Tenant(TimestampedModel):
         nullable=False,
         server_default=text("'ACTIVE'"),
     )
+    allow_negative_stock: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    lock_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    hard_lock_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class User(TenantModel):

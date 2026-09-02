@@ -147,9 +147,9 @@ Solid = implemented. Dashed in draw.io = planned.
 
 | Top-level | Implemented slices | API examples | Planned slices |
 | --- | --- | --- | --- |
-| Identity (`app/auth/`) | tenants, auth, users, roles, permissions, branches, departments, employees (nested), audit logs | `/tenants`, `/auth/login`, `/users`, `/roles` | tenant operational settings (`allow_negative_stock`, `lock_date`, `hard_lock_date`) as columns |
+| Identity (`app/auth/`) | tenants, auth, users, roles, permissions, branches, departments, employees (nested), audit logs; tenant columns `allow_negative_stock`, `lock_date`, `hard_lock_date` | `/tenants`, `/auth/login`, `/users`, `/roles` | period-close PATCH / `erp.period.lock` |
 | CRM (`app/crm/`) | customers, contacts | `/customers`, `/contacts` | leads, opportunities, activities |
-| Inventory (`app/inventory_management/`) | units, categories, products, price lists, warehouses | `/units`, `/products`, `/warehouses` | stock, transfers, adjustments, GRN, delivery notes, sales returns |
+| Inventory (`app/inventory_management/`) | units, categories, products, price lists, warehouses, stock, stock transfers, stock adjustments | `/units`, `/products`, `/warehouses`, `/stock`, `/stock-transfers`, `/stock-adjustments` | GRN, delivery notes, sales returns |
 | ERP (`app/erp/`) | currencies, exchange rates, taxes, payment terms, terms templates, document sequences, suppliers, quotations | `/quotations`, `/suppliers`, `/exchange-rates` | sales orders, sales invoices, credit notes, customer payments, purchase orders, purchase invoices, debit notes, supplier payments, logistics, journals / AR / AP, einvoicing status APIs |
 | Common | attachments | `/attachments` | — |
 | `integrations` | storage | — | email, WhatsApp, video, AI, forecast, `einvoicing/` ASP adapters |
@@ -210,11 +210,11 @@ Posted rows are never overwritten. An AED 1,000 July invoice is not edited to AE
 
 ### Negative stock
 
-Tenant setting `allow_negative_stock` (default false), documented as a first-class column when implemented — not a JSONB extra. When false, dispatch/sale aborts if physical qty is insufficient: *Post the purchase invoice / GRN first* (`INVENTORY_INSUFFICIENT_STOCK`). The inventory service checks this under `SELECT FOR UPDATE` in the same transaction as the movement.
+Tenant column `allow_negative_stock` (default false). When false, dispatch/sale/transfer-out aborts if available qty (`qty_on_hand - qty_reserved`) is insufficient: *Post the purchase invoice / GRN first* (`INVENTORY_INSUFFICIENT_STOCK`). `StockService` checks this under `SELECT FOR UPDATE` in the same transaction as the movement.
 
 ### Period lock
 
-Tenant `lock_date` (non-advisers) and `hard_lock_date` (everyone), first-class columns when implemented. Create/edit/delete of dated vouchers is rejected when `document_date <= lock` (`PERIOD_LOCKED`). Advancing the lock is refused while any warehouse has negative on-hand (`PERIOD_LOCK_BLOCKED_NEGATIVE_STOCK`). AI may flag issues before close; it does not set the lock.
+Tenant `lock_date` (non-advisers) and `hard_lock_date` (everyone) are first-class columns. Dated stock posts are rejected when `document_date <= lock` (`PERIOD_LOCKED`, details include both lock dates). Advancing the lock is still planned (`erp.period.lock`) and must refuse while any warehouse has negative on-hand (`PERIOD_LOCK_BLOCKED_NEGATIVE_STOCK`).
 
 ### Invoice posting
 
@@ -260,11 +260,12 @@ Keep the ERP modular. Do not turn it into microservices early.
 
 - Amplify, API Gateway, and Lambda packaging.
 - SES, Agora, WhatsApp Go adapter, OpenAI, Forecast ML, `app/workers/`.
-- Stock movements with `allow_negative_stock`, period lock dates as tenant columns, and DRAFT → POSTED invoices.
-- `Idempotency-Key` / `If-Match` on invoice post, payments, and stock movements.
+- DRAFT → POSTED sales/purchase invoices, payments, and ledger posting.
+- `Idempotency-Key` / `If-Match` on invoice post and payments (stock documents already require both).
+- Period-close PATCH / `erp.period.lock` (lock dates are stored and enforced on stock post).
 - UAE e-invoicing ASP adapter, PINT-AE completeness fields, inbound e-bill drafts.
 - Splitting PostgreSQL per tenant.
 
-Quotations already return `available_actions`, `version`, `is_posted` (always false), and `document_number` / `document_date` aliases. PATCH and workflow verbs require `If-Match` (or body `version`); a mismatch is `DOCUMENT_STALE`. Planned ledger documents still need the same contract when they are built.
+Quotations already return `available_actions`, `version`, `is_posted` (always false), and `document_number` / `document_date` aliases. Stock adjustments and transfers use the same document contract; `POST /{resource}/{id}/post` moves quantity through `StockService`. PATCH and workflow verbs require `If-Match` (or body `version`); a mismatch is `DOCUMENT_STALE`.
 
-When those land, update this file and the matching draw.io page (solid vs dashed).
+When remaining slices land, update this file and the matching draw.io page (solid vs dashed).

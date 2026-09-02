@@ -547,6 +547,9 @@ class TenantCurrentResponse(BaseModel):
     default_currency: str | None = None
     default_currency_id: UUID | None = None
     quotation_requires_approval: bool = True
+    allow_negative_stock: bool = False
+    lock_date: date | None = None
+    hard_lock_date: date | None = None
     headquarters: AddressPayload | None = None
     users_count: int
     departments_count: int
@@ -567,6 +570,7 @@ class TenantCurrentUpdate(BaseModel):
     default_currency: str | None = Field(default=None, max_length=3)
     default_currency_id: UUID | None = None
     quotation_requires_approval: bool | None = None
+    allow_negative_stock: bool | None = None
     headquarters: AddressPayload | None = None
 
     @field_validator(

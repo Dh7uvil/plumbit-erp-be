@@ -56,9 +56,18 @@ class WarehouseService:
         row = await self._require(tenant_id, warehouse_id)
         return await self._to_response(tenant_id, row)
 
+    async def get_many(
+        self, tenant_id: UUID, warehouse_ids: Sequence[UUID]
+    ) -> dict[UUID, WarehouseResponse]:
+        rows = await self.repo.get_many(tenant_id, warehouse_ids)
+        return {item.id: item for item in await self._to_responses(tenant_id, rows)}
+
     async def require_id(self, tenant_id: UUID, warehouse_id: UUID) -> UUID:
         await self._require(tenant_id, warehouse_id)
         return warehouse_id
+
+    async def search_ids(self, tenant_id: UUID, search: str) -> list[UUID]:
+        return await self.repo.search_ids(tenant_id, search)
 
     async def create(
         self, tenant_id: UUID, payload: WarehouseCreate, *, actor_user_id: UUID

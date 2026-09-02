@@ -33,10 +33,12 @@ def test_regional_form_payload_is_valid() -> None:
             "default_currency": "INR",
             "default_currency_id": str(currency_id),
             "quotation_requires_approval": True,
+            "allow_negative_stock": False,
         }
     )
     assert payload.timezone == "Asia/Kolkata"
     assert payload.default_currency_id == currency_id
+    assert payload.allow_negative_stock is False
 
 
 def test_invalid_contact_email_is_rejected() -> None:

@@ -36,6 +36,9 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "product": ("create", "read", "update", "delete"),
         "price_list": ("create", "read", "update", "delete"),
         "warehouse": ("create", "read", "update", "delete"),
+        "stock": ("read", "update"),
+        "stock_transfer": ("create", "read", "update", "delete", "post"),
+        "stock_adjustment": ("create", "read", "update", "delete", "post"),
     },
     ERP_MODULE: {
         "supplier": ("create", "read", "update", "delete"),
@@ -123,6 +126,18 @@ WAREHOUSE_CREATE = build_permission(INVENTORY_MODULE, "warehouse", "create")
 WAREHOUSE_READ = build_permission(INVENTORY_MODULE, "warehouse", "read")
 WAREHOUSE_UPDATE = build_permission(INVENTORY_MODULE, "warehouse", "update")
 WAREHOUSE_DELETE = build_permission(INVENTORY_MODULE, "warehouse", "delete")
+STOCK_READ = build_permission(INVENTORY_MODULE, "stock", "read")
+STOCK_UPDATE = build_permission(INVENTORY_MODULE, "stock", "update")
+STOCK_TRANSFER_CREATE = build_permission(INVENTORY_MODULE, "stock_transfer", "create")
+STOCK_TRANSFER_READ = build_permission(INVENTORY_MODULE, "stock_transfer", "read")
+STOCK_TRANSFER_UPDATE = build_permission(INVENTORY_MODULE, "stock_transfer", "update")
+STOCK_TRANSFER_DELETE = build_permission(INVENTORY_MODULE, "stock_transfer", "delete")
+STOCK_TRANSFER_POST = build_permission(INVENTORY_MODULE, "stock_transfer", "post")
+STOCK_ADJUSTMENT_CREATE = build_permission(INVENTORY_MODULE, "stock_adjustment", "create")
+STOCK_ADJUSTMENT_READ = build_permission(INVENTORY_MODULE, "stock_adjustment", "read")
+STOCK_ADJUSTMENT_UPDATE = build_permission(INVENTORY_MODULE, "stock_adjustment", "update")
+STOCK_ADJUSTMENT_DELETE = build_permission(INVENTORY_MODULE, "stock_adjustment", "delete")
+STOCK_ADJUSTMENT_POST = build_permission(INVENTORY_MODULE, "stock_adjustment", "post")
 
 SUPPLIER_CREATE = build_permission(ERP_MODULE, "supplier", "create")
 SUPPLIER_READ = build_permission(ERP_MODULE, "supplier", "read")
