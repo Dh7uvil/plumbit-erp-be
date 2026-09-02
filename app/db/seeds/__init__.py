@@ -1,7 +1,8 @@
 """Tenant seed entry points.
 
 ``seed_on_tenant_create`` runs during provisioning. ``seed_required_masters`` and
-``seed_common_data`` are the two seed bodies; the latter is also the CLI target.
+``seed_common_data`` are the two seed bodies; ``uv run seed-tenants`` runs both
+against existing tenants.
 """
 
 from app.db.seeds.common import seed_common_data

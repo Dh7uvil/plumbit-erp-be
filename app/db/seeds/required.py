@@ -1,7 +1,9 @@
 """Operational masters every tenant needs after it exists.
 
-Idempotent: existing taxes, units, warehouses, terms, and sequences are left
-alone. Safe to call from tenant creation and from a later backfill.
+Idempotent for taxes, units, warehouses, and terms (insert if missing).
+Canonical document sequences are upserted: missing rows are inserted; existing
+canonical rows get prefix and padding reconciled. ``next_number`` and
+``is_active`` are never reset. Safe to call from tenant creation and backfill.
 """
 
 from __future__ import annotations
@@ -37,9 +39,24 @@ _UNITS: tuple[tuple[str, str], ...] = (
     ("KG", "Kilogram"),
 )
 
+# Canonical series equals prefix. Debit notes use SDN so DN stays delivery notes.
+_DOCUMENT_SEQUENCES: tuple[tuple[DocumentType, str], ...] = (
+    (DocumentType.QUOTATION, "QUO"),
+    (DocumentType.SALES_ORDER, "SO"),
+    (DocumentType.DELIVERY_NOTE, "DN"),
+    (DocumentType.SALES_INVOICE, "INV"),
+    (DocumentType.CREDIT_NOTE, "CN"),
+    (DocumentType.PURCHASE_ORDER, "PO"),
+    (DocumentType.GOODS_RECEIPT, "GRN"),
+    (DocumentType.PURCHASE_INVOICE, "BILL"),
+    (DocumentType.DEBIT_NOTE, "SDN"),
+)
+
+_SEQUENCE_PADDING = 6
+
 
 async def seed_required_masters(session: AsyncSession, tenant_id: UUID) -> None:
-    """Insert VAT, UOMs, MAIN warehouse, Net 30, default T&C, and the QUO sequence."""
+    """Insert VAT, UOMs, MAIN warehouse, Net 30, default T&C, and document sequences."""
 
     existing_tax_names = set(
         (
@@ -53,6 +70,15 @@ async def seed_required_masters(session: AsyncSession, tenant_id: UUID) -> None:
         .scalars()
         .all()
     )
+    has_default_tax = (
+        await session.execute(
+            select(Tax.id).where(
+                Tax.tenant_id == tenant_id,
+                Tax.is_default.is_(True),
+                Tax.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none() is not None
     for name, tax_category, rate, is_default in _TAXES:
         if name in existing_tax_names:
             continue
@@ -62,7 +88,7 @@ async def seed_required_masters(session: AsyncSession, tenant_id: UUID) -> None:
                 name=name,
                 tax_category=tax_category,
                 rate=rate,
-                is_default=is_default,
+                is_default=is_default and not has_default_tax,
             )
         )
 
@@ -93,12 +119,21 @@ async def seed_required_masters(session: AsyncSession, tenant_id: UUID) -> None:
         )
     ).scalar_one_or_none()
     if existing_warehouse is None:
+        has_default_warehouse = (
+            await session.execute(
+                select(Warehouse.id).where(
+                    Warehouse.tenant_id == tenant_id,
+                    Warehouse.is_default.is_(True),
+                    Warehouse.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none() is not None
         session.add(
             Warehouse(
                 tenant_id=tenant_id,
                 code="MAIN",
                 name="Main Warehouse",
-                is_default=True,
+                is_default=not has_default_warehouse,
             )
         )
 
@@ -131,38 +166,63 @@ async def seed_required_masters(session: AsyncSession, tenant_id: UUID) -> None:
         )
     ).scalar_one_or_none()
     if existing_terms is None:
+        has_default_terms = (
+            await session.execute(
+                select(TermsTemplate.id).where(
+                    TermsTemplate.tenant_id == tenant_id,
+                    TermsTemplate.is_default.is_(True),
+                    TermsTemplate.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none() is not None
         session.add(
             TermsTemplate(
                 tenant_id=tenant_id,
                 name="Standard terms",
                 body=_DEFAULT_TC,
-                is_default=True,
+                is_default=not has_default_terms,
             )
         )
+
+    await _upsert_document_sequences(session, tenant_id)
+    await session.flush()
+
+
+async def _upsert_document_sequences(session: AsyncSession, tenant_id: UUID) -> None:
+    """Insert missing canonical sequences; restore prefix/padding without resetting counters."""
 
     fiscal_year = datetime.now(UTC).year
-    existing_sequence = (
-        await session.execute(
-            select(DocumentSequence.id).where(
-                DocumentSequence.tenant_id == tenant_id,
-                DocumentSequence.document_type == DocumentType.QUOTATION.value,
-                DocumentSequence.series == "QUO",
-                DocumentSequence.fiscal_year == fiscal_year,
-                DocumentSequence.deleted_at.is_(None),
+    existing_rows = (
+        (
+            await session.execute(
+                select(DocumentSequence).where(
+                    DocumentSequence.tenant_id == tenant_id,
+                    DocumentSequence.fiscal_year == fiscal_year,
+                    DocumentSequence.deleted_at.is_(None),
+                )
             )
         )
-    ).scalar_one_or_none()
-    if existing_sequence is None:
-        session.add(
-            DocumentSequence(
-                tenant_id=tenant_id,
-                document_type=DocumentType.QUOTATION.value,
-                series="QUO",
-                fiscal_year=fiscal_year,
-                prefix="QUO",
-                next_number=1,
-                padding=6,
-            )
-        )
+        .scalars()
+        .all()
+    )
+    by_key = {(row.document_type, row.series): row for row in existing_rows}
 
-    await session.flush()
+    for document_type, series in _DOCUMENT_SEQUENCES:
+        existing = by_key.get((document_type.value, series))
+        if existing is None:
+            session.add(
+                DocumentSequence(
+                    tenant_id=tenant_id,
+                    document_type=document_type.value,
+                    series=series,
+                    fiscal_year=fiscal_year,
+                    prefix=series,
+                    next_number=1,
+                    padding=_SEQUENCE_PADDING,
+                )
+            )
+            continue
+        if existing.prefix != series:
+            existing.prefix = series
+        if existing.padding != _SEQUENCE_PADDING:
+            existing.padding = _SEQUENCE_PADDING

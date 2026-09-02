@@ -60,6 +60,7 @@ class BaseRepository[ModelT: SoftDeleteTenantModel]:
         *,
         filters: Mapping[str, object] | None = None,
         common_filter: BaseFilter | None = None,
+        extra_criteria: Sequence[ColumnElement[bool]] | None = None,
     ) -> list[ColumnElement[bool]]:
         criteria: list[ColumnElement[bool]] = [
             self._column("tenant_id") == tenant_id,
@@ -73,6 +74,9 @@ class BaseRepository[ModelT: SoftDeleteTenantModel]:
                 msg = f"filter fields are not allowed: {fields}"
                 raise ValueError(msg)
             criteria.extend(self._filter_clause(name, value) for name, value in filters.items())
+
+        if extra_criteria:
+            criteria.extend(extra_criteria)
 
         if common_filter is not None:
             if common_filter.date_from is not None:
@@ -117,6 +121,7 @@ class BaseRepository[ModelT: SoftDeleteTenantModel]:
         page: PageParams,
         common_filter: BaseFilter | None = None,
         filters: Mapping[str, object] | None = None,
+        extra_criteria: Sequence[ColumnElement[bool]] | None = None,
     ) -> tuple[Sequence[ModelT], int]:
         """Return one bounded, allowlist-sorted page and its total count."""
 
@@ -124,6 +129,7 @@ class BaseRepository[ModelT: SoftDeleteTenantModel]:
             tenant_id,
             filters=filters,
             common_filter=common_filter,
+            extra_criteria=extra_criteria,
         )
         sort_by = common_filter.sort_by if common_filter else "created_at"
         sort_order = common_filter.sort_order if common_filter else "desc"

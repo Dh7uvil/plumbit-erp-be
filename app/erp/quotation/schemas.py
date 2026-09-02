@@ -110,10 +110,12 @@ class QuotationUpdate(BaseModel):
     adjustment_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
     lines: list[QuotationLineInput] | None = None
+    version: int | None = Field(default=None, ge=1)
 
 
 class QuotationRejectRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=2000)
+    version: int | None = Field(default=None, ge=1)
 
     @field_validator("reason")
     @classmethod
@@ -130,8 +132,12 @@ class QuotationResponse(BaseModel):
     id: UUID
     tenant_id: UUID
     quote_number: str
+    document_number: str
     status: QuotationStatus
+    version: int
+    is_posted: bool
     quote_date: date
+    document_date: date
     valid_until: date | None
     branch_id: UUID | None
     customer_id: UUID
@@ -162,6 +168,7 @@ class QuotationResponse(BaseModel):
     converted_at: datetime | None
     converted_document_type: str | None
     converted_document_id: UUID | None
+    available_actions: list[str] = Field(default_factory=list)
     lines: list[QuotationLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

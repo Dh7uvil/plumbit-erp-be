@@ -38,5 +38,10 @@ dist/
 *.log
 tmp/
 
-docs/
+# Local working notes and diagrams; keep committed architecture and OpenAPI snapshots
+docs/*
+!docs/ARCHITECTURE.md
+!docs/TECH_STACK.md
+!docs/openapi/
+!docs/openapi/**
  

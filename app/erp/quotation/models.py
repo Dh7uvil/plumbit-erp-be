@@ -35,6 +35,7 @@ class Quotation(AuditUserMixin, SoftDeleteTenantModel):
         nullable=False,
         server_default=text("'DRAFT'"),
     )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     quote_date: Mapped[date] = mapped_column(Date, nullable=False)
     valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     branch_id: Mapped[UUID | None] = mapped_column(

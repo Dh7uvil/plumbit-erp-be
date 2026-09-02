@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
 
 from app.auth.catalog import (
     AUDIT_LOG_READ,
@@ -78,6 +78,7 @@ from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.files import max_upload_bytes
 from app.core.exceptions import ValidationError
+from app.core.rate_limit import client_key, enforce_auth_rate_limit
 
 router = APIRouter()
 
@@ -184,8 +185,10 @@ async def delete_current_tenant_logo(
 )
 async def login(
     payload: LoginRequest,
+    request: Request,
     service: AuthServiceDependency,
 ) -> ApiResponse[TokenPairResponse]:
+    enforce_auth_rate_limit(f"login:{client_key(request)}:{payload.tenant_id}:{payload.email}")
     tokens = await service.login(payload)
     return ApiResponse(data=tokens, message="Logged in successfully")
 
@@ -198,8 +201,10 @@ async def login(
 )
 async def refresh(
     payload: RefreshRequest,
+    request: Request,
     service: AuthServiceDependency,
 ) -> ApiResponse[TokenPairResponse]:
+    enforce_auth_rate_limit(f"refresh:{client_key(request)}")
     tokens = await service.refresh(payload.refresh_token)
     return ApiResponse(data=tokens)
 

@@ -1,4 +1,4 @@
-"""CLI to backfill common catalog data on existing tenants."""
+"""CLI to backfill common catalog data and required masters on existing tenants."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.auth.models import Tenant
 from app.core.enums import TenantStatus
 from app.db.seeds.common import seed_common_data
+from app.db.seeds.required import seed_required_masters
 from app.db.session import async_session_factory, transaction
 
 
@@ -26,8 +27,10 @@ class TenantSeedResult:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Backfill common catalog data (ISO 4217 currencies, AED default) onto "
-            "existing tenants. Idempotent: already-present codes are skipped."
+            "Backfill ISO 4217 currencies and required masters (VAT, UOMs, warehouse, "
+            "payment terms, T&C, document sequences) onto existing tenants. Idempotent: "
+            "present currency codes are skipped; sequence prefix/padding are reconciled "
+            "without resetting allocated numbers."
         )
     )
     parser.add_argument(
@@ -69,7 +72,7 @@ async def seed_existing_tenants(
     tenant_id: UUID | None = None,
     tenant_code: str | None = None,
 ) -> list[TenantSeedResult]:
-    """Apply ``seed_common_data`` to matching active tenants."""
+    """Apply ``seed_common_data`` and ``seed_required_masters`` to matching active tenants."""
 
     tenants = await _load_tenants(tenant_id=tenant_id, tenant_code=tenant_code)
     if (tenant_id is not None or tenant_code is not None) and not tenants:
@@ -79,6 +82,7 @@ async def seed_existing_tenants(
     for target_id, code in tenants:
         async with async_session_factory() as session, transaction(session):
             inserted = await seed_common_data(session, target_id)
+            await seed_required_masters(session, target_id)
         results.append(
             TenantSeedResult(
                 tenant_id=target_id,
@@ -93,7 +97,7 @@ def _print_summary(results: list[TenantSeedResult]) -> None:
     if not results:
         print("No active tenants to seed")
         return
-    print(f"Seeded common data for {len(results)} tenant(s)")
+    print(f"Seeded {len(results)} tenant(s)")
     for row in results:
         print(f"  {row.code}  {row.tenant_id}  currencies_inserted={row.currencies_inserted}")
 

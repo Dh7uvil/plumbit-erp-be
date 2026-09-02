@@ -39,15 +39,22 @@ Generate the `JWT_SECRET` value with:
 uv run generate-jwt-secret --env
 ```
 
-Provision a tenant (ISO currencies, VAT, UOMs, MAIN warehouse, and the QUO sequence
-are seeded in the same transaction):
+Refresh OpenAPI snapshots after a public-contract change:
+
+```bash
+uv run export-openapi
+```
+
+Provision a tenant (ISO currencies, VAT, UOMs, MAIN warehouse, and the nine
+canonical document sequences are seeded in the same transaction):
 
 ```bash
 uv run create-tenant
 ```
 
-Backfill the ISO 4217 catalog onto tenants that already exist (idempotent; skips
-codes that are present):
+Backfill the ISO 4217 catalog and required masters (including document sequences)
+onto tenants that already exist. Idempotent: present currency codes are skipped;
+sequence prefix/padding are restored without resetting allocated numbers:
 
 ```bash
 uv run seed-tenants

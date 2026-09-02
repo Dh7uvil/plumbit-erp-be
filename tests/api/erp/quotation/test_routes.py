@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
+from app.common.models.audit_log import AuditLog
+from app.core.enums import AuditAction
+from app.db.session import async_session_factory
 from tests.conftest import login_headers, provision_admin
 
 
@@ -121,6 +125,10 @@ async def _create_quote(
     return {"status_code": response.status_code, "body": response.json(), "text": response.text}
 
 
+def _if_match(headers: dict[str, str], version: object) -> dict[str, str]:
+    return {**headers, "If-Match": str(version)}
+
+
 @pytest.mark.asyncio
 async def test_registered_domestic_quote_applies_five_percent_vat(client: AsyncClient) -> None:
     tenant_id, email, password = await provision_admin()
@@ -136,6 +144,12 @@ async def test_registered_domestic_quote_applies_five_percent_vat(client: AsyncC
     assert Decimal(data["grand_total"]) == Decimal("210.0000")
     assert Decimal(data["exchange_rate"]) == Decimal("1")
     assert Decimal(data["lines"][0]["tax_rate"]) == Decimal("5")
+    assert data["version"] == 1
+    assert data["is_posted"] is False
+    assert data["document_number"] == data["quote_number"]
+    assert data["document_date"] == data["quote_date"]
+    assert "send" not in data["available_actions"]
+    assert {"submit", "cancel", "clone", "delete"}.issubset(data["available_actions"])
 
 
 @pytest.mark.asyncio
@@ -179,8 +193,8 @@ async def test_missing_org_rate_rejects_foreign_currency_quote(client: AsyncClie
         product_id=product_id,
         currency_id=usd_id,
     )
-    assert created["status_code"] == 404, created["text"]
-    assert created["body"]["error"]["code"] == "RESOURCE_NOT_FOUND"
+    assert created["status_code"] == 422, created["text"]
+    assert created["body"]["error"]["code"] == "EXCHANGE_RATE_MISSING"
 
 
 @pytest.mark.asyncio
@@ -224,15 +238,28 @@ async def test_approve_then_send_happy_path(client: AsyncClient) -> None:
     customer_id = await _create_customer(client, headers)
     product_id = await _create_product(client, headers, ids)
     created = await _create_quote(client, headers, customer_id=customer_id, product_id=product_id)
-    quote_id = created["body"]["data"]["id"]
-    submitted = await client.post(f"/api/v1/quotations/{quote_id}/submit", headers=headers)
+    quote = created["body"]["data"]
+    quote_id = quote["id"]
+    submitted = await client.post(
+        f"/api/v1/quotations/{quote_id}/submit",
+        headers=_if_match(headers, quote["version"]),
+    )
     assert submitted.status_code == 200, submitted.text
     assert submitted.json()["data"]["status"] == "PENDING_APPROVAL"
-    approved = await client.post(f"/api/v1/quotations/{quote_id}/approve", headers=headers)
+    assert submitted.json()["data"]["version"] == quote["version"] + 1
+    assert "approve" in submitted.json()["data"]["available_actions"]
+    approved = await client.post(
+        f"/api/v1/quotations/{quote_id}/approve",
+        headers=_if_match(headers, submitted.json()["data"]["version"]),
+    )
     assert approved.status_code == 200, approved.text
-    sent = await client.post(f"/api/v1/quotations/{quote_id}/send", headers=headers)
+    sent = await client.post(
+        f"/api/v1/quotations/{quote_id}/send",
+        headers=_if_match(headers, approved.json()["data"]["version"]),
+    )
     assert sent.status_code == 200, sent.text
     assert sent.json()["data"]["status"] == "SENT"
+    assert "delete" not in sent.json()["data"]["available_actions"]
 
 
 @pytest.mark.asyncio
@@ -244,12 +271,27 @@ async def test_invalid_status_transition_from_accepted_to_draft(client: AsyncCli
     product_id = await _create_product(client, headers, ids)
     created = await _create_quote(client, headers, customer_id=customer_id, product_id=product_id)
     quote_id = created["body"]["data"]["id"]
-    await client.post(f"/api/v1/quotations/{quote_id}/submit", headers=headers)
-    await client.post(f"/api/v1/quotations/{quote_id}/approve", headers=headers)
-    await client.post(f"/api/v1/quotations/{quote_id}/send", headers=headers)
-    accepted = await client.post(f"/api/v1/quotations/{quote_id}/accept", headers=headers)
+    version = created["body"]["data"]["version"]
+    submitted = await client.post(
+        f"/api/v1/quotations/{quote_id}/submit", headers=_if_match(headers, version)
+    )
+    version = submitted.json()["data"]["version"]
+    approved = await client.post(
+        f"/api/v1/quotations/{quote_id}/approve", headers=_if_match(headers, version)
+    )
+    version = approved.json()["data"]["version"]
+    sent = await client.post(
+        f"/api/v1/quotations/{quote_id}/send", headers=_if_match(headers, version)
+    )
+    version = sent.json()["data"]["version"]
+    accepted = await client.post(
+        f"/api/v1/quotations/{quote_id}/accept", headers=_if_match(headers, version)
+    )
     assert accepted.status_code == 200, accepted.text
-    reopened = await client.post(f"/api/v1/quotations/{quote_id}/reopen", headers=headers)
+    reopened = await client.post(
+        f"/api/v1/quotations/{quote_id}/reopen",
+        headers=_if_match(headers, accepted.json()["data"]["version"]),
+    )
     assert reopened.status_code == 409, reopened.text
     assert reopened.json()["error"]["code"] == "INVALID_STATUS_TRANSITION"
 
@@ -263,7 +305,10 @@ async def test_send_from_draft_rejected_when_approval_required(client: AsyncClie
     product_id = await _create_product(client, headers, ids)
     created = await _create_quote(client, headers, customer_id=customer_id, product_id=product_id)
     quote_id = created["body"]["data"]["id"]
-    sent = await client.post(f"/api/v1/quotations/{quote_id}/send", headers=headers)
+    sent = await client.post(
+        f"/api/v1/quotations/{quote_id}/send",
+        headers=_if_match(headers, created["body"]["data"]["version"]),
+    )
     assert sent.status_code == 422, sent.text
 
 
@@ -323,6 +368,9 @@ async def test_quotation_tenant_isolation(client: AsyncClient) -> None:
     fetched = await client.get(f"/api/v1/quotations/{quote_id}", headers=headers_b)
     assert fetched.status_code == 404
     assert fetched.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+    listed = await client.get("/api/v1/quotations", headers=headers_b)
+    assert listed.status_code == 200
+    assert all(item["id"] != quote_id for item in listed.json()["data"])
 
 
 @pytest.mark.asyncio
@@ -375,3 +423,191 @@ async def test_clone_creates_new_draft_number(client: AsyncClient) -> None:
     assert cloned.status_code == 200, cloned.text
     assert cloned.json()["data"]["status"] == "DRAFT"
     assert cloned.json()["data"]["quote_number"] != created["body"]["data"]["quote_number"]
+    assert cloned.json()["data"]["version"] == 1
+
+
+async def _send_quote(
+    client: AsyncClient, headers: dict[str, str], quote: dict[str, object]
+) -> dict[str, object]:
+    quote_id = quote["id"]
+    version = quote["version"]
+    submitted = await client.post(
+        f"/api/v1/quotations/{quote_id}/submit", headers=_if_match(headers, version)
+    )
+    assert submitted.status_code == 200, submitted.text
+    approved = await client.post(
+        f"/api/v1/quotations/{quote_id}/approve",
+        headers=_if_match(headers, submitted.json()["data"]["version"]),
+    )
+    assert approved.status_code == 200, approved.text
+    sent = await client.post(
+        f"/api/v1/quotations/{quote_id}/send",
+        headers=_if_match(headers, approved.json()["data"]["version"]),
+    )
+    assert sent.status_code == 200, sent.text
+    return sent.json()["data"]
+
+
+@pytest.mark.asyncio
+async def test_stale_version_is_document_stale(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded_ids(client, headers)
+    customer_id = await _create_customer(client, headers)
+    product_id = await _create_product(client, headers, ids)
+    created = await _create_quote(client, headers, customer_id=customer_id, product_id=product_id)
+    quote_id = created["body"]["data"]["id"]
+    stale = created["body"]["data"]["version"]
+    first = await client.post(
+        f"/api/v1/quotations/{quote_id}/submit", headers=_if_match(headers, stale)
+    )
+    assert first.status_code == 200, first.text
+    retry = await client.post(
+        f"/api/v1/quotations/{quote_id}/submit", headers=_if_match(headers, stale)
+    )
+    assert retry.status_code == 409, retry.text
+    assert retry.json()["error"]["code"] == "DOCUMENT_STALE"
+
+
+@pytest.mark.asyncio
+async def test_expired_filter_and_actions(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded_ids(client, headers)
+    customer_id = await _create_customer(client, headers)
+    product_id = await _create_product(client, headers, ids)
+    expired_create = await client.post(
+        "/api/v1/quotations",
+        headers=headers,
+        json={
+            "customer_id": customer_id,
+            "valid_until": "2000-01-01",
+            "lines": [{"product_id": product_id, "quantity": "1"}],
+        },
+    )
+    assert expired_create.status_code == 201, expired_create.text
+    live_create = await _create_quote(
+        client, headers, customer_id=customer_id, product_id=product_id
+    )
+    expired_sent = await _send_quote(client, headers, expired_create.json()["data"])
+    live_sent = await _send_quote(client, headers, live_create["body"]["data"])
+    assert expired_sent["status"] == "EXPIRED"
+    assert "accept" not in expired_sent["available_actions"]
+    assert "clone" in expired_sent["available_actions"]
+    assert live_sent["status"] == "SENT"
+
+    expired_list = await client.get("/api/v1/quotations?status=EXPIRED", headers=headers)
+    assert expired_list.status_code == 200, expired_list.text
+    expired_ids = {item["id"] for item in expired_list.json()["data"]}
+    assert expired_sent["id"] in expired_ids
+    assert live_sent["id"] not in expired_ids
+
+    sent_list = await client.get("/api/v1/quotations?status=SENT", headers=headers)
+    assert sent_list.status_code == 200, sent_list.text
+    sent_ids = {item["id"] for item in sent_list.json()["data"]}
+    assert live_sent["id"] in sent_ids
+    assert expired_sent["id"] not in sent_ids
+
+
+@pytest.mark.asyncio
+async def test_draft_delete_and_reject_reason(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded_ids(client, headers)
+    customer_id = await _create_customer(client, headers)
+    product_id = await _create_product(client, headers, ids)
+    created = await _create_quote(client, headers, customer_id=customer_id, product_id=product_id)
+    quote_id = created["body"]["data"]["id"]
+    deleted = await client.delete(
+        f"/api/v1/quotations/{quote_id}",
+        headers=_if_match(headers, created["body"]["data"]["version"]),
+    )
+    assert deleted.status_code == 200, deleted.text
+    missing = await client.get(f"/api/v1/quotations/{quote_id}", headers=headers)
+    assert missing.status_code == 404
+
+    second = await _create_quote(client, headers, customer_id=customer_id, product_id=product_id)
+    submitted = await client.post(
+        f"/api/v1/quotations/{second['body']['data']['id']}/submit",
+        headers=_if_match(headers, second["body"]["data"]["version"]),
+    )
+    assert submitted.status_code == 200, submitted.text
+    rejected = await client.post(
+        f"/api/v1/quotations/{second['body']['data']['id']}/reject",
+        headers=_if_match(headers, submitted.json()["data"]["version"]),
+        json={"reason": "Pricing too high"},
+    )
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["data"]["status"] == "REJECTED"
+
+    quote_uuid = UUID(str(second["body"]["data"]["id"]))
+    async with async_session_factory() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(AuditLog).where(
+                        AuditLog.entity_id == quote_uuid,
+                        AuditLog.action == AuditAction.REJECT.value,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert any(
+        row.new_values is not None and row.new_values.get("reason") == "Pricing too high"
+        for row in rows
+    )
+
+    sent = await _send_quote(
+        client,
+        headers,
+        (await _create_quote(client, headers, customer_id=customer_id, product_id=product_id))[
+            "body"
+        ]["data"],
+    )
+    blocked = await client.delete(
+        f"/api/v1/quotations/{sent['id']}",
+        headers=_if_match(headers, sent["version"]),
+    )
+    assert blocked.status_code == 409, blocked.text
+    assert blocked.json()["error"]["code"] == "INVALID_STATUS_TRANSITION"
+
+
+@pytest.mark.asyncio
+async def test_available_actions_respect_permissions(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded_ids(client, headers)
+    customer_id = await _create_customer(client, headers)
+    product_id = await _create_product(client, headers, ids)
+    created = await _create_quote(client, headers, customer_id=customer_id, product_id=product_id)
+    quote_id = created["body"]["data"]["id"]
+    permissions = await client.get("/api/v1/permissions?module=erp&page_size=100", headers=headers)
+    codes = {item["code"]: item["id"] for item in permissions.json()["data"]}
+    suffix = uuid4().hex[:8]
+    role = await client.post(
+        "/api/v1/roles",
+        headers=headers,
+        json={
+            "name": f"Quote reader {suffix}",
+            "permission_ids": [codes["erp.quotation.read"], codes["erp.quotation.create"]],
+        },
+    )
+    assert role.status_code == 201, role.text
+    limited_email = f"reader-{suffix}@example.com"
+    user = await client.post(
+        "/api/v1/users",
+        headers=headers,
+        json={
+            "name": "Quote Reader",
+            "email": limited_email,
+            "password": "password12",
+            "role_ids": [role.json()["data"]["id"]],
+        },
+    )
+    assert user.status_code == 201, user.text
+    limited_headers = await login_headers(client, tenant_id, limited_email, "password12")
+    fetched = await client.get(f"/api/v1/quotations/{quote_id}", headers=limited_headers)
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["data"]["available_actions"] == ["clone"]

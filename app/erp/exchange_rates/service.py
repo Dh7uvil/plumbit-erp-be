@@ -16,7 +16,12 @@ from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
 from app.common.utils.datetime import today_in_timezone
 from app.core.enums import AuditAction
-from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
+from app.core.exceptions import (
+    DuplicateResourceError,
+    ExchangeRateMissingError,
+    ResourceNotFoundError,
+    ValidationError,
+)
 from app.db.session import transaction
 from app.erp.exchange_rates.models import Currency
 from app.erp.exchange_rates.repository import CurrencyRepository, ExchangeRateRepository
@@ -274,7 +279,13 @@ class ExchangeRateService:
             effective_date=effective,
         )
         if row is None:
-            raise ResourceNotFoundError("No exchange rate for this currency on the document date")
+            raise ExchangeRateMissingError(
+                details={
+                    "from_currency_id": str(from_currency_id),
+                    "to_currency_id": str(target_id),
+                    "effective_date": effective.isoformat(),
+                }
+            )
         return ExchangeRateResolveResponse(
             from_currency_id=row.from_currency_id,
             to_currency_id=row.to_currency_id,
