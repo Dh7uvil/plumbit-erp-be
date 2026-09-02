@@ -155,16 +155,10 @@ class DepartmentSummary(BaseModel):
 
 
 class EmployeeUpsert(BaseModel):
-    employee_code: str = Field(min_length=1, max_length=50)
     branch_id: UUID | None = None
     department_id: UUID | None = None
     designation: str | None = Field(default=None, max_length=150)
     joining_date: date | None = None
-
-    @field_validator("employee_code")
-    @classmethod
-    def normalize_code(cls, value: str) -> str:
-        return normalize_required_text(value, field_name="employee_code")
 
     @field_validator("designation")
     @classmethod

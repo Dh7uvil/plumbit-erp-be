@@ -952,12 +952,6 @@
       },
       "EmployeeUpsert": {
         "properties": {
-          "employee_code": {
-            "type": "string",
-            "maxLength": 50,
-            "minLength": 1,
-            "title": "Employee Code"
-          },
           "branch_id": {
             "anyOf": [
               {
@@ -1008,9 +1002,6 @@
           }
         },
         "type": "object",
-        "required": [
-          "employee_code"
-        ],
         "title": "EmployeeUpsert"
       },
       "HTTPValidationError": {
