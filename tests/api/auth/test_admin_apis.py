@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from uuid import uuid4
 
 import pytest
@@ -10,6 +11,19 @@ from sqlalchemy import event
 
 from app.db.session import engine
 from tests.conftest import login_headers, provision_admin
+
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
+def _assert_no_uuid_strings(value: object) -> None:
+    if isinstance(value, str):
+        assert _UUID_RE.fullmatch(value) is None, value
+    elif isinstance(value, list):
+        for item in value:
+            _assert_no_uuid_strings(item)
 
 
 async def _create_limited_user(
@@ -597,3 +611,289 @@ async def test_current_tenant_rejects_invalid_contact_email(client: AsyncClient)
     error = rejected.json()["error"]
     assert error["code"] == "VALIDATION_ERROR"
     assert "contact_email" in error["details"]
+
+
+@pytest.mark.asyncio
+async def test_get_audit_log_includes_changes_for_identity_update(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    suffix = uuid4().hex[:8]
+    created = await client.post(
+        "/api/v1/users",
+        headers=headers,
+        json={
+            "name": "Before Name",
+            "email": f"audit-{suffix}@example.com",
+            "password": "password12",
+        },
+    )
+    assert created.status_code == 201, created.text
+    user_id = created.json()["data"]["id"]
+    updated = await client.patch(
+        f"/api/v1/users/{user_id}",
+        headers=headers,
+        json={"name": "After Name"},
+    )
+    assert updated.status_code == 200, updated.text
+
+    listed = await client.get("/api/v1/audit-logs?action=UPDATE", headers=headers)
+    assert listed.status_code == 200, listed.text
+    match = next(
+        item
+        for item in listed.json()["data"]
+        if item["entity_type"] == "user" and item["entity_id"] == user_id
+    )
+    assert "old_values" not in match
+    assert "new_values" not in match
+    assert "changes" not in match
+    assert "user_agent" not in match
+
+    detail = await client.get(f"/api/v1/audit-logs/{match['id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    data = detail.json()["data"]
+    assert data["old_values"]["name"] == "Before Name"
+    assert data["new_values"]["name"] == "After Name"
+    name_change = next(item for item in data["changes"] if item["field"] == "name")
+    assert name_change["old_value"] == "Before Name"
+    assert name_change["new_value"] == "After Name"
+    assert data["changes"]
+    assert "id" not in data["old_values"]
+    assert "id" not in data["new_values"]
+
+
+@pytest.mark.asyncio
+async def test_update_user_audit_stores_employee_labels(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    suffix = uuid4().hex[:8]
+    branch = await client.post(
+        "/api/v1/branches",
+        headers=headers,
+        json={"name": "Dubai HQ", "code": f"DXB-{suffix[:4]}"},
+    )
+    assert branch.status_code == 201, branch.text
+    branch_id = branch.json()["data"]["id"]
+    employee_code = f"E-{suffix[:6]}"
+    created = await client.post(
+        "/api/v1/users",
+        headers=headers,
+        json={
+            "name": "Staff Member",
+            "email": f"staff-{suffix}@example.com",
+            "password": "password12",
+            "employee": {
+                "employee_code": employee_code,
+                "branch_id": branch_id,
+                "designation": "Before Title",
+            },
+        },
+    )
+    assert created.status_code == 201, created.text
+    user_id = created.json()["data"]["id"]
+    updated = await client.patch(
+        f"/api/v1/users/{user_id}",
+        headers=headers,
+        json={
+            "employee": {
+                "employee_code": employee_code,
+                "branch_id": branch_id,
+                "designation": "After Title",
+            }
+        },
+    )
+    assert updated.status_code == 200, updated.text
+
+    listed = await client.get("/api/v1/audit-logs?action=UPDATE&page_size=100", headers=headers)
+    assert listed.status_code == 200, listed.text
+    match = next(
+        item
+        for item in listed.json()["data"]
+        if item["entity_type"] == "user" and item["entity_id"] == user_id
+    )
+    detail = await client.get(f"/api/v1/audit-logs/{match['id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    data = detail.json()["data"]
+    designation_change = next(item for item in data["changes"] if item["field"] == "designation")
+    assert designation_change["old_value"] == "Before Title"
+    assert designation_change["new_value"] == "After Title"
+    assert data["old_values"]["employee"] == employee_code
+    assert data["old_values"]["branch"] == "Dubai HQ"
+    _assert_no_uuid_strings(data["old_values"]["employee"])
+    _assert_no_uuid_strings(data["old_values"]["branch"])
+
+
+@pytest.mark.asyncio
+async def test_assign_roles_skips_audit_when_roles_unchanged(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    suffix = uuid4().hex[:8]
+    role = await client.post(
+        "/api/v1/roles",
+        headers=headers,
+        json={"name": f"Same Role {suffix}"},
+    )
+    assert role.status_code == 201, role.text
+    created = await client.post(
+        "/api/v1/users",
+        headers=headers,
+        json={
+            "name": "Stable Roles",
+            "email": f"stable-{suffix}@example.com",
+            "password": "password12",
+        },
+    )
+    assert created.status_code == 201, created.text
+    user_id = created.json()["data"]["id"]
+    payload = {"role_ids": [role.json()["data"]["id"]]}
+    first = await client.put(f"/api/v1/users/{user_id}/roles", headers=headers, json=payload)
+    assert first.status_code == 200, first.text
+
+    async def user_update_ids() -> list[str]:
+        listed = await client.get("/api/v1/audit-logs?action=UPDATE&page_size=100", headers=headers)
+        assert listed.status_code == 200, listed.text
+        return [
+            item["id"]
+            for item in listed.json()["data"]
+            if item["entity_type"] == "user" and item["entity_id"] == user_id
+        ]
+
+    after_first = await user_update_ids()
+    assert after_first
+    second = await client.put(f"/api/v1/users/{user_id}/roles", headers=headers, json=payload)
+    assert second.status_code == 200, second.text
+    assert await user_update_ids() == after_first
+
+
+@pytest.mark.asyncio
+async def test_assign_roles_audit_stores_role_names(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    suffix = uuid4().hex[:8]
+    role_name = f"Sales Manager {suffix}"
+    role = await client.post(
+        "/api/v1/roles",
+        headers=headers,
+        json={"name": role_name},
+    )
+    assert role.status_code == 201, role.text
+    created = await client.post(
+        "/api/v1/users",
+        headers=headers,
+        json={
+            "name": "Role Assignee",
+            "email": f"roles-{suffix}@example.com",
+            "password": "password12",
+        },
+    )
+    assert created.status_code == 201, created.text
+    user_id = created.json()["data"]["id"]
+    assigned = await client.put(
+        f"/api/v1/users/{user_id}/roles",
+        headers=headers,
+        json={"role_ids": [role.json()["data"]["id"]]},
+    )
+    assert assigned.status_code == 200, assigned.text
+
+    listed = await client.get("/api/v1/audit-logs?action=UPDATE&page_size=100", headers=headers)
+    assert listed.status_code == 200, listed.text
+    match = next(
+        item
+        for item in listed.json()["data"]
+        if item["entity_type"] == "user" and item["entity_id"] == user_id
+    )
+    detail = await client.get(f"/api/v1/audit-logs/{match['id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    data = detail.json()["data"]
+    roles_change = next(item for item in data["changes"] if item["field"] == "roles")
+    assert roles_change["old_value"] == []
+    assert roles_change["new_value"] == [role_name]
+    _assert_no_uuid_strings(roles_change["old_value"])
+    _assert_no_uuid_strings(roles_change["new_value"])
+    assert "id" not in (data["old_values"] or {})
+    assert "id" not in (data["new_values"] or {})
+
+
+@pytest.mark.asyncio
+async def test_set_role_permissions_audit_stores_catalog_codes(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    permissions = await client.get("/api/v1/permissions?page_size=200", headers=headers)
+    assert permissions.status_code == 200, permissions.text
+    permission_id = next(
+        item["id"] for item in permissions.json()["data"] if item["code"] == "identity.user.read"
+    )
+    suffix = uuid4().hex[:8]
+    role = await client.post(
+        "/api/v1/roles",
+        headers=headers,
+        json={"name": f"Perms {suffix}"},
+    )
+    assert role.status_code == 201, role.text
+    role_id = role.json()["data"]["id"]
+    updated = await client.put(
+        f"/api/v1/roles/{role_id}/permissions",
+        headers=headers,
+        json={"permission_ids": [permission_id]},
+    )
+    assert updated.status_code == 200, updated.text
+
+    listed = await client.get("/api/v1/audit-logs?action=UPDATE&page_size=100", headers=headers)
+    assert listed.status_code == 200, listed.text
+    match = next(
+        item
+        for item in listed.json()["data"]
+        if item["entity_type"] == "role" and item["entity_id"] == role_id
+    )
+    detail = await client.get(f"/api/v1/audit-logs/{match['id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    data = detail.json()["data"]
+    perms_change = next(item for item in data["changes"] if item["field"] == "permissions")
+    assert perms_change["old_value"] == []
+    assert perms_change["new_value"] == ["identity.user.read"]
+    _assert_no_uuid_strings(perms_change["old_value"])
+    _assert_no_uuid_strings(perms_change["new_value"])
+    assert "id" not in (data["old_values"] or {})
+    assert "id" not in (data["new_values"] or {})
+
+
+@pytest.mark.asyncio
+async def test_get_audit_log_not_found(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    missing = await client.get(f"/api/v1/audit-logs/{uuid4()}", headers=headers)
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_get_audit_log_tenant_isolation(client: AsyncClient) -> None:
+    tenant_a, email_a, password_a = await provision_admin()
+    tenant_b, email_b, password_b = await provision_admin()
+    headers_a = await login_headers(client, tenant_a, email_a, password_a)
+    headers_b = await login_headers(client, tenant_b, email_b, password_b)
+
+    logs_b = await client.get("/api/v1/audit-logs", headers=headers_b)
+    assert logs_b.status_code == 200, logs_b.text
+    foreign_id = logs_b.json()["data"][0]["id"]
+    missing = await client.get(f"/api/v1/audit-logs/{foreign_id}", headers=headers_a)
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+    assert "data" not in missing.json() or missing.json().get("data") is None
+
+
+@pytest.mark.asyncio
+async def test_get_audit_log_permission_denied(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    limited_email, limited_password = await _create_limited_user(
+        client,
+        headers,
+        permission_code="identity.user.read",
+    )
+    limited_headers = await login_headers(client, tenant_id, limited_email, limited_password)
+    logs = await client.get("/api/v1/audit-logs", headers=headers)
+    assert logs.status_code == 200, logs.text
+    log_id = logs.json()["data"][0]["id"]
+    denied = await client.get(f"/api/v1/audit-logs/{log_id}", headers=limited_headers)
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "PERMISSION_DENIED"

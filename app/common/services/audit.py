@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date, datetime
 from enum import Enum
+from typing import TypedDict
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,6 +57,30 @@ def sanitize_audit_values(values: dict[str, object] | None) -> dict[str, object]
         key: jsonable_value(value) for key, value in values.items() if key not in _SENSITIVE_KEYS
     }
     return sanitized or None
+
+
+class AuditFieldChange(TypedDict):
+    field: str
+    old_value: object
+    new_value: object
+
+
+def audit_field_changes(
+    old_values: Mapping[str, object] | None,
+    new_values: Mapping[str, object] | None,
+) -> list[AuditFieldChange]:
+    """Diff two JSON snapshots. `None` and `{}` are empty; unchanged keys are omitted."""
+
+    old = old_values or {}
+    new = new_values or {}
+    changes: list[AuditFieldChange] = []
+    for field in sorted(set(old) | set(new)):
+        old_value = jsonable_value(old[field]) if field in old else None
+        new_value = jsonable_value(new[field]) if field in new else None
+        if old_value == new_value:
+            continue
+        changes.append({"field": field, "old_value": old_value, "new_value": new_value})
+    return changes
 
 
 class AuditWriter:

@@ -79,7 +79,7 @@ class CategoryService:
                 module=INVENTORY_MODULE,
                 entity_type="category",
                 entity_id=row.id,
-                new_values={"code": row.code},
+                new_values=await self._category_snapshot(tenant_id, row),
             )
             return CategoryResponse.model_validate(row)
 
@@ -89,7 +89,8 @@ class CategoryService:
         values = payload.model_dump(exclude_unset=True)
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
-            await self._require(tenant_id, category_id)
+            existing = await self._require(tenant_id, category_id)
+            old_values = await self._category_snapshot(tenant_id, existing)
             if values.get("parent_id") is not None:
                 if values["parent_id"] == category_id:
                     raise ValidationError("A category cannot be its own parent")
@@ -107,7 +108,8 @@ class CategoryService:
                 module=INVENTORY_MODULE,
                 entity_type="category",
                 entity_id=row.id,
-                new_values={"name": row.name},
+                old_values=old_values,
+                new_values=await self._category_snapshot(tenant_id, row),
             )
             return CategoryResponse.model_validate(row)
 
@@ -127,9 +129,22 @@ class CategoryService:
                 module=INVENTORY_MODULE,
                 entity_type="category",
                 entity_id=category_id,
-                old_values={"code": row.code},
+                old_values=await self._category_snapshot(tenant_id, row),
             )
             return response
+
+    async def _category_snapshot(self, tenant_id: UUID, row: Category) -> dict[str, object]:
+        parent_name: str | None = None
+        if row.parent_id is not None:
+            parent = await self.repo.get(tenant_id, row.parent_id)
+            if parent is not None:
+                parent_name = parent.name
+        return {
+            "name": row.name,
+            "code": row.code,
+            "parent": parent_name,
+            "is_active": row.is_active,
+        }
 
     async def _require(self, tenant_id: UUID, category_id: UUID) -> Category:
         row = await self.repo.get(tenant_id, category_id)

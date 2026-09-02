@@ -17,7 +17,7 @@ from app.core.enums import AuditAction, PriceListType
 from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError
 from app.db.session import transaction
 from app.erp.exchange_rates.service import CurrencyService
-from app.inventory_management.price_lists.models import PriceList
+from app.inventory_management.price_lists.models import PriceList, PriceListItem
 from app.inventory_management.price_lists.repository import PriceListRepository
 from app.inventory_management.price_lists.schemas import (
     PriceListCreate,
@@ -94,7 +94,7 @@ class PriceListService:
                 module=INVENTORY_MODULE,
                 entity_type="price_list",
                 entity_id=row.id,
-                new_values={"name": row.name},
+                new_values=await self._price_list_snapshot(tenant_id, row),
             )
             return await self._to_response(tenant_id, row)
 
@@ -104,7 +104,8 @@ class PriceListService:
         values = payload.model_dump(exclude_unset=True)
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
-            await self._require(tenant_id, price_list_id)
+            existing = await self._require(tenant_id, price_list_id)
+            old_values = await self._price_list_snapshot(tenant_id, existing)
             try:
                 row = await self.repo.update(tenant_id, price_list_id, values)
             except IntegrityError as exc:
@@ -118,7 +119,8 @@ class PriceListService:
                 module=INVENTORY_MODULE,
                 entity_type="price_list",
                 entity_id=row.id,
-                new_values={"name": row.name},
+                old_values=old_values,
+                new_values=await self._price_list_snapshot(tenant_id, row),
             )
             return await self._to_response(tenant_id, row)
 
@@ -136,7 +138,7 @@ class PriceListService:
                 module=INVENTORY_MODULE,
                 entity_type="price_list",
                 entity_id=price_list_id,
-                old_values={"name": row.name},
+                old_values=await self._price_list_snapshot(tenant_id, row),
             )
             return response
 
@@ -151,6 +153,12 @@ class PriceListService:
         async with transaction(self.session):
             await self._require(tenant_id, price_list_id)
             await self.products.get(tenant_id, payload.product_id)
+            existing = await self.repo.get_item(tenant_id, price_list_id, payload.product_id)
+            old_values = (
+                await self._price_list_item_snapshot(tenant_id, existing)
+                if existing is not None
+                else None
+            )
             item = await self.repo.upsert_item(
                 tenant_id,
                 price_list_id=price_list_id,
@@ -164,7 +172,8 @@ class PriceListService:
                 module=INVENTORY_MODULE,
                 entity_type="price_list",
                 entity_id=price_list_id,
-                new_values={"product_id": payload.product_id, "rate": payload.rate},
+                old_values=old_values,
+                new_values=await self._price_list_item_snapshot(tenant_id, item),
             )
             return PriceListItemResponse.model_validate(item)
 
@@ -188,7 +197,7 @@ class PriceListService:
                 module=INVENTORY_MODULE,
                 entity_type="price_list",
                 entity_id=price_list_id,
-                old_values={"product_id": product_id},
+                old_values=await self._price_list_item_snapshot(tenant_id, item),
             )
             return PriceListItemResponse.model_validate(item)
 
@@ -215,6 +224,25 @@ class PriceListService:
             return quantize_money(selling_rate)
         percent = price_list.percent or Decimal("0")
         return quantize_money(selling_rate * (Decimal("1") + percent / Decimal("100")))
+
+    async def _price_list_snapshot(self, tenant_id: UUID, row: PriceList) -> dict[str, object]:
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        return {
+            "name": row.name,
+            "currency": currency.code,
+            "list_type": row.list_type,
+            "percent": row.percent,
+            "is_active": row.is_active,
+        }
+
+    async def _price_list_item_snapshot(
+        self, tenant_id: UUID, item: PriceListItem
+    ) -> dict[str, object]:
+        product = await self.products.get(tenant_id, item.product_id)
+        return {
+            "product": product.sku,
+            "rate": item.rate,
+        }
 
     async def _to_response(self, tenant_id: UUID, row: PriceList) -> PriceListResponse:
         items = await self.repo.list_items(tenant_id, row.id)

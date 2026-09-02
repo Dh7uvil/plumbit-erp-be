@@ -79,7 +79,7 @@ class ContactService:
                 module=CRM_MODULE,
                 entity_type="contact",
                 entity_id=row.id,
-                new_values={"name": row.name, "customer_id": row.customer_id},
+                new_values=await self._contact_snapshot(tenant_id, row),
             )
             return ContactResponse.model_validate(row)
 
@@ -90,6 +90,7 @@ class ContactService:
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
             existing = await self._require(tenant_id, contact_id)
+            old_values = await self._contact_snapshot(tenant_id, existing)
             if values.get("is_primary") is True:
                 await self.repo.clear_other_primaries(
                     tenant_id, existing.customer_id, keep_id=contact_id
@@ -104,7 +105,8 @@ class ContactService:
                 module=CRM_MODULE,
                 entity_type="contact",
                 entity_id=row.id,
-                new_values={"name": row.name},
+                old_values=old_values,
+                new_values=await self._contact_snapshot(tenant_id, row),
             )
             return ContactResponse.model_validate(row)
 
@@ -122,9 +124,20 @@ class ContactService:
                 module=CRM_MODULE,
                 entity_type="contact",
                 entity_id=contact_id,
-                old_values={"name": row.name},
+                old_values=await self._contact_snapshot(tenant_id, row),
             )
             return response
+
+    async def _contact_snapshot(self, tenant_id: UUID, row: Contact) -> dict[str, object]:
+        customer = await self.customers.require_party(tenant_id, row.customer_id)
+        return {
+            "customer": customer.name,
+            "name": row.name,
+            "email": row.email,
+            "phone": row.phone,
+            "is_primary": row.is_primary,
+            "is_active": row.is_active,
+        }
 
     async def _require(self, tenant_id: UUID, contact_id: UUID) -> Contact:
         row = await self.repo.get(tenant_id, contact_id)

@@ -23,7 +23,7 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.db.session import transaction
-from app.erp.exchange_rates.models import Currency
+from app.erp.exchange_rates.models import Currency, ExchangeRate
 from app.erp.exchange_rates.repository import CurrencyRepository, ExchangeRateRepository
 from app.erp.exchange_rates.schemas import (
     CurrencyCreate,
@@ -33,6 +33,28 @@ from app.erp.exchange_rates.schemas import (
     ExchangeRateResponse,
     ExchangeRateUpsert,
 )
+
+
+def _currency_snapshot(row: Currency) -> dict[str, object]:
+    return {
+        "code": row.code,
+        "name": row.name,
+        "symbol": row.symbol,
+        "decimal_places": row.decimal_places,
+        "is_base": row.is_base,
+        "is_active": row.is_active,
+    }
+
+
+def _exchange_rate_snapshot(
+    row: ExchangeRate, *, from_currency: str, to_currency: str
+) -> dict[str, object]:
+    return {
+        "from_currency": from_currency,
+        "to_currency": to_currency,
+        "effective_date": row.effective_date,
+        "rate": row.rate,
+    }
 
 
 class CurrencyService:
@@ -104,7 +126,7 @@ class CurrencyService:
                 module=ERP_MODULE,
                 entity_type="currency",
                 entity_id=row.id,
-                new_values={"code": row.code, "is_base": row.is_base},
+                new_values=_currency_snapshot(row),
             )
             return CurrencyResponse.model_validate(row)
 
@@ -120,6 +142,7 @@ class CurrencyService:
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
             row = await self._require(tenant_id, currency_id)
+            old_values = _currency_snapshot(row)
             if values.get("is_base") is False and row.is_base:
                 raise ValidationError("Cannot unset the tenant base currency")
             try:
@@ -137,7 +160,8 @@ class CurrencyService:
                 module=ERP_MODULE,
                 entity_type="currency",
                 entity_id=updated.id,
-                new_values={"code": updated.code, "is_base": updated.is_base},
+                old_values=old_values,
+                new_values=_currency_snapshot(updated),
             )
             return CurrencyResponse.model_validate(updated)
 
@@ -161,7 +185,7 @@ class CurrencyService:
                 module=ERP_MODULE,
                 entity_type="currency",
                 entity_id=currency_id,
-                old_values={"code": row.code},
+                old_values=_currency_snapshot(row),
             )
             return response
 
@@ -211,6 +235,11 @@ class ExchangeRateService:
                 to_currency_id=base.id,
                 effective_date=on_date,
             )
+            old_values = (
+                _exchange_rate_snapshot(existing, from_currency=foreign.code, to_currency=base.code)
+                if existing is not None
+                else None
+            )
             if existing is None:
                 row = await self.repo.create(
                     tenant_id,
@@ -238,11 +267,10 @@ class ExchangeRateService:
                 module=ERP_MODULE,
                 entity_type="exchange_rate",
                 entity_id=row.id,
-                new_values={
-                    "from_currency_id": row.from_currency_id,
-                    "rate": row.rate,
-                    "effective_date": row.effective_date,
-                },
+                old_values=old_values,
+                new_values=_exchange_rate_snapshot(
+                    row, from_currency=foreign.code, to_currency=base.code
+                ),
             )
             return ExchangeRateResponse.model_validate(row)
 

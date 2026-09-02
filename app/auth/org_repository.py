@@ -213,6 +213,23 @@ class OrganizationRepository:
         result = await self.session.execute(statement)
         return {row.id: row for row in result.scalars().all()}
 
+    async def audit_employee_label(
+        self, tenant_id: UUID, employee_id: UUID | None
+    ) -> str | None:
+        if employee_id is None:
+            return None
+        employees = await self.get_employees_by_ids(tenant_id, [employee_id])
+        employee = employees.get(employee_id)
+        if employee is None:
+            return None
+        if employee.user_id is None:
+            return employee.employee_code
+        users = await self.get_users_by_ids(tenant_id, [employee.user_id])
+        user = users.get(employee.user_id)
+        if user is None:
+            return employee.employee_code
+        return f"{user.name} ({employee.employee_code})"
+
     async def get_users_by_ids(
         self,
         tenant_id: UUID,

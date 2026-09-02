@@ -1,7 +1,7 @@
 """Request and response schemas for the access-management slice."""
 
 from datetime import date, datetime
-from typing import ClassVar
+from typing import Any, ClassVar
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -119,6 +119,23 @@ class AddressResponse(AddressPayload):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+
+
+def format_address_label(address: AddressResponse | None) -> str | None:
+    """Human-readable address line for audit snapshots."""
+
+    if address is None:
+        return None
+    parts = [
+        address.address_line_1,
+        address.address_line_2,
+        address.city,
+        address.state,
+        address.postal_code,
+        address.country,
+    ]
+    text = ", ".join(part for part in parts if part)
+    return text or None
 
 
 class BranchSummary(BaseModel):
@@ -784,6 +801,19 @@ class AuditLogResponse(BaseModel):
     module: str
     ip_address: str | None
     status: str
+
+
+class AuditLogChange(BaseModel):
+    field: str
+    old_value: Any = None
+    new_value: Any = None
+
+
+class AuditLogDetailResponse(AuditLogResponse):
+    user_agent: str | None = None
+    old_values: dict[str, Any] | None = None
+    new_values: dict[str, Any] | None = None
+    changes: list[AuditLogChange]
 
 
 class AuditLogSummaryResponse(BaseModel):

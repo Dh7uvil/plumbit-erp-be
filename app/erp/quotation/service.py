@@ -206,7 +206,7 @@ class QuotationService:
                 module=ERP_MODULE,
                 entity_type="quotation",
                 entity_id=row.id,
-                new_values={"quote_number": number},
+                new_values=await self._quotation_snapshot(tenant_id, row),
             )
             loaded = await self._require(tenant_id, row.id)
             today, requires_approval = await self._response_context(tenant_id)
@@ -223,6 +223,7 @@ class QuotationService:
     ) -> QuotationResponse:
         async with transaction(self.session):
             existing = await self._require(tenant_id, quotation_id, for_update=True)
+            old_values = await self._quotation_snapshot(tenant_id, existing)
             today, requires_approval = await self._response_context(tenant_id)
             assert_editable(self._effective_status(existing, today))
             self._assert_version(existing, expected_version)
@@ -232,6 +233,7 @@ class QuotationService:
             header["version"] = existing.version + 1
             await self.repo.update(tenant_id, quotation_id, header)
             await self.repo.replace_lines(tenant_id, quotation_id, line_rows)
+            loaded = await self._require(tenant_id, quotation_id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -239,9 +241,9 @@ class QuotationService:
                 module=ERP_MODULE,
                 entity_type="quotation",
                 entity_id=quotation_id,
-                new_values={"quote_number": existing.quote_number, "version": header["version"]},
+                old_values=old_values,
+                new_values=await self._quotation_snapshot(tenant_id, loaded),
             )
-            loaded = await self._require(tenant_id, quotation_id)
             return self._to_response(loaded, today, requires_approval=requires_approval)
 
     async def submit(
@@ -288,6 +290,7 @@ class QuotationService:
     ) -> QuotationResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, quotation_id, for_update=True)
+            old_values = await self._quotation_snapshot(tenant_id, row)
             today, requires_approval = await self._response_context(tenant_id)
             current = self._effective_status(row, today)
             self._assert_version(row, expected_version)
@@ -308,7 +311,8 @@ class QuotationService:
                 module=ERP_MODULE,
                 entity_type="quotation",
                 entity_id=row.id,
-                new_values={"status": row.status, "version": row.version},
+                old_values=old_values,
+                new_values=await self._quotation_snapshot(tenant_id, row),
             )
             return self._to_response(row, today, requires_approval=requires_approval)
 
@@ -392,6 +396,8 @@ class QuotationService:
                 },
             )
             await self.repo.replace_lines(tenant_id, row.id, line_rows)
+            new_values = await self._quotation_snapshot(tenant_id, row)
+            new_values["cloned_from"] = source.quote_number
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -399,7 +405,7 @@ class QuotationService:
                 module=ERP_MODULE,
                 entity_type="quotation",
                 entity_id=row.id,
-                new_values={"quote_number": number, "cloned_from": source.id},
+                new_values=new_values,
             )
             loaded = await self._require(tenant_id, row.id)
             today, requires_approval = await self._response_context(tenant_id)
@@ -420,8 +426,8 @@ class QuotationService:
             if current != QuotationStatus.DRAFT:
                 raise InvalidStatusTransitionError("Only draft quotations can be deleted")
             self._assert_version(row, expected_version)
-            quote_number = row.quote_number
             response = self._to_response(row, today, requires_approval=requires_approval)
+            old_values = await self._quotation_snapshot(tenant_id, row)
             await self.repo.soft_delete(tenant_id, quotation_id)
             await self.audit.write(
                 tenant_id=tenant_id,
@@ -430,7 +436,7 @@ class QuotationService:
                 module=ERP_MODULE,
                 entity_type="quotation",
                 entity_id=quotation_id,
-                old_values={"quote_number": quote_number, "status": current.value},
+                old_values=old_values,
             )
             return response
 
@@ -455,6 +461,7 @@ class QuotationService:
         }
         async with transaction(self.session):
             row = await self._require(tenant_id, quotation_id, for_update=True)
+            old_values = await self._quotation_snapshot(tenant_id, row)
             today, requires_approval = await self._response_context(tenant_id)
             current = self._effective_status(row, today)
             self._assert_version(row, expected_version)
@@ -464,7 +471,7 @@ class QuotationService:
             row.updated_by = actor_user_id
             await self.session.flush()
             await self.session.refresh(row, attribute_names=["updated_at"])
-            new_values: dict[str, object] = {"status": target.value, "version": row.version}
+            new_values = await self._quotation_snapshot(tenant_id, row)
             if action == "reject" and reason:
                 new_values["reason"] = reason
             await self.audit.write(
@@ -474,7 +481,7 @@ class QuotationService:
                 module=ERP_MODULE,
                 entity_type="quotation",
                 entity_id=row.id,
-                old_values={"status": current.value},
+                old_values=old_values,
                 new_values=new_values,
             )
             return self._to_response(row, today, requires_approval=requires_approval)
@@ -785,6 +792,51 @@ class QuotationService:
                     "provided_version": expected_version,
                 }
             )
+
+    async def _quotation_snapshot(self, tenant_id: UUID, row: Quotation) -> dict[str, object]:
+        branch_name: str | None = None
+        if row.branch_id is not None:
+            branch_name = (await self.org.get_branch(tenant_id, row.branch_id)).name
+        customer = await self.customers.get(tenant_id, row.customer_id)
+        contact_name: str | None = None
+        if row.contact_id is not None:
+            contact_name = (await self.contacts.get(tenant_id, row.contact_id)).name
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        price_list_name: str | None = None
+        if row.price_list_id is not None:
+            price_list = await self.price_lists.get(tenant_id, row.price_list_id)
+            price_list_name = price_list.name
+        payment_term_name: str | None = None
+        if row.payment_terms_id is not None:
+            payment_term = await self.payment_terms.get(tenant_id, row.payment_terms_id)
+            payment_term_name = payment_term.name
+        return {
+            "quote_number": row.quote_number,
+            "status": row.status,
+            "version": row.version,
+            "quote_date": row.quote_date,
+            "valid_until": row.valid_until,
+            "branch": branch_name,
+            "customer": customer.name,
+            "contact": contact_name,
+            "tax_treatment": row.tax_treatment,
+            "place_of_supply": row.place_of_supply,
+            "currency": currency.code,
+            "exchange_rate": row.exchange_rate,
+            "price_list": price_list_name,
+            "payment_terms": payment_term_name,
+            "salesperson": await self.org.employee_audit_label(tenant_id, row.salesperson_id),
+            "discount_type": row.discount_type,
+            "discount_value": row.discount_value,
+            "discount_amount": row.discount_amount,
+            "shipping_amount": row.shipping_amount,
+            "adjustment_amount": row.adjustment_amount,
+            "subtotal": row.subtotal,
+            "tax_amount": row.tax_amount,
+            "grand_total": row.grand_total,
+            "foreign_amount": row.foreign_amount,
+            "base_amount": row.base_amount,
+        }
 
     async def _require(
         self, tenant_id: UUID, quotation_id: UUID, *, for_update: bool = False

@@ -169,3 +169,12 @@ class AuditLogRepository:
             int(failed_attempts or 0),
             int(admin_actions or 0),
         )
+
+    async def get(self, tenant_id: UUID, audit_log_id: UUID) -> AuditLog | None:
+        result = await self.session.execute(
+            select(AuditLog).where(
+                AuditLog.id == audit_log_id,
+                AuditLog.tenant_id == tenant_id,
+            )
+        )
+        return result.scalar_one_or_none()
