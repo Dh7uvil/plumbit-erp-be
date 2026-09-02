@@ -15,6 +15,8 @@ Configuration covers:
 ```text
 Application  Database  Authentication  Storage  Email  WhatsApp  Agora
 AWS Lambda  API Gateway  Amplify  OpenAI  Forecast  Feature Flags
+E-invoicing ASP (provider id, server-only credentials, SLA)
+Rate limits for post / payment / einvoice submit (per tenant)
 ```
 
 ## Secrets
@@ -32,7 +34,14 @@ DATABASE_PASSWORD=
 JWT_SECRET=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
+EINVOICE_ASP_PROVIDER=
+EINVOICE_ASP_API_KEY=
 ```
+
+ASP credentials are **server-only**. The tenant row may store a provider id and public Peppol /
+TIN identifiers; it must never return API keys to the client. Never put ASP secrets in a
+`NEXT_PUBLIC_` variable on the sibling frontend. Per-tenant provider selection is data; the
+secret stays in environment / a secrets manager keyed by tenant + provider.
 
 ## Environment separation
 
@@ -49,7 +58,7 @@ Secure password hashing        SQL injection protection   Auth on protected APIs
 JWT expiration                 File upload validation     Authorization on resources
 Refresh-token rotation         MIME/type validation       Tenant isolation
 Rate limiting on sensitive     Maximum upload sizes       Audit logging
-  endpoints
+  endpoints (post, payment, e-invoice submit per tenant)
 CORS allowlist
 ```
 
@@ -90,6 +99,7 @@ Video:            Agora
 Messaging:        self-hosted WhatsApp (Go)
 AI:               OpenAI GPT-5.4 Mini (assistive only)
 Forecast:         Prophet · XGBoost · LightGBM · Statsmodels
+E-invoicing:      MoF-accredited ASP (out of process; generic adapter default)
 Observability:    Structured JSON logs, CloudWatch in production
 ```
 
@@ -107,7 +117,9 @@ Internet → AWS Amplify (Next.js)
                     ├── Agora
                     ├── WhatsApp Go (self-hosted)
                     ├── OpenAI GPT-5.4 Mini
-                    └── Forecast ML
+                    ├── Forecast ML
+                    └── MoF-accredited ASP (e-invoicing; not in-process)
 ```
 
-Run forecast, mail and import work on a separate Lambda/worker — not inside the user request.
+Run forecast, mail, import, PDF and e-invoice submit/poll work on a separate Lambda/worker —
+not inside the user request. Redis is optional and not part of this topology.

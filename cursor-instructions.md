@@ -1,10 +1,15 @@
 # Cursor Instructions — Plumbit ERP Backend
 
-You are working on a production-grade multi-tenant ERP backend built with FastAPI, PostgreSQL,
-SQLAlchemy 2.x, Alembic and Pydantic v2.
+You are working on a production-grade multi-tenant UAE trading ERP backend built with FastAPI,
+PostgreSQL, SQLAlchemy 2.x, Alembic and Pydantic v2.
 
-Follow the project's architecture and guardrails strictly. ERP financial, inventory and
-tenant-isolation rules have higher priority than convenience. Do not bypass these rules even if
+The product scope is Zoho Books + Inventory + CRM / Odoo Sales, Purchase, Inventory, Accounting,
+CRM: quotes, orders, invoices, GRN, credit/debit notes, payments, stock, journals, UAE VAT, and
+UAE e-invoicing through third-party Accredited Service Providers (ASPs). Manufacturing, POS, full
+payroll, e-commerce, projects/timesheets, recurring invoices, and banking/PDC are out of scope.
+
+Follow the project's architecture and guardrails strictly. ERP financial, inventory, tenant-isolation
+and e-invoicing rules have higher priority than convenience. Do not bypass these rules even if
 doing so makes implementation easier.
 
 ## Architecture
@@ -24,25 +29,51 @@ Modules sit directly under `app/`, with shared building blocks in `app/common/`.
 its own `router.py`, `service.py`, `repository.py`, `schemas.py`, `models.py` and
 `dependencies.py`.
 
+Identity lives in `app/auth/`. Do not invent a `users_management` package. Permission prefixes are
+`identity.*`, `crm.*`, `inventory.*`, `erp.*`.
+
+Label implemented vs planned so agents do not stub screens or empty OpenAPI tags without an API.
+
 ```text
 app/
 ├── router.py                     mounts every module router under /api/v1
-├── core/  db/
-├── common/                       models/ schemas/ repositories/ services/ dependencies/ utils/
-├── users_management/             auth, users, roles, permissions, tenants
-├── erp/                          quotation, sales, purchase_invoices, purchase_orders,
-│                                 accounting, logistics, exchange_rates
-├── inventory_management/         products, categories, warehouses, stock, transfers, adjustments
-├── crm/                          leads, customers, contacts, opportunities, activities
-├── communication_service/        email, whatsapp, chat, meetings
-├── notifications_service/        notifications, templates, delivery
-├── integrations/                 third-party providers only
-└── workers/                      background jobs
+├── core/  db/  cli/
+├── common/                       models/ schemas/ repositories/ services/ dependencies/
+│                                 utils/ attachments/
+├── auth/                         Identity: auth, users, roles, permissions, tenants/org-settings,
+│                                 branches, departments, employees (nested), audit-logs
+│                                 planned: tenant operational settings (negative stock, lock dates)
+├── crm/                          implemented: customers, contacts
+│                                 planned: leads, opportunities, activities
+├── inventory_management/         implemented: units, categories, products, price_lists, warehouses
+│                                 planned: stock, stock_transfers, stock_adjustments,
+│                                 goods_receipts (GRN), delivery_notes, sales_returns
+├── erp/                          implemented: currencies, exchange_rates, taxes, payment_terms,
+│                                 terms_templates, document_sequences, suppliers, quotations
+│                                 planned: sales_orders, sales_invoices, credit_notes,
+│                                 customer_payments, purchase_orders, purchase_invoices,
+│                                 debit_notes, supplier_payments,
+│                                 accounting (chart_of_accounts, journals, AR, AP),
+│                                 logistics (imports, exports, shipments, containers),
+│                                 einvoicing (status APIs on sales invoices and credit notes;
+│                                 inbound e-bills as draft purchase invoices)
+├── integrations/                 implemented: storage/
+│                                 planned: email, whatsapp, video, ai, forecast,
+│                                 einvoicing/ (ASP adapters only — Zoho, Tally, generic Peppol ASP)
+├── communication_service/        planned: email, whatsapp, chat, meetings
+├── notifications_service/        planned: notifications, templates, delivery
+└── workers/                      planned: imports, exports, reports, PDF, AI,
+                                  einvoice submit / poll / inbound webhook
 ```
 
 Directories are `snake_case` because Python packages cannot contain hyphens. Modules are a code
 concept only — they never appear in the URL, which is a flat set of hyphenated plural resources
-(`app/erp/purchase_invoices/` → `/api/v1/purchase-invoices`).
+(`app/erp/purchase_invoices/` → `/api/v1/purchase-invoices`). Resource segments must be unique:
+`/credit-notes`, `/debit-notes`, `/customer-payments`, `/supplier-payments`, `/delivery-notes`.
+
+Document-number prefixes: `QUO`, `SO`, `DN` (delivery notes), `INV`, `CN` (credit notes), `PO`,
+`GRN`, `BILL` (purchase invoices), `SDN` (debit notes). Prefer a unique prefix per type; URLs
+must be unique even if a prefix is shared.
 
 ## Detailed instruction files
 
@@ -51,11 +82,11 @@ Read the relevant file before working in that area — each one is the authority
 | File | Use it when |
 | --- | --- |
 | [adding-a-new-module](.github/instructions/adding-a-new-module.instructions.md) | Creating a module or feature slice; module registry, folder layout, layer responsibilities, naming |
-| [api-design-and-versioning](.github/instructions/api-design-and-versioning.instructions.md) | Designing endpoints, responses, errors, pagination, filtering, sorting, OpenAPI |
-| [backend-domain-boundaries](.github/instructions/backend-domain-boundaries.instructions.md) | Tenancy, authorization, module ownership, integrations, financial and workflow invariants |
-| [configuration-and-environment](.github/instructions/configuration-and-environment.instructions.md) | Settings, secrets, environments, security defaults, caching, storage, deployment |
+| [api-design-and-versioning](.github/instructions/api-design-and-versioning.instructions.md) | Designing endpoints, responses, errors, pagination, filtering, sorting, OpenAPI, document contract |
+| [backend-domain-boundaries](.github/instructions/backend-domain-boundaries.instructions.md) | Tenancy, authorization, module ownership, VAT, posting, lock/stock, e-invoicing, integrations |
+| [configuration-and-environment](.github/instructions/configuration-and-environment.instructions.md) | Settings, secrets, environments, security defaults, caching, storage, ASP credentials, deployment |
 | [logging-and-observability](.github/instructions/logging-and-observability.instructions.md) | Structured logs, audit trails, health checks, performance guardrails |
-| [migration-and-schema-discipline](.github/instructions/migration-and-schema-discipline.instructions.md) | Model changes, Alembic migrations, indexes, soft deletes, UUIDs |
+| [migration-and-schema-discipline](.github/instructions/migration-and-schema-discipline.instructions.md) | Model changes, Alembic migrations, indexes, soft deletes, UUIDs, document uniqueness |
 | [pull-request-and-code-review](.github/instructions/pull-request-and-code-review.instructions.md) | Branching, commits, PR content, review checklist, non-negotiables |
 | [testing-and-quality-gates](.github/instructions/testing-and-quality-gates.instructions.md) | Test layers, mandatory ERP test cases, tooling, CI pipeline |
 
@@ -69,21 +100,30 @@ Read the relevant file before working in that area — each one is the authority
 - Never expose SQLAlchemy models directly; use Pydantic schemas for API contracts.
 - Every tenant-owned record must be tenant isolated. Never trust `tenant_id` from the client —
   always derive tenant context from the authenticated user.
-- Enforce permission-based authorization at the API/service boundary.
+- Enforce permission-based authorization at the API/service boundary (`identity.*` / `crm.*` /
+  `inventory.*` / `erp.*`).
 - Use UUIDs for public entity IDs.
 - Use `Decimal` for financial calculations. Store timestamps in UTC.
 - Use soft deletion where appropriate. Never delete posted financial transactions.
 - Never overwrite a posted voucher. Correct it with a credit note, debit note, reversal or
   adjustment in the **open** period (double-entry, immutable history).
 - Respect tenant `allow_negative_stock`. When it is off, block dispatch/sale if physical stock
-  is insufficient — require GRN / purchase receipt first.
+  is insufficient — require GRN / purchase receipt first. Check under `SELECT FOR UPDATE`.
 - Respect tenant lock dates. Do not create, edit or delete a voucher dated on or before the lock.
+  Refuse to advance a lock while any warehouse is negative.
 - Invoices stay `DRAFT` until explicit Confirm/Post. Drafts do not touch stock, AR, tax or GL.
+  Posting is `POST /{resource}/{id}/post` (or `/confirm`), never a side effect of PATCH.
+- Every workflow document response includes `available_actions`. That list is the only legal
+  source of UI buttons.
+- UAE VAT: require TRN when `REGISTERED`; place of supply from emirate; never recompute posted tax.
+- Posting is local (stock + AR/AP + tax + GL in one transaction). Peppol/FTA exchange is an ASP
+  job after commit, via `app/integrations/einvoicing/` and the transactional outbox — never from
+  `erp/sales_invoices/service.py`.
 - Never allow invalid workflow status transitions.
 - Use database transactions for multi-step business operations; do not call `commit()` inside
   repositories.
 - Use Alembic for every schema change. Never modify an already deployed migration.
-- Use background workers for long-running operations.
+- Use background workers for long-running operations (imports, PDF/print, e-invoice submit/poll).
 - Keep third-party integrations under `app/integrations/`; never call external providers
   directly from business modules.
 - Centralize error handling and use consistent API responses.
@@ -91,6 +131,7 @@ Read the relevant file before working in that area — each one is the authority
 - Prevent N+1 queries and add appropriate database indexes.
 - Maintain audit logs for important changes. Never log credentials, tokens or secrets, and
   never commit secrets.
+- Feature-flag unfinished modules so they do not appear in OpenAPI as empty stubs.
 - Never introduce a new dependency unless existing dependencies cannot solve the problem.
 - Reuse existing utilities and services; do not duplicate functionality.
 - Do not over-engineer simple requirements — prefer simple, maintainable implementations.
@@ -99,19 +140,21 @@ Read the relevant file before working in that area — each one is the authority
 ## Before implementing any feature
 
 1. Inspect the existing implementation.
-2. Identify the correct module.
+2. Identify the correct module (Identity is `app/auth/`, not `users_management`).
 3. Identify related models.
 4. Identify existing services.
 5. Identify existing repositories.
 6. Identify existing schemas.
-7. Identify existing permissions.
+7. Identify existing permissions (`identity.*` / `crm.*` / `inventory.*` / `erp.*`).
 8. Identify tenant isolation requirements.
-9. Identify audit, lock-date, negative-stock and posting (DRAFT vs POSTED) requirements.
-10. Identify transaction requirements.
+9. Identify audit, lock-date, negative-stock, posting (DRAFT vs POSTED), VAT and e-invoicing
+   requirements.
+10. Identify transaction, idempotency and optimistic-concurrency (`version` / `If-Match`) needs.
 11. Implement the smallest clean solution.
 12. Add or update tests.
 13. Update the Alembic migration if the schema changes.
-14. Verify linting and type checking.
+14. Update the OpenAPI snapshot under `docs/openapi/` if the public contract changes.
+15. Verify linting and type checking.
 
 ## Before modifying a database model
 
@@ -121,7 +164,7 @@ cascade behavior and soft-delete requirements — then generate an Alembic migra
 ## Before creating an endpoint
 
 Verify authentication, authorization, tenant isolation, validation, pagination, filtering,
-sorting, error handling, audit logging and tests.
+sorting, error handling, audit logging, `available_actions` on document responses, and tests.
 
 ## Security posture
 
@@ -130,6 +173,7 @@ Treat every request as untrusted. Never trust any of these from the client:
 ```text
 tenant_id  user_id  role  permission  resource ownership
 file type  file name  financial values  status transitions
+available_actions  einvoice_status
 ```
 
 Validate everything on the backend.
@@ -161,12 +205,16 @@ Validate everything on the backend.
 22. Never modify deployed Alembic migrations.
 23. Never log credentials or tokens.
 24. Never allow one tenant to access another tenant's data.
+25. Never call an Accredited Service Provider from a business module — only via app/integrations/einvoicing/.
+26. Never dual-write posted invoices or journals into Zoho Books, TallyPrime, or any ASP ledger.
+27. Never implement Peppol AS4, OpenPeppol PKI, or MoF ASP accreditation inside Plumbit.
 ```
 
 ## System overview
 
 Production: AWS Amplify (Next.js) → API Gateway → Lambda (FastAPI) → RDS PostgreSQL, S3,
-SES, Agora, self-hosted WhatsApp (Go), OpenAI GPT-5.4 Mini, Forecast ML.
+SES, Agora, self-hosted WhatsApp (Go), OpenAI GPT-5.4 Mini, Forecast ML, MoF-accredited ASP
+(e-invoicing, out of process).
 
 Local: Next.js → Uvicorn FastAPI → PostgreSQL + MinIO.
 
@@ -177,5 +225,6 @@ Users → Amplify → API Gateway → Lambda / FastAPI
                                       ├── RDS PostgreSQL (multi-tenant)
                                       ├── S3
                                       ├── SES · Agora · WhatsApp Go
-                                      └── OpenAI · Forecast ML
+                                      ├── OpenAI · Forecast ML
+                                      └── MoF ASP (PINT-AE / Peppol / FTA)
 ```

@@ -46,7 +46,10 @@ Old Status: draft → New Status: approved
 
 Audit logs are written by services (where the business meaning is known), not by repositories.
 They are append-only and must not be editable by normal users. Any endpoint that changes state
-— create, update, status transition, approval, posting, deletion — emits an audit record.
+— create, update, status transition, approval, posting, period lock, e-invoice submit, deletion — emits an audit record.
+
+Do not log ASP credentials, Peppol private keys, or full PINT-AE XML payloads. E-invoice
+failures record `asp_error_code` and a redacted message.
 
 ## Health checks
 

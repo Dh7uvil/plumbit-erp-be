@@ -57,16 +57,21 @@ Before requesting review, run the local gates: Ruff, Black, MyPy and Pytest.
 - Timestamps stored in UTC.
 - Status transitions validated against the allowed state machine.
 - Posted financial records are not updated or deleted; corrections are new documents.
-- Draft invoices do not move stock or post ledgers.
-- Stock movements respect `allow_negative_stock` with a locked qty check.
+- Draft invoices do not move stock or post ledgers; post is a named endpoint, not PATCH.
+- Workflow document responses include `available_actions`.
+- Stock movements respect `allow_negative_stock` with a locked qty check (`SELECT FOR UPDATE`).
 - Document dates are rejected when on or before the tenant lock date.
-- Document numbers generated through a concurrency-safe mechanism.
+- Document numbers generated through a concurrency-safe mechanism; unique per `(tenant_id, document_number)` per type.
+- `Idempotency-Key` on post / payment / stock-movement / einvoice submit; `If-Match` / `version` on PATCH and post.
+- E-invoicing: no ASP call from a business module; drafts never submitted; inbound webhooks do not auto-post.
 
 **API surface**
 - Consistent response envelope and application error codes.
 - Pagination on list endpoints with an enforced maximum page size.
 - Sorting and filtering use allowlists; no raw SQL from user input.
 - OpenAPI summary, description, schemas, status codes and permissions declared.
+- OpenAPI snapshot updated under `docs/openapi/` when the public contract changes.
+- Unfinished modules are not published as empty OpenAPI stubs.
 
 **Schema**
 - Alembic migration included and reviewed for any model change.
@@ -114,4 +119,7 @@ A pull request that violates any of these is rejected regardless of its other me
 22. Never modify deployed Alembic migrations.
 23. Never log credentials or tokens.
 24. Never allow one tenant to access another tenant's data.
+25. Never call an Accredited Service Provider from a business module — only via app/integrations/einvoicing/.
+26. Never dual-write posted invoices or journals into Zoho Books, TallyPrime, or any ASP ledger.
+27. Never implement Peppol AS4, OpenPeppol PKI, or MoF ASP accreditation inside Plumbit.
 ```
