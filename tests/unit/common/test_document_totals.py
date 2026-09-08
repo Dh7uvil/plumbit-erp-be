@@ -1,16 +1,16 @@
-"""Unit tests for quotation totals and UAE VAT category resolution."""
+"""Unit tests for document totals and UAE VAT category resolution."""
 
 from decimal import Decimal
 from uuid import uuid4
 
 from app.auth.schemas import AddressResponse
-from app.core.enums import DiscountType, PlaceOfSupply, TaxCategory, TaxTreatment
-from app.erp.quotation.totals import (
+from app.common.utils.document_totals import (
     compute_header_totals,
     compute_line_amounts,
     place_of_supply_from_address,
     resolve_line_tax_category,
 )
+from app.core.enums import DiscountType, PlaceOfSupply, TaxCategory, TaxTreatment
 
 
 def test_line_amounts_apply_percent_discount_then_vat() -> None:

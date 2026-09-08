@@ -1,4 +1,4 @@
-"""Quotation compose, totals, FX snapshot, and status transitions."""
+"""Sales order compose, totals, FX snapshot, and status transitions."""
 
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
     ERP_MODULE,
-    QUOTATION_APPROVE,
-    QUOTATION_CREATE,
-    QUOTATION_DELETE,
-    QUOTATION_SEND,
-    QUOTATION_UPDATE,
+    SALES_ORDER_APPROVE,
+    SALES_ORDER_CLOSE,
+    SALES_ORDER_CONFIRM,
     SALES_ORDER_CREATE,
+    SALES_ORDER_DELETE,
+    SALES_ORDER_UPDATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.schemas.filters import BaseFilter
@@ -35,10 +35,12 @@ from app.common.utils.document_totals import (
 )
 from app.core.enums import (
     AuditAction,
+    BillingStatus,
     DiscountType,
     DocumentType,
+    FulfillmentStatus,
     PlaceOfSupply,
-    QuotationStatus,
+    SalesOrderStatus,
     TaxCategory,
     TaxTreatment,
 )
@@ -59,42 +61,37 @@ from app.erp.accounting.service import (
     TermsTemplateService,
 )
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
-from app.erp.quotation.models import Quotation
-from app.erp.quotation.repository import QuotationRepository
-from app.erp.quotation.schemas import (
-    QuotationComposeDefaults,
-    QuotationCreate,
-    QuotationLineInput,
-    QuotationLineResponse,
-    QuotationResponse,
-    QuotationUpdate,
+from app.erp.quotation.service import QuotationService
+from app.erp.sales_orders.models import SalesOrder
+from app.erp.sales_orders.repository import SalesOrderRepository
+from app.erp.sales_orders.schemas import (
+    SalesOrderComposeDefaults,
+    SalesOrderCreate,
+    SalesOrderLineInput,
+    SalesOrderLineResponse,
+    SalesOrderResponse,
+    SalesOrderUpdate,
 )
-from app.erp.quotation.workflow import (
-    assert_convertible,
-    assert_editable,
-    next_status,
-    transition_actions,
-)
+from app.erp.sales_orders.workflow import assert_editable, next_status, transition_actions
 from app.inventory_management.price_lists.service import PriceListService
 from app.inventory_management.products.service import ProductService
 from app.inventory_management.units.service import UnitService
+from app.inventory_management.warehouses.service import WarehouseService
 
 _ZERO = Decimal("0")
-_QUOTE_SERIES = "QUO"
+_ORDER_SERIES = "SO"
 _ACTION_PERMISSIONS: dict[str, str] = {
-    "submit": QUOTATION_UPDATE,
-    "approve": QUOTATION_APPROVE,
-    "reject": QUOTATION_APPROVE,
-    "reopen": QUOTATION_UPDATE,
-    "send": QUOTATION_SEND,
-    "accept": QUOTATION_UPDATE,
-    "decline": QUOTATION_UPDATE,
-    "cancel": QUOTATION_UPDATE,
-    "convert": SALES_ORDER_CREATE,
+    "submit": SALES_ORDER_UPDATE,
+    "approve": SALES_ORDER_APPROVE,
+    "reject": SALES_ORDER_APPROVE,
+    "reopen": SALES_ORDER_UPDATE,
+    "confirm": SALES_ORDER_CONFIRM,
+    "close": SALES_ORDER_CLOSE,
+    "cancel": SALES_ORDER_UPDATE,
 }
 
 
-class QuotationService:
+class SalesOrderService:
     def __init__(
         self,
         session: AsyncSession,
@@ -103,13 +100,14 @@ class QuotationService:
     ) -> None:
         self.session = session
         self.actor_permissions = actor_permissions
-        self.repo = QuotationRepository(session)
+        self.repo = SalesOrderRepository(session)
         self.org = OrganizationService(session)
         self.customers = CustomerService(session)
         self.contacts = ContactService(session)
         self.products = ProductService(session)
         self.price_lists = PriceListService(session)
         self.units = UnitService(session)
+        self.warehouses = WarehouseService(session)
         self.taxes = TaxService(session)
         self.payment_terms = PaymentTermService(session)
         self.terms = TermsTemplateService(session)
@@ -125,47 +123,59 @@ class QuotationService:
         page: PageParams,
         common_filter: BaseFilter | None = None,
         status: str | None = None,
+        fulfillment_status: str | None = None,
+        billing_status: str | None = None,
         customer_id: UUID | None = None,
         branch_id: UUID | None = None,
+        warehouse_id: UUID | None = None,
         currency_id: UUID | None = None,
-    ) -> tuple[list[QuotationResponse], int]:
-        today = await self._today(tenant_id)
-        requires_approval = await self.org.quotation_requires_approval(tenant_id)
+        salesperson_id: UUID | None = None,
+        source_quotation_id: UUID | None = None,
+    ) -> tuple[list[SalesOrderResponse], int]:
+        requires_approval = await self.org.sales_order_requires_approval(tenant_id)
         filters: dict[str, object] = {}
+        if status is not None:
+            filters["status"] = status
+        if fulfillment_status is not None:
+            filters["fulfillment_status"] = fulfillment_status
+        if billing_status is not None:
+            filters["billing_status"] = billing_status
         if customer_id is not None:
             filters["customer_id"] = customer_id
         if branch_id is not None:
             filters["branch_id"] = branch_id
+        if warehouse_id is not None:
+            filters["warehouse_id"] = warehouse_id
         if currency_id is not None:
             filters["currency_id"] = currency_id
+        if salesperson_id is not None:
+            filters["salesperson_id"] = salesperson_id
+        if source_quotation_id is not None:
+            filters["source_quotation_id"] = source_quotation_id
         rows, total = await self.repo.list(
             tenant_id,
             page=page,
             common_filter=common_filter,
             filters=filters or None,
-            status=status,
-            today=today,
         )
-        return [
-            self._to_response(row, today, requires_approval=requires_approval) for row in rows
-        ], total
+        return [self._to_response(row, requires_approval=requires_approval) for row in rows], total
 
-    async def get(self, tenant_id: UUID, quotation_id: UUID) -> QuotationResponse:
-        today, requires_approval = await self._response_context(tenant_id)
+    async def get(self, tenant_id: UUID, sales_order_id: UUID) -> SalesOrderResponse:
+        requires_approval = await self.org.sales_order_requires_approval(tenant_id)
         return self._to_response(
-            await self._require(tenant_id, quotation_id),
-            today,
+            await self._require(tenant_id, sales_order_id),
             requires_approval=requires_approval,
         )
 
     async def compose_defaults(
         self, tenant_id: UUID, customer_id: UUID
-    ) -> QuotationComposeDefaults:
+    ) -> SalesOrderComposeDefaults:
         customer = await self.customers.get(tenant_id, customer_id)
         primary = await self.contacts.get_primary(tenant_id, customer_id)
         default_terms = await self.terms.get_default(tenant_id)
+        default_warehouse = await self.warehouses.get_default(tenant_id)
         place = place_of_supply_from_address(customer.shipping_address)
-        return QuotationComposeDefaults(
+        return SalesOrderComposeDefaults(
             customer_id=customer.id,
             customer_name=customer.name,
             customer_trn=customer.trn,
@@ -175,6 +185,7 @@ class QuotationService:
             payment_terms_id=customer.payment_terms_id,
             salesperson_id=customer.salesperson_id,
             contact_id=primary.id if primary else None,
+            warehouse_id=default_warehouse.id if default_warehouse else None,
             place_of_supply=place,
             bill_to_snapshot=format_address_snapshot(customer.billing_address),
             ship_to_snapshot=format_address_snapshot(customer.shipping_address),
@@ -182,24 +193,24 @@ class QuotationService:
         )
 
     async def create(
-        self, tenant_id: UUID, payload: QuotationCreate, *, actor_user_id: UUID
-    ) -> QuotationResponse:
+        self, tenant_id: UUID, payload: SalesOrderCreate, *, actor_user_id: UUID
+    ) -> SalesOrderResponse:
         async with transaction(self.session):
             header, line_rows = await self._build_draft(tenant_id, payload)
-            quote_date = cast(date, header["quote_date"])
+            order_date = cast(date, header["order_date"])
             number = await self.sequences.allocate(
                 tenant_id,
-                document_type=DocumentType.QUOTATION,
-                series=_QUOTE_SERIES,
-                fiscal_year=quote_date.year,
-                prefix=_QUOTE_SERIES,
+                document_type=DocumentType.SALES_ORDER,
+                series=_ORDER_SERIES,
+                fiscal_year=order_date.year,
+                prefix=_ORDER_SERIES,
             )
             row = await self.repo.create(
                 tenant_id,
                 {
                     **header,
-                    "quote_number": number,
-                    "status": QuotationStatus.DRAFT.value,
+                    "document_number": number,
+                    "status": SalesOrderStatus.DRAFT.value,
                     "version": 1,
                     "created_by": actor_user_id,
                     "updated_by": actor_user_id,
@@ -211,74 +222,174 @@ class QuotationService:
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
                 module=ERP_MODULE,
-                entity_type="quotation",
+                entity_type="sales_order",
                 entity_id=row.id,
-                new_values=await self._quotation_snapshot(tenant_id, row),
+                new_values=await self._snapshot(tenant_id, row),
             )
             loaded = await self._require(tenant_id, row.id)
-            today, requires_approval = await self._response_context(tenant_id)
-            return self._to_response(loaded, today, requires_approval=requires_approval)
+            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            return self._to_response(loaded, requires_approval=requires_approval)
+
+    async def create_from_quotation(
+        self,
+        tenant_id: UUID,
+        quotation_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        order_date: date | None = None,
+        expected_shipment_date: date | None = None,
+        reference_number: str | None = None,
+        warehouse_id: UUID | None = None,
+        branch_id: UUID | None = None,
+    ) -> SalesOrderResponse:
+        async with transaction(self.session):
+            quotes = QuotationService(self.session, actor_permissions=self.actor_permissions)
+            quotation = await quotes.require_convertible(
+                tenant_id, quotation_id, expected_version=expected_version
+            )
+            payload = SalesOrderCreate(
+                customer_id=quotation.customer_id,
+                contact_id=quotation.contact_id,
+                branch_id=quotation.branch_id if branch_id is None else branch_id,
+                warehouse_id=warehouse_id,
+                order_date=order_date,
+                expected_shipment_date=expected_shipment_date,
+                reference_number=reference_number,
+                currency_id=quotation.currency_id,
+                price_list_id=quotation.price_list_id,
+                payment_terms_id=quotation.payment_terms_id,
+                salesperson_id=quotation.salesperson_id,
+                notes=quotation.notes,
+                terms_and_conditions=quotation.terms_and_conditions,
+                discount_type=quotation.discount_type,
+                discount_value=quotation.discount_value,
+                shipping_amount=quotation.shipping_amount,
+                adjustment_amount=quotation.adjustment_amount,
+                place_of_supply=quotation.place_of_supply,
+                lines=[
+                    SalesOrderLineInput(
+                        product_id=line.product_id,
+                        description=line.description,
+                        quantity=line.quantity,
+                        unit_id=line.unit_id,
+                        rate=line.rate,
+                        discount_type=line.discount_type,
+                        discount_value=line.discount_value,
+                        tax_id=line.tax_id,
+                    )
+                    for line in quotation.lines
+                ],
+            )
+            header, line_rows = await self._build_draft(tenant_id, payload)
+            header["source_quotation_id"] = quotation.id
+            for built, source in zip(line_rows, quotation.lines, strict=True):
+                built["source_quotation_line_id"] = source.id
+            order_date_value = cast(date, header["order_date"])
+            number = await self.sequences.allocate(
+                tenant_id,
+                document_type=DocumentType.SALES_ORDER,
+                series=_ORDER_SERIES,
+                fiscal_year=order_date_value.year,
+                prefix=_ORDER_SERIES,
+            )
+            row = await self.repo.create(
+                tenant_id,
+                {
+                    **header,
+                    "document_number": number,
+                    "status": SalesOrderStatus.DRAFT.value,
+                    "version": 1,
+                    "created_by": actor_user_id,
+                    "updated_by": actor_user_id,
+                },
+            )
+            await self.repo.replace_lines(tenant_id, row.id, line_rows)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.CREATE,
+                module=ERP_MODULE,
+                entity_type="sales_order",
+                entity_id=row.id,
+                new_values=await self._snapshot(tenant_id, row),
+            )
+            await quotes.mark_converted(
+                tenant_id,
+                quotation_id,
+                document_type=DocumentType.SALES_ORDER,
+                document_id=row.id,
+                actor_user_id=actor_user_id,
+                expected_version=quotation.version,
+            )
+            loaded = await self._require(tenant_id, row.id)
+            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            return self._to_response(loaded, requires_approval=requires_approval)
 
     async def update(
         self,
         tenant_id: UUID,
-        quotation_id: UUID,
-        payload: QuotationUpdate,
+        sales_order_id: UUID,
+        payload: SalesOrderUpdate,
         *,
         actor_user_id: UUID,
         expected_version: int,
-    ) -> QuotationResponse:
+    ) -> SalesOrderResponse:
         async with transaction(self.session):
-            existing = await self._require(tenant_id, quotation_id, for_update=True)
-            old_values = await self._quotation_snapshot(tenant_id, existing)
-            today, requires_approval = await self._response_context(tenant_id)
-            assert_editable(self._effective_status(existing, today))
+            existing = await self._require(tenant_id, sales_order_id, for_update=True)
+            old_values = await self._snapshot(tenant_id, existing)
+            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            assert_editable(SalesOrderStatus(existing.status))
             self._assert_version(existing, expected_version)
-            create_payload = await self._update_to_create(tenant_id, existing, payload)
+            create_payload = await self._update_to_create(existing, payload)
             header, line_rows = await self._build_draft(tenant_id, create_payload)
             header["updated_by"] = actor_user_id
             header["version"] = existing.version + 1
-            await self.repo.update(tenant_id, quotation_id, header)
-            await self.repo.replace_lines(tenant_id, quotation_id, line_rows)
-            loaded = await self._require(tenant_id, quotation_id)
+            header["source_quotation_id"] = existing.source_quotation_id
+            if payload.lines is None:
+                for built, existing_line in zip(line_rows, existing.lines, strict=True):
+                    built["source_quotation_line_id"] = existing_line.source_quotation_line_id
+            await self.repo.update(tenant_id, sales_order_id, header)
+            await self.repo.replace_lines(tenant_id, sales_order_id, line_rows)
+            loaded = await self._require(tenant_id, sales_order_id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
                 module=ERP_MODULE,
-                entity_type="quotation",
-                entity_id=quotation_id,
+                entity_type="sales_order",
+                entity_id=sales_order_id,
                 old_values=old_values,
-                new_values=await self._quotation_snapshot(tenant_id, loaded),
+                new_values=await self._snapshot(tenant_id, loaded),
             )
-            return self._to_response(loaded, today, requires_approval=requires_approval)
+            return self._to_response(loaded, requires_approval=requires_approval)
 
     async def submit(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
-    ) -> QuotationResponse:
+        self, tenant_id: UUID, sales_order_id: UUID, *, actor_user_id: UUID, expected_version: int
+    ) -> SalesOrderResponse:
         return await self._transition(
-            tenant_id, quotation_id, "submit", actor_user_id, expected_version=expected_version
+            tenant_id, sales_order_id, "submit", actor_user_id, expected_version=expected_version
         )
 
     async def approve(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
-    ) -> QuotationResponse:
+        self, tenant_id: UUID, sales_order_id: UUID, *, actor_user_id: UUID, expected_version: int
+    ) -> SalesOrderResponse:
         return await self._transition(
-            tenant_id, quotation_id, "approve", actor_user_id, expected_version=expected_version
+            tenant_id, sales_order_id, "approve", actor_user_id, expected_version=expected_version
         )
 
     async def reject(
         self,
         tenant_id: UUID,
-        quotation_id: UUID,
+        sales_order_id: UUID,
         *,
         actor_user_id: UUID,
         expected_version: int,
         reason: str | None = None,
-    ) -> QuotationResponse:
+    ) -> SalesOrderResponse:
         return await self._transition(
             tenant_id,
-            quotation_id,
+            sales_order_id,
             "reject",
             actor_user_id,
             expected_version=expected_version,
@@ -286,27 +397,29 @@ class QuotationService:
         )
 
     async def reopen(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
-    ) -> QuotationResponse:
+        self, tenant_id: UUID, sales_order_id: UUID, *, actor_user_id: UUID, expected_version: int
+    ) -> SalesOrderResponse:
         return await self._transition(
-            tenant_id, quotation_id, "reopen", actor_user_id, expected_version=expected_version
+            tenant_id, sales_order_id, "reopen", actor_user_id, expected_version=expected_version
         )
 
-    async def send(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
-    ) -> QuotationResponse:
+    async def confirm(
+        self, tenant_id: UUID, sales_order_id: UUID, *, actor_user_id: UUID, expected_version: int
+    ) -> SalesOrderResponse:
         async with transaction(self.session):
-            row = await self._require(tenant_id, quotation_id, for_update=True)
-            old_values = await self._quotation_snapshot(tenant_id, row)
-            today, requires_approval = await self._response_context(tenant_id)
-            current = self._effective_status(row, today)
+            row = await self._require(tenant_id, sales_order_id, for_update=True)
+            old_values = await self._snapshot(tenant_id, row)
+            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            current = SalesOrderStatus(row.status)
             self._assert_version(row, expected_version)
-            if current == QuotationStatus.DRAFT and requires_approval:
+            if current == SalesOrderStatus.DRAFT and requires_approval:
                 raise ValidationError(
-                    "This organization requires approval before a quotation can be sent"
+                    "This organization requires approval before a sales order can be confirmed"
                 )
-            target = next_status(current, "send")
+            target = next_status(current, "confirm")
             row.status = target.value
+            row.confirmed_at = utcnow()
+            row.confirmed_by = actor_user_id
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
@@ -314,47 +427,63 @@ class QuotationService:
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
-                action=AuditAction.SEND,
+                action=AuditAction.CONFIRM,
                 module=ERP_MODULE,
-                entity_type="quotation",
+                entity_type="sales_order",
                 entity_id=row.id,
                 old_values=old_values,
-                new_values=await self._quotation_snapshot(tenant_id, row),
+                new_values=await self._snapshot(tenant_id, row),
             )
-            return self._to_response(row, today, requires_approval=requires_approval)
+            return self._to_response(row, requires_approval=requires_approval)
 
-    async def accept(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
-    ) -> QuotationResponse:
+    async def close(
+        self, tenant_id: UUID, sales_order_id: UUID, *, actor_user_id: UUID, expected_version: int
+    ) -> SalesOrderResponse:
         return await self._transition(
-            tenant_id, quotation_id, "accept", actor_user_id, expected_version=expected_version
-        )
-
-    async def decline(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
-    ) -> QuotationResponse:
-        return await self._transition(
-            tenant_id, quotation_id, "decline", actor_user_id, expected_version=expected_version
+            tenant_id,
+            sales_order_id,
+            "close",
+            actor_user_id,
+            expected_version=expected_version,
+            extra={"closed_at": utcnow(), "closed_by": actor_user_id},
         )
 
     async def cancel(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
-    ) -> QuotationResponse:
+        self,
+        tenant_id: UUID,
+        sales_order_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        reason: str | None = None,
+    ) -> SalesOrderResponse:
         return await self._transition(
-            tenant_id, quotation_id, "cancel", actor_user_id, expected_version=expected_version
+            tenant_id,
+            sales_order_id,
+            "cancel",
+            actor_user_id,
+            expected_version=expected_version,
+            reason=reason,
+            extra={
+                "cancelled_at": utcnow(),
+                "cancelled_by": actor_user_id,
+                "cancel_reason": reason,
+            },
         )
 
     async def clone(
-        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID
-    ) -> QuotationResponse:
+        self, tenant_id: UUID, sales_order_id: UUID, *, actor_user_id: UUID
+    ) -> SalesOrderResponse:
         async with transaction(self.session):
-            source = await self._require(tenant_id, quotation_id)
-            payload = QuotationCreate(
+            source = await self._require(tenant_id, sales_order_id)
+            payload = SalesOrderCreate(
                 customer_id=source.customer_id,
                 contact_id=source.contact_id,
                 branch_id=source.branch_id,
-                quote_date=None,
-                valid_until=source.valid_until,
+                warehouse_id=source.warehouse_id,
+                order_date=None,
+                expected_shipment_date=source.expected_shipment_date,
+                reference_number=source.reference_number,
                 currency_id=source.currency_id,
                 price_list_id=source.price_list_id,
                 payment_terms_id=source.payment_terms_id,
@@ -367,7 +496,7 @@ class QuotationService:
                 adjustment_amount=source.adjustment_amount,
                 place_of_supply=PlaceOfSupply(source.place_of_supply),
                 lines=[
-                    QuotationLineInput(
+                    SalesOrderLineInput(
                         product_id=line.product_id,
                         description=line.description,
                         quantity=line.quantity,
@@ -383,154 +512,106 @@ class QuotationService:
                 ],
             )
             header, line_rows = await self._build_draft(tenant_id, payload)
-            quote_date = cast(date, header["quote_date"])
+            order_date = cast(date, header["order_date"])
             number = await self.sequences.allocate(
                 tenant_id,
-                document_type=DocumentType.QUOTATION,
-                series=_QUOTE_SERIES,
-                fiscal_year=quote_date.year,
-                prefix=_QUOTE_SERIES,
+                document_type=DocumentType.SALES_ORDER,
+                series=_ORDER_SERIES,
+                fiscal_year=order_date.year,
+                prefix=_ORDER_SERIES,
             )
             row = await self.repo.create(
                 tenant_id,
                 {
                     **header,
-                    "quote_number": number,
-                    "status": QuotationStatus.DRAFT.value,
+                    "document_number": number,
+                    "status": SalesOrderStatus.DRAFT.value,
                     "version": 1,
                     "created_by": actor_user_id,
                     "updated_by": actor_user_id,
                 },
             )
             await self.repo.replace_lines(tenant_id, row.id, line_rows)
-            new_values = await self._quotation_snapshot(tenant_id, row)
-            new_values["cloned_from"] = source.quote_number
+            new_values = await self._snapshot(tenant_id, row)
+            new_values["cloned_from"] = source.document_number
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CLONE,
                 module=ERP_MODULE,
-                entity_type="quotation",
+                entity_type="sales_order",
                 entity_id=row.id,
                 new_values=new_values,
             )
             loaded = await self._require(tenant_id, row.id)
-            today, requires_approval = await self._response_context(tenant_id)
-            return self._to_response(loaded, today, requires_approval=requires_approval)
+            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            return self._to_response(loaded, requires_approval=requires_approval)
 
     async def delete(
         self,
         tenant_id: UUID,
-        quotation_id: UUID,
+        sales_order_id: UUID,
         *,
         actor_user_id: UUID,
         expected_version: int,
-    ) -> QuotationResponse:
+    ) -> SalesOrderResponse:
         async with transaction(self.session):
-            row = await self._require(tenant_id, quotation_id, for_update=True)
-            today, requires_approval = await self._response_context(tenant_id)
-            current = self._effective_status(row, today)
-            if current != QuotationStatus.DRAFT:
-                raise InvalidStatusTransitionError("Only draft quotations can be deleted")
+            row = await self._require(tenant_id, sales_order_id, for_update=True)
+            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            current = SalesOrderStatus(row.status)
+            if current != SalesOrderStatus.DRAFT:
+                raise InvalidStatusTransitionError("Only draft sales orders can be deleted")
             self._assert_version(row, expected_version)
-            response = self._to_response(row, today, requires_approval=requires_approval)
-            old_values = await self._quotation_snapshot(tenant_id, row)
-            await self.repo.soft_delete(tenant_id, quotation_id)
+            response = self._to_response(row, requires_approval=requires_approval)
+            old_values = await self._snapshot(tenant_id, row)
+            await self.repo.soft_delete(tenant_id, sales_order_id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
                 module=ERP_MODULE,
-                entity_type="quotation",
-                entity_id=quotation_id,
+                entity_type="sales_order",
+                entity_id=sales_order_id,
                 old_values=old_values,
             )
             return response
 
-    async def require_convertible(
-        self, tenant_id: UUID, quotation_id: UUID, *, expected_version: int
-    ) -> QuotationResponse:
-        row = await self._require(tenant_id, quotation_id, for_update=True)
-        today, requires_approval = await self._response_context(tenant_id)
-        current = self._effective_status(row, today)
-        self._assert_version(row, expected_version)
-        assert_convertible(current)
-        if row.converted_document_id is not None:
-            raise InvalidStatusTransitionError("Quotation has already been converted")
-        return self._to_response(row, today, requires_approval=requires_approval)
-
-    async def mark_converted(
-        self,
-        tenant_id: UUID,
-        quotation_id: UUID,
-        *,
-        document_type: DocumentType,
-        document_id: UUID,
-        actor_user_id: UUID,
-        expected_version: int,
-    ) -> QuotationResponse:
-        async with transaction(self.session):
-            row = await self._require(tenant_id, quotation_id, for_update=True)
-            old_values = await self._quotation_snapshot(tenant_id, row)
-            today, requires_approval = await self._response_context(tenant_id)
-            current = self._effective_status(row, today)
-            self._assert_version(row, expected_version)
-            assert_convertible(current)
-            if row.converted_document_id is not None:
-                raise InvalidStatusTransitionError("Quotation has already been converted")
-            target = next_status(current, "convert")
-            row.status = target.value
-            row.converted_at = utcnow()
-            row.converted_document_type = document_type.value
-            row.converted_document_id = document_id
-            row.version += 1
-            row.updated_by = actor_user_id
-            await self.session.flush()
-            await self.session.refresh(row, attribute_names=["updated_at"])
-            await self.audit.write(
-                tenant_id=tenant_id,
-                user_id=actor_user_id,
-                action=AuditAction.CONVERT,
-                module=ERP_MODULE,
-                entity_type="quotation",
-                entity_id=row.id,
-                old_values=old_values,
-                new_values=await self._quotation_snapshot(tenant_id, row),
-            )
-            return self._to_response(row, today, requires_approval=requires_approval)
-
     async def _transition(
         self,
         tenant_id: UUID,
-        quotation_id: UUID,
+        sales_order_id: UUID,
         action: str,
         actor_user_id: UUID,
         *,
         expected_version: int,
         reason: str | None = None,
-    ) -> QuotationResponse:
+        extra: dict[str, object] | None = None,
+    ) -> SalesOrderResponse:
         action_map = {
             "submit": AuditAction.SUBMIT,
             "approve": AuditAction.APPROVE,
             "reject": AuditAction.REJECT,
             "reopen": AuditAction.UPDATE,
-            "accept": AuditAction.ACCEPT,
-            "decline": AuditAction.DECLINE,
+            "close": AuditAction.CLOSE,
             "cancel": AuditAction.CANCEL,
         }
         async with transaction(self.session):
-            row = await self._require(tenant_id, quotation_id, for_update=True)
-            old_values = await self._quotation_snapshot(tenant_id, row)
-            today, requires_approval = await self._response_context(tenant_id)
-            current = self._effective_status(row, today)
+            row = await self._require(tenant_id, sales_order_id, for_update=True)
+            old_values = await self._snapshot(tenant_id, row)
+            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            current = SalesOrderStatus(row.status)
             self._assert_version(row, expected_version)
+            if action == "cancel":
+                self._assert_cancellable(row, current)
             target = next_status(current, action)
             row.status = target.value
             row.version += 1
             row.updated_by = actor_user_id
+            for name, value in (extra or {}).items():
+                setattr(row, name, value)
             await self.session.flush()
             await self.session.refresh(row, attribute_names=["updated_at"])
-            new_values = await self._quotation_snapshot(tenant_id, row)
+            new_values = await self._snapshot(tenant_id, row)
             if action == "reject" and reason:
                 new_values["reason"] = reason
             await self.audit.write(
@@ -538,15 +619,27 @@ class QuotationService:
                 user_id=actor_user_id,
                 action=action_map[action],
                 module=ERP_MODULE,
-                entity_type="quotation",
+                entity_type="sales_order",
                 entity_id=row.id,
                 old_values=old_values,
                 new_values=new_values,
             )
-            return self._to_response(row, today, requires_approval=requires_approval)
+            return self._to_response(row, requires_approval=requires_approval)
+
+    def _assert_cancellable(self, row: SalesOrder, current: SalesOrderStatus) -> None:
+        if current != SalesOrderStatus.CONFIRMED:
+            return
+        if (
+            row.fulfillment_status != FulfillmentStatus.NOT_DELIVERED.value
+            or row.billing_status != BillingStatus.NOT_INVOICED.value
+        ):
+            raise InvalidStatusTransitionError(
+                "A confirmed sales order cannot be cancelled after fulfillment "
+                "or billing has started"
+            )
 
     async def _build_draft(
-        self, tenant_id: UUID, payload: QuotationCreate
+        self, tenant_id: UUID, payload: SalesOrderCreate
     ) -> tuple[dict[str, object], builtins.list[dict[str, object]]]:
         customer = await self.customers.get(tenant_id, payload.customer_id)
         if payload.branch_id is not None:
@@ -562,15 +655,22 @@ class QuotationService:
         if payload.price_list_id is not None:
             await self.price_lists.require_id(tenant_id, payload.price_list_id)
 
+        warehouse_id = payload.warehouse_id
+        if warehouse_id is None:
+            default_warehouse = await self.warehouses.get_default(tenant_id)
+            warehouse_id = default_warehouse.id if default_warehouse else None
+        else:
+            await self.warehouses.require_id(tenant_id, warehouse_id)
+
         currency_id = payload.currency_id or customer.currency_id
         await self.currencies.require_id(tenant_id, currency_id)
         base = await self.currencies.get_base(tenant_id)
-        quote_date = payload.quote_date or await self._today(tenant_id)
+        order_date = payload.order_date or await self._today(tenant_id)
         resolved = await self.fx.resolve(
             tenant_id,
             from_currency_id=currency_id,
             to_currency_id=base.id,
-            on_date=quote_date,
+            on_date=order_date,
         )
 
         place = payload.place_of_supply or place_of_supply_from_address(customer.shipping_address)
@@ -599,9 +699,11 @@ class QuotationService:
             adjustment_amount=quantize_money(payload.adjustment_amount),
         )
         header: dict[str, object] = {
-            "quote_date": quote_date,
-            "valid_until": payload.valid_until,
+            "order_date": order_date,
+            "expected_shipment_date": payload.expected_shipment_date,
+            "reference_number": payload.reference_number,
             "branch_id": payload.branch_id,
+            "warehouse_id": warehouse_id,
             "customer_id": customer.id,
             "contact_id": payload.contact_id,
             "customer_trn": customer.trn,
@@ -627,13 +729,15 @@ class QuotationService:
             "grand_total": grand,
             "foreign_amount": grand,
             "base_amount": quantize_money(grand * resolved.rate),
+            "fulfillment_status": FulfillmentStatus.NOT_DELIVERED.value,
+            "billing_status": BillingStatus.NOT_INVOICED.value,
         }
         return header, line_rows
 
     async def _build_lines(
         self,
         tenant_id: UUID,
-        lines: Sequence[QuotationLineInput],
+        lines: Sequence[SalesOrderLineInput],
         *,
         tax_treatment: TaxTreatment,
         place_of_supply: PlaceOfSupply,
@@ -706,6 +810,8 @@ class QuotationService:
                     "tax_rate": chosen_tax.rate,
                     "tax_amount": tax_amount,
                     "amount": net,
+                    "qty_delivered": _ZERO,
+                    "qty_invoiced": _ZERO,
                 }
             )
             nets.append(net)
@@ -713,15 +819,15 @@ class QuotationService:
         return built, nets, taxes
 
     async def _update_to_create(
-        self, tenant_id: UUID, existing: Quotation, payload: QuotationUpdate
-    ) -> QuotationCreate:
+        self, existing: SalesOrder, payload: SalesOrderUpdate
+    ) -> SalesOrderCreate:
         values = payload.model_dump(exclude_unset=True, exclude={"version"})
         lines = values.get("lines")
         line_inputs = (
-            [QuotationLineInput.model_validate(item) for item in lines]
+            [SalesOrderLineInput.model_validate(item) for item in lines]
             if lines is not None
             else [
-                QuotationLineInput(
+                SalesOrderLineInput(
                     product_id=line.product_id,
                     description=line.description,
                     quantity=line.quantity,
@@ -734,12 +840,16 @@ class QuotationService:
                 for line in existing.lines
             ]
         )
-        return QuotationCreate(
+        return SalesOrderCreate(
             customer_id=existing.customer_id,
             contact_id=values.get("contact_id", existing.contact_id),
             branch_id=values.get("branch_id", existing.branch_id),
-            quote_date=values.get("quote_date", existing.quote_date),
-            valid_until=values.get("valid_until", existing.valid_until),
+            warehouse_id=values.get("warehouse_id", existing.warehouse_id),
+            order_date=values.get("order_date", existing.order_date),
+            expected_shipment_date=values.get(
+                "expected_shipment_date", existing.expected_shipment_date
+            ),
+            reference_number=values.get("reference_number", existing.reference_number),
             currency_id=values.get("currency_id", existing.currency_id),
             price_list_id=values.get("price_list_id", existing.price_list_id),
             payment_terms_id=values.get("payment_terms_id", existing.payment_terms_id),
@@ -757,50 +867,39 @@ class QuotationService:
             lines=line_inputs,
         )
 
-    def _effective_status(self, row: Quotation, today: date) -> QuotationStatus:
-        status = QuotationStatus(row.status)
-        if (
-            status == QuotationStatus.SENT
-            and row.valid_until is not None
-            and row.valid_until < today
-        ):
-            return QuotationStatus.EXPIRED
-        return status
-
     def _available_actions(
-        self, status: QuotationStatus, *, requires_approval: bool
+        self, status: SalesOrderStatus, *, requires_approval: bool
     ) -> builtins.list[str]:
         actions: builtins.list[str] = []
         for action in transition_actions(status):
-            if action == "send" and status == QuotationStatus.DRAFT and requires_approval:
+            if action == "confirm" and status == SalesOrderStatus.DRAFT and requires_approval:
                 continue
             required = _ACTION_PERMISSIONS[action]
             if has_permission(self.actor_permissions, required):
                 actions.append(action)
-        if has_permission(self.actor_permissions, QUOTATION_CREATE):
+        if has_permission(self.actor_permissions, SALES_ORDER_CREATE):
             actions.append("clone")
-        if status == QuotationStatus.DRAFT and has_permission(
-            self.actor_permissions, QUOTATION_DELETE
+        if status == SalesOrderStatus.DRAFT and has_permission(
+            self.actor_permissions, SALES_ORDER_DELETE
         ):
             actions.append("delete")
         return actions
 
-    def _to_response(
-        self, row: Quotation, today: date, *, requires_approval: bool
-    ) -> QuotationResponse:
-        status = self._effective_status(row, today)
-        return QuotationResponse(
+    def _to_response(self, row: SalesOrder, *, requires_approval: bool) -> SalesOrderResponse:
+        status = SalesOrderStatus(row.status)
+        return SalesOrderResponse(
             id=row.id,
             tenant_id=row.tenant_id,
-            quote_number=row.quote_number,
-            document_number=row.quote_number,
+            document_number=row.document_number,
             status=status,
             version=row.version,
             is_posted=False,
-            quote_date=row.quote_date,
-            document_date=row.quote_date,
-            valid_until=row.valid_until,
+            reference_number=row.reference_number,
+            order_date=row.order_date,
+            document_date=row.order_date,
+            expected_shipment_date=row.expected_shipment_date,
             branch_id=row.branch_id,
+            warehouse_id=row.warehouse_id,
             customer_id=row.customer_id,
             contact_id=row.contact_id,
             customer_trn=row.customer_trn,
@@ -826,24 +925,26 @@ class QuotationService:
             grand_total=row.grand_total,
             foreign_amount=row.foreign_amount,
             base_amount=row.base_amount,
-            converted_at=row.converted_at,
-            converted_document_type=row.converted_document_type,
-            converted_document_id=row.converted_document_id,
+            fulfillment_status=FulfillmentStatus(row.fulfillment_status),
+            billing_status=BillingStatus(row.billing_status),
+            source_quotation_id=row.source_quotation_id,
+            confirmed_at=row.confirmed_at,
+            confirmed_by=row.confirmed_by,
+            closed_at=row.closed_at,
+            closed_by=row.closed_by,
+            cancelled_at=row.cancelled_at,
+            cancelled_by=row.cancelled_by,
+            cancel_reason=row.cancel_reason,
             available_actions=self._available_actions(status, requires_approval=requires_approval),
-            lines=[QuotationLineResponse.model_validate(line) for line in row.lines],
+            lines=[SalesOrderLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
 
-    async def _response_context(self, tenant_id: UUID) -> tuple[date, bool]:
-        today = await self._today(tenant_id)
-        requires_approval = await self.org.quotation_requires_approval(tenant_id)
-        return today, requires_approval
-
     async def _today(self, tenant_id: UUID) -> date:
         return today_in_timezone(await self.org.get_timezone(tenant_id))
 
-    def _assert_version(self, row: Quotation, expected_version: int) -> None:
+    def _assert_version(self, row: SalesOrder, expected_version: int) -> None:
         if row.version != expected_version:
             raise DocumentStaleError(
                 details={
@@ -852,7 +953,7 @@ class QuotationService:
                 }
             )
 
-    async def _quotation_snapshot(self, tenant_id: UUID, row: Quotation) -> dict[str, object]:
+    async def _snapshot(self, tenant_id: UUID, row: SalesOrder) -> dict[str, object]:
         branch_name: str | None = None
         if row.branch_id is not None:
             branch_name = (await self.org.get_branch(tenant_id, row.branch_id)).name
@@ -869,13 +970,17 @@ class QuotationService:
         if row.payment_terms_id is not None:
             payment_term = await self.payment_terms.get(tenant_id, row.payment_terms_id)
             payment_term_name = payment_term.name
+        warehouse_name: str | None = None
+        if row.warehouse_id is not None:
+            warehouse_name = (await self.warehouses.get(tenant_id, row.warehouse_id)).name
         return {
-            "quote_number": row.quote_number,
+            "document_number": row.document_number,
             "status": row.status,
             "version": row.version,
-            "quote_date": row.quote_date,
-            "valid_until": row.valid_until,
+            "order_date": row.order_date,
+            "reference_number": row.reference_number,
             "branch": branch_name,
+            "warehouse": warehouse_name,
             "customer": customer.name,
             "contact": contact_name,
             "tax_treatment": row.tax_treatment,
@@ -895,12 +1000,14 @@ class QuotationService:
             "grand_total": row.grand_total,
             "foreign_amount": row.foreign_amount,
             "base_amount": row.base_amount,
+            "fulfillment_status": row.fulfillment_status,
+            "billing_status": row.billing_status,
         }
 
     async def _require(
-        self, tenant_id: UUID, quotation_id: UUID, *, for_update: bool = False
-    ) -> Quotation:
-        row = await self.repo.get(tenant_id, quotation_id, for_update=for_update)
+        self, tenant_id: UUID, sales_order_id: UUID, *, for_update: bool = False
+    ) -> SalesOrder:
+        row = await self.repo.get(tenant_id, sales_order_id, for_update=for_update)
         if row is None:
-            raise ResourceNotFoundError("Quotation not found")
+            raise ResourceNotFoundError("Sales order not found")
         return row

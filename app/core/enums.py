@@ -28,6 +28,44 @@ class QuotationStatus(StrEnum):
     CONVERTED = "CONVERTED"
 
 
+class SalesOrderStatus(StrEnum):
+    DRAFT = "DRAFT"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    CONFIRMED = "CONFIRMED"
+    CLOSED = "CLOSED"
+    CANCELLED = "CANCELLED"
+
+
+class PurchaseOrderStatus(StrEnum):
+    DRAFT = "DRAFT"
+    PENDING_APPROVAL = "PENDING_APPROVAL"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    ISSUED = "ISSUED"
+    CLOSED = "CLOSED"
+    CANCELLED = "CANCELLED"
+
+
+class FulfillmentStatus(StrEnum):
+    NOT_DELIVERED = "NOT_DELIVERED"
+    PARTIALLY_DELIVERED = "PARTIALLY_DELIVERED"
+    DELIVERED = "DELIVERED"
+
+
+class ReceiptStatus(StrEnum):
+    NOT_RECEIVED = "NOT_RECEIVED"
+    PARTIALLY_RECEIVED = "PARTIALLY_RECEIVED"
+    RECEIVED = "RECEIVED"
+
+
+class BillingStatus(StrEnum):
+    NOT_INVOICED = "NOT_INVOICED"
+    PARTIALLY_INVOICED = "PARTIALLY_INVOICED"
+    INVOICED = "INVOICED"
+
+
 class TaxTreatment(StrEnum):
     REGISTERED = "REGISTERED"
     UNREGISTERED = "UNREGISTERED"
@@ -180,6 +218,10 @@ class AuditAction(StrEnum):
     CLONE = "CLONE"
     POST = "POST"
     CANCEL = "CANCEL"
+    CONFIRM = "CONFIRM"
+    ISSUE = "ISSUE"
+    CLOSE = "CLOSE"
+    CONVERT = "CONVERT"
     LOGIN = "LOGIN"
     LOGOUT = "LOGOUT"
 
@@ -213,6 +255,8 @@ class AttachmentEntityType(StrEnum):
     CONTACT = "CONTACT"
     PRODUCT = "PRODUCT"
     QUOTATION = "QUOTATION"
+    SALES_ORDER = "SALES_ORDER"
+    PURCHASE_ORDER = "PURCHASE_ORDER"
     BRANCH = "BRANCH"
     EMPLOYEE = "EMPLOYEE"
 

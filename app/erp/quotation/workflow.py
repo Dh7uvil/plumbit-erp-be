@@ -18,21 +18,11 @@ _TRANSITIONS: dict[tuple[QuotationStatus, str], QuotationStatus] = {
     (QuotationStatus.SENT, "decline"): QuotationStatus.DECLINED,
     (QuotationStatus.SENT, "cancel"): QuotationStatus.CANCELLED,
     (QuotationStatus.ACCEPTED, "cancel"): QuotationStatus.CANCELLED,
+    (QuotationStatus.ACCEPTED, "convert"): QuotationStatus.CONVERTED,
 }
 
 _EDITABLE = frozenset({QuotationStatus.DRAFT})
-_PRE_CONVERT = frozenset(
-    {
-        QuotationStatus.DRAFT,
-        QuotationStatus.PENDING_APPROVAL,
-        QuotationStatus.APPROVED,
-        QuotationStatus.REJECTED,
-        QuotationStatus.SENT,
-        QuotationStatus.ACCEPTED,
-        QuotationStatus.EXPIRED,
-        QuotationStatus.DECLINED,
-    }
-)
+_CONVERTIBLE = frozenset({QuotationStatus.ACCEPTED})
 
 
 def next_status(current: QuotationStatus, action: str) -> QuotationStatus:
@@ -53,6 +43,8 @@ def assert_editable(status: QuotationStatus) -> None:
         raise InvalidStatusTransitionError("Only draft quotations can be edited")
 
 
-def assert_pre_convert(status: QuotationStatus) -> None:
-    if status not in _PRE_CONVERT or status == QuotationStatus.CONVERTED:
-        raise InvalidStatusTransitionError("Quotation cannot be cancelled in this status")
+def assert_convertible(status: QuotationStatus) -> None:
+    if status not in _CONVERTIBLE:
+        raise InvalidStatusTransitionError(
+            "Only an accepted quotation can be converted to a sales order"
+        )

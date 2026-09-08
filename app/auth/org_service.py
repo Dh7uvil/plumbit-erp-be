@@ -56,6 +56,8 @@ _SETTINGS_FIELDS = (
     "fiscal_year_start",
     "default_currency",
     "quotation_requires_approval",
+    "sales_order_requires_approval",
+    "purchase_order_requires_approval",
     "headquarters",
 )
 
@@ -512,6 +514,8 @@ class OrganizationService:
             default_currency=settings.default_currency,
             default_currency_id=tenant.default_currency_id,
             quotation_requires_approval=settings.quotation_requires_approval,
+            sales_order_requires_approval=settings.sales_order_requires_approval,
+            purchase_order_requires_approval=settings.purchase_order_requires_approval,
             allow_negative_stock=tenant.allow_negative_stock,
             lock_date=tenant.lock_date,
             hard_lock_date=tenant.hard_lock_date,
@@ -667,6 +671,16 @@ class OrganizationService:
         tenant = await self._require_tenant(tenant_id)
         settings = TenantSettings.model_validate(tenant.settings or {})
         return settings.quotation_requires_approval
+
+    async def sales_order_requires_approval(self, tenant_id: UUID) -> bool:
+        tenant = await self._require_tenant(tenant_id)
+        settings = TenantSettings.model_validate(tenant.settings or {})
+        return settings.sales_order_requires_approval
+
+    async def purchase_order_requires_approval(self, tenant_id: UUID) -> bool:
+        tenant = await self._require_tenant(tenant_id)
+        settings = TenantSettings.model_validate(tenant.settings or {})
+        return settings.purchase_order_requires_approval
 
     async def get_inventory_controls(
         self, tenant_id: UUID, *, for_update: bool = False

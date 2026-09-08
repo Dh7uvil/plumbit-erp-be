@@ -26,6 +26,11 @@ class WarehouseRepository:
     async def get(self, tenant_id: UUID, warehouse_id: UUID) -> Warehouse | None:
         return await self._repo.get(tenant_id, warehouse_id)
 
+    async def get_default(self, tenant_id: UUID) -> Warehouse | None:
+        statement = self._repo.base_query(tenant_id).where(Warehouse.is_default.is_(True))
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
     async def get_many(self, tenant_id: UUID, ids: Sequence[UUID]) -> Sequence[Warehouse]:
         if not ids:
             return []

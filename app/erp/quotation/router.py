@@ -12,6 +12,7 @@ from app.auth.catalog import (
     QUOTATION_READ,
     QUOTATION_SEND,
     QUOTATION_UPDATE,
+    SALES_ORDER_CREATE,
 )
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
@@ -22,6 +23,7 @@ from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
 from app.erp.quotation.dependencies import QuotationServiceDependency
 from app.erp.quotation.schemas import (
+    ConvertToSalesOrderRequest,
     QuotationComposeDefaults,
     QuotationCreate,
     QuotationFilter,
@@ -29,6 +31,8 @@ from app.erp.quotation.schemas import (
     QuotationResponse,
     QuotationUpdate,
 )
+from app.erp.sales_orders.dependencies import SalesOrderServiceDependency
+from app.erp.sales_orders.schemas import SalesOrderResponse
 
 router = APIRouter(prefix="/quotations", tags=["Quotations"])
 
@@ -271,3 +275,31 @@ async def clone_quotation(
 ) -> ApiResponse[QuotationResponse]:
     row = await service.clone(tenant.tenant_id, quotation_id, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Quotation cloned as a new draft")
+
+
+@router.post(
+    "/{quotation_id}/convert-to-sales-order",
+    response_model=ApiResponse[SalesOrderResponse],
+)
+async def convert_quotation_to_sales_order(
+    quotation_id: UUID,
+    tenant: TenantContextDependency,
+    sales_orders: SalesOrderServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(QUOTATION_UPDATE))],
+    __: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_CREATE))],
+    if_match: IfMatch = None,
+    payload: Annotated[ConvertToSalesOrderRequest | None, Body()] = None,
+) -> ApiResponse[SalesOrderResponse]:
+    body = payload or ConvertToSalesOrderRequest()
+    row = await sales_orders.create_from_quotation(
+        tenant.tenant_id,
+        quotation_id,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(if_match=if_match, body_version=body.version),
+        order_date=body.order_date,
+        expected_shipment_date=body.expected_shipment_date,
+        reference_number=body.reference_number,
+        warehouse_id=body.warehouse_id,
+        branch_id=body.branch_id,
+    )
+    return ApiResponse(data=row, message="Quotation converted to a sales order")

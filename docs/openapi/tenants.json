@@ -498,6 +498,16 @@
             "title": "Quotation Requires Approval",
             "default": true
           },
+          "sales_order_requires_approval": {
+            "type": "boolean",
+            "title": "Sales Order Requires Approval",
+            "default": false
+          },
+          "purchase_order_requires_approval": {
+            "type": "boolean",
+            "title": "Purchase Order Requires Approval",
+            "default": false
+          },
           "allow_negative_stock": {
             "type": "boolean",
             "title": "Allow Negative Stock",
@@ -709,6 +719,28 @@
               }
             ],
             "title": "Quotation Requires Approval"
+          },
+          "sales_order_requires_approval": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sales Order Requires Approval"
+          },
+          "purchase_order_requires_approval": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Order Requires Approval"
           },
           "allow_negative_stock": {
             "anyOf": [

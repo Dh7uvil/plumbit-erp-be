@@ -4,7 +4,12 @@ import pytest
 
 from app.core.enums import QuotationStatus
 from app.core.exceptions import InvalidStatusTransitionError
-from app.erp.quotation.workflow import assert_editable, next_status, transition_actions
+from app.erp.quotation.workflow import (
+    assert_convertible,
+    assert_editable,
+    next_status,
+    transition_actions,
+)
 
 
 def test_happy_path_submit_approve_send_accept() -> None:
@@ -38,4 +43,14 @@ def test_only_draft_is_editable() -> None:
 def test_transition_actions_follow_the_machine() -> None:
     assert transition_actions(QuotationStatus.DRAFT) == ["submit", "send", "cancel"]
     assert transition_actions(QuotationStatus.PENDING_APPROVAL) == ["approve", "reject", "cancel"]
+    assert transition_actions(QuotationStatus.ACCEPTED) == ["cancel", "convert"]
     assert transition_actions(QuotationStatus.EXPIRED) == []
+
+
+def test_only_accepted_is_convertible() -> None:
+    assert_convertible(QuotationStatus.ACCEPTED)
+    with pytest.raises(InvalidStatusTransitionError):
+        assert_convertible(QuotationStatus.SENT)
+    with pytest.raises(InvalidStatusTransitionError):
+        assert_convertible(QuotationStatus.REJECTED)
+    assert next_status(QuotationStatus.ACCEPTED, "convert") == QuotationStatus.CONVERTED
