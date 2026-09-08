@@ -138,6 +138,14 @@ OPENAPI_TAGS: list[dict[str, str]] = [
             "Commercial quotations with server-side totals, UAE VAT, and status workflow."
         ),
     },
+    {
+        "name": "Period Lock",
+        "description": (
+            "Transaction lock and books close. GET is visible with organization.read; "
+            "preview and PATCH require erp.period.lock. Override bypasses the transaction "
+            "lock only; books close blocks every role until unlocked with a reason."
+        ),
+    },
 ]
 APP_DESCRIPTION = "Multi-tenant ERP backend API."
 

@@ -1,0 +1,523 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Plumbit ERP API \u2014 Period Lock",
+    "description": "Transaction lock and books close. GET is visible with organization.read; preview and PATCH require erp.period.lock. Override bypasses the transaction lock only; books close blocks every role until unlocked with a reason.",
+    "version": "0.1.0"
+  },
+  "tags": [
+    {
+      "name": "Period Lock",
+      "description": "Transaction lock and books close. GET is visible with organization.read; preview and PATCH require erp.period.lock. Override bypasses the transaction lock only; books close blocks every role until unlocked with a reason."
+    }
+  ],
+  "paths": {
+    "/api/v1/period-lock": {
+      "get": {
+        "tags": [
+          "Period Lock"
+        ],
+        "summary": "Get Period Lock",
+        "operationId": "get_period_lock_api_v1_period_lock_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PeriodLockResponse_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Period Lock"
+        ],
+        "summary": "Update Period Lock",
+        "operationId": "update_period_lock_api_v1_period_lock_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeriodLockUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PeriodLockResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/period-lock/preview": {
+      "get": {
+        "tags": [
+          "Period Lock"
+        ],
+        "summary": "Preview Period Lock",
+        "operationId": "preview_period_lock_api_v1_period_lock_preview_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "lock_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lock Date"
+            }
+          },
+          {
+            "name": "hard_lock_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hard Lock Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PeriodLockPreviewResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiResponse_PeriodLockPreviewResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/PeriodLockPreviewResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[PeriodLockPreviewResponse]"
+      },
+      "ApiResponse_PeriodLockResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/PeriodLockResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[PeriodLockResponse]"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "PeriodLockNegativeBalance": {
+        "properties": {
+          "warehouse_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Warehouse Id"
+          },
+          "warehouse_code": {
+            "type": "string",
+            "title": "Warehouse Code"
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Product Id"
+          },
+          "sku": {
+            "type": "string",
+            "title": "Sku"
+          },
+          "qty_on_hand": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty On Hand"
+          }
+        },
+        "type": "object",
+        "required": [
+          "warehouse_id",
+          "warehouse_code",
+          "product_id",
+          "sku",
+          "qty_on_hand"
+        ],
+        "title": "PeriodLockNegativeBalance"
+      },
+      "PeriodLockPreviewResponse": {
+        "properties": {
+          "allow_negative_stock": {
+            "type": "boolean",
+            "title": "Allow Negative Stock"
+          },
+          "negative_balances": {
+            "items": {
+              "$ref": "#/components/schemas/PeriodLockNegativeBalance"
+            },
+            "type": "array",
+            "title": "Negative Balances"
+          },
+          "negative_balances_total_count": {
+            "type": "integer",
+            "title": "Negative Balances Total Count"
+          },
+          "negative_balances_are_current": {
+            "type": "boolean",
+            "title": "Negative Balances Are Current",
+            "default": true
+          },
+          "unposted_documents": {
+            "items": {
+              "$ref": "#/components/schemas/PeriodLockUnpostedDocument"
+            },
+            "type": "array",
+            "title": "Unposted Documents"
+          },
+          "unposted_documents_total_count": {
+            "type": "integer",
+            "title": "Unposted Documents Total Count"
+          },
+          "blocked": {
+            "type": "boolean",
+            "title": "Blocked"
+          },
+          "requires_acknowledgement": {
+            "type": "boolean",
+            "title": "Requires Acknowledgement"
+          }
+        },
+        "type": "object",
+        "required": [
+          "allow_negative_stock",
+          "negative_balances",
+          "negative_balances_total_count",
+          "unposted_documents",
+          "unposted_documents_total_count",
+          "blocked",
+          "requires_acknowledgement"
+        ],
+        "title": "PeriodLockPreviewResponse"
+      },
+      "PeriodLockResponse": {
+        "properties": {
+          "lock_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lock Date"
+          },
+          "hard_lock_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hard Lock Date"
+          },
+          "lock_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lock Reason"
+          },
+          "hard_lock_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hard Lock Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lock_date",
+          "hard_lock_date",
+          "lock_reason",
+          "hard_lock_reason"
+        ],
+        "title": "PeriodLockResponse"
+      },
+      "PeriodLockUnpostedDocument": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "document_type": {
+            "type": "string",
+            "enum": [
+              "stock_adjustment",
+              "stock_transfer"
+            ],
+            "title": "Document Type"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "document_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Document Date"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "document_type",
+          "document_number",
+          "document_date",
+          "status"
+        ],
+        "title": "PeriodLockUnpostedDocument"
+      },
+      "PeriodLockUpdate": {
+        "properties": {
+          "lock_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lock Date"
+          },
+          "hard_lock_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hard Lock Date"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "acknowledge_negative_stock": {
+            "type": "boolean",
+            "title": "Acknowledge Negative Stock",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "PeriodLockUpdate"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

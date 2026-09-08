@@ -143,6 +143,7 @@ class StockTransferResponse(BaseModel):
     cancelled_by: UUID | None
     cancel_reason: str | None
     available_actions: list[str] = Field(default_factory=list)
+    period_locked: bool = False
     lines: list[StockTransferLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

@@ -1206,6 +1206,11 @@
             "type": "array",
             "title": "Available Actions"
           },
+          "period_locked": {
+            "type": "boolean",
+            "title": "Period Locked",
+            "default": false
+          },
           "lines": {
             "items": {
               "$ref": "#/components/schemas/StockTransferLineResponse"

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
     INVENTORY_MODULE,
+    PERIOD_OVERRIDE,
     STOCK_TRANSFER_CREATE,
     STOCK_TRANSFER_DELETE,
     STOCK_TRANSFER_POST,
@@ -20,6 +21,7 @@ from app.auth.catalog import (
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
+from app.common.period_lock import PeriodLockPolicy
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
@@ -81,6 +83,8 @@ class StockTransferService:
         self.sequences = DocumentSequenceService(session)
         self.idempotency = IdempotencyService(session)
         self.audit = AuditWriter(session)
+        self._can_override = has_permission(actor_permissions, PERIOD_OVERRIDE)
+        self._period_policy: PeriodLockPolicy | None = None
 
     async def list(
         self,
@@ -119,10 +123,13 @@ class StockTransferService:
             filters=filters or None,
             extra_criteria=extra or None,
         )
+        await self._ensure_policy(tenant_id)
         return [self._to_response(row) for row in rows], total
 
     async def get(self, tenant_id: UUID, transfer_id: UUID) -> StockTransferResponse:
-        return self._to_response(await self._require(tenant_id, transfer_id))
+        row = await self._require(tenant_id, transfer_id)
+        await self._ensure_policy(tenant_id)
+        return self._to_response(row)
 
     async def create(
         self, tenant_id: UUID, payload: StockTransferCreate, *, actor_user_id: UUID
@@ -130,6 +137,8 @@ class StockTransferService:
         async with transaction(self.session):
             header, line_rows = await self._build_draft(tenant_id, payload)
             document_date = cast(date, header["document_date"])
+            policy = await self._ensure_policy(tenant_id)
+            policy.assert_open(document_date, can_override=self._can_override)
             number = await self.sequences.allocate(
                 tenant_id,
                 document_type=DocumentType.STOCK_TRANSFER,
@@ -178,6 +187,8 @@ class StockTransferService:
             old_values = await self._snapshot(tenant_id, existing)
             create_payload = self._update_to_create(existing, payload)
             header, line_rows = await self._build_draft(tenant_id, create_payload)
+            policy = await self._ensure_policy(tenant_id)
+            policy.assert_open(cast(date, header["document_date"]), can_override=self._can_override)
             header["updated_by"] = actor_user_id
             header["version"] = existing.version + 1
             await self.repo.update(tenant_id, transfer_id, header)
@@ -208,6 +219,7 @@ class StockTransferService:
             if StockDocumentStatus(row.status) != StockDocumentStatus.DRAFT:
                 raise InvalidStatusTransitionError("Only draft stock transfers can be deleted")
             self._assert_version(row, expected_version)
+            await self._ensure_policy(tenant_id)
             response = self._to_response(row)
             old_values = await self._snapshot(tenant_id, row)
             await self.repo.soft_delete(tenant_id, transfer_id)
@@ -241,6 +253,7 @@ class StockTransferService:
                 return StockTransferResponse.model_validate(replay)
             row = await self._require(tenant_id, transfer_id, for_update=True)
             if StockDocumentStatus(row.status) == StockDocumentStatus.POSTED:
+                await self._ensure_policy(tenant_id)
                 response = self._to_response(row)
                 await self.idempotency.store(
                     tenant_id, idempotency_key, response.model_dump(mode="json")
@@ -263,6 +276,7 @@ class StockTransferService:
                         warehouse_id=warehouse_id,
                         product_id=line.product_id,
                         document_date=row.document_date,
+                        can_override_soft_lock=self._can_override,
                     )
                 source = locked_by_warehouse[row.from_warehouse_id]
                 dest = locked_by_warehouse[row.to_warehouse_id]
@@ -304,6 +318,7 @@ class StockTransferService:
             await self.session.flush()
             await self.session.refresh(row, attribute_names=["updated_at"])
             loaded = await self._require(tenant_id, transfer_id)
+            await self._ensure_policy(tenant_id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -342,6 +357,7 @@ class StockTransferService:
             row.updated_by = actor_user_id
             await self.session.flush()
             await self.session.refresh(row, attribute_names=["updated_at"])
+            await self._ensure_policy(tenant_id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -462,9 +478,13 @@ class StockTransferService:
             lines=lines,
         )
 
-    def _available_actions(self, status: StockDocumentStatus) -> builtins.list[str]:
+    def _available_actions(
+        self, status: StockDocumentStatus, *, period_locked: bool
+    ) -> builtins.list[str]:
         actions: builtins.list[str] = []
         for action in transition_actions(status):
+            if action == "post" and period_locked:
+                continue
             required = _ACTION_PERMISSIONS[action]
             if has_permission(self.actor_permissions, required):
                 actions.append(action)
@@ -478,6 +498,8 @@ class StockTransferService:
 
     def _to_response(self, row: StockTransfer) -> StockTransferResponse:
         status = StockDocumentStatus(row.status)
+        date_locked = self._date_in_locked_period(row.document_date)
+        post_blocked = self._post_blocked(row.document_date)
         return StockTransferResponse(
             id=row.id,
             tenant_id=row.tenant_id,
@@ -497,11 +519,27 @@ class StockTransferService:
             cancelled_at=row.cancelled_at,
             cancelled_by=row.cancelled_by,
             cancel_reason=row.cancel_reason,
-            available_actions=self._available_actions(status),
+            available_actions=self._available_actions(status, period_locked=post_blocked),
+            period_locked=date_locked,
             lines=[StockTransferLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
+
+    async def _ensure_policy(self, tenant_id: UUID) -> PeriodLockPolicy:
+        if self._period_policy is None:
+            _, self._period_policy = await self.org.get_inventory_controls(tenant_id)
+        return self._period_policy
+
+    def _date_in_locked_period(self, document_date: date) -> bool:
+        if self._period_policy is None:
+            return False
+        return self._period_policy.is_locked(document_date, can_override=False)
+
+    def _post_blocked(self, document_date: date) -> bool:
+        if self._period_policy is None:
+            return False
+        return self._period_policy.is_locked(document_date, can_override=self._can_override)
 
     def _assert_version(self, row: StockTransfer, expected_version: int) -> None:
         if row.version != expected_version:

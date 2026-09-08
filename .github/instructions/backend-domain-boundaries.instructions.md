@@ -119,10 +119,11 @@ Identity is the Python package `app/auth/` — keep that name.
 auth (Identity)         implemented: auth, users, roles, permissions, tenants/org-settings,
                         branches, departments, employees (nested), audit-logs
                         (attachments live in app/common/attachments/ with identity.attachment.*)
-                        planned: tenant operational settings (allow_negative_stock, lock dates)
+                        tenant operational settings: allow_negative_stock, lock_date,
+                        hard_lock_date, lock_reason, hard_lock_reason
 
 erp                     implemented: currencies, exchange_rates, taxes, payment_terms,
-                        terms_templates, document_sequences, suppliers, quotations
+                        terms_templates, document_sequences, suppliers, quotations, period_lock
                         planned: sales_orders, sales_invoices, credit_notes, customer_payments,
                         purchase_orders, purchase_invoices, debit_notes, supplier_payments,
                         accounting (chart of accounts, journals, AR, AP),
@@ -130,9 +131,9 @@ erp                     implemented: currencies, exchange_rates, taxes, payment_
                         einvoicing status APIs (on sales invoices and credit notes;
                         inbound e-bills as draft purchase invoices)
 
-inventory_management    implemented: units, categories, products, price_lists, warehouses
-                        planned: stock, stock_transfers, stock_adjustments, goods_receipts (GRN),
-                        delivery_notes, sales_returns
+inventory_management    implemented: units, categories, products, price_lists, warehouses,
+                        stock, stock_transfers, stock_adjustments
+                        planned: goods_receipts (GRN), delivery_notes, sales_returns
 
 crm                     implemented: customers, contacts
                         planned: leads, opportunities, activities
@@ -279,7 +280,7 @@ the original row; the user posts a credit note (and a new invoice if needed) in 
 Treat on-hand quantity as a guarded invariant, not a number field you decrement blindly.
 
 Each tenant has `allow_negative_stock` (default **false**), stored as a first-class tenant
-column (not a JSONB extra) when that slice is built. When it is false, validating a
+column (not a JSONB extra). When it is false, validating a
 delivery note, sales dispatch or stock-out **must** abort if available physical stock is less
 than the requested quantity:
 
@@ -294,7 +295,10 @@ movement, with `SELECT FOR UPDATE` on the stock row so concurrent sales cannot b
 not rely on the UI.
 
 When the toggle is true (warehouse-speed mode), negative on-hand is allowed but must still be
-visible on the warehouse and must **block period close**.
+visible on the warehouse. Advancing a period lock while negatives exist is refused unless
+`allow_negative_stock` is true **and** the caller passes `acknowledge_negative_stock`. When
+negatives are not allowed, advancing the lock is a hard block (`PERIOD_LOCK_BLOCKED_NEGATIVE_STOCK`,
+`details.reason=negative_stock_disallowed`). Unlocking or clearing a lock skips this gate.
 
 ## 12. Period lock (monthly close)
 
@@ -302,26 +306,34 @@ Do not freeze the whole application with a manual "end of month" tool. Store per
 first-class columns:
 
 ```text
-lock_date         blocks non-adviser roles from mutating dated vouchers
-hard_lock_date    blocks every role, including advisers
+lock_date           transaction lock (soft) — bypassable with erp.period.override
+hard_lock_date      books close (hard) — nobody posts through it, including Superadmin
+lock_reason         last reason persisted for the transaction lock
+hard_lock_reason    last reason persisted for books close
 ```
 
-On create, update or delete of sales, purchase, invoice, bill, stock movement or journal
-entry, compare `document_date` to the lock:
+`hard_lock_date <= lock_date` when both are set. Neither date may be after today in the tenant
+timezone. Policy lives in `app/common/period_lock.py` (`PeriodLockPolicy.assert_open`). Dated
+create, update and post of stock documents compare `document_date` to the lock:
 
 ```text
-if document_date <= applicable_lock_date  →  reject
-code: PERIOD_LOCKED
-details: lock_date, hard_lock_date, document_date
-"This period is closed for auditing."
+if document_date <= hard_lock_date                          → PERIOD_LOCKED (tier=hard)
+if document_date <= lock_date and actor lacks override          → PERIOD_LOCKED (tier=soft)
+details: lock_date, hard_lock_date, document_date, tier, reason
 ```
 
-Setting or advancing a lock date is refused while **any warehouse** for that tenant has
-negative on-hand (`PERIOD_LOCK_BLOCKED_NEGATIVE_STOCK`, details include warehouse and qty).
-Clear inventory errors first. Locking and unlocking are audited. Changing these columns is
-permissioned: org profile stays `identity.organization.update`; advancing locks uses dedicated
-`erp.period.lock` when that permission exists. AI may **flag** unposted GRNs and anomalies
-before close; it must not set the lock.
+Drafts are not books: delete and cancel of an unposted draft stay allowed at any date. Re-dating
+a stranded draft into the open period is allowed; an update whose **resulting** date is still locked
+is not.
+
+Setting or advancing a lock is refused while any warehouse has negative on-hand **and**
+`allow_negative_stock` is false (`PERIOD_LOCK_BLOCKED_NEGATIVE_STOCK`,
+`details.reason=negative_stock_disallowed`). When negatives are allowed, the caller must pass
+`acknowledge_negative_stock` (`details.reason=acknowledgement_required`). Unlocking or clearing
+skips the gate. Locking and unlocking are audited (`entity_type=period_lock`). Changing lock
+columns is permissioned `erp.period.lock`; `erp.period.override` bypasses the transaction lock
+only. Org profile stays `identity.organization.update` and does not write lock dates.
+AI may **flag** unposted documents and anomalies before close; it must not set the lock.
 
 ## 13. Invoice posting (ledger rule)
 
@@ -579,14 +591,16 @@ hardcoded router constant).
 
 These are first-class tenant **columns**, not JSONB extras, with dedicated permissions and
 audit on change. Today `TenantSettings` only has profile fields plus `quotation_requires_approval`
-— document the operational columns so they are added as columns when the slice is built:
+— operational columns on `tenants`:
 
 ```text
 allow_negative_stock    default false     identity.organization.update
-lock_date               date or null      erp.period.lock (or identity.organization.update until then)
-hard_lock_date          date or null      erp.period.lock
-einvoicing_required     default false     identity.organization.update
-asp_provider_id         tenant-selected   identity.organization.update (credentials stay server-only)
+lock_date               date or null    erp.period.lock
+hard_lock_date          date or null     erp.period.lock
+lock_reason             string or null  erp.period.lock
+hard_lock_reason        string or null  erp.period.lock
+einvoicing_required     default false    identity.organization.update
+asp_provider_id         tenant-selected    identity.organization.update (credentials stay server-only)
 peppol_participant_id, tin, digital identity   on tenant (public identifiers, not secrets)
 ```
 

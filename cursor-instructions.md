@@ -42,14 +42,15 @@ app/
 │                                 utils/ attachments/
 ├── auth/                         Identity: auth, users, roles, permissions, tenants/org-settings,
 │                                 branches, departments, employees (nested), audit-logs
-│                                 planned: tenant operational settings (negative stock, lock dates)
+│                                 operational settings: allow_negative_stock, lock dates, reasons
 ├── crm/                          implemented: customers, contacts
 │                                 planned: leads, opportunities, activities
-├── inventory_management/         implemented: units, categories, products, price_lists, warehouses
-│                                 planned: stock, stock_transfers, stock_adjustments,
-│                                 goods_receipts (GRN), delivery_notes, sales_returns
+├── inventory_management/         implemented: units, categories, products, price_lists, warehouses,
+│                                 stock, stock_transfers, stock_adjustments
+│                                 planned: goods_receipts (GRN), delivery_notes, sales_returns
 ├── erp/                          implemented: currencies, exchange_rates, taxes, payment_terms,
-│                                 terms_templates, document_sequences, suppliers, quotations
+│                                 terms_templates, document_sequences, suppliers, quotations,
+│                                 period_lock
 │                                 planned: sales_orders, sales_invoices, credit_notes,
 │                                 customer_payments, purchase_orders, purchase_invoices,
 │                                 debit_notes, supplier_payments,
@@ -109,8 +110,10 @@ Read the relevant file before working in that area — each one is the authority
   adjustment in the **open** period (double-entry, immutable history).
 - Respect tenant `allow_negative_stock`. When it is off, block dispatch/sale if physical stock
   is insufficient — require GRN / purchase receipt first. Check under `SELECT FOR UPDATE`.
-- Respect tenant lock dates. Do not create, edit or delete a voucher dated on or before the lock.
-  Refuse to advance a lock while any warehouse is negative.
+- Respect tenant lock dates via `PeriodLockPolicy`. Do not create, update or post a voucher
+  dated on or before the lock (override bypasses the transaction lock only; books close is
+  final). Delete and cancel of unposted drafts stay allowed. Refuse to advance a lock while
+  any warehouse is negative unless negatives are allowed and acknowledged.
 - Invoices stay `DRAFT` until explicit Confirm/Post. Drafts do not touch stock, AR, tax or GL.
   Posting is `POST /{resource}/{id}/post` (or `/confirm`), never a side effect of PATCH.
 - Every workflow document response includes `available_actions`. That list is the only legal

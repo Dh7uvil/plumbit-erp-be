@@ -147,10 +147,10 @@ Solid = implemented. Dashed in draw.io = planned.
 
 | Top-level | Implemented slices | API examples | Planned slices |
 | --- | --- | --- | --- |
-| Identity (`app/auth/`) | tenants, auth, users, roles, permissions, branches, departments, employees (nested), audit logs; tenant columns `allow_negative_stock`, `lock_date`, `hard_lock_date` | `/tenants`, `/auth/login`, `/users`, `/roles` | period-close PATCH / `erp.period.lock` |
+| Identity (`app/auth/`) | tenants, auth, users, roles, permissions, branches, departments, employees (nested), audit logs; tenant columns `allow_negative_stock`, `lock_date`, `hard_lock_date`, `lock_reason`, `hard_lock_reason` | `/tenants`, `/auth/login`, `/users`, `/roles` | — |
 | CRM (`app/crm/`) | customers, contacts | `/customers`, `/contacts` | leads, opportunities, activities |
 | Inventory (`app/inventory_management/`) | units, categories, products, price lists, warehouses, stock, stock transfers, stock adjustments | `/units`, `/products`, `/warehouses`, `/stock`, `/stock-transfers`, `/stock-adjustments` | GRN, delivery notes, sales returns |
-| ERP (`app/erp/`) | currencies, exchange rates, taxes, payment terms, terms templates, document sequences, suppliers, quotations | `/quotations`, `/suppliers`, `/exchange-rates` | sales orders, sales invoices, credit notes, customer payments, purchase orders, purchase invoices, debit notes, supplier payments, logistics, journals / AR / AP, einvoicing status APIs |
+| ERP (`app/erp/`) | currencies, exchange rates, taxes, payment terms, terms templates, document sequences, suppliers, quotations, period lock | `/quotations`, `/suppliers`, `/exchange-rates`, `/period-lock` | sales orders, sales invoices, credit notes, customer payments, purchase orders, purchase invoices, debit notes, supplier payments, logistics, journals / AR / AP, einvoicing status APIs |
 | Common | attachments | `/attachments` | — |
 | `integrations` | storage | — | email, WhatsApp, video, AI, forecast, `einvoicing/` ASP adapters |
 | `communication_service` | — | — | email, WhatsApp, chat, meetings (Agora) |
@@ -214,7 +214,7 @@ Tenant column `allow_negative_stock` (default false). When false, dispatch/sale/
 
 ### Period lock
 
-Tenant `lock_date` (non-advisers) and `hard_lock_date` (everyone) are first-class columns. Dated stock posts are rejected when `document_date <= lock` (`PERIOD_LOCKED`, details include both lock dates). Advancing the lock is still planned (`erp.period.lock`) and must refuse while any warehouse has negative on-hand (`PERIOD_LOCK_BLOCKED_NEGATIVE_STOCK`).
+Tenant `lock_date` (transaction lock, bypassable with `erp.period.override`) and `hard_lock_date` (books close, every role) are first-class columns with persisted reasons. Dated stock create/update/post is rejected when `document_date` is locked (`PERIOD_LOCKED`, details include both lock dates, `tier`, and the matching reason). Delete and cancel of unposted drafts stay open. Advancing the lock uses `PATCH /period-lock` (`erp.period.lock`). It is refused while any warehouse has negative on-hand unless `allow_negative_stock` is true and the caller acknowledges (`PERIOD_LOCK_BLOCKED_NEGATIVE_STOCK`, `details.reason`).
 
 ### Invoice posting
 

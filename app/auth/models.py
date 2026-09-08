@@ -59,6 +59,8 @@ class Tenant(TimestampedModel):
     )
     lock_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     hard_lock_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    lock_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    hard_lock_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
 class User(TenantModel):

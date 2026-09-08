@@ -29,6 +29,7 @@ from app.auth.schemas import (
     UserSummary,
     format_address_label,
 )
+from app.common.period_lock import PeriodLockPolicy
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
@@ -438,8 +439,8 @@ class OrganizationService:
             )
             return response
 
-    async def _require_tenant(self, tenant_id: UUID) -> Tenant:
-        tenant = await self.access.get_tenant(tenant_id)
+    async def _require_tenant(self, tenant_id: UUID, *, for_update: bool = False) -> Tenant:
+        tenant = await self.access.get_tenant(tenant_id, for_update=for_update)
         if tenant is None:
             raise ResourceNotFoundError("Tenant not found")
         return tenant
@@ -668,12 +669,40 @@ class OrganizationService:
         return settings.quotation_requires_approval
 
     async def get_inventory_controls(
-        self, tenant_id: UUID
-    ) -> tuple[bool, date | None, date | None]:
-        """Return allow_negative_stock, lock_date, and hard_lock_date for posting checks."""
+        self, tenant_id: UUID, *, for_update: bool = False
+    ) -> tuple[bool, PeriodLockPolicy]:
+        """Return allow_negative_stock and the tenant period-lock policy."""
+
+        tenant = await self._require_tenant(tenant_id, for_update=for_update)
+        return tenant.allow_negative_stock, self._period_lock_policy(tenant)
+
+    async def set_period_lock(
+        self,
+        tenant_id: UUID,
+        *,
+        lock_date: date | None,
+        hard_lock_date: date | None,
+        lock_reason: str | None,
+        hard_lock_reason: str | None,
+    ) -> PeriodLockPolicy:
+        """Persist lock dates and reasons. Callers own the surrounding transaction."""
 
         tenant = await self._require_tenant(tenant_id)
-        return tenant.allow_negative_stock, tenant.lock_date, tenant.hard_lock_date
+        tenant.lock_date = lock_date
+        tenant.hard_lock_date = hard_lock_date
+        tenant.lock_reason = lock_reason
+        tenant.hard_lock_reason = hard_lock_reason
+        await self.session.flush()
+        await self.session.refresh(tenant)
+        return self._period_lock_policy(tenant)
+
+    def _period_lock_policy(self, tenant: Tenant) -> PeriodLockPolicy:
+        return PeriodLockPolicy(
+            lock_date=tenant.lock_date,
+            hard_lock_date=tenant.hard_lock_date,
+            lock_reason=tenant.lock_reason,
+            hard_lock_reason=tenant.hard_lock_reason,
+        )
 
     async def upsert_address(
         self,
