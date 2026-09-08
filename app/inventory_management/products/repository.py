@@ -3,6 +3,7 @@
 from collections.abc import Mapping, Sequence
 from uuid import UUID
 
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.repositories.base import BaseRepository
@@ -26,6 +27,32 @@ class ProductRepository:
 
     async def get(self, tenant_id: UUID, product_id: UUID) -> Product | None:
         return await self._repo.get(tenant_id, product_id)
+
+    async def get_many(self, tenant_id: UUID, ids: Sequence[UUID]) -> Sequence[Product]:
+        if not ids:
+            return []
+        statement = self._repo.base_query(tenant_id).where(Product.id.in_(list(ids)))
+        result = await self.session.execute(statement)
+        return result.scalars().all()
+
+    async def search_ids(self, tenant_id: UUID, search: str) -> list[UUID]:
+        term = f"%{search}%"
+        statement = select(Product.id).where(
+            Product.tenant_id == tenant_id,
+            Product.deleted_at.is_(None),
+            or_(Product.sku.ilike(term), Product.name.ilike(term)),
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars().all())
+
+    async def ids_by_category(self, tenant_id: UUID, category_id: UUID) -> list[UUID]:
+        statement = select(Product.id).where(
+            Product.tenant_id == tenant_id,
+            Product.deleted_at.is_(None),
+            Product.category_id == category_id,
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars().all())
 
     async def list(
         self,

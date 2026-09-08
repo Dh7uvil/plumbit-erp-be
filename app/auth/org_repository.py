@@ -6,11 +6,28 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.models import Address, Branch, Department, Employee, User
+from app.auth.models import Address, Branch, Department, Employee, Tenant, User
 from app.common.repositories.base import BaseRepository
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.utils.datetime import utcnow
 from app.core.enums import AddressType
+
+_EMPLOYEE_CODE_PREFIX = "EMP"
+
+
+def next_employee_code_from_existing(existing_codes: Sequence[str], year: int) -> str:
+    """Return the next ``EMP{year}{seq}`` code from existing codes for that year."""
+
+    prefix = f"{_EMPLOYEE_CODE_PREFIX}{year}"
+    highest = 0
+    for code in existing_codes:
+        if not code.startswith(prefix):
+            continue
+        suffix = code[len(prefix) :]
+        if suffix.isdigit():
+            highest = max(highest, int(suffix))
+    return f"{prefix}{highest + 1:02d}"
 
 
 class OrganizationRepository:
@@ -141,6 +158,21 @@ class OrganizationRepository:
     async def create_employee(self, tenant_id: UUID, values: Mapping[str, object]) -> Employee:
         return await self.employees.create(tenant_id, values)
 
+    async def next_employee_code(self, tenant_id: UUID) -> str:
+        """Allocate the next tenant-scoped ``EMP{year}{seq}`` code under a tenant lock."""
+
+        year = utcnow().year
+        prefix = f"{_EMPLOYEE_CODE_PREFIX}{year}"
+        await self.session.execute(
+            select(Tenant.id).where(Tenant.id == tenant_id).with_for_update()
+        )
+        statement = select(Employee.employee_code).where(
+            Employee.tenant_id == tenant_id,
+            Employee.employee_code.like(f"{prefix}%"),
+        )
+        result = await self.session.execute(statement)
+        return next_employee_code_from_existing(list(result.scalars().all()), year)
+
     async def update_employee(
         self,
         tenant_id: UUID,
@@ -213,9 +245,7 @@ class OrganizationRepository:
         result = await self.session.execute(statement)
         return {row.id: row for row in result.scalars().all()}
 
-    async def audit_employee_label(
-        self, tenant_id: UUID, employee_id: UUID | None
-    ) -> str | None:
+    async def audit_employee_label(self, tenant_id: UUID, employee_id: UUID | None) -> str | None:
         if employee_id is None:
             return None
         employees = await self.get_employees_by_ids(tenant_id, [employee_id])

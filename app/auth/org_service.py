@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -103,6 +104,8 @@ class OrganizationService:
                 tenant.timezone = values["timezone"]
             if "default_currency_id" in values:
                 tenant.default_currency_id = values["default_currency_id"]
+            if "allow_negative_stock" in values and values["allow_negative_stock"] is not None:
+                tenant.allow_negative_stock = values["allow_negative_stock"]
             settings = TenantSettings.model_validate(tenant.settings or {})
             settings_update = {key: values[key] for key in _SETTINGS_FIELDS if key in values}
             if settings_update:
@@ -508,6 +511,9 @@ class OrganizationService:
             default_currency=settings.default_currency,
             default_currency_id=tenant.default_currency_id,
             quotation_requires_approval=settings.quotation_requires_approval,
+            allow_negative_stock=tenant.allow_negative_stock,
+            lock_date=tenant.lock_date,
+            hard_lock_date=tenant.hard_lock_date,
             headquarters=settings.headquarters,
             logo_url=await presign_logo_url(self.storage, tenant.logo_storage_key),
             users_count=await self.org.count_users(tenant.id),
@@ -522,6 +528,9 @@ class OrganizationService:
             "name": tenant.name,
             "timezone": tenant.timezone,
             "settings": tenant.settings,
+            "allow_negative_stock": tenant.allow_negative_stock,
+            "lock_date": tenant.lock_date,
+            "hard_lock_date": tenant.hard_lock_date,
             "has_logo": tenant.logo_storage_key is not None,
         }
 
@@ -657,6 +666,14 @@ class OrganizationService:
         tenant = await self._require_tenant(tenant_id)
         settings = TenantSettings.model_validate(tenant.settings or {})
         return settings.quotation_requires_approval
+
+    async def get_inventory_controls(
+        self, tenant_id: UUID
+    ) -> tuple[bool, date | None, date | None]:
+        """Return allow_negative_stock, lock_date, and hard_lock_date for posting checks."""
+
+        tenant = await self._require_tenant(tenant_id)
+        return tenant.allow_negative_stock, tenant.lock_date, tenant.hard_lock_date
 
     async def upsert_address(
         self,

@@ -100,6 +100,27 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "description": "Inventory location master. One warehouse may be the tenant default.",
     },
     {
+        "name": "Stock",
+        "description": (
+            "Warehouse stock balances and the append-only movement ledger. "
+            "On-hand is never edited here; posting a transfer or adjustment moves quantity."
+        ),
+    },
+    {
+        "name": "Stock Transfers",
+        "description": (
+            "Warehouse-to-warehouse transfer documents. Save stays DRAFT; "
+            "POST /stock-transfers/{id}/post moves stock in one step."
+        ),
+    },
+    {
+        "name": "Stock Adjustments",
+        "description": (
+            "Quantity adjustments (opening stock, count, damage, found, other). "
+            "Save stays DRAFT; posting writes signed movements."
+        ),
+    },
+    {
         "name": "Customers",
         "description": "Quote-ready customer master with billing, shipping, and extra addresses.",
     },

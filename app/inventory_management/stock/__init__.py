@@ -1,0 +1,1 @@
+"""Inventory stock inquiry."""

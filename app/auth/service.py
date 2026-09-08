@@ -822,7 +822,6 @@ class AuthService:
                 raise ValidationError("Department does not belong to the selected branch")
 
         values: dict[str, object] = {
-            "employee_code": payload.employee_code,
             "branch_id": branch_id,
             "department_id": department_id,
             "designation": payload.designation,
@@ -831,6 +830,7 @@ class AuthService:
         }
         try:
             if user.employee_id is None:
+                values["employee_code"] = await self.org.next_employee_code(tenant_id)
                 values["status"] = EmployeeStatus.ACTIVE.value
                 employee = await self.org.create_employee(tenant_id, values)
                 user.employee_id = employee.id
@@ -838,6 +838,7 @@ class AuthService:
                 return employee
             updated = await self.org.update_employee(tenant_id, user.employee_id, values)
             if updated is None:
+                values["employee_code"] = await self.org.next_employee_code(tenant_id)
                 values["status"] = EmployeeStatus.ACTIVE.value
                 created = await self.org.create_employee(tenant_id, values)
                 user.employee_id = created.id

@@ -155,16 +155,10 @@ class DepartmentSummary(BaseModel):
 
 
 class EmployeeUpsert(BaseModel):
-    employee_code: str = Field(min_length=1, max_length=50)
     branch_id: UUID | None = None
     department_id: UUID | None = None
     designation: str | None = Field(default=None, max_length=150)
     joining_date: date | None = None
-
-    @field_validator("employee_code")
-    @classmethod
-    def normalize_code(cls, value: str) -> str:
-        return normalize_required_text(value, field_name="employee_code")
 
     @field_validator("designation")
     @classmethod
@@ -553,6 +547,9 @@ class TenantCurrentResponse(BaseModel):
     default_currency: str | None = None
     default_currency_id: UUID | None = None
     quotation_requires_approval: bool = True
+    allow_negative_stock: bool = False
+    lock_date: date | None = None
+    hard_lock_date: date | None = None
     headquarters: AddressPayload | None = None
     users_count: int
     departments_count: int
@@ -573,6 +570,7 @@ class TenantCurrentUpdate(BaseModel):
     default_currency: str | None = Field(default=None, max_length=3)
     default_currency_id: UUID | None = None
     quotation_requires_approval: bool | None = None
+    allow_negative_stock: bool | None = None
     headquarters: AddressPayload | None = None
 
     @field_validator(

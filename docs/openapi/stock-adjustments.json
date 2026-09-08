@@ -1,53 +1,30 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Plumbit ERP API \u2014 Users",
-    "description": "Tenant user management, role assignment, and nested employee profiles.",
+    "title": "Plumbit ERP API \u2014 Stock Adjustments",
+    "description": "Quantity adjustments (opening stock, count, damage, found, other). Save stays DRAFT; posting writes signed movements.",
     "version": "0.1.0"
   },
   "tags": [
     {
-      "name": "Users",
-      "description": "Tenant user management, role assignment, and nested employee profiles."
+      "name": "Stock Adjustments",
+      "description": "Quantity adjustments (opening stock, count, damage, found, other). Save stays DRAFT; posting writes signed movements."
     }
   ],
   "paths": {
-    "/api/v1/users": {
+    "/api/v1/stock-adjustments": {
       "get": {
         "tags": [
-          "Users"
+          "Stock Adjustments"
         ],
-        "summary": "List users",
-        "description": "Requires `identity.user.read`. Rows include roles and nested employee. Filter by account status, roles, phone, last login, and employee fields (department, branch, designation, joining date, employee status, employee code, manager).",
-        "operationId": "list_users_api_v1_users_get",
+        "summary": "List Stock Adjustments",
+        "operationId": "list_stock_adjustments_api_v1_stock_adjustments_get",
         "security": [
           {
             "HTTPBearer": []
           }
         ],
         "parameters": [
-          {
-            "name": "role_ids",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "format": "uuid"
-                  }
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Users assigned to any of these roles. Repeat the parameter for multiple roles.",
-              "title": "Role Ids"
-            },
-            "description": "Users assigned to any of these roles. Repeat the parameter for multiple roles."
-          },
           {
             "name": "page",
             "in": "query",
@@ -151,7 +128,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/UserStatus"
+                  "$ref": "#/components/schemas/StockDocumentStatus"
                 },
                 {
                   "type": "null"
@@ -161,7 +138,7 @@
             }
           },
           {
-            "name": "role_id",
+            "name": "warehouse_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -174,24 +151,23 @@
                   "type": "null"
                 }
               ],
-              "title": "Role Id"
+              "title": "Warehouse Id"
             }
           },
           {
-            "name": "department_id",
+            "name": "reason",
             "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string",
-                  "format": "uuid"
+                  "$ref": "#/components/schemas/StockAdjustmentReason"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "Department Id"
+              "title": "Reason"
             }
           },
           {
@@ -212,159 +188,7 @@
             }
           },
           {
-            "name": "designation",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 150
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Designation"
-            }
-          },
-          {
-            "name": "joining_date",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Joining Date"
-            }
-          },
-          {
-            "name": "joining_date_from",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Joining Date From"
-            }
-          },
-          {
-            "name": "joining_date_to",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Joining Date To"
-            }
-          },
-          {
-            "name": "employee_status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/EmployeeStatus"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Employee Status"
-            }
-          },
-          {
-            "name": "employee_code",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 50
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Employee Code"
-            }
-          },
-          {
-            "name": "last_login_from",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Last Login From"
-            }
-          },
-          {
-            "name": "last_login_to",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Last Login To"
-            }
-          },
-          {
-            "name": "phone",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 50
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Phone"
-            }
-          },
-          {
-            "name": "manager_id",
+            "name": "product_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -377,38 +201,51 @@
                   "type": "null"
                 }
               ],
-              "title": "Manager Id"
+              "title": "Product Id"
+            }
+          },
+          {
+            "name": "document_date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Document Date From"
+            }
+          },
+          {
+            "name": "document_date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Document Date To"
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "format": "uuid"
-                    }
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Role Ids"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_list_UserResponse__"
+                  "$ref": "#/components/schemas/ApiResponse_list_StockAdjustmentResponse__"
                 }
               }
             }
@@ -427,11 +264,10 @@
       },
       "post": {
         "tags": [
-          "Users"
+          "Stock Adjustments"
         ],
-        "summary": "Create user",
-        "description": "Requires `identity.user.create`. Optional nested `employee` HR profile.",
-        "operationId": "create_user_api_v1_users_post",
+        "summary": "Create Stock Adjustment",
+        "operationId": "create_stock_adjustment_api_v1_stock_adjustments_post",
         "security": [
           {
             "HTTPBearer": []
@@ -442,7 +278,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UserCreate"
+                "$ref": "#/components/schemas/StockAdjustmentCreate"
               }
             }
           }
@@ -453,7 +289,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserDetailResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_StockAdjustmentResponse_"
                 }
               }
             }
@@ -471,14 +307,13 @@
         }
       }
     },
-    "/api/v1/users/{user_id}": {
+    "/api/v1/stock-adjustments/{adjustment_id}": {
       "get": {
         "tags": [
-          "Users"
+          "Stock Adjustments"
         ],
-        "summary": "Get user",
-        "description": "Requires `identity.user.read`.",
-        "operationId": "get_user_api_v1_users__user_id__get",
+        "summary": "Get Stock Adjustment",
+        "operationId": "get_stock_adjustment_api_v1_stock_adjustments__adjustment_id__get",
         "security": [
           {
             "HTTPBearer": []
@@ -486,13 +321,13 @@
         ],
         "parameters": [
           {
-            "name": "user_id",
+            "name": "adjustment_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "User Id"
+              "title": "Adjustment Id"
             }
           }
         ],
@@ -502,7 +337,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserDetailResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_StockAdjustmentResponse_"
                 }
               }
             }
@@ -521,11 +356,10 @@
       },
       "patch": {
         "tags": [
-          "Users"
+          "Stock Adjustments"
         ],
-        "summary": "Update user",
-        "description": "Requires `identity.user.update`. Optional nested `employee` HR profile.",
-        "operationId": "update_user_api_v1_users__user_id__patch",
+        "summary": "Update Stock Adjustment",
+        "operationId": "update_stock_adjustment_api_v1_stock_adjustments__adjustment_id__patch",
         "security": [
           {
             "HTTPBearer": []
@@ -533,13 +367,29 @@
         ],
         "parameters": [
           {
-            "name": "user_id",
+            "name": "adjustment_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "User Id"
+              "title": "Adjustment Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
             }
           }
         ],
@@ -548,7 +398,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UserUpdate"
+                "$ref": "#/components/schemas/StockAdjustmentUpdate"
               }
             }
           }
@@ -559,7 +409,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserDetailResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_StockAdjustmentResponse_"
                 }
               }
             }
@@ -575,16 +425,13 @@
             }
           }
         }
-      }
-    },
-    "/api/v1/users/{user_id}/deactivate": {
-      "post": {
+      },
+      "delete": {
         "tags": [
-          "Users"
+          "Stock Adjustments"
         ],
-        "summary": "Deactivate user",
-        "description": "Requires `identity.user.delete`. Disables the account; no hard delete.",
-        "operationId": "deactivate_user_api_v1_users__user_id__deactivate_post",
+        "summary": "Delete Stock Adjustment",
+        "operationId": "delete_stock_adjustment_api_v1_stock_adjustments__adjustment_id__delete",
         "security": [
           {
             "HTTPBearer": []
@@ -592,13 +439,29 @@
         ],
         "parameters": [
           {
-            "name": "user_id",
+            "name": "adjustment_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "User Id"
+              "title": "Adjustment Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
             }
           }
         ],
@@ -608,7 +471,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserDetailResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_StockAdjustmentResponse_"
                 }
               }
             }
@@ -626,14 +489,13 @@
         }
       }
     },
-    "/api/v1/users/{user_id}/activate": {
+    "/api/v1/stock-adjustments/{adjustment_id}/post": {
       "post": {
         "tags": [
-          "Users"
+          "Stock Adjustments"
         ],
-        "summary": "Activate user",
-        "description": "Requires `identity.user.update`. Restores a disabled user to active.",
-        "operationId": "activate_user_api_v1_users__user_id__activate_post",
+        "summary": "Post Stock Adjustment",
+        "operationId": "post_stock_adjustment_api_v1_stock_adjustments__adjustment_id__post_post",
         "security": [
           {
             "HTTPBearer": []
@@ -641,13 +503,45 @@
         ],
         "parameters": [
           {
-            "name": "user_id",
+            "name": "adjustment_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "User Id"
+              "title": "Adjustment Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
             }
           }
         ],
@@ -657,7 +551,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserDetailResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_StockAdjustmentResponse_"
                 }
               }
             }
@@ -675,14 +569,13 @@
         }
       }
     },
-    "/api/v1/users/{user_id}/roles": {
-      "put": {
+    "/api/v1/stock-adjustments/{adjustment_id}/cancel": {
+      "post": {
         "tags": [
-          "Users"
+          "Stock Adjustments"
         ],
-        "summary": "Assign user roles",
-        "description": "Requires `identity.user.update`.",
-        "operationId": "assign_user_roles_api_v1_users__user_id__roles_put",
+        "summary": "Cancel Stock Adjustment",
+        "operationId": "cancel_stock_adjustment_api_v1_stock_adjustments__adjustment_id__cancel_post",
         "security": [
           {
             "HTTPBearer": []
@@ -690,22 +583,45 @@
         ],
         "parameters": [
           {
-            "name": "user_id",
+            "name": "adjustment_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "User Id"
+              "title": "Adjustment Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
             }
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AssignRolesRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/StockAdjustmentCancelRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
               }
             }
           }
@@ -716,7 +632,55 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserDetailResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_StockAdjustmentResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stock-adjustments/{adjustment_id}/clone": {
+      "post": {
+        "tags": [
+          "Stock Adjustments"
+        ],
+        "summary": "Clone Stock Adjustment",
+        "operationId": "clone_stock_adjustment_api_v1_stock_adjustments__adjustment_id__clone_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "adjustment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Adjustment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_StockAdjustmentResponse_"
                 }
               }
             }
@@ -737,7 +701,7 @@
   },
   "components": {
     "schemas": {
-      "ApiResponse_UserDetailResponse_": {
+      "ApiResponse_StockAdjustmentResponse_": {
         "properties": {
           "success": {
             "type": "boolean",
@@ -746,7 +710,7 @@
             "default": true
           },
           "data": {
-            "$ref": "#/components/schemas/UserDetailResponse"
+            "$ref": "#/components/schemas/StockAdjustmentResponse"
           },
           "message": {
             "anyOf": [
@@ -769,9 +733,9 @@
         "required": [
           "data"
         ],
-        "title": "ApiResponse[UserDetailResponse]"
+        "title": "ApiResponse[StockAdjustmentResponse]"
       },
-      "ApiResponse_list_UserResponse__": {
+      "ApiResponse_list_StockAdjustmentResponse__": {
         "properties": {
           "success": {
             "type": "boolean",
@@ -781,7 +745,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/UserResponse"
+              "$ref": "#/components/schemas/StockAdjustmentResponse"
             },
             "type": "array",
             "title": "Data"
@@ -807,202 +771,7 @@
         "required": [
           "data"
         ],
-        "title": "ApiResponse[list[UserResponse]]"
-      },
-      "AssignRolesRequest": {
-        "properties": {
-          "role_ids": {
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "type": "array",
-            "title": "Role Ids"
-          }
-        },
-        "type": "object",
-        "required": [
-          "role_ids"
-        ],
-        "title": "AssignRolesRequest"
-      },
-      "BranchSummary": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "code": {
-            "type": "string",
-            "title": "Code"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "code"
-        ],
-        "title": "BranchSummary"
-      },
-      "DepartmentSummary": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "code": {
-            "type": "string",
-            "title": "Code"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "code"
-        ],
-        "title": "DepartmentSummary"
-      },
-      "EmployeeStatus": {
-        "type": "string",
-        "enum": [
-          "ACTIVE",
-          "INACTIVE"
-        ],
-        "title": "EmployeeStatus"
-      },
-      "EmployeeSummary": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "employee_code": {
-            "type": "string",
-            "title": "Employee Code"
-          },
-          "designation": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Designation"
-          },
-          "joining_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Joining Date"
-          },
-          "status": {
-            "$ref": "#/components/schemas/EmployeeStatus"
-          },
-          "branch": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BranchSummary"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "department": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DepartmentSummary"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "employee_code",
-          "designation",
-          "joining_date",
-          "status"
-        ],
-        "title": "EmployeeSummary"
-      },
-      "EmployeeUpsert": {
-        "properties": {
-          "branch_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Branch Id"
-          },
-          "department_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Department Id"
-          },
-          "designation": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 150
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Designation"
-          },
-          "joining_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Joining Date"
-          }
-        },
-        "type": "object",
-        "title": "EmployeeUpsert"
+        "title": "ApiResponse[list[StockAdjustmentResponse]]"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1017,140 +786,59 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
-      "RoleSummary": {
+      "StockAdjustmentCancelRequest": {
         "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "is_system_role": {
-            "type": "boolean",
-            "title": "Is System Role"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "is_system_role"
-        ],
-        "title": "RoleSummary"
-      },
-      "UserCreate": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Name"
-          },
-          "email": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 3,
-            "title": "Email"
-          },
-          "password": {
-            "type": "string",
-            "maxLength": 72,
-            "minLength": 8,
-            "title": "Password"
-          },
-          "phone": {
+          "reason": {
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 50
+                "maxLength": 2000
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Phone"
+            "title": "Reason"
           },
-          "status": {
-            "$ref": "#/components/schemas/UserStatus",
-            "default": "ACTIVE"
-          },
-          "role_ids": {
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "type": "array",
-            "title": "Role Ids"
-          },
-          "employee": {
+          "version": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/EmployeeUpsert"
+                "type": "integer",
+                "minimum": 1.0
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Version"
           }
         },
         "type": "object",
-        "required": [
-          "name",
-          "email",
-          "password"
-        ],
-        "title": "UserCreate"
+        "title": "StockAdjustmentCancelRequest"
       },
-      "UserDetailResponse": {
+      "StockAdjustmentCreate": {
         "properties": {
-          "id": {
+          "warehouse_id": {
             "type": "string",
             "format": "uuid",
-            "title": "Id"
+            "title": "Warehouse Id"
           },
-          "tenant_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Tenant Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "email": {
-            "type": "string",
-            "title": "Email"
-          },
-          "phone": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phone"
-          },
-          "status": {
-            "$ref": "#/components/schemas/UserStatus"
-          },
-          "last_login_at": {
+          "document_date": {
             "anyOf": [
               {
                 "type": "string",
-                "format": "date-time"
+                "format": "date"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Last Login At"
+            "title": "Document Date"
           },
-          "employee_id": {
+          "reason": {
+            "$ref": "#/components/schemas/StockAdjustmentReason"
+          },
+          "branch_id": {
             "anyOf": [
               {
                 "type": "string",
@@ -1160,72 +848,21 @@
                 "type": "null"
               }
             ],
-            "title": "Employee Id"
+            "title": "Branch Id"
           },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          },
-          "roles": {
-            "items": {
-              "$ref": "#/components/schemas/RoleSummary"
-            },
-            "type": "array",
-            "title": "Roles"
-          },
-          "employee": {
+          "reference": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/EmployeeSummary"
+                "type": "string",
+                "maxLength": 100
               },
               {
                 "type": "null"
               }
-            ]
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "tenant_id",
-          "name",
-          "email",
-          "phone",
-          "status",
-          "last_login_at",
-          "employee_id",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "UserDetailResponse"
-      },
-      "UserResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
+            ],
+            "title": "Reference"
           },
-          "tenant_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Tenant Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "email": {
-            "type": "string",
-            "title": "Email"
-          },
-          "phone": {
+          "notes": {
             "anyOf": [
               {
                 "type": "string"
@@ -1234,24 +871,33 @@
                 "type": "null"
               }
             ],
-            "title": "Phone"
+            "title": "Notes"
           },
-          "status": {
-            "$ref": "#/components/schemas/UserStatus"
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/StockAdjustmentLineInput"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "warehouse_id",
+          "reason",
+          "lines"
+        ],
+        "title": "StockAdjustmentCreate"
+      },
+      "StockAdjustmentLineInput": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Product Id"
           },
-          "last_login_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Login At"
-          },
-          "employee_id": {
+          "unit_id": {
             "anyOf": [
               {
                 "type": "string",
@@ -1261,123 +907,449 @@
                 "type": "null"
               }
             ],
-            "title": "Employee Id"
+            "title": "Unit Id"
           },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          },
-          "roles": {
-            "items": {
-              "$ref": "#/components/schemas/RoleSummary"
-            },
-            "type": "array",
-            "title": "Roles"
-          },
-          "employee": {
+          "qty_delta": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/EmployeeSummary"
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Qty Delta"
+          },
+          "qty_counted": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty Counted"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id"
+        ],
+        "title": "StockAdjustmentLineInput"
+      },
+      "StockAdjustmentLineResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "line_number": {
+            "type": "integer",
+            "title": "Line Number"
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Product Id"
+          },
+          "unit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Id"
+          },
+          "qty_counted": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty Counted"
+          },
+          "qty_booked": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty Booked"
+          },
+          "qty_delta": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty Delta"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
           }
         },
         "type": "object",
         "required": [
           "id",
-          "tenant_id",
-          "name",
-          "email",
-          "phone",
-          "status",
-          "last_login_at",
-          "employee_id",
-          "created_at",
-          "updated_at"
+          "line_number",
+          "product_id",
+          "unit_id",
+          "qty_counted",
+          "qty_booked",
+          "qty_delta",
+          "notes"
         ],
-        "title": "UserResponse"
+        "title": "StockAdjustmentLineResponse"
       },
-      "UserStatus": {
+      "StockAdjustmentReason": {
         "type": "string",
         "enum": [
-          "ACTIVE",
-          "INVITED",
-          "DISABLED"
+          "OPENING_STOCK",
+          "COUNT",
+          "DAMAGE",
+          "FOUND",
+          "OTHER"
         ],
-        "title": "UserStatus"
+        "title": "StockAdjustmentReason"
       },
-      "UserUpdate": {
+      "StockAdjustmentResponse": {
         "properties": {
-          "name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 200,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
           },
-          "email": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 255,
-                "minLength": 3
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Email"
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tenant Id"
           },
-          "phone": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 50
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phone"
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
           },
           "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UserStatus"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/StockDocumentStatus"
           },
-          "employee": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "is_posted": {
+            "type": "boolean",
+            "title": "Is Posted"
+          },
+          "document_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Document Date"
+          },
+          "warehouse_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Warehouse Id"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/StockAdjustmentReason"
+          },
+          "branch_id": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/EmployeeUpsert"
+                "type": "string",
+                "format": "uuid"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Branch Id"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "posted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted At"
+          },
+          "posted_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted By"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "cancelled_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled By"
+          },
+          "cancel_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Reason"
+          },
+          "available_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Actions"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/StockAdjustmentLineResponse"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
           }
         },
         "type": "object",
-        "title": "UserUpdate"
+        "required": [
+          "id",
+          "tenant_id",
+          "document_number",
+          "status",
+          "version",
+          "is_posted",
+          "document_date",
+          "warehouse_id",
+          "reason",
+          "branch_id",
+          "reference",
+          "notes",
+          "posted_at",
+          "posted_by",
+          "cancelled_at",
+          "cancelled_by",
+          "cancel_reason",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "StockAdjustmentResponse"
+      },
+      "StockAdjustmentUpdate": {
+        "properties": {
+          "warehouse_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warehouse Id"
+          },
+          "document_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Date"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StockAdjustmentReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "lines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/StockAdjustmentLineInput"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lines"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "title": "StockAdjustmentUpdate"
+      },
+      "StockDocumentStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "POSTED",
+          "CANCELLED"
+        ],
+        "title": "StockDocumentStatus"
       },
       "ValidationError": {
         "properties": {

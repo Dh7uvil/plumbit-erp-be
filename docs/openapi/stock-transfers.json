@@ -1,53 +1,30 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Plumbit ERP API \u2014 Users",
-    "description": "Tenant user management, role assignment, and nested employee profiles.",
+    "title": "Plumbit ERP API \u2014 Stock Transfers",
+    "description": "Warehouse-to-warehouse transfer documents. Save stays DRAFT; POST /stock-transfers/{id}/post moves stock in one step.",
     "version": "0.1.0"
   },
   "tags": [
     {
-      "name": "Users",
-      "description": "Tenant user management, role assignment, and nested employee profiles."
+      "name": "Stock Transfers",
+      "description": "Warehouse-to-warehouse transfer documents. Save stays DRAFT; POST /stock-transfers/{id}/post moves stock in one step."
     }
   ],
   "paths": {
-    "/api/v1/users": {
+    "/api/v1/stock-transfers": {
       "get": {
         "tags": [
-          "Users"
+          "Stock Transfers"
         ],
-        "summary": "List users",
-        "description": "Requires `identity.user.read`. Rows include roles and nested employee. Filter by account status, roles, phone, last login, and employee fields (department, branch, designation, joining date, employee status, employee code, manager).",
-        "operationId": "list_users_api_v1_users_get",
+        "summary": "List Stock Transfers",
+        "operationId": "list_stock_transfers_api_v1_stock_transfers_get",
         "security": [
           {
             "HTTPBearer": []
           }
         ],
         "parameters": [
-          {
-            "name": "role_ids",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "format": "uuid"
-                  }
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Users assigned to any of these roles. Repeat the parameter for multiple roles.",
-              "title": "Role Ids"
-            },
-            "description": "Users assigned to any of these roles. Repeat the parameter for multiple roles."
-          },
           {
             "name": "page",
             "in": "query",
@@ -151,7 +128,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/UserStatus"
+                  "$ref": "#/components/schemas/StockDocumentStatus"
                 },
                 {
                   "type": "null"
@@ -161,7 +138,7 @@
             }
           },
           {
-            "name": "role_id",
+            "name": "from_warehouse_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -174,11 +151,11 @@
                   "type": "null"
                 }
               ],
-              "title": "Role Id"
+              "title": "From Warehouse Id"
             }
           },
           {
-            "name": "department_id",
+            "name": "to_warehouse_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -191,7 +168,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Department Id"
+              "title": "To Warehouse Id"
             }
           },
           {
@@ -212,159 +189,7 @@
             }
           },
           {
-            "name": "designation",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 150
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Designation"
-            }
-          },
-          {
-            "name": "joining_date",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Joining Date"
-            }
-          },
-          {
-            "name": "joining_date_from",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Joining Date From"
-            }
-          },
-          {
-            "name": "joining_date_to",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Joining Date To"
-            }
-          },
-          {
-            "name": "employee_status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/EmployeeStatus"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Employee Status"
-            }
-          },
-          {
-            "name": "employee_code",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 50
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Employee Code"
-            }
-          },
-          {
-            "name": "last_login_from",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Last Login From"
-            }
-          },
-          {
-            "name": "last_login_to",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Last Login To"
-            }
-          },
-          {
-            "name": "phone",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 50
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Phone"
-            }
-          },
-          {
-            "name": "manager_id",
+            "name": "product_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -377,38 +202,51 @@
                   "type": "null"
                 }
               ],
-              "title": "Manager Id"
+              "title": "Product Id"
+            }
+          },
+          {
+            "name": "document_date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Document Date From"
+            }
+          },
+          {
+            "name": "document_date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Document Date To"
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "format": "uuid"
-                    }
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Role Ids"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_list_UserResponse__"
+                  "$ref": "#/components/schemas/ApiResponse_list_StockTransferResponse__"
                 }
               }
             }
@@ -427,11 +265,10 @@
       },
       "post": {
         "tags": [
-          "Users"
+          "Stock Transfers"
         ],
-        "summary": "Create user",
-        "description": "Requires `identity.user.create`. Optional nested `employee` HR profile.",
-        "operationId": "create_user_api_v1_users_post",
+        "summary": "Create Stock Transfer",
+        "operationId": "create_stock_transfer_api_v1_stock_transfers_post",
         "security": [
           {
             "HTTPBearer": []
@@ -442,7 +279,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UserCreate"
+                "$ref": "#/components/schemas/StockTransferCreate"
               }
             }
           }
@@ -453,7 +290,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserDetailResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_StockTransferResponse_"
                 }
               }
             }
@@ -471,14 +308,13 @@
         }
       }
     },
-    "/api/v1/users/{user_id}": {
+    "/api/v1/stock-transfers/{transfer_id}": {
       "get": {
         "tags": [
-          "Users"
+          "Stock Transfers"
         ],
-        "summary": "Get user",
-        "description": "Requires `identity.user.read`.",
-        "operationId": "get_user_api_v1_users__user_id__get",
+        "summary": "Get Stock Transfer",
+        "operationId": "get_stock_transfer_api_v1_stock_transfers__transfer_id__get",
         "security": [
           {
             "HTTPBearer": []
@@ -486,13 +322,13 @@
         ],
         "parameters": [
           {
-            "name": "user_id",
+            "name": "transfer_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "User Id"
+              "title": "Transfer Id"
             }
           }
         ],
@@ -502,7 +338,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserDetailResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_StockTransferResponse_"
                 }
               }
             }
@@ -521,11 +357,10 @@
       },
       "patch": {
         "tags": [
-          "Users"
+          "Stock Transfers"
         ],
-        "summary": "Update user",
-        "description": "Requires `identity.user.update`. Optional nested `employee` HR profile.",
-        "operationId": "update_user_api_v1_users__user_id__patch",
+        "summary": "Update Stock Transfer",
+        "operationId": "update_stock_transfer_api_v1_stock_transfers__transfer_id__patch",
         "security": [
           {
             "HTTPBearer": []
@@ -533,13 +368,29 @@
         ],
         "parameters": [
           {
-            "name": "user_id",
+            "name": "transfer_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "User Id"
+              "title": "Transfer Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
             }
           }
         ],
@@ -548,7 +399,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UserUpdate"
+                "$ref": "#/components/schemas/StockTransferUpdate"
               }
             }
           }
@@ -559,7 +410,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserDetailResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_StockTransferResponse_"
                 }
               }
             }
@@ -575,16 +426,13 @@
             }
           }
         }
-      }
-    },
-    "/api/v1/users/{user_id}/deactivate": {
-      "post": {
+      },
+      "delete": {
         "tags": [
-          "Users"
+          "Stock Transfers"
         ],
-        "summary": "Deactivate user",
-        "description": "Requires `identity.user.delete`. Disables the account; no hard delete.",
-        "operationId": "deactivate_user_api_v1_users__user_id__deactivate_post",
+        "summary": "Delete Stock Transfer",
+        "operationId": "delete_stock_transfer_api_v1_stock_transfers__transfer_id__delete",
         "security": [
           {
             "HTTPBearer": []
@@ -592,13 +440,29 @@
         ],
         "parameters": [
           {
-            "name": "user_id",
+            "name": "transfer_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "User Id"
+              "title": "Transfer Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
             }
           }
         ],
@@ -608,7 +472,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserDetailResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_StockTransferResponse_"
                 }
               }
             }
@@ -626,14 +490,13 @@
         }
       }
     },
-    "/api/v1/users/{user_id}/activate": {
+    "/api/v1/stock-transfers/{transfer_id}/post": {
       "post": {
         "tags": [
-          "Users"
+          "Stock Transfers"
         ],
-        "summary": "Activate user",
-        "description": "Requires `identity.user.update`. Restores a disabled user to active.",
-        "operationId": "activate_user_api_v1_users__user_id__activate_post",
+        "summary": "Post Stock Transfer",
+        "operationId": "post_stock_transfer_api_v1_stock_transfers__transfer_id__post_post",
         "security": [
           {
             "HTTPBearer": []
@@ -641,13 +504,45 @@
         ],
         "parameters": [
           {
-            "name": "user_id",
+            "name": "transfer_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "User Id"
+              "title": "Transfer Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
             }
           }
         ],
@@ -657,7 +552,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserDetailResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_StockTransferResponse_"
                 }
               }
             }
@@ -675,14 +570,13 @@
         }
       }
     },
-    "/api/v1/users/{user_id}/roles": {
-      "put": {
+    "/api/v1/stock-transfers/{transfer_id}/cancel": {
+      "post": {
         "tags": [
-          "Users"
+          "Stock Transfers"
         ],
-        "summary": "Assign user roles",
-        "description": "Requires `identity.user.update`.",
-        "operationId": "assign_user_roles_api_v1_users__user_id__roles_put",
+        "summary": "Cancel Stock Transfer",
+        "operationId": "cancel_stock_transfer_api_v1_stock_transfers__transfer_id__cancel_post",
         "security": [
           {
             "HTTPBearer": []
@@ -690,22 +584,45 @@
         ],
         "parameters": [
           {
-            "name": "user_id",
+            "name": "transfer_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "User Id"
+              "title": "Transfer Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
             }
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AssignRolesRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/StockTransferCancelRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
               }
             }
           }
@@ -716,7 +633,55 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_UserDetailResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_StockTransferResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stock-transfers/{transfer_id}/clone": {
+      "post": {
+        "tags": [
+          "Stock Transfers"
+        ],
+        "summary": "Clone Stock Transfer",
+        "operationId": "clone_stock_transfer_api_v1_stock_transfers__transfer_id__clone_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transfer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_StockTransferResponse_"
                 }
               }
             }
@@ -737,7 +702,7 @@
   },
   "components": {
     "schemas": {
-      "ApiResponse_UserDetailResponse_": {
+      "ApiResponse_StockTransferResponse_": {
         "properties": {
           "success": {
             "type": "boolean",
@@ -746,7 +711,7 @@
             "default": true
           },
           "data": {
-            "$ref": "#/components/schemas/UserDetailResponse"
+            "$ref": "#/components/schemas/StockTransferResponse"
           },
           "message": {
             "anyOf": [
@@ -769,9 +734,9 @@
         "required": [
           "data"
         ],
-        "title": "ApiResponse[UserDetailResponse]"
+        "title": "ApiResponse[StockTransferResponse]"
       },
-      "ApiResponse_list_UserResponse__": {
+      "ApiResponse_list_StockTransferResponse__": {
         "properties": {
           "success": {
             "type": "boolean",
@@ -781,7 +746,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/UserResponse"
+              "$ref": "#/components/schemas/StockTransferResponse"
             },
             "type": "array",
             "title": "Data"
@@ -807,202 +772,7 @@
         "required": [
           "data"
         ],
-        "title": "ApiResponse[list[UserResponse]]"
-      },
-      "AssignRolesRequest": {
-        "properties": {
-          "role_ids": {
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "type": "array",
-            "title": "Role Ids"
-          }
-        },
-        "type": "object",
-        "required": [
-          "role_ids"
-        ],
-        "title": "AssignRolesRequest"
-      },
-      "BranchSummary": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "code": {
-            "type": "string",
-            "title": "Code"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "code"
-        ],
-        "title": "BranchSummary"
-      },
-      "DepartmentSummary": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "code": {
-            "type": "string",
-            "title": "Code"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "code"
-        ],
-        "title": "DepartmentSummary"
-      },
-      "EmployeeStatus": {
-        "type": "string",
-        "enum": [
-          "ACTIVE",
-          "INACTIVE"
-        ],
-        "title": "EmployeeStatus"
-      },
-      "EmployeeSummary": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "employee_code": {
-            "type": "string",
-            "title": "Employee Code"
-          },
-          "designation": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Designation"
-          },
-          "joining_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Joining Date"
-          },
-          "status": {
-            "$ref": "#/components/schemas/EmployeeStatus"
-          },
-          "branch": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/BranchSummary"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "department": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DepartmentSummary"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "employee_code",
-          "designation",
-          "joining_date",
-          "status"
-        ],
-        "title": "EmployeeSummary"
-      },
-      "EmployeeUpsert": {
-        "properties": {
-          "branch_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Branch Id"
-          },
-          "department_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Department Id"
-          },
-          "designation": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 150
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Designation"
-          },
-          "joining_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Joining Date"
-          }
-        },
-        "type": "object",
-        "title": "EmployeeUpsert"
+        "title": "ApiResponse[list[StockTransferResponse]]"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1017,367 +787,583 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
-      "RoleSummary": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "is_system_role": {
-            "type": "boolean",
-            "title": "Is System Role"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "name",
-          "is_system_role"
-        ],
-        "title": "RoleSummary"
-      },
-      "UserCreate": {
-        "properties": {
-          "name": {
-            "type": "string",
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Name"
-          },
-          "email": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 3,
-            "title": "Email"
-          },
-          "password": {
-            "type": "string",
-            "maxLength": 72,
-            "minLength": 8,
-            "title": "Password"
-          },
-          "phone": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 50
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phone"
-          },
-          "status": {
-            "$ref": "#/components/schemas/UserStatus",
-            "default": "ACTIVE"
-          },
-          "role_ids": {
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "type": "array",
-            "title": "Role Ids"
-          },
-          "employee": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/EmployeeUpsert"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "required": [
-          "name",
-          "email",
-          "password"
-        ],
-        "title": "UserCreate"
-      },
-      "UserDetailResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "tenant_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Tenant Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "email": {
-            "type": "string",
-            "title": "Email"
-          },
-          "phone": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phone"
-          },
-          "status": {
-            "$ref": "#/components/schemas/UserStatus"
-          },
-          "last_login_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Login At"
-          },
-          "employee_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Employee Id"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          },
-          "roles": {
-            "items": {
-              "$ref": "#/components/schemas/RoleSummary"
-            },
-            "type": "array",
-            "title": "Roles"
-          },
-          "employee": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/EmployeeSummary"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "tenant_id",
-          "name",
-          "email",
-          "phone",
-          "status",
-          "last_login_at",
-          "employee_id",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "UserDetailResponse"
-      },
-      "UserResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "tenant_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Tenant Id"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "email": {
-            "type": "string",
-            "title": "Email"
-          },
-          "phone": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phone"
-          },
-          "status": {
-            "$ref": "#/components/schemas/UserStatus"
-          },
-          "last_login_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Login At"
-          },
-          "employee_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Employee Id"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          },
-          "roles": {
-            "items": {
-              "$ref": "#/components/schemas/RoleSummary"
-            },
-            "type": "array",
-            "title": "Roles"
-          },
-          "employee": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/EmployeeSummary"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "tenant_id",
-          "name",
-          "email",
-          "phone",
-          "status",
-          "last_login_at",
-          "employee_id",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "UserResponse"
-      },
-      "UserStatus": {
+      "StockDocumentStatus": {
         "type": "string",
         "enum": [
-          "ACTIVE",
-          "INVITED",
-          "DISABLED"
+          "DRAFT",
+          "POSTED",
+          "CANCELLED"
         ],
-        "title": "UserStatus"
+        "title": "StockDocumentStatus"
       },
-      "UserUpdate": {
+      "StockTransferCancelRequest": {
         "properties": {
-          "name": {
+          "reason": {
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 200,
-                "minLength": 1
+                "maxLength": 2000
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Name"
+            "title": "Reason"
           },
-          "email": {
+          "version": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 255,
-                "minLength": 3
+                "type": "integer",
+                "minimum": 1.0
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Email"
-          },
-          "phone": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 50
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phone"
-          },
-          "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/UserStatus"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "employee": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/EmployeeUpsert"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "title": "Version"
           }
         },
         "type": "object",
-        "title": "UserUpdate"
+        "title": "StockTransferCancelRequest"
+      },
+      "StockTransferCreate": {
+        "properties": {
+          "from_warehouse_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "From Warehouse Id"
+          },
+          "to_warehouse_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "To Warehouse Id"
+          },
+          "document_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Date"
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/StockTransferLineInput"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from_warehouse_id",
+          "to_warehouse_id",
+          "lines"
+        ],
+        "title": "StockTransferCreate"
+      },
+      "StockTransferLineInput": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Product Id"
+          },
+          "unit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Id"
+          },
+          "qty": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              }
+            ],
+            "title": "Qty"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "qty"
+        ],
+        "title": "StockTransferLineInput"
+      },
+      "StockTransferLineResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "line_number": {
+            "type": "integer",
+            "title": "Line Number"
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Product Id"
+          },
+          "unit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Id"
+          },
+          "qty": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty"
+          },
+          "qty_transferred": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Transferred"
+          },
+          "qty_source_before": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty Source Before"
+          },
+          "qty_dest_before": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty Dest Before"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "line_number",
+          "product_id",
+          "unit_id",
+          "qty",
+          "qty_transferred",
+          "qty_source_before",
+          "qty_dest_before",
+          "notes"
+        ],
+        "title": "StockTransferLineResponse"
+      },
+      "StockTransferResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tenant Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StockDocumentStatus"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "is_posted": {
+            "type": "boolean",
+            "title": "Is Posted"
+          },
+          "document_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Document Date"
+          },
+          "from_warehouse_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "From Warehouse Id"
+          },
+          "to_warehouse_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "To Warehouse Id"
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "posted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted At"
+          },
+          "posted_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted By"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "cancelled_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled By"
+          },
+          "cancel_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Reason"
+          },
+          "available_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Actions"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/StockTransferLineResponse"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "document_number",
+          "status",
+          "version",
+          "is_posted",
+          "document_date",
+          "from_warehouse_id",
+          "to_warehouse_id",
+          "branch_id",
+          "reason",
+          "reference",
+          "notes",
+          "posted_at",
+          "posted_by",
+          "cancelled_at",
+          "cancelled_by",
+          "cancel_reason",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "StockTransferResponse"
+      },
+      "StockTransferUpdate": {
+        "properties": {
+          "from_warehouse_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Warehouse Id"
+          },
+          "to_warehouse_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Warehouse Id"
+          },
+          "document_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Date"
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "lines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/StockTransferLineInput"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lines"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "title": "StockTransferUpdate"
       },
       "ValidationError": {
         "properties": {

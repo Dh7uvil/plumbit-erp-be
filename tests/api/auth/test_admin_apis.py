@@ -9,6 +9,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import event
 
+from app.common.utils.datetime import utcnow
 from app.db.session import engine
 from tests.conftest import login_headers, provision_admin
 
@@ -226,7 +227,6 @@ async def test_user_list_filters_by_employee_and_profile_fields(client: AsyncCli
             "password": "password12",
             "phone": "+971501234567",
             "employee": {
-                "employee_code": f"E-SALES-{suffix[:6]}",
                 "branch_id": branch_id,
                 "department_id": department_id,
                 "designation": "Sales Manager",
@@ -244,7 +244,6 @@ async def test_user_list_filters_by_employee_and_profile_fields(client: AsyncCli
             "password": "password12",
             "phone": "+971509999999",
             "employee": {
-                "employee_code": f"E-OPS-{suffix[:6]}",
                 "branch_id": other_branch.json()["data"]["id"],
                 "department_id": other_department.json()["data"]["id"],
                 "designation": "Operations Lead",
@@ -255,6 +254,7 @@ async def test_user_list_filters_by_employee_and_profile_fields(client: AsyncCli
     assert unmatched.status_code == 201, unmatched.text
     matched_id = matched.json()["data"]["id"]
     unmatched_id = unmatched.json()["data"]["id"]
+    matched_code = matched.json()["data"]["employee"]["employee_code"]
 
     async def listed_ids(query: str) -> set[str]:
         response = await client.get(f"/api/v1/users?{query}", headers=headers)
@@ -285,7 +285,7 @@ async def test_user_list_filters_by_employee_and_profile_fields(client: AsyncCli
     assert matched_id in employee_status_ids
     assert unmatched_id in employee_status_ids
 
-    code_ids = await listed_ids(f"employee_code=E-SALES-{suffix[:6]}")
+    code_ids = await listed_ids(f"employee_code={matched_code}")
     assert matched_id in code_ids
     assert unmatched_id not in code_ids
 
@@ -347,6 +347,7 @@ async def test_nested_employee_on_user_create(client: AsyncClient) -> None:
         },
     )
     assert department.status_code == 201, department.text
+    year = utcnow().year
     created = await client.post(
         "/api/v1/users",
         headers=headers,
@@ -355,7 +356,6 @@ async def test_nested_employee_on_user_create(client: AsyncClient) -> None:
             "email": f"emp-{uuid4().hex[:8]}@example.com",
             "password": "password12",
             "employee": {
-                "employee_code": f"E-{uuid4().hex[:6]}",
                 "branch_id": branch.json()["data"]["id"],
                 "department_id": department.json()["data"]["id"],
                 "designation": "Manager",
@@ -366,9 +366,43 @@ async def test_nested_employee_on_user_create(client: AsyncClient) -> None:
     assert created.status_code == 201, created.text
     employee = created.json()["data"]["employee"]
     assert employee is not None
+    assert employee["employee_code"] == f"EMP{year}01"
     assert employee["designation"] == "Manager"
     assert employee["department"]["name"] == "Sales"
     assert employee["branch"]["name"] == "Dubai"
+
+    second = await client.post(
+        "/api/v1/users",
+        headers=headers,
+        json={
+            "name": "Second Employee",
+            "email": f"emp2-{uuid4().hex[:8]}@example.com",
+            "password": "password12",
+            "employee": {
+                "branch_id": branch.json()["data"]["id"],
+                "department_id": department.json()["data"]["id"],
+                "designation": "Associate",
+            },
+        },
+    )
+    assert second.status_code == 201, second.text
+    assert second.json()["data"]["employee"]["employee_code"] == f"EMP{year}02"
+
+    updated = await client.patch(
+        f"/api/v1/users/{created.json()['data']['id']}",
+        headers=headers,
+        json={
+            "employee": {
+                "branch_id": branch.json()["data"]["id"],
+                "department_id": department.json()["data"]["id"],
+                "designation": "Director",
+                "employee_code": "CLIENT-SENT",
+            }
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["data"]["employee"]["employee_code"] == f"EMP{year}01"
+    assert updated.json()["data"]["employee"]["designation"] == "Director"
 
 
 @pytest.mark.asyncio
@@ -673,7 +707,6 @@ async def test_update_user_audit_stores_employee_labels(client: AsyncClient) -> 
     )
     assert branch.status_code == 201, branch.text
     branch_id = branch.json()["data"]["id"]
-    employee_code = f"E-{suffix[:6]}"
     created = await client.post(
         "/api/v1/users",
         headers=headers,
@@ -682,7 +715,6 @@ async def test_update_user_audit_stores_employee_labels(client: AsyncClient) -> 
             "email": f"staff-{suffix}@example.com",
             "password": "password12",
             "employee": {
-                "employee_code": employee_code,
                 "branch_id": branch_id,
                 "designation": "Before Title",
             },
@@ -690,12 +722,12 @@ async def test_update_user_audit_stores_employee_labels(client: AsyncClient) -> 
     )
     assert created.status_code == 201, created.text
     user_id = created.json()["data"]["id"]
+    employee_code = created.json()["data"]["employee"]["employee_code"]
     updated = await client.patch(
         f"/api/v1/users/{user_id}",
         headers=headers,
         json={
             "employee": {
-                "employee_code": employee_code,
                 "branch_id": branch_id,
                 "designation": "After Title",
             }
