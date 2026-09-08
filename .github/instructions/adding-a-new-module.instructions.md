@@ -30,9 +30,9 @@ implemented vs planned so agents do not stub a slice without an API.
 
 | Module | Owns |
 | --- | --- |
-| `auth` (Identity) | **Implemented:** auth, users, roles, permissions, tenants/org-settings, branches, departments, employees (nested), audit-logs. Attachments in `app/common/attachments/` with `identity.attachment.*`. **Planned:** tenant operational settings (`allow_negative_stock`, `lock_date`, `hard_lock_date`). |
-| `erp` | **Implemented:** currencies, exchange_rates, taxes, payment_terms, terms_templates, document_sequences, suppliers, quotations. **Planned:** sales_orders, sales_invoices, credit_notes, customer_payments, purchase_orders, purchase_invoices, debit_notes, supplier_payments, accounting (chart of accounts, journals, AR, AP), logistics, einvoicing **status APIs** (on sales invoices and credit notes; inbound e-bills as draft purchase invoices). |
-| `inventory_management` | **Implemented:** units, categories, products, price_lists, warehouses. **Planned:** stock, stock_transfers, stock_adjustments, goods_receipts (GRN), delivery_notes, sales_returns. |
+| `auth` (Identity) | **Implemented:** auth, users, roles, permissions, tenants/org-settings, branches, departments, employees (nested), audit-logs. Attachments in `app/common/attachments/` with `identity.attachment.*`. Tenant operational settings (`allow_negative_stock`, `lock_date`, `hard_lock_date`, `lock_reason`, `hard_lock_reason`) are first-class columns. |
+| `erp` | **Implemented:** currencies, exchange_rates, taxes, payment_terms, terms_templates, document_sequences, suppliers, quotations, period_lock. **Planned:** sales_orders, sales_invoices, credit_notes, customer_payments, purchase_orders, purchase_invoices, debit_notes, supplier_payments, accounting (chart of accounts, journals, AR, AP), logistics, einvoicing **status APIs** (on sales invoices and credit notes; inbound e-bills as draft purchase invoices). |
+| `inventory_management` | **Implemented:** units, categories, products, price_lists, warehouses, stock, stock_transfers, stock_adjustments. **Planned:** goods_receipts (GRN), delivery_notes, sales_returns. |
 | `crm` | **Implemented:** customers, contacts. **Planned:** leads, opportunities, activities. |
 | `communication_service` | **Planned:** email, whatsapp, chat, meetings. |
 | `notifications_service` | **Planned:** notifications, templates, delivery status. |
@@ -69,6 +69,7 @@ plumbit-erp-be/
 │   │   ├── services/             audit.py
 │   │   ├── dependencies/         auth.py tenant.py permissions.py pagination.py
 │   │   ├── attachments/          identity.attachment.* slice
+│   │   ├── period_lock.py       shared PeriodLockPolicy invariant (no DB)
 │   │   └── utils/                datetime.py currency.py validators.py generators.py files.py
 │   │
 │   ├── auth/                     Identity — router, service, org, audit, catalog
@@ -76,6 +77,7 @@ plumbit-erp-be/
 │   │   ├── quotation/
 │   │   ├── suppliers/
 │   │   ├── exchange_rates/
+│   │   ├── period_lock/
 │   │   ├── accounting/           taxes, payment_terms, terms_templates, document_sequences
 │   │   ├── sales_orders/         planned
 │   │   ├── sales_invoices/       planned (post + einvoice status)
@@ -85,7 +87,7 @@ plumbit-erp-be/
 │   │   ├── debit_notes/          planned
 │   │   └── einvoicing/           planned status helpers; adapters are NOT here
 │   ├── inventory_management/     units/ categories/ products/ price_lists/ warehouses/
-│   │                             stock/ stock_transfers/ stock_adjustments/  (planned)
+│   │                             stock/ stock_transfers/ stock_adjustments/
 │   ├── crm/                      customers/ contacts/
 │   │                             leads/ opportunities/ activities/  (planned)
 │   ├── communication_service/    planned
@@ -270,7 +272,7 @@ They compute `available_actions` for document responses.
 ```python
 class OrderService:
     async def create_order(self, tenant_id: UUID, data: OrderCreate):
-        # Reject if document_date <= tenant lock_date / hard_lock_date
+        # Reject if PeriodLockPolicy.assert_open fails for document_date
         # Keep the order DRAFT — do not move stock or post ledgers on save
         ...
 

@@ -49,6 +49,7 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "terms_template": ("create", "read", "update", "delete"),
         "document_sequence": ("create", "read", "update", "delete"),
         "quotation": ("create", "read", "update", "delete", "approve", "send"),
+        "period": ("lock", "override"),
     },
 }
 
@@ -173,6 +174,8 @@ QUOTATION_UPDATE = build_permission(ERP_MODULE, "quotation", "update")
 QUOTATION_DELETE = build_permission(ERP_MODULE, "quotation", "delete")
 QUOTATION_APPROVE = build_permission(ERP_MODULE, "quotation", "approve")
 QUOTATION_SEND = build_permission(ERP_MODULE, "quotation", "send")
+PERIOD_LOCK = build_permission(ERP_MODULE, "period", "lock")
+PERIOD_OVERRIDE = build_permission(ERP_MODULE, "period", "override")
 
 SYSTEM_ADMIN_ROLE_NAME = "Superadmin"
 

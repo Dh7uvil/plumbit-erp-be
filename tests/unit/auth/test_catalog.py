@@ -36,6 +36,8 @@ def test_catalog_includes_quote_ready_permissions() -> None:
     assert "erp.tax.read" in CATALOG_PERMISSIONS
     assert "erp.quotation.approve" in CATALOG_PERMISSIONS
     assert "erp.quotation.send" in CATALOG_PERMISSIONS
+    assert "erp.period.lock" in CATALOG_PERMISSIONS
+    assert "erp.period.override" in CATALOG_PERMISSIONS
     assert "erp.document_sequence.create" in CATALOG_PERMISSIONS
     assert "inventory.stock.read" in CATALOG_PERMISSIONS
     assert "inventory.stock.update" in CATALOG_PERMISSIONS

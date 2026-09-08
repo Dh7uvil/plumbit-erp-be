@@ -22,7 +22,6 @@ from app.common.utils.datetime import utcnow
 from app.core.enums import AuditAction, StockMovementType
 from app.core.exceptions import (
     InsufficientStockError,
-    PeriodLockedError,
     ResourceNotFoundError,
     ValidationError,
 )
@@ -223,13 +222,14 @@ class StockService:
         warehouse_id: UUID,
         product_id: UUID,
         document_date: date,
+        can_override_soft_lock: bool = False,
     ) -> LockedBalance:
         """Validate product/warehouse/period and SELECT FOR UPDATE the balance row."""
 
         product = await self.products.require_stockable(tenant_id, product_id)
         warehouse = await self.warehouses.get(tenant_id, warehouse_id)
-        allow_negative, lock_date, hard_lock_date = await self.org.get_inventory_controls(tenant_id)
-        self._assert_period_open(document_date, lock_date, hard_lock_date)
+        allow_negative, policy = await self.org.get_inventory_controls(tenant_id)
+        policy.assert_open(document_date, can_override=can_override_soft_lock)
         row = await self._lock_or_create(tenant_id, warehouse_id, product_id)
         return LockedBalance(
             row=row,
@@ -313,12 +313,14 @@ class StockService:
         notes: str | None = None,
         occurred_at: datetime | None = None,
         unit_id: UUID | None = None,
+        can_override_soft_lock: bool = False,
     ) -> StockMovement:
         locked = await self.lock_balance(
             tenant_id,
             warehouse_id=warehouse_id,
             product_id=product_id,
             document_date=document_date,
+            can_override_soft_lock=can_override_soft_lock,
         )
         return await self.apply_locked(
             tenant_id,
@@ -361,23 +363,6 @@ class StockService:
             if row is None:
                 raise
             return row
-
-    def _assert_period_open(
-        self,
-        document_date: date,
-        lock_date: date | None,
-        hard_lock_date: date | None,
-    ) -> None:
-        if (hard_lock_date is not None and document_date <= hard_lock_date) or (
-            lock_date is not None and document_date <= lock_date
-        ):
-            raise PeriodLockedError(
-                details={
-                    "lock_date": lock_date.isoformat() if lock_date else None,
-                    "hard_lock_date": hard_lock_date.isoformat() if hard_lock_date else None,
-                    "document_date": document_date.isoformat(),
-                }
-            )
 
     async def _balance_responses(
         self, tenant_id: UUID, rows: Sequence[StockBalance]

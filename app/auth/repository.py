@@ -145,8 +145,10 @@ class AccessRepository:
         result = await self.session.execute(statement)
         return [(row.id, row.name, row.logo_storage_key) for row in result.all()]
 
-    async def get_tenant(self, tenant_id: UUID) -> Tenant | None:
+    async def get_tenant(self, tenant_id: UUID, *, for_update: bool = False) -> Tenant | None:
         statement = select(Tenant).where(Tenant.id == tenant_id)
+        if for_update:
+            statement = statement.with_for_update()
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()
 

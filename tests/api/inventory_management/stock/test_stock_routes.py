@@ -10,10 +10,22 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from app.auth.models import Tenant
 from app.db.session import async_session_factory, transaction
 from app.inventory_management.stock.models import StockBalance
 from tests.conftest import login_headers, provision_admin
+
+_STOCK_CLERK_CODES = (
+    "inventory.stock_adjustment.create",
+    "inventory.stock_adjustment.read",
+    "inventory.stock_adjustment.update",
+    "inventory.stock_adjustment.delete",
+    "inventory.stock_adjustment.post",
+    "inventory.stock_transfer.create",
+    "inventory.stock_transfer.read",
+    "inventory.stock_transfer.update",
+    "inventory.stock_transfer.delete",
+    "inventory.stock_transfer.post",
+)
 
 
 async def _seeded(client: AsyncClient, headers: dict[str, str]) -> dict[str, str]:
@@ -109,6 +121,60 @@ async def _post_document(
     idempotency = key if key is not None else uuid4().hex
     response = await client.post(path, headers=_if_match(headers, version, key=idempotency))
     return response
+
+
+async def _permission_ids(
+    client: AsyncClient, headers: dict[str, str], codes: tuple[str, ...]
+) -> list[str]:
+    found: dict[str, str] = {}
+    searches = {code.split(".")[1] for code in codes}
+    for search in searches:
+        response = await client.get(
+            f"/api/v1/permissions?search={search}&page_size=100", headers=headers
+        )
+        assert response.status_code == 200, response.text
+        for item in response.json()["data"]:
+            if item["code"] in codes:
+                found[item["code"]] = item["id"]
+    missing = set(codes) - set(found)
+    assert not missing, missing
+    return [found[code] for code in codes]
+
+
+async def _user_headers(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+    tenant_id: str,
+    *,
+    codes: tuple[str, ...],
+) -> dict[str, str]:
+    suffix = uuid4().hex[:8]
+    email = f"clerk-{suffix}@example.com"
+    permission_ids = await _permission_ids(client, admin_headers, codes)
+    role = await client.post(
+        "/api/v1/roles",
+        headers=admin_headers,
+        json={"name": f"Stock {suffix}", "permission_ids": permission_ids},
+    )
+    assert role.status_code == 201, role.text
+    user = await client.post(
+        "/api/v1/users",
+        headers=admin_headers,
+        json={
+            "name": "Stock Clerk",
+            "email": email,
+            "password": "password12",
+            "role_ids": [role.json()["data"]["id"]],
+        },
+    )
+    assert user.status_code == 201, user.text
+    return await login_headers(client, tenant_id, email, "password12")
+
+
+async def _stock_clerk_headers(
+    client: AsyncClient, admin_headers: dict[str, str], tenant_id: str
+) -> dict[str, str]:
+    return await _user_headers(client, admin_headers, tenant_id, codes=_STOCK_CLERK_CODES)
 
 
 @pytest.mark.asyncio
@@ -443,19 +509,24 @@ async def test_period_lock_rejects_dated_post(client: AsyncClient) -> None:
     assert created.status_code == 201, created.text
     doc = created.json()["data"]
 
-    async with async_session_factory() as session, transaction(session):
-        tenant = await session.get(Tenant, UUID(tenant_id))
-        assert tenant is not None
-        tenant.lock_date = date(2024, 12, 31)
+    locked = await client.patch(
+        "/api/v1/period-lock",
+        headers=headers,
+        json={"lock_date": "2024-12-31"},
+    )
+    assert locked.status_code == 200, locked.text
+    assert locked.json()["data"]["lock_date"] == "2024-12-31"
 
+    clerk_headers = await _stock_clerk_headers(client, headers, tenant_id)
     rejected = await _post_document(
-        client, headers, f"/api/v1/stock-adjustments/{doc['id']}/post", doc["version"]
+        client, clerk_headers, f"/api/v1/stock-adjustments/{doc['id']}/post", doc["version"]
     )
     assert rejected.status_code == 409, rejected.text
     error = rejected.json()["error"]
     assert error["code"] == "PERIOD_LOCKED"
     assert error["details"]["document_date"] == "2020-01-15"
     assert error["details"]["lock_date"] == "2024-12-31"
+    assert error["details"]["tier"] == "soft"
 
 
 @pytest.mark.asyncio
