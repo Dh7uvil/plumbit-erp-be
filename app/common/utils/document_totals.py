@@ -1,4 +1,4 @@
-"""Pure quotation total and UAE VAT helpers. No I/O."""
+"""Pure document total and UAE VAT helpers. No I/O."""
 
 from __future__ import annotations
 
@@ -83,7 +83,7 @@ def resolve_line_tax_category(
     tax_treatment: TaxTreatment,
     place_of_supply: PlaceOfSupply,
 ) -> TaxCategory:
-    """Decide the VAT category snapshotted onto a quote line."""
+    """Decide the VAT category snapshotted onto a document line."""
 
     if item_category in {
         TaxCategory.EXEMPT,

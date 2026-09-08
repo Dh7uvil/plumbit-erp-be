@@ -47,6 +47,12 @@ class Product(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
         nullable=False,
         server_default=text("0"),
     )
+    purchase_rate: Mapped[Decimal] = mapped_column(
+        Numeric(MONEY_PRECISION, MONEY_SCALE),
+        nullable=False,
+        server_default=text("0"),
+    )
+    purchase_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     tax_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("taxes.id", ondelete="SET NULL"),

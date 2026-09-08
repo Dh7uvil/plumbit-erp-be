@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from collections.abc import Sequence
 from uuid import UUID
 
@@ -66,8 +67,14 @@ class WarehouseService:
         await self._require(tenant_id, warehouse_id)
         return warehouse_id
 
-    async def search_ids(self, tenant_id: UUID, search: str) -> list[UUID]:
+    async def search_ids(self, tenant_id: UUID, search: str) -> builtins.list[UUID]:
         return await self.repo.search_ids(tenant_id, search)
+
+    async def get_default(self, tenant_id: UUID) -> WarehouseResponse | None:
+        row = await self.repo.get_default(tenant_id)
+        if row is None:
+            return None
+        return await self._to_response(tenant_id, row)
 
     async def create(
         self, tenant_id: UUID, payload: WarehouseCreate, *, actor_user_id: UUID

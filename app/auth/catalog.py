@@ -49,6 +49,8 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "terms_template": ("create", "read", "update", "delete"),
         "document_sequence": ("create", "read", "update", "delete"),
         "quotation": ("create", "read", "update", "delete", "approve", "send"),
+        "sales_order": ("create", "read", "update", "delete", "approve", "confirm", "close"),
+        "purchase_order": ("create", "read", "update", "delete", "approve", "issue", "close"),
         "period": ("lock", "override"),
     },
 }
@@ -174,6 +176,20 @@ QUOTATION_UPDATE = build_permission(ERP_MODULE, "quotation", "update")
 QUOTATION_DELETE = build_permission(ERP_MODULE, "quotation", "delete")
 QUOTATION_APPROVE = build_permission(ERP_MODULE, "quotation", "approve")
 QUOTATION_SEND = build_permission(ERP_MODULE, "quotation", "send")
+SALES_ORDER_CREATE = build_permission(ERP_MODULE, "sales_order", "create")
+SALES_ORDER_READ = build_permission(ERP_MODULE, "sales_order", "read")
+SALES_ORDER_UPDATE = build_permission(ERP_MODULE, "sales_order", "update")
+SALES_ORDER_DELETE = build_permission(ERP_MODULE, "sales_order", "delete")
+SALES_ORDER_APPROVE = build_permission(ERP_MODULE, "sales_order", "approve")
+SALES_ORDER_CONFIRM = build_permission(ERP_MODULE, "sales_order", "confirm")
+SALES_ORDER_CLOSE = build_permission(ERP_MODULE, "sales_order", "close")
+PURCHASE_ORDER_CREATE = build_permission(ERP_MODULE, "purchase_order", "create")
+PURCHASE_ORDER_READ = build_permission(ERP_MODULE, "purchase_order", "read")
+PURCHASE_ORDER_UPDATE = build_permission(ERP_MODULE, "purchase_order", "update")
+PURCHASE_ORDER_DELETE = build_permission(ERP_MODULE, "purchase_order", "delete")
+PURCHASE_ORDER_APPROVE = build_permission(ERP_MODULE, "purchase_order", "approve")
+PURCHASE_ORDER_ISSUE = build_permission(ERP_MODULE, "purchase_order", "issue")
+PURCHASE_ORDER_CLOSE = build_permission(ERP_MODULE, "purchase_order", "close")
 PERIOD_LOCK = build_permission(ERP_MODULE, "period", "lock")
 PERIOD_OVERRIDE = build_permission(ERP_MODULE, "period", "override")
 

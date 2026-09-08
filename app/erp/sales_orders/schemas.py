@@ -1,4 +1,4 @@
-"""Quotation request/response schemas."""
+"""Sales order request/response schemas."""
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -8,27 +8,39 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.schemas.filters import BaseFilter
-from app.core.enums import DiscountType, PlaceOfSupply, QuotationStatus, TaxTreatment
+from app.core.enums import (
+    BillingStatus,
+    DiscountType,
+    FulfillmentStatus,
+    PlaceOfSupply,
+    SalesOrderStatus,
+    TaxTreatment,
+)
 
 
-class QuotationFilter(BaseFilter):
+class SalesOrderFilter(BaseFilter):
     allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
         {
             "created_at",
             "updated_at",
-            "quote_number",
-            "quote_date",
+            "document_number",
+            "order_date",
             "status",
             "grand_total",
         }
     )
-    status: QuotationStatus | None = None
+    status: SalesOrderStatus | None = None
+    fulfillment_status: FulfillmentStatus | None = None
+    billing_status: BillingStatus | None = None
     customer_id: UUID | None = None
     branch_id: UUID | None = None
+    warehouse_id: UUID | None = None
     currency_id: UUID | None = None
+    salesperson_id: UUID | None = None
+    source_quotation_id: UUID | None = None
 
 
-class QuotationLineInput(BaseModel):
+class SalesOrderLineInput(BaseModel):
     product_id: UUID | None = None
     description: str | None = None
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
@@ -47,13 +59,13 @@ class QuotationLineInput(BaseModel):
         return normalized or None
 
     @model_validator(mode="after")
-    def require_product_or_description(self) -> "QuotationLineInput":
+    def require_product_or_description(self) -> "SalesOrderLineInput":
         if self.product_id is None and not self.description:
             raise ValueError("Each line requires a product_id or a description")
         return self
 
 
-class QuotationLineResponse(BaseModel):
+class SalesOrderLineResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -70,14 +82,19 @@ class QuotationLineResponse(BaseModel):
     tax_rate: Decimal
     tax_amount: Decimal
     amount: Decimal
+    qty_delivered: Decimal
+    qty_invoiced: Decimal
+    source_quotation_line_id: UUID | None
 
 
-class QuotationCreate(BaseModel):
+class SalesOrderCreate(BaseModel):
     customer_id: UUID
     contact_id: UUID | None = None
     branch_id: UUID | None = None
-    quote_date: date | None = None
-    valid_until: date | None = None
+    warehouse_id: UUID | None = None
+    order_date: date | None = None
+    expected_shipment_date: date | None = None
+    reference_number: str | None = Field(default=None, max_length=60)
     currency_id: UUID | None = None
     price_list_id: UUID | None = None
     payment_terms_id: UUID | None = None
@@ -90,14 +107,24 @@ class QuotationCreate(BaseModel):
     shipping_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
-    lines: list[QuotationLineInput] = Field(default_factory=list)
+    lines: list[SalesOrderLineInput] = Field(default_factory=list)
+
+    @field_validator("reference_number")
+    @classmethod
+    def normalize_reference(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
 
-class QuotationUpdate(BaseModel):
+class SalesOrderUpdate(BaseModel):
     contact_id: UUID | None = None
     branch_id: UUID | None = None
-    quote_date: date | None = None
-    valid_until: date | None = None
+    warehouse_id: UUID | None = None
+    order_date: date | None = None
+    expected_shipment_date: date | None = None
+    reference_number: str | None = Field(default=None, max_length=60)
     currency_id: UUID | None = None
     price_list_id: UUID | None = None
     payment_terms_id: UUID | None = None
@@ -109,11 +136,19 @@ class QuotationUpdate(BaseModel):
     shipping_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
-    lines: list[QuotationLineInput] | None = None
+    lines: list[SalesOrderLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
+    @field_validator("reference_number")
+    @classmethod
+    def normalize_reference(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
-class QuotationRejectRequest(BaseModel):
+
+class SalesOrderRejectRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=2000)
     version: int | None = Field(default=None, ge=1)
 
@@ -126,37 +161,34 @@ class QuotationRejectRequest(BaseModel):
         return normalized or None
 
 
-class ConvertToSalesOrderRequest(BaseModel):
-    order_date: date | None = None
-    expected_shipment_date: date | None = None
-    reference_number: str | None = Field(default=None, max_length=60)
-    warehouse_id: UUID | None = None
-    branch_id: UUID | None = None
+class SalesOrderCancelRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=2000)
     version: int | None = Field(default=None, ge=1)
 
-    @field_validator("reference_number")
+    @field_validator("reason")
     @classmethod
-    def normalize_reference(cls, value: str | None) -> str | None:
+    def normalize_reason(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()
         return normalized or None
 
 
-class QuotationResponse(BaseModel):
+class SalesOrderResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     tenant_id: UUID
-    quote_number: str
     document_number: str
-    status: QuotationStatus
+    status: SalesOrderStatus
     version: int
     is_posted: bool
-    quote_date: date
+    reference_number: str | None
+    order_date: date
     document_date: date
-    valid_until: date | None
+    expected_shipment_date: date | None
     branch_id: UUID | None
+    warehouse_id: UUID | None
     customer_id: UUID
     contact_id: UUID | None
     customer_trn: str | None
@@ -182,16 +214,23 @@ class QuotationResponse(BaseModel):
     grand_total: Decimal
     foreign_amount: Decimal
     base_amount: Decimal
-    converted_at: datetime | None
-    converted_document_type: str | None
-    converted_document_id: UUID | None
+    fulfillment_status: FulfillmentStatus
+    billing_status: BillingStatus
+    source_quotation_id: UUID | None
+    confirmed_at: datetime | None
+    confirmed_by: UUID | None
+    closed_at: datetime | None
+    closed_by: UUID | None
+    cancelled_at: datetime | None
+    cancelled_by: UUID | None
+    cancel_reason: str | None
     available_actions: list[str] = Field(default_factory=list)
-    lines: list[QuotationLineResponse] = Field(default_factory=list)
+    lines: list[SalesOrderLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
 
-class QuotationComposeDefaults(BaseModel):
+class SalesOrderComposeDefaults(BaseModel):
     customer_id: UUID
     customer_name: str
     customer_trn: str | None
@@ -201,6 +240,7 @@ class QuotationComposeDefaults(BaseModel):
     payment_terms_id: UUID | None
     salesperson_id: UUID | None
     contact_id: UUID | None
+    warehouse_id: UUID | None
     place_of_supply: PlaceOfSupply
     bill_to_snapshot: str | None
     ship_to_snapshot: str | None

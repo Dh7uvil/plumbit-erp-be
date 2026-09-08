@@ -494,6 +494,8 @@
           "CONTACT",
           "PRODUCT",
           "QUOTATION",
+          "SALES_ORDER",
+          "PURCHASE_ORDER",
           "BRANCH",
           "EMPLOYEE"
         ],

@@ -586,6 +586,31 @@
             "title": "Selling Rate",
             "default": "0"
           },
+          "purchase_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              }
+            ],
+            "title": "Purchase Rate",
+            "default": "0"
+          },
+          "purchase_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Description"
+          },
           "tax_id": {
             "anyOf": [
               {
@@ -686,6 +711,22 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Selling Rate"
           },
+          "purchase_rate": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Purchase Rate"
+          },
+          "purchase_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Description"
+          },
           "tax_id": {
             "anyOf": [
               {
@@ -739,6 +780,8 @@
           "unit_id",
           "category_id",
           "selling_rate",
+          "purchase_rate",
+          "purchase_description",
           "tax_id",
           "hs_code",
           "track_inventory",
@@ -823,6 +866,33 @@
               }
             ],
             "title": "Selling Rate"
+          },
+          "purchase_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Rate"
+          },
+          "purchase_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Description"
           },
           "tax_id": {
             "anyOf": [

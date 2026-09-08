@@ -498,6 +498,8 @@ class TenantSettings(BaseModel):
     fiscal_year_start: str | None = Field(default=None, max_length=50)
     default_currency: str | None = Field(default=None, max_length=3)
     quotation_requires_approval: bool = True
+    sales_order_requires_approval: bool = False
+    purchase_order_requires_approval: bool = False
     headquarters: AddressPayload | None = None
 
     @field_validator("industry", "website", "founded", "fiscal_year_start", "phone")
@@ -547,6 +549,8 @@ class TenantCurrentResponse(BaseModel):
     default_currency: str | None = None
     default_currency_id: UUID | None = None
     quotation_requires_approval: bool = True
+    sales_order_requires_approval: bool = False
+    purchase_order_requires_approval: bool = False
     allow_negative_stock: bool = False
     lock_date: date | None = None
     hard_lock_date: date | None = None
@@ -570,6 +574,8 @@ class TenantCurrentUpdate(BaseModel):
     default_currency: str | None = Field(default=None, max_length=3)
     default_currency_id: UUID | None = None
     quotation_requires_approval: bool | None = None
+    sales_order_requires_approval: bool | None = None
+    purchase_order_requires_approval: bool | None = None
     allow_negative_stock: bool | None = None
     headquarters: AddressPayload | None = None
 

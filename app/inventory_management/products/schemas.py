@@ -31,6 +31,8 @@ class ProductCreate(BaseModel):
     unit_id: UUID | None = None
     category_id: UUID | None = None
     selling_rate: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
+    purchase_rate: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
+    purchase_description: str | None = None
     tax_id: UUID | None = None
     hs_code: str | None = Field(default=None, max_length=20)
     track_inventory: bool = False
@@ -61,6 +63,8 @@ class ProductUpdate(BaseModel):
     unit_id: UUID | None = None
     category_id: UUID | None = None
     selling_rate: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
+    purchase_rate: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
+    purchase_description: str | None = None
     tax_id: UUID | None = None
     hs_code: str | None = Field(default=None, max_length=20)
     track_inventory: bool | None = None
@@ -94,6 +98,8 @@ class ProductResponse(BaseModel):
     unit_id: UUID | None
     category_id: UUID | None
     selling_rate: Decimal
+    purchase_rate: Decimal
+    purchase_description: str | None
     tax_id: UUID | None
     hs_code: str | None
     track_inventory: bool

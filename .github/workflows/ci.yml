@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      ENV: testing
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: plumbit
+          POSTGRES_PASSWORD: plumbit
+          POSTGRES_DB: plumb_it_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --group dev
+      - name: Write test environment
+        run: |
+          cat > .env.test <<'EOF'
+          ENV=testing
+          DATABASE_HOST=127.0.0.1
+          DATABASE_PORT=5432
+          DATABASE_NAME=plumb_it_test
+          DATABASE_USER=plumbit
+          DATABASE_PASSWORD=plumbit
+          JWT_SECRET=ci-test-jwt-secret-must-be-32-chars
+          EOF
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format
+        run: uv run ruff format --check .
+      - name: Type check
+        run: uv run mypy app
+      - name: Migrate
+        run: uv run alembic upgrade head
+      - name: Test
+        run: uv run pytest

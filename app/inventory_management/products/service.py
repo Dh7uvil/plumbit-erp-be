@@ -187,6 +187,8 @@ class ProductService:
             "unit": unit_code,
             "category": category_name,
             "selling_rate": row.selling_rate,
+            "purchase_rate": row.purchase_rate,
+            "purchase_description": row.purchase_description,
             "tax": tax_name,
             "hs_code": row.hs_code,
             "track_inventory": row.track_inventory,
