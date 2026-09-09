@@ -62,6 +62,16 @@ uv run seed-tenants --tenant-id <uuid>
 uv run seed-tenants --tenant-code <code>
 ```
 
+Grant the full permission catalog to the Superadmin role on existing tenants
+(users inherit those grants). Use this after new catalog permissions land.
+Idempotent: missing catalog rows are inserted and missing role grants are added:
+
+```bash
+uv run grant-superadmin-permissions
+uv run grant-superadmin-permissions --tenant-id <uuid>
+uv run grant-superadmin-permissions --tenant-code <code>
+```
+
 Object storage uses one S3 client everywhere. For local development, run MinIO and point
 the API at it:
 

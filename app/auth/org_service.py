@@ -685,6 +685,17 @@ class OrganizationService:
         settings = TenantSettings.model_validate(tenant.settings or {})
         return settings.purchase_order_requires_approval
 
+    async def get_bank_details(self, tenant_id: UUID) -> str | None:
+        """Return free-text bank details from tenant settings, if present."""
+
+        tenant = await self._require_tenant(tenant_id)
+        raw = tenant.settings or {}
+        value = raw.get("bank_details")
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return None
+
     async def get_inventory_controls(
         self, tenant_id: UUID, *, for_update: bool = False
     ) -> tuple[bool, PeriodLockPolicy]:

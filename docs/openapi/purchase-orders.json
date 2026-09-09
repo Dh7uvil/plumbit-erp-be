@@ -2,13 +2,13 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Plumbit ERP API \u2014 Purchase Orders",
-    "description": "Purchase Orders",
+    "description": "Supplier purchase orders, including back-to-back creation from a sales order.",
     "version": "0.1.0"
   },
   "tags": [
     {
       "name": "Purchase Orders",
-      "description": "Purchase Orders"
+      "description": "Supplier purchase orders, including back-to-back creation from a sales order."
     }
   ],
   "paths": {
@@ -283,6 +283,23 @@
                 }
               ],
               "title": "Currency Id"
+            }
+          },
+          {
+            "name": "source_sales_order_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Sales Order Id"
             }
           }
         ],
@@ -1841,6 +1858,18 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Qty Billed"
+          },
+          "source_sales_order_line_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sales Order Line Id"
           }
         },
         "type": "object",
@@ -2233,6 +2262,18 @@
               }
             ],
             "title": "Cancel Reason"
+          },
+          "source_sales_order_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sales Order Id"
           },
           "available_actions": {
             "items": {

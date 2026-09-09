@@ -3,13 +3,15 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, Query, status
+from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
 
 from app.auth.catalog import (
+    PROFORMA_INVOICE_CREATE,
     QUOTATION_APPROVE,
     QUOTATION_CREATE,
     QUOTATION_DELETE,
     QUOTATION_READ,
+    QUOTATION_REVISE,
     QUOTATION_SEND,
     QUOTATION_UPDATE,
     SALES_ORDER_CREATE,
@@ -18,17 +20,24 @@ from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
+from app.common.idempotency.service import hash_request, require_idempotency_key
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
+from app.erp.proforma_invoices.dependencies import ProformaInvoiceServiceDependency
+from app.erp.proforma_invoices.schemas import ProformaInvoiceResponse
 from app.erp.quotation.dependencies import QuotationServiceDependency
 from app.erp.quotation.schemas import (
+    ConvertToProformaInvoiceRequest,
     ConvertToSalesOrderRequest,
     QuotationComposeDefaults,
     QuotationCreate,
     QuotationFilter,
     QuotationRejectRequest,
     QuotationResponse,
+    QuotationReviseRequest,
+    QuotationRevisionListItem,
+    QuotationRevisionResponse,
     QuotationUpdate,
 )
 from app.erp.sales_orders.dependencies import SalesOrderServiceDependency
@@ -37,6 +46,7 @@ from app.erp.sales_orders.schemas import SalesOrderResponse
 router = APIRouter(prefix="/quotations", tags=["Quotations"])
 
 IfMatch = Annotated[str | None, Header()]
+IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
 
 
 @router.get("/compose-defaults", response_model=ApiResponse[QuotationComposeDefaults])
@@ -266,6 +276,55 @@ async def cancel_quotation(
     return ApiResponse(data=row, message="Quotation cancelled")
 
 
+@router.post("/{quotation_id}/revise", response_model=ApiResponse[QuotationResponse])
+async def revise_quotation(
+    quotation_id: UUID,
+    payload: QuotationReviseRequest,
+    tenant: TenantContextDependency,
+    service: QuotationServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(QUOTATION_REVISE))],
+    if_match: IfMatch = None,
+) -> ApiResponse[QuotationResponse]:
+    row = await service.revise(
+        tenant.tenant_id,
+        quotation_id,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(if_match=if_match, body_version=payload.version),
+        revision_reason=payload.revision_reason,
+    )
+    return ApiResponse(data=row, message="Quotation revised")
+
+
+@router.get(
+    "/{quotation_id}/revisions",
+    response_model=ApiResponse[list[QuotationRevisionListItem]],
+)
+async def list_quotation_revisions(
+    quotation_id: UUID,
+    tenant: TenantContextDependency,
+    service: QuotationServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(QUOTATION_READ))],
+) -> ApiResponse[list[QuotationRevisionListItem]]:
+    rows = await service.list_revisions(tenant.tenant_id, quotation_id)
+    return ApiResponse(data=rows)
+
+
+@router.get(
+    "/{quotation_id}/revisions/{revision_number}",
+    response_model=ApiResponse[QuotationRevisionResponse],
+)
+async def get_quotation_revision(
+    quotation_id: UUID,
+    revision_number: int,
+    tenant: TenantContextDependency,
+    service: QuotationServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(QUOTATION_READ))],
+) -> ApiResponse[QuotationRevisionResponse]:
+    return ApiResponse(
+        data=await service.get_revision(tenant.tenant_id, quotation_id, revision_number)
+    )
+
+
 @router.post("/{quotation_id}/clone", response_model=ApiResponse[QuotationResponse])
 async def clone_quotation(
     quotation_id: UUID,
@@ -283,14 +342,17 @@ async def clone_quotation(
 )
 async def convert_quotation_to_sales_order(
     quotation_id: UUID,
+    request: Request,
     tenant: TenantContextDependency,
     sales_orders: SalesOrderServiceDependency,
     _: Annotated[CurrentUser, Depends(require_permission(QUOTATION_UPDATE))],
     __: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_CREATE))],
     if_match: IfMatch = None,
+    idempotency_key: IdempotencyKeyHeader = None,
     payload: Annotated[ConvertToSalesOrderRequest | None, Body()] = None,
 ) -> ApiResponse[SalesOrderResponse]:
     body = payload or ConvertToSalesOrderRequest()
+    raw_body = await request.body()
     row = await sales_orders.create_from_quotation(
         tenant.tenant_id,
         quotation_id,
@@ -299,7 +361,39 @@ async def convert_quotation_to_sales_order(
         order_date=body.order_date,
         expected_shipment_date=body.expected_shipment_date,
         reference_number=body.reference_number,
+        customer_po_number=body.customer_po_number,
+        customer_po_date=body.customer_po_date,
         warehouse_id=body.warehouse_id,
         branch_id=body.branch_id,
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=raw_body),
+        endpoint=request.url.path,
     )
     return ApiResponse(data=row, message="Quotation converted to a sales order")
+
+
+@router.post(
+    "/{quotation_id}/convert-to-proforma-invoice",
+    response_model=ApiResponse[ProformaInvoiceResponse],
+)
+async def convert_quotation_to_proforma_invoice(
+    quotation_id: UUID,
+    tenant: TenantContextDependency,
+    proforma_invoices: ProformaInvoiceServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(QUOTATION_READ))],
+    __: Annotated[CurrentUser, Depends(require_permission(PROFORMA_INVOICE_CREATE))],
+    if_match: IfMatch = None,
+    payload: Annotated[ConvertToProformaInvoiceRequest | None, Body()] = None,
+) -> ApiResponse[ProformaInvoiceResponse]:
+    body = payload or ConvertToProformaInvoiceRequest()
+    row = await proforma_invoices.create_from_quotation(
+        tenant.tenant_id,
+        quotation_id,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(if_match=if_match, body_version=body.version),
+        proforma_date=body.proforma_date,
+        valid_until=body.valid_until,
+        incoterm=body.incoterm,
+        incoterm_place=body.incoterm_place,
+    )
+    return ApiResponse(data=row, message="Proforma invoice created from quotation")

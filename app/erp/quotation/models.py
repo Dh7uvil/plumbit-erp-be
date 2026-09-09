@@ -4,7 +4,19 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, text
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -147,11 +159,25 @@ class Quotation(AuditUserMixin, SoftDeleteTenantModel):
         PostgreSQLUUID(as_uuid=True),
         nullable=True,
     )
+    revision_number: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    revised_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
     lines: Mapped[list["QuotationLine"]] = relationship(
         back_populates="quotation",
         cascade="all, delete-orphan",
         order_by="QuotationLine.line_number",
+    )
+    revisions: Mapped[list["QuotationRevision"]] = relationship(
+        back_populates="quotation",
+        cascade="all, delete-orphan",
+        order_by="QuotationRevision.revision_number",
     )
 
 
@@ -219,3 +245,37 @@ class QuotationLine(TenantModel):
     )
 
     quotation: Mapped[Quotation] = relationship(back_populates="lines")
+
+
+class QuotationRevision(TenantModel):
+    """Immutable snapshot of a quotation as it stood before a revise."""
+
+    __tablename__ = "quotation_revisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "quotation_id",
+            "revision_number",
+            name="uq_quotation_revisions_quotation_id_revision_number",
+        ),
+        Index("ix_quotation_revisions_tenant_id_quotation_id", "tenant_id", "quotation_id"),
+    )
+
+    quotation_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("quotations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    quote_number: Mapped[str] = mapped_column(String(40), nullable=False)
+    status_at_revision: Mapped[str] = mapped_column(String(30), nullable=False)
+    header: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    lines: Mapped[list[object]] = mapped_column(JSONB, nullable=False)
+    revision_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    revised_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revised_by: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    quotation: Mapped[Quotation] = relationship(back_populates="revisions")

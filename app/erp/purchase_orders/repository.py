@@ -5,13 +5,14 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.common.repositories.base import BaseRepository
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.core.enums import PurchaseOrderStatus
 from app.erp.purchase_orders.models import PurchaseOrder, PurchaseOrderLine
 
 _SORT_FIELDS = frozenset(
@@ -33,6 +34,7 @@ _FILTER_FIELDS = frozenset(
         "branch_id",
         "warehouse_id",
         "currency_id",
+        "source_sales_order_id",
     }
 )
 
@@ -122,3 +124,25 @@ class PurchaseOrderRepository:
             created.append(row)
         await self.session.flush()
         return created
+
+    async def list_covering_lines(
+        self,
+        tenant_id: UUID,
+        sales_order_line_ids: Sequence[UUID],
+    ) -> builtins.list[PurchaseOrderLine]:
+        if not sales_order_line_ids:
+            return []
+        statement = (
+            select(PurchaseOrderLine)
+            .join(PurchaseOrder, PurchaseOrderLine.purchase_order_id == PurchaseOrder.id)
+            .where(
+                PurchaseOrderLine.tenant_id == tenant_id,
+                PurchaseOrder.tenant_id == tenant_id,
+                PurchaseOrder.deleted_at.is_(None),
+                PurchaseOrder.status != PurchaseOrderStatus.CANCELLED.value,
+                PurchaseOrderLine.source_sales_order_line_id.in_(list(sales_order_line_ids)),
+            )
+            .options(selectinload(PurchaseOrderLine.purchase_order))
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars().all())

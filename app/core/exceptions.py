@@ -30,6 +30,13 @@ class ErrorCode(StrEnum):
     EINVOICE_ASP_UNAVAILABLE = "EINVOICE_ASP_UNAVAILABLE"
     EINVOICE_ALREADY_EXCHANGED = "EINVOICE_ALREADY_EXCHANGED"
     SUPPLIER_SKU_NOT_MAPPED = "SUPPLIER_SKU_NOT_MAPPED"
+    QUOTATION_HAS_LIVE_PROFORMA = "QUOTATION_HAS_LIVE_PROFORMA"
+    MILESTONE_MODE_MIXED = "MILESTONE_MODE_MIXED"
+    MILESTONE_TOTAL_MISMATCH = "MILESTONE_TOTAL_MISMATCH"
+    CUSTOMER_PO_REQUIRED = "CUSTOMER_PO_REQUIRED"
+    ALREADY_ACKNOWLEDGED = "ALREADY_ACKNOWLEDGED"
+    SALES_ORDER_NOT_CONFIRMED = "SALES_ORDER_NOT_CONFIRMED"
+    PO_COVERAGE_EXCEEDED = "PO_COVERAGE_EXCEEDED"
     INTEGRATION_ERROR = "INTEGRATION_ERROR"
     INTERNAL_ERROR = "INTERNAL_ERROR"
     RATE_LIMITED = "RATE_LIMITED"
@@ -190,6 +197,48 @@ class SupplierSkuNotMappedError(AppError):
     default_code = ErrorCode.SUPPLIER_SKU_NOT_MAPPED
     default_status = HTTPStatus.CONFLICT
     default_message = "Supplier SKU is not mapped to a product"
+
+
+class QuotationHasLiveProformaError(AppError):
+    default_code = ErrorCode.QUOTATION_HAS_LIVE_PROFORMA
+    default_status = HTTPStatus.CONFLICT
+    default_message = "This quotation already has a live proforma invoice"
+
+
+class MilestoneModeMixedError(AppError):
+    default_code = ErrorCode.MILESTONE_MODE_MIXED
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "Milestones must all use percent or all use amount"
+
+
+class MilestoneTotalMismatchError(AppError):
+    default_code = ErrorCode.MILESTONE_TOTAL_MISMATCH
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "Milestone totals do not match the document"
+
+
+class CustomerPoRequiredError(AppError):
+    default_code = ErrorCode.CUSTOMER_PO_REQUIRED
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "A customer PO number is required to acknowledge this order"
+
+
+class AlreadyAcknowledgedError(AppError):
+    default_code = ErrorCode.ALREADY_ACKNOWLEDGED
+    default_status = HTTPStatus.CONFLICT
+    default_message = "This sales order has already been acknowledged"
+
+
+class SalesOrderNotConfirmedError(AppError):
+    default_code = ErrorCode.SALES_ORDER_NOT_CONFIRMED
+    default_status = HTTPStatus.CONFLICT
+    default_message = "Purchase orders can only be planned against a confirmed sales order"
+
+
+class PoCoverageExceededError(AppError):
+    default_code = ErrorCode.PO_COVERAGE_EXCEEDED
+    default_status = HTTPStatus.CONFLICT
+    default_message = "Purchase quantity exceeds uncovered sales order quantity"
 
 
 class IntegrationError(AppError):

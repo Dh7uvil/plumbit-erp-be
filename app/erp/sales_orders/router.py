@@ -3,9 +3,11 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, Query, status
+from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
 
 from app.auth.catalog import (
+    PURCHASE_ORDER_CREATE,
+    SALES_ORDER_ACKNOWLEDGE,
     SALES_ORDER_APPROVE,
     SALES_ORDER_CLOSE,
     SALES_ORDER_CONFIRM,
@@ -18,11 +20,20 @@ from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
+from app.common.idempotency.service import hash_request, require_idempotency_key
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
+from app.erp.purchase_orders.dependencies import PurchaseOrderServiceDependency
+from app.erp.purchase_orders.schemas import (
+    PurchaseOrderFromSalesOrderRequest,
+    PurchaseOrderPlanResponse,
+    PurchaseOrderResponse,
+    SalesOrderCoverageResponse,
+)
 from app.erp.sales_orders.dependencies import SalesOrderServiceDependency
 from app.erp.sales_orders.schemas import (
+    CustomerPoDuplicate,
     SalesOrderCancelRequest,
     SalesOrderComposeDefaults,
     SalesOrderCreate,
@@ -35,6 +46,7 @@ from app.erp.sales_orders.schemas import (
 router = APIRouter(prefix="/sales-orders", tags=["Sales Orders"])
 
 IfMatch = Annotated[str | None, Header()]
+IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
 
 
 @router.get("/compose-defaults", response_model=ApiResponse[SalesOrderComposeDefaults])
@@ -46,6 +58,24 @@ async def compose_defaults(
 ) -> ApiResponse[SalesOrderComposeDefaults]:
     data = await service.compose_defaults(tenant.tenant_id, customer_id)
     return ApiResponse(data=data)
+
+
+@router.get("/check-customer-po", response_model=ApiResponse[list[CustomerPoDuplicate]])
+async def check_customer_po(
+    tenant: TenantContextDependency,
+    service: SalesOrderServiceDependency,
+    customer_id: Annotated[UUID, Query()],
+    customer_po_number: Annotated[str, Query()],
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_READ))],
+    exclude_id: Annotated[UUID | None, Query()] = None,
+) -> ApiResponse[list[CustomerPoDuplicate]]:
+    rows = await service.find_duplicate_customer_po(
+        tenant.tenant_id,
+        customer_id=customer_id,
+        customer_po_number=customer_po_number,
+        exclude_sales_order_id=exclude_id,
+    )
+    return ApiResponse(data=rows)
 
 
 @router.get("", response_model=ApiResponse[list[SalesOrderResponse]])
@@ -69,6 +99,7 @@ async def list_sales_orders(
         currency_id=filters.currency_id,
         salesperson_id=filters.salesperson_id,
         source_quotation_id=filters.source_quotation_id,
+        source_proforma_invoice_id=filters.source_proforma_invoice_id,
     )
     return paginated_response(rows, params=page, total=total)
 
@@ -266,3 +297,73 @@ async def clone_sales_order(
 ) -> ApiResponse[SalesOrderResponse]:
     row = await service.clone(tenant.tenant_id, sales_order_id, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Sales order cloned as a new draft")
+
+
+@router.post("/{sales_order_id}/acknowledge", response_model=ApiResponse[SalesOrderResponse])
+async def acknowledge_sales_order(
+    sales_order_id: UUID,
+    tenant: TenantContextDependency,
+    service: SalesOrderServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_ACKNOWLEDGE))],
+    if_match: IfMatch = None,
+) -> ApiResponse[SalesOrderResponse]:
+    row = await service.acknowledge(
+        tenant.tenant_id,
+        sales_order_id,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(if_match=if_match),
+    )
+    return ApiResponse(data=row, message="Sales order acknowledged")
+
+
+@router.get(
+    "/{sales_order_id}/purchase-order-plan",
+    response_model=ApiResponse[PurchaseOrderPlanResponse],
+)
+async def get_purchase_order_plan(
+    sales_order_id: UUID,
+    tenant: TenantContextDependency,
+    purchase_orders: PurchaseOrderServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_READ))],
+    __: Annotated[CurrentUser, Depends(require_permission(PURCHASE_ORDER_CREATE))],
+) -> ApiResponse[PurchaseOrderPlanResponse]:
+    data = await purchase_orders.plan_from_sales_order(tenant.tenant_id, sales_order_id)
+    return ApiResponse(data=data)
+
+
+@router.get("/{sales_order_id}/coverage", response_model=ApiResponse[SalesOrderCoverageResponse])
+async def get_sales_order_coverage(
+    sales_order_id: UUID,
+    tenant: TenantContextDependency,
+    purchase_orders: PurchaseOrderServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_READ))],
+) -> ApiResponse[SalesOrderCoverageResponse]:
+    data = await purchase_orders.coverage_for_sales_order(tenant.tenant_id, sales_order_id)
+    return ApiResponse(data=data)
+
+
+@router.post(
+    "/{sales_order_id}/purchase-orders",
+    response_model=ApiResponse[list[PurchaseOrderResponse]],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_purchase_orders_from_sales_order(
+    sales_order_id: UUID,
+    payload: PurchaseOrderFromSalesOrderRequest,
+    request: Request,
+    tenant: TenantContextDependency,
+    purchase_orders: PurchaseOrderServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(PURCHASE_ORDER_CREATE))],
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[list[PurchaseOrderResponse]]:
+    raw_body = await request.body()
+    rows = await purchase_orders.create_from_sales_order(
+        tenant.tenant_id,
+        sales_order_id,
+        payload,
+        actor_user_id=tenant.user_id,
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=raw_body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(data=rows, message="Purchase orders created from sales order")

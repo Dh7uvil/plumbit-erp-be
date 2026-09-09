@@ -8,6 +8,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import logging
+
 from app.auth.catalog import (
     BRANCH_READ,
     BRANCH_UPDATE,
@@ -19,6 +21,8 @@ from app.auth.catalog import (
     EMPLOYEE_UPDATE,
     PRODUCT_READ,
     PRODUCT_UPDATE,
+    PROFORMA_INVOICE_READ,
+    PROFORMA_INVOICE_UPDATE,
     PURCHASE_ORDER_READ,
     PURCHASE_ORDER_UPDATE,
     QUOTATION_READ,
@@ -33,11 +37,15 @@ from app.auth.catalog import (
     SUPPLIER_UPDATE,
 )
 from app.common.attachments.entities import AttachmentEntitySpec, EntityRef, Probe, register
+from app.common.outbox.models import OutboxEvent
+from app.common.registries.quotation_dependents import register as register_quotation_dependent
 from app.common.registries.unposted_documents import UnpostedDocument
 from app.common.registries.unposted_documents import register as register_unposted
 from app.common.schemas.pagination import PageParams
 from app.core.enums import AttachmentEntityType, CompanyType, StockDocumentStatus
 from app.core.exceptions import ResourceNotFoundError
+
+logger = logging.getLogger(__name__)
 
 _WIRED = False
 
@@ -50,6 +58,8 @@ def wire_platform() -> None:
         return
     _register_unposted_probes()
     _register_attachment_entities()
+    _register_outbox_handlers()
+    _register_quotation_dependents()
     _WIRED = True
 
 
@@ -201,6 +211,14 @@ def _register_attachment_entities() -> None:
             _probe_via_get(_stock_adjustment_get),
         )
     )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.PROFORMA_INVOICE,
+            PROFORMA_INVOICE_READ,
+            PROFORMA_INVOICE_UPDATE,
+            _probe_via_get(_proforma_invoice_get),
+        )
+    )
 
 
 def _probe_via_get(
@@ -295,3 +313,45 @@ async def _stock_adjustment_get(session: AsyncSession, tenant_id: UUID, entity_i
     from app.inventory_management.stock_adjustments.service import StockAdjustmentService
 
     return await StockAdjustmentService(session).get(tenant_id, entity_id)
+
+
+async def _proforma_invoice_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.erp.proforma_invoices.service import ProformaInvoiceService
+
+    return await ProformaInvoiceService(session).get(tenant_id, entity_id)
+
+
+def _register_outbox_handlers() -> None:
+    # Phases 34 and 35 replace these logging no-ops with real handlers.
+    from app.common.outbox.handlers import register as register_outbox
+
+    for event_type in (
+        "erp.quotation.revised",
+        "erp.proforma_invoice.sent",
+        "erp.proforma_invoice.confirmed",
+        "erp.sales_order.acknowledged",
+    ):
+        register_outbox(event_type, _log_outbox_event)
+
+
+async def _log_outbox_event(event: OutboxEvent) -> None:
+    logger.info(
+        "outbox event acknowledged (no-op until phases 34/35)",
+        extra={
+            "event_type": event.event_type,
+            "aggregate_type": event.aggregate_type,
+            "aggregate_id": str(event.aggregate_id),
+        },
+    )
+
+
+def _register_quotation_dependents() -> None:
+    register_quotation_dependent("proforma_invoice", _probe_live_proforma_for_quotation)
+
+
+async def _probe_live_proforma_for_quotation(
+    session: AsyncSession, tenant_id: UUID, quotation_id: UUID
+) -> bool:
+    from app.erp.proforma_invoices.service import ProformaInvoiceService
+
+    return await ProformaInvoiceService(session).has_live_for_quotation(tenant_id, quotation_id)

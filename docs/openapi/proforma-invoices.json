@@ -1,24 +1,24 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Plumbit ERP API \u2014 Quotations",
-    "description": "Commercial quotations with server-side totals, UAE VAT, and status workflow.",
+    "title": "Plumbit ERP API \u2014 Proforma Invoices",
+    "description": "Export-facing proforma invoices with payment milestones. Confirming a PFI accepts its source quotation; converting it creates the sales order.",
     "version": "0.1.0"
   },
   "tags": [
     {
-      "name": "Quotations",
-      "description": "Commercial quotations with server-side totals, UAE VAT, and status workflow."
+      "name": "Proforma Invoices",
+      "description": "Export-facing proforma invoices with payment milestones. Confirming a PFI accepts its source quotation; converting it creates the sales order."
     }
   ],
   "paths": {
-    "/api/v1/quotations/compose-defaults": {
+    "/api/v1/proforma-invoices/compose-defaults": {
       "get": {
         "tags": [
-          "Quotations"
+          "Proforma Invoices"
         ],
         "summary": "Compose Defaults",
-        "operationId": "compose_defaults_api_v1_quotations_compose_defaults_get",
+        "operationId": "compose_defaults_api_v1_proforma_invoices_compose_defaults_get",
         "security": [
           {
             "HTTPBearer": []
@@ -42,7 +42,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationComposeDefaults_"
+                  "$ref": "#/components/schemas/ApiResponse_ProformaInvoiceComposeDefaults_"
                 }
               }
             }
@@ -60,13 +60,13 @@
         }
       }
     },
-    "/api/v1/quotations": {
+    "/api/v1/proforma-invoices": {
       "get": {
         "tags": [
-          "Quotations"
+          "Proforma Invoices"
         ],
-        "summary": "List Quotations",
-        "operationId": "list_quotations_api_v1_quotations_get",
+        "summary": "List Proforma Invoices",
+        "operationId": "list_proforma_invoices_api_v1_proforma_invoices_get",
         "security": [
           {
             "HTTPBearer": []
@@ -176,7 +176,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/QuotationStatus"
+                  "$ref": "#/components/schemas/ProformaInvoiceStatus"
                 },
                 {
                   "type": "null"
@@ -235,6 +235,23 @@
               ],
               "title": "Currency Id"
             }
+          },
+          {
+            "name": "source_quotation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Quotation Id"
+            }
           }
         ],
         "responses": {
@@ -243,7 +260,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_list_QuotationResponse__"
+                  "$ref": "#/components/schemas/ApiResponse_list_ProformaInvoiceResponse__"
                 }
               }
             }
@@ -262,10 +279,10 @@
       },
       "post": {
         "tags": [
-          "Quotations"
+          "Proforma Invoices"
         ],
-        "summary": "Create Quotation",
-        "operationId": "create_quotation_api_v1_quotations_post",
+        "summary": "Create Proforma Invoice",
+        "operationId": "create_proforma_invoice_api_v1_proforma_invoices_post",
         "security": [
           {
             "HTTPBearer": []
@@ -276,7 +293,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/QuotationCreate"
+                "$ref": "#/components/schemas/ProformaInvoiceCreate"
               }
             }
           }
@@ -287,7 +304,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_ProformaInvoiceResponse_"
                 }
               }
             }
@@ -305,13 +322,13 @@
         }
       }
     },
-    "/api/v1/quotations/{quotation_id}": {
+    "/api/v1/proforma-invoices/{proforma_invoice_id}": {
       "get": {
         "tags": [
-          "Quotations"
+          "Proforma Invoices"
         ],
-        "summary": "Get Quotation",
-        "operationId": "get_quotation_api_v1_quotations__quotation_id__get",
+        "summary": "Get Proforma Invoice",
+        "operationId": "get_proforma_invoice_api_v1_proforma_invoices__proforma_invoice_id__get",
         "security": [
           {
             "HTTPBearer": []
@@ -319,13 +336,13 @@
         ],
         "parameters": [
           {
-            "name": "quotation_id",
+            "name": "proforma_invoice_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Quotation Id"
+              "title": "Proforma Invoice Id"
             }
           }
         ],
@@ -335,7 +352,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_ProformaInvoiceResponse_"
                 }
               }
             }
@@ -354,10 +371,10 @@
       },
       "patch": {
         "tags": [
-          "Quotations"
+          "Proforma Invoices"
         ],
-        "summary": "Update Quotation",
-        "operationId": "update_quotation_api_v1_quotations__quotation_id__patch",
+        "summary": "Update Proforma Invoice",
+        "operationId": "update_proforma_invoice_api_v1_proforma_invoices__proforma_invoice_id__patch",
         "security": [
           {
             "HTTPBearer": []
@@ -365,13 +382,13 @@
         ],
         "parameters": [
           {
-            "name": "quotation_id",
+            "name": "proforma_invoice_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Quotation Id"
+              "title": "Proforma Invoice Id"
             }
           },
           {
@@ -396,7 +413,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/QuotationUpdate"
+                "$ref": "#/components/schemas/ProformaInvoiceUpdate"
               }
             }
           }
@@ -407,7 +424,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_ProformaInvoiceResponse_"
                 }
               }
             }
@@ -426,10 +443,10 @@
       },
       "delete": {
         "tags": [
-          "Quotations"
+          "Proforma Invoices"
         ],
-        "summary": "Delete Quotation",
-        "operationId": "delete_quotation_api_v1_quotations__quotation_id__delete",
+        "summary": "Delete Proforma Invoice",
+        "operationId": "delete_proforma_invoice_api_v1_proforma_invoices__proforma_invoice_id__delete",
         "security": [
           {
             "HTTPBearer": []
@@ -437,13 +454,13 @@
         ],
         "parameters": [
           {
-            "name": "quotation_id",
+            "name": "proforma_invoice_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Quotation Id"
+              "title": "Proforma Invoice Id"
             }
           },
           {
@@ -469,7 +486,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_ProformaInvoiceResponse_"
                 }
               }
             }
@@ -487,13 +504,13 @@
         }
       }
     },
-    "/api/v1/quotations/{quotation_id}/submit": {
+    "/api/v1/proforma-invoices/{proforma_invoice_id}/send": {
       "post": {
         "tags": [
-          "Quotations"
+          "Proforma Invoices"
         ],
-        "summary": "Submit Quotation",
-        "operationId": "submit_quotation_api_v1_quotations__quotation_id__submit_post",
+        "summary": "Send Proforma Invoice",
+        "operationId": "send_proforma_invoice_api_v1_proforma_invoices__proforma_invoice_id__send_post",
         "security": [
           {
             "HTTPBearer": []
@@ -501,13 +518,13 @@
         ],
         "parameters": [
           {
-            "name": "quotation_id",
+            "name": "proforma_invoice_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Quotation Id"
+              "title": "Proforma Invoice Id"
             }
           },
           {
@@ -533,7 +550,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_ProformaInvoiceResponse_"
                 }
               }
             }
@@ -551,13 +568,13 @@
         }
       }
     },
-    "/api/v1/quotations/{quotation_id}/approve": {
+    "/api/v1/proforma-invoices/{proforma_invoice_id}/confirm": {
       "post": {
         "tags": [
-          "Quotations"
+          "Proforma Invoices"
         ],
-        "summary": "Approve Quotation",
-        "operationId": "approve_quotation_api_v1_quotations__quotation_id__approve_post",
+        "summary": "Confirm Proforma Invoice",
+        "operationId": "confirm_proforma_invoice_api_v1_proforma_invoices__proforma_invoice_id__confirm_post",
         "security": [
           {
             "HTTPBearer": []
@@ -565,13 +582,13 @@
         ],
         "parameters": [
           {
-            "name": "quotation_id",
+            "name": "proforma_invoice_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Quotation Id"
+              "title": "Proforma Invoice Id"
             }
           },
           {
@@ -597,7 +614,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_ProformaInvoiceResponse_"
                 }
               }
             }
@@ -615,13 +632,13 @@
         }
       }
     },
-    "/api/v1/quotations/{quotation_id}/reject": {
+    "/api/v1/proforma-invoices/{proforma_invoice_id}/decline": {
       "post": {
         "tags": [
-          "Quotations"
+          "Proforma Invoices"
         ],
-        "summary": "Reject Quotation",
-        "operationId": "reject_quotation_api_v1_quotations__quotation_id__reject_post",
+        "summary": "Decline Proforma Invoice",
+        "operationId": "decline_proforma_invoice_api_v1_proforma_invoices__proforma_invoice_id__decline_post",
         "security": [
           {
             "HTTPBearer": []
@@ -629,13 +646,13 @@
         ],
         "parameters": [
           {
-            "name": "quotation_id",
+            "name": "proforma_invoice_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Quotation Id"
+              "title": "Proforma Invoice Id"
             }
           },
           {
@@ -661,7 +678,7 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/QuotationRejectRequest"
+                    "$ref": "#/components/schemas/ProformaInvoiceReasonRequest"
                   },
                   {
                     "type": "null"
@@ -678,7 +695,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_ProformaInvoiceResponse_"
                 }
               }
             }
@@ -696,13 +713,13 @@
         }
       }
     },
-    "/api/v1/quotations/{quotation_id}/reopen": {
+    "/api/v1/proforma-invoices/{proforma_invoice_id}/cancel": {
       "post": {
         "tags": [
-          "Quotations"
+          "Proforma Invoices"
         ],
-        "summary": "Reopen Quotation",
-        "operationId": "reopen_quotation_api_v1_quotations__quotation_id__reopen_post",
+        "summary": "Cancel Proforma Invoice",
+        "operationId": "cancel_proforma_invoice_api_v1_proforma_invoices__proforma_invoice_id__cancel_post",
         "security": [
           {
             "HTTPBearer": []
@@ -710,333 +727,13 @@
         ],
         "parameters": [
           {
-            "name": "quotation_id",
+            "name": "proforma_invoice_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Quotation Id"
-            }
-          },
-          {
-            "name": "if-match",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationResponse_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/quotations/{quotation_id}/send": {
-      "post": {
-        "tags": [
-          "Quotations"
-        ],
-        "summary": "Send Quotation",
-        "operationId": "send_quotation_api_v1_quotations__quotation_id__send_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "quotation_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Quotation Id"
-            }
-          },
-          {
-            "name": "if-match",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationResponse_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/quotations/{quotation_id}/accept": {
-      "post": {
-        "tags": [
-          "Quotations"
-        ],
-        "summary": "Accept Quotation",
-        "operationId": "accept_quotation_api_v1_quotations__quotation_id__accept_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "quotation_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Quotation Id"
-            }
-          },
-          {
-            "name": "if-match",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationResponse_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/quotations/{quotation_id}/decline": {
-      "post": {
-        "tags": [
-          "Quotations"
-        ],
-        "summary": "Decline Quotation",
-        "operationId": "decline_quotation_api_v1_quotations__quotation_id__decline_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "quotation_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Quotation Id"
-            }
-          },
-          {
-            "name": "if-match",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationResponse_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/quotations/{quotation_id}/cancel": {
-      "post": {
-        "tags": [
-          "Quotations"
-        ],
-        "summary": "Cancel Quotation",
-        "operationId": "cancel_quotation_api_v1_quotations__quotation_id__cancel_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "quotation_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Quotation Id"
-            }
-          },
-          {
-            "name": "if-match",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationResponse_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/quotations/{quotation_id}/revise": {
-      "post": {
-        "tags": [
-          "Quotations"
-        ],
-        "summary": "Revise Quotation",
-        "operationId": "revise_quotation_api_v1_quotations__quotation_id__revise_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "quotation_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Quotation Id"
+              "title": "Proforma Invoice Id"
             }
           },
           {
@@ -1057,11 +754,18 @@
           }
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/QuotationReviseRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ProformaInvoiceReasonRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
               }
             }
           }
@@ -1072,7 +776,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_ProformaInvoiceResponse_"
                 }
               }
             }
@@ -1090,118 +794,13 @@
         }
       }
     },
-    "/api/v1/quotations/{quotation_id}/revisions": {
-      "get": {
-        "tags": [
-          "Quotations"
-        ],
-        "summary": "List Quotation Revisions",
-        "operationId": "list_quotation_revisions_api_v1_quotations__quotation_id__revisions_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "quotation_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Quotation Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_list_QuotationRevisionListItem__"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/quotations/{quotation_id}/revisions/{revision_number}": {
-      "get": {
-        "tags": [
-          "Quotations"
-        ],
-        "summary": "Get Quotation Revision",
-        "operationId": "get_quotation_revision_api_v1_quotations__quotation_id__revisions__revision_number__get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "quotation_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Quotation Id"
-            }
-          },
-          {
-            "name": "revision_number",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Revision Number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationRevisionResponse_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/quotations/{quotation_id}/clone": {
+    "/api/v1/proforma-invoices/{proforma_invoice_id}/reopen": {
       "post": {
         "tags": [
-          "Quotations"
+          "Proforma Invoices"
         ],
-        "summary": "Clone Quotation",
-        "operationId": "clone_quotation_api_v1_quotations__quotation_id__clone_post",
+        "summary": "Reopen Proforma Invoice",
+        "operationId": "reopen_proforma_invoice_api_v1_proforma_invoices__proforma_invoice_id__reopen_post",
         "security": [
           {
             "HTTPBearer": []
@@ -1209,13 +808,29 @@
         ],
         "parameters": [
           {
-            "name": "quotation_id",
+            "name": "proforma_invoice_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Quotation Id"
+              "title": "Proforma Invoice Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
             }
           }
         ],
@@ -1225,7 +840,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_QuotationResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_ProformaInvoiceResponse_"
                 }
               }
             }
@@ -1243,13 +858,13 @@
         }
       }
     },
-    "/api/v1/quotations/{quotation_id}/convert-to-sales-order": {
+    "/api/v1/proforma-invoices/{proforma_invoice_id}/revise": {
       "post": {
         "tags": [
-          "Quotations"
+          "Proforma Invoices"
         ],
-        "summary": "Convert Quotation To Sales Order",
-        "operationId": "convert_quotation_to_sales_order_api_v1_quotations__quotation_id__convert_to_sales_order_post",
+        "summary": "Revise Proforma Invoice",
+        "operationId": "revise_proforma_invoice_api_v1_proforma_invoices__proforma_invoice_id__revise_post",
         "security": [
           {
             "HTTPBearer": []
@@ -1257,13 +872,125 @@
         ],
         "parameters": [
           {
-            "name": "quotation_id",
+            "name": "proforma_invoice_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Quotation Id"
+              "title": "Proforma Invoice Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProformaInvoiceResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/proforma-invoices/{proforma_invoice_id}/clone": {
+      "post": {
+        "tags": [
+          "Proforma Invoices"
+        ],
+        "summary": "Clone Proforma Invoice",
+        "operationId": "clone_proforma_invoice_api_v1_proforma_invoices__proforma_invoice_id__clone_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "proforma_invoice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Proforma Invoice Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProformaInvoiceResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/proforma-invoices/{proforma_invoice_id}/convert-to-sales-order": {
+      "post": {
+        "tags": [
+          "Proforma Invoices"
+        ],
+        "summary": "Convert Proforma Invoice To Sales Order",
+        "operationId": "convert_proforma_invoice_to_sales_order_api_v1_proforma_invoices__proforma_invoice_id__convert_to_sales_order_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "proforma_invoice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Proforma Invoice Id"
             }
           },
           {
@@ -1305,7 +1032,7 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/ConvertToSalesOrderRequest"
+                    "$ref": "#/components/schemas/ConvertProformaToSalesOrderRequest"
                   },
                   {
                     "type": "null"
@@ -1339,91 +1066,44 @@
           }
         }
       }
-    },
-    "/api/v1/quotations/{quotation_id}/convert-to-proforma-invoice": {
-      "post": {
-        "tags": [
-          "Quotations"
-        ],
-        "summary": "Convert Quotation To Proforma Invoice",
-        "operationId": "convert_quotation_to_proforma_invoice_api_v1_quotations__quotation_id__convert_to_proforma_invoice_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "quotation_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Quotation Id"
-            }
-          },
-          {
-            "name": "if-match",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/ConvertToProformaInvoiceRequest"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Payload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ProformaInvoiceResponse_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
     "schemas": {
+      "ApiResponse_ProformaInvoiceComposeDefaults_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/ProformaInvoiceComposeDefaults"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[ProformaInvoiceComposeDefaults]"
+      },
       "ApiResponse_ProformaInvoiceResponse_": {
         "properties": {
           "success": {
@@ -1457,108 +1137,6 @@
           "data"
         ],
         "title": "ApiResponse[ProformaInvoiceResponse]"
-      },
-      "ApiResponse_QuotationComposeDefaults_": {
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "const": true,
-            "title": "Success",
-            "default": true
-          },
-          "data": {
-            "$ref": "#/components/schemas/QuotationComposeDefaults"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
-          },
-          "meta": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Meta"
-          }
-        },
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "ApiResponse[QuotationComposeDefaults]"
-      },
-      "ApiResponse_QuotationResponse_": {
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "const": true,
-            "title": "Success",
-            "default": true
-          },
-          "data": {
-            "$ref": "#/components/schemas/QuotationResponse"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
-          },
-          "meta": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Meta"
-          }
-        },
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "ApiResponse[QuotationResponse]"
-      },
-      "ApiResponse_QuotationRevisionResponse_": {
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "const": true,
-            "title": "Success",
-            "default": true
-          },
-          "data": {
-            "$ref": "#/components/schemas/QuotationRevisionResponse"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
-          },
-          "meta": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Meta"
-          }
-        },
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "ApiResponse[QuotationRevisionResponse]"
       },
       "ApiResponse_SalesOrderResponse_": {
         "properties": {
@@ -1594,7 +1172,7 @@
         ],
         "title": "ApiResponse[SalesOrderResponse]"
       },
-      "ApiResponse_list_QuotationResponse__": {
+      "ApiResponse_list_ProformaInvoiceResponse__": {
         "properties": {
           "success": {
             "type": "boolean",
@@ -1604,7 +1182,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/QuotationResponse"
+              "$ref": "#/components/schemas/ProformaInvoiceResponse"
             },
             "type": "array",
             "title": "Data"
@@ -1630,45 +1208,7 @@
         "required": [
           "data"
         ],
-        "title": "ApiResponse[list[QuotationResponse]]"
-      },
-      "ApiResponse_list_QuotationRevisionListItem__": {
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "const": true,
-            "title": "Success",
-            "default": true
-          },
-          "data": {
-            "items": {
-              "$ref": "#/components/schemas/QuotationRevisionListItem"
-            },
-            "type": "array",
-            "title": "Data"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
-          },
-          "meta": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Meta"
-          }
-        },
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "ApiResponse[list[QuotationRevisionListItem]]"
+        "title": "ApiResponse[list[ProformaInvoiceResponse]]"
       },
       "BillingStatus": {
         "type": "string",
@@ -1679,71 +1219,7 @@
         ],
         "title": "BillingStatus"
       },
-      "ConvertToProformaInvoiceRequest": {
-        "properties": {
-          "proforma_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Proforma Date"
-          },
-          "valid_until": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Valid Until"
-          },
-          "incoterm": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Incoterm"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "incoterm_place": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Incoterm Place"
-          },
-          "version": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Version"
-          }
-        },
-        "type": "object",
-        "title": "ConvertToProformaInvoiceRequest"
-      },
-      "ConvertToSalesOrderRequest": {
+      "ConvertProformaToSalesOrderRequest": {
         "properties": {
           "order_date": {
             "anyOf": [
@@ -1768,18 +1244,6 @@
               }
             ],
             "title": "Expected Shipment Date"
-          },
-          "reference_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 60
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reference Number"
           },
           "customer_po_number": {
             "anyOf": [
@@ -1843,7 +1307,7 @@
           }
         },
         "type": "object",
-        "title": "ConvertToSalesOrderRequest"
+        "title": "ConvertProformaToSalesOrderRequest"
       },
       "DiscountType": {
         "type": "string",
@@ -1916,6 +1380,610 @@
           "OUTSIDE_UAE"
         ],
         "title": "PlaceOfSupply"
+      },
+      "ProformaInvoiceComposeDefaults": {
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Customer Id"
+          },
+          "customer_name": {
+            "type": "string",
+            "title": "Customer Name"
+          },
+          "customer_trn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Trn"
+          },
+          "tax_treatment": {
+            "$ref": "#/components/schemas/TaxTreatment"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "price_list_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price List Id"
+          },
+          "payment_terms_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Terms Id"
+          },
+          "salesperson_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Salesperson Id"
+          },
+          "contact_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Id"
+          },
+          "place_of_supply": {
+            "$ref": "#/components/schemas/PlaceOfSupply"
+          },
+          "bill_to_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bill To Snapshot"
+          },
+          "ship_to_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ship To Snapshot"
+          },
+          "terms_and_conditions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms And Conditions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "customer_id",
+          "customer_name",
+          "customer_trn",
+          "tax_treatment",
+          "currency_id",
+          "price_list_id",
+          "payment_terms_id",
+          "salesperson_id",
+          "contact_id",
+          "place_of_supply",
+          "bill_to_snapshot",
+          "ship_to_snapshot",
+          "terms_and_conditions"
+        ],
+        "title": "ProformaInvoiceComposeDefaults"
+      },
+      "ProformaInvoiceCreate": {
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Customer Id"
+          },
+          "contact_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Id"
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "proforma_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proforma Date"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          },
+          "currency_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Id"
+          },
+          "price_list_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price List Id"
+          },
+          "payment_terms_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Terms Id"
+          },
+          "salesperson_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Salesperson Id"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "terms_and_conditions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms And Conditions"
+          },
+          "terms_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms Template Id"
+          },
+          "discount_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiscountType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "discount_value": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discount Value"
+          },
+          "shipping_amount": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              }
+            ],
+            "title": "Shipping Amount",
+            "default": "0"
+          },
+          "adjustment_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              }
+            ],
+            "title": "Adjustment Amount",
+            "default": "0"
+          },
+          "place_of_supply": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlaceOfSupply"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_quotation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Quotation Id"
+          },
+          "incoterm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Incoterm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "incoterm_place": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incoterm Place"
+          },
+          "port_of_loading": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port Of Loading"
+          },
+          "port_of_discharge": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port Of Discharge"
+          },
+          "country_of_origin": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Of Origin"
+          },
+          "country_of_final_destination": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Of Final Destination"
+          },
+          "expected_shipment_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Shipment Date"
+          },
+          "partial_shipment_allowed": {
+            "type": "boolean",
+            "title": "Partial Shipment Allowed",
+            "default": false
+          },
+          "transhipment_allowed": {
+            "type": "boolean",
+            "title": "Transhipment Allowed",
+            "default": false
+          },
+          "bank_details_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bank Details Snapshot"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/ProformaInvoiceLineInput"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "milestones": {
+            "items": {
+              "$ref": "#/components/schemas/ProformaInvoiceMilestoneInput"
+            },
+            "type": "array",
+            "title": "Milestones"
+          }
+        },
+        "type": "object",
+        "required": [
+          "customer_id"
+        ],
+        "title": "ProformaInvoiceCreate"
+      },
+      "ProformaInvoiceLineInput": {
+        "properties": {
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "unit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Id"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "discount_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiscountType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "discount_value": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discount Value"
+          },
+          "tax_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Id"
+          },
+          "hs_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hs Code"
+          },
+          "source_quotation_line_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Quotation Line Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "quantity"
+        ],
+        "title": "ProformaInvoiceLineInput"
       },
       "ProformaInvoiceLineResponse": {
         "properties": {
@@ -2065,6 +2133,104 @@
         ],
         "title": "ProformaInvoiceLineResponse"
       },
+      "ProformaInvoiceMilestoneInput": {
+        "properties": {
+          "sequence": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/PaymentMilestoneTrigger"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,5}|(?=[\\d.]{1,10}0*$)\\d{0,5}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "net_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Days"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "trigger"
+        ],
+        "title": "ProformaInvoiceMilestoneInput"
+      },
       "ProformaInvoiceMilestoneResponse": {
         "properties": {
           "id": {
@@ -2161,6 +2327,36 @@
           "notes"
         ],
         "title": "ProformaInvoiceMilestoneResponse"
+      },
+      "ProformaInvoiceReasonRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "title": "ProformaInvoiceReasonRequest"
       },
       "ProformaInvoiceResponse": {
         "properties": {
@@ -2797,1180 +2993,7 @@
         ],
         "title": "ProformaInvoiceStatus"
       },
-      "QuotationComposeDefaults": {
-        "properties": {
-          "customer_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Customer Id"
-          },
-          "customer_name": {
-            "type": "string",
-            "title": "Customer Name"
-          },
-          "customer_trn": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Customer Trn"
-          },
-          "tax_treatment": {
-            "$ref": "#/components/schemas/TaxTreatment"
-          },
-          "currency_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Currency Id"
-          },
-          "price_list_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Price List Id"
-          },
-          "payment_terms_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payment Terms Id"
-          },
-          "salesperson_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Salesperson Id"
-          },
-          "contact_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Contact Id"
-          },
-          "place_of_supply": {
-            "$ref": "#/components/schemas/PlaceOfSupply"
-          },
-          "bill_to_snapshot": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bill To Snapshot"
-          },
-          "ship_to_snapshot": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ship To Snapshot"
-          },
-          "terms_and_conditions": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Terms And Conditions"
-          }
-        },
-        "type": "object",
-        "required": [
-          "customer_id",
-          "customer_name",
-          "customer_trn",
-          "tax_treatment",
-          "currency_id",
-          "price_list_id",
-          "payment_terms_id",
-          "salesperson_id",
-          "contact_id",
-          "place_of_supply",
-          "bill_to_snapshot",
-          "ship_to_snapshot",
-          "terms_and_conditions"
-        ],
-        "title": "QuotationComposeDefaults"
-      },
-      "QuotationCreate": {
-        "properties": {
-          "customer_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Customer Id"
-          },
-          "contact_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Contact Id"
-          },
-          "branch_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Branch Id"
-          },
-          "quote_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Quote Date"
-          },
-          "valid_until": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Valid Until"
-          },
-          "currency_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Currency Id"
-          },
-          "price_list_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Price List Id"
-          },
-          "payment_terms_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payment Terms Id"
-          },
-          "salesperson_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Salesperson Id"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "terms_and_conditions": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Terms And Conditions"
-          },
-          "terms_template_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Terms Template Id"
-          },
-          "discount_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DiscountType"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "discount_value": {
-            "anyOf": [
-              {
-                "type": "number",
-                "minimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Discount Value"
-          },
-          "shipping_amount": {
-            "anyOf": [
-              {
-                "type": "number",
-                "minimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
-              }
-            ],
-            "title": "Shipping Amount",
-            "default": "0"
-          },
-          "adjustment_amount": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
-              }
-            ],
-            "title": "Adjustment Amount",
-            "default": "0"
-          },
-          "place_of_supply": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PlaceOfSupply"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "lines": {
-            "items": {
-              "$ref": "#/components/schemas/QuotationLineInput"
-            },
-            "type": "array",
-            "title": "Lines"
-          }
-        },
-        "type": "object",
-        "required": [
-          "customer_id"
-        ],
-        "title": "QuotationCreate"
-      },
-      "QuotationLineInput": {
-        "properties": {
-          "product_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Product Id"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "quantity": {
-            "anyOf": [
-              {
-                "type": "number",
-                "exclusiveMinimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
-              }
-            ],
-            "title": "Quantity"
-          },
-          "unit_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Id"
-          },
-          "rate": {
-            "anyOf": [
-              {
-                "type": "number",
-                "minimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rate"
-          },
-          "discount_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DiscountType"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "discount_value": {
-            "anyOf": [
-              {
-                "type": "number",
-                "minimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Discount Value"
-          },
-          "tax_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tax Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "quantity"
-        ],
-        "title": "QuotationLineInput"
-      },
-      "QuotationLineResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "line_number": {
-            "type": "integer",
-            "title": "Line Number"
-          },
-          "product_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Product Id"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description"
-          },
-          "quantity": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Quantity"
-          },
-          "unit_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Id"
-          },
-          "rate": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Rate"
-          },
-          "discount_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DiscountType"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "discount_value": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Discount Value"
-          },
-          "discount_amount": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Discount Amount"
-          },
-          "tax_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tax Id"
-          },
-          "tax_rate": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Tax Rate"
-          },
-          "tax_amount": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Tax Amount"
-          },
-          "amount": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Amount"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "line_number",
-          "product_id",
-          "description",
-          "quantity",
-          "unit_id",
-          "rate",
-          "discount_type",
-          "discount_value",
-          "discount_amount",
-          "tax_id",
-          "tax_rate",
-          "tax_amount",
-          "amount"
-        ],
-        "title": "QuotationLineResponse"
-      },
-      "QuotationRejectRequest": {
-        "properties": {
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2000
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reason"
-          },
-          "version": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Version"
-          }
-        },
-        "type": "object",
-        "title": "QuotationRejectRequest"
-      },
-      "QuotationResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "tenant_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Tenant Id"
-          },
-          "quote_number": {
-            "type": "string",
-            "title": "Quote Number"
-          },
-          "document_number": {
-            "type": "string",
-            "title": "Document Number"
-          },
-          "status": {
-            "$ref": "#/components/schemas/QuotationStatus"
-          },
-          "version": {
-            "type": "integer",
-            "title": "Version"
-          },
-          "is_posted": {
-            "type": "boolean",
-            "title": "Is Posted"
-          },
-          "quote_date": {
-            "type": "string",
-            "format": "date",
-            "title": "Quote Date"
-          },
-          "document_date": {
-            "type": "string",
-            "format": "date",
-            "title": "Document Date"
-          },
-          "valid_until": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Valid Until"
-          },
-          "branch_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Branch Id"
-          },
-          "customer_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Customer Id"
-          },
-          "contact_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Contact Id"
-          },
-          "customer_trn": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Customer Trn"
-          },
-          "tax_treatment": {
-            "$ref": "#/components/schemas/TaxTreatment"
-          },
-          "place_of_supply": {
-            "$ref": "#/components/schemas/PlaceOfSupply"
-          },
-          "currency_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Currency Id"
-          },
-          "base_currency_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Base Currency Id"
-          },
-          "exchange_rate": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Exchange Rate"
-          },
-          "price_list_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Price List Id"
-          },
-          "payment_terms_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payment Terms Id"
-          },
-          "salesperson_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Salesperson Id"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "terms_and_conditions": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Terms And Conditions"
-          },
-          "bill_to_snapshot": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bill To Snapshot"
-          },
-          "ship_to_snapshot": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ship To Snapshot"
-          },
-          "discount_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DiscountType"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "discount_value": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Discount Value"
-          },
-          "discount_amount": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Discount Amount"
-          },
-          "shipping_amount": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Shipping Amount"
-          },
-          "adjustment_amount": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Adjustment Amount"
-          },
-          "subtotal": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Subtotal"
-          },
-          "tax_amount": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Tax Amount"
-          },
-          "grand_total": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Grand Total"
-          },
-          "foreign_amount": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Foreign Amount"
-          },
-          "base_amount": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Base Amount"
-          },
-          "converted_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Converted At"
-          },
-          "converted_document_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Converted Document Type"
-          },
-          "converted_document_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Converted Document Id"
-          },
-          "revision_number": {
-            "type": "integer",
-            "title": "Revision Number",
-            "default": 0
-          },
-          "revision_count": {
-            "type": "integer",
-            "title": "Revision Count",
-            "default": 0
-          },
-          "display_number": {
-            "type": "string",
-            "title": "Display Number"
-          },
-          "available_actions": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Available Actions"
-          },
-          "lines": {
-            "items": {
-              "$ref": "#/components/schemas/QuotationLineResponse"
-            },
-            "type": "array",
-            "title": "Lines"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "tenant_id",
-          "quote_number",
-          "document_number",
-          "status",
-          "version",
-          "is_posted",
-          "quote_date",
-          "document_date",
-          "valid_until",
-          "branch_id",
-          "customer_id",
-          "contact_id",
-          "customer_trn",
-          "tax_treatment",
-          "place_of_supply",
-          "currency_id",
-          "base_currency_id",
-          "exchange_rate",
-          "price_list_id",
-          "payment_terms_id",
-          "salesperson_id",
-          "notes",
-          "terms_and_conditions",
-          "bill_to_snapshot",
-          "ship_to_snapshot",
-          "discount_type",
-          "discount_value",
-          "discount_amount",
-          "shipping_amount",
-          "adjustment_amount",
-          "subtotal",
-          "tax_amount",
-          "grand_total",
-          "foreign_amount",
-          "base_amount",
-          "converted_at",
-          "converted_document_type",
-          "converted_document_id",
-          "display_number",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "QuotationResponse"
-      },
-      "QuotationReviseRequest": {
-        "properties": {
-          "revision_reason": {
-            "type": "string",
-            "maxLength": 2000,
-            "minLength": 1,
-            "title": "Revision Reason"
-          },
-          "version": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Version"
-          }
-        },
-        "type": "object",
-        "required": [
-          "revision_reason"
-        ],
-        "title": "QuotationReviseRequest"
-      },
-      "QuotationRevisionListItem": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "revision_number": {
-            "type": "integer",
-            "title": "Revision Number"
-          },
-          "quote_number": {
-            "type": "string",
-            "title": "Quote Number"
-          },
-          "status_at_revision": {
-            "type": "string",
-            "title": "Status At Revision"
-          },
-          "revision_reason": {
-            "type": "string",
-            "title": "Revision Reason"
-          },
-          "revised_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Revised At"
-          },
-          "revised_by": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Revised By"
-          },
-          "grand_total": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Grand Total"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "revision_number",
-          "quote_number",
-          "status_at_revision",
-          "revision_reason",
-          "revised_at",
-          "revised_by"
-        ],
-        "title": "QuotationRevisionListItem"
-      },
-      "QuotationRevisionResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "revision_number": {
-            "type": "integer",
-            "title": "Revision Number"
-          },
-          "quote_number": {
-            "type": "string",
-            "title": "Quote Number"
-          },
-          "status_at_revision": {
-            "type": "string",
-            "title": "Status At Revision"
-          },
-          "revision_reason": {
-            "type": "string",
-            "title": "Revision Reason"
-          },
-          "revised_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Revised At"
-          },
-          "revised_by": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Revised By"
-          },
-          "grand_total": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Grand Total"
-          },
-          "header": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Header"
-          },
-          "lines": {
-            "items": {},
-            "type": "array",
-            "title": "Lines"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "revision_number",
-          "quote_number",
-          "status_at_revision",
-          "revision_reason",
-          "revised_at",
-          "revised_by",
-          "header",
-          "lines"
-        ],
-        "title": "QuotationRevisionResponse"
-      },
-      "QuotationStatus": {
-        "type": "string",
-        "enum": [
-          "DRAFT",
-          "PENDING_APPROVAL",
-          "APPROVED",
-          "REJECTED",
-          "SENT",
-          "ACCEPTED",
-          "DECLINED",
-          "EXPIRED",
-          "CANCELLED",
-          "CONVERTED"
-        ],
-        "title": "QuotationStatus"
-      },
-      "QuotationUpdate": {
+      "ProformaInvoiceUpdate": {
         "properties": {
           "contact_id": {
             "anyOf": [
@@ -3996,7 +3019,7 @@
             ],
             "title": "Branch Id"
           },
-          "quote_date": {
+          "proforma_date": {
             "anyOf": [
               {
                 "type": "string",
@@ -4006,7 +3029,7 @@
                 "type": "null"
               }
             ],
-            "title": "Quote Date"
+            "title": "Proforma Date"
           },
           "valid_until": {
             "anyOf": [
@@ -4156,12 +3179,127 @@
                 "type": "null"
               }
             ]
+          },
+          "incoterm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Incoterm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "incoterm_place": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incoterm Place"
+          },
+          "port_of_loading": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port Of Loading"
+          },
+          "port_of_discharge": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port Of Discharge"
+          },
+          "country_of_origin": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Of Origin"
+          },
+          "country_of_final_destination": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Of Final Destination"
+          },
+          "expected_shipment_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Shipment Date"
+          },
+          "partial_shipment_allowed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Partial Shipment Allowed"
+          },
+          "transhipment_allowed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transhipment Allowed"
+          },
+          "bank_details_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bank Details Snapshot"
           },
           "lines": {
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/QuotationLineInput"
+                  "$ref": "#/components/schemas/ProformaInvoiceLineInput"
                 },
                 "type": "array"
               },
@@ -4171,6 +3309,20 @@
             ],
             "title": "Lines"
           },
+          "milestones": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ProformaInvoiceMilestoneInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Milestones"
+          },
           "version": {
             "anyOf": [
               {
@@ -4185,7 +3337,7 @@
           }
         },
         "type": "object",
-        "title": "QuotationUpdate"
+        "title": "ProformaInvoiceUpdate"
       },
       "SalesOrderLineResponse": {
         "properties": {

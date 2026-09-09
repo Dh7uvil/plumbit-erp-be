@@ -48,6 +48,38 @@ class PurchaseOrderStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class ProformaInvoiceStatus(StrEnum):
+    DRAFT = "DRAFT"
+    SENT = "SENT"
+    CONFIRMED = "CONFIRMED"
+    DECLINED = "DECLINED"
+    EXPIRED = "EXPIRED"
+    CANCELLED = "CANCELLED"
+    CONVERTED = "CONVERTED"
+
+
+class PaymentMilestoneTrigger(StrEnum):
+    ON_CONFIRMATION = "ON_CONFIRMATION"
+    BEFORE_SHIPMENT = "BEFORE_SHIPMENT"
+    ON_BL_COPY = "ON_BL_COPY"
+    ON_ARRIVAL = "ON_ARRIVAL"
+    NET_DAYS = "NET_DAYS"
+
+
+class Incoterm(StrEnum):
+    EXW = "EXW"
+    FCA = "FCA"
+    FAS = "FAS"
+    FOB = "FOB"
+    CFR = "CFR"
+    CIF = "CIF"
+    CPT = "CPT"
+    CIP = "CIP"
+    DAP = "DAP"
+    DPU = "DPU"
+    DDP = "DDP"
+
+
 class FulfillmentStatus(StrEnum):
     NOT_DELIVERED = "NOT_DELIVERED"
     PARTIALLY_DELIVERED = "PARTIALLY_DELIVERED"
@@ -226,6 +258,8 @@ class AuditAction(StrEnum):
     ISSUE = "ISSUE"
     CLOSE = "CLOSE"
     CONVERT = "CONVERT"
+    ACKNOWLEDGE = "ACKNOWLEDGE"
+    REVISE = "REVISE"
     LINK = "LINK"
     UNLINK = "UNLINK"
     LOGIN = "LOGIN"

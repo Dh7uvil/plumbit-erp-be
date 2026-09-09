@@ -124,7 +124,8 @@ auth (Identity)         implemented: auth, users, roles, permissions, tenants/or
 
 erp                     implemented: currencies, exchange_rates, taxes, payment_terms,
                         terms_templates, document_sequences, suppliers, supplier_products,
-                        quotations, period_lock, sales_orders, purchase_orders
+                        quotations, proforma_invoices, period_lock, sales_orders,
+                        purchase_orders
                         planned: sales_invoices, credit_notes, customer_payments,
                         purchase_invoices, debit_notes, supplier_payments,
                         accounting (chart of accounts, journals, AR, AP),
@@ -184,6 +185,10 @@ SalesOrderCreated / InvoicePosted
 Events fit notifications, audit logging, analytics, AI processing, integrations, PDF generation
 and e-invoice submit/poll. Stock, AR/AP, tax and GL that must succeed together stay in the
 posting transaction — they are not fired as after-the-fact events.
+
+Every new outbox `event_type` needs a handler registered in `app/wiring.py`. The dispatcher
+dead-letters unknown types (`DEAD`), it does not ignore them. Register a logging no-op if the
+real handler is not ready yet.
 
 ## 7. Third-party integrations
 
@@ -568,13 +573,19 @@ adapter and document fields exist — do not publish empty OpenAPI stubs.
 
 Place Zoho/Odoo trading features in these slices. Do not invent a seventh top-level module.
 
-**Sales:** Quote → Sales order → Delivery note → Sales invoice → Customer payment → Credit note
+**Sales:** Quote → optional proforma invoice → Sales order → Delivery note → Sales invoice → Customer payment → Credit note
 
 **Purchase:** Purchase order → GRN → Purchase invoice → Supplier payment → Debit note
 
-Quotations already ship. Later slices follow this order so stock and tax have somewhere to
-post. Accounting (chart of accounts, journals, AR, AP) comes after the documents that hit it.
-E-invoicing ASP adapters come after posted sales invoices and credit notes exist.
+A quotation terminates as `CONVERTED` exactly once. Raising a proforma invoice does not consume
+that slot; confirming the PFI promotes a `SENT` quotation to `ACCEPTED`, and creating the sales
+order from the PFI marks both documents `CONVERTED`. Direct quotation-to-sales-order stays
+available until a live PFI exists.
+
+Quotations, proforma invoices, sales orders and purchase orders already ship. Later slices follow
+this order so stock and tax have somewhere to post. Accounting (chart of accounts, journals, AR,
+AP) comes after the documents that hit it. E-invoicing ASP adapters come after posted sales
+invoices and credit notes exist.
 
 ## 20. Posting atomicity, branch, and outbox
 

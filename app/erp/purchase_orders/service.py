@@ -22,6 +22,7 @@ from app.auth.catalog import (
 )
 from app.auth.org_service import OrganizationService
 from app.auth.schemas import AddressResponse
+from app.common.idempotency.service import IdempotencyService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
@@ -42,13 +43,16 @@ from app.core.enums import (
     PlaceOfSupply,
     PurchaseOrderStatus,
     ReceiptStatus,
+    SalesOrderStatus,
     TaxCategory,
     TaxTreatment,
 )
 from app.core.exceptions import (
     DocumentStaleError,
     InvalidStatusTransitionError,
+    PoCoverageExceededError,
     ResourceNotFoundError,
+    SalesOrderNotConfirmedError,
     ValidationError,
 )
 from app.core.permissions import has_permission
@@ -61,15 +65,22 @@ from app.erp.accounting.service import (
     TermsTemplateService,
 )
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
-from app.erp.purchase_orders.models import PurchaseOrder
+from app.erp.purchase_orders.models import PurchaseOrder, PurchaseOrderLine
 from app.erp.purchase_orders.repository import PurchaseOrderRepository
 from app.erp.purchase_orders.schemas import (
+    CoveragePurchaseOrderRef,
     PurchaseOrderComposeDefaults,
     PurchaseOrderCreate,
+    PurchaseOrderFromSalesOrderRequest,
     PurchaseOrderLineInput,
     PurchaseOrderLineResponse,
+    PurchaseOrderPlanGroup,
+    PurchaseOrderPlanLine,
+    PurchaseOrderPlanResponse,
     PurchaseOrderResponse,
     PurchaseOrderUpdate,
+    SalesOrderCoverageLine,
+    SalesOrderCoverageResponse,
 )
 from app.erp.purchase_orders.workflow import assert_editable, next_status, transition_actions
 from app.erp.supplier_products.service import SupplierProductService
@@ -115,6 +126,7 @@ class PurchaseOrderService:
         self.currencies = CurrencyService(session)
         self.fx = ExchangeRateService(session)
         self.audit = AuditWriter(session)
+        self.idempotency = IdempotencyService(session)
 
     async def list(
         self,
@@ -129,6 +141,7 @@ class PurchaseOrderService:
         branch_id: UUID | None = None,
         warehouse_id: UUID | None = None,
         currency_id: UUID | None = None,
+        source_sales_order_id: UUID | None = None,
     ) -> tuple[list[PurchaseOrderResponse], int]:
         requires_approval = await self.org.purchase_order_requires_approval(tenant_id)
         filters: dict[str, object] = {}
@@ -146,6 +159,8 @@ class PurchaseOrderService:
             filters["warehouse_id"] = warehouse_id
         if currency_id is not None:
             filters["currency_id"] = currency_id
+        if source_sales_order_id is not None:
+            filters["source_sales_order_id"] = source_sales_order_id
         rows, total = await self.repo.list(
             tenant_id,
             page=page,
@@ -246,6 +261,10 @@ class PurchaseOrderService:
             header, line_rows = await self._build_draft(tenant_id, create_payload)
             header["updated_by"] = actor_user_id
             header["version"] = existing.version + 1
+            header["source_sales_order_id"] = existing.source_sales_order_id
+            if payload.lines is None:
+                for built, existing_line in zip(line_rows, existing.lines, strict=True):
+                    built["source_sales_order_line_id"] = existing_line.source_sales_order_line_id
             await self.repo.update(tenant_id, purchase_order_id, header)
             await self.repo.replace_lines(tenant_id, purchase_order_id, line_rows)
             loaded = await self._require(tenant_id, purchase_order_id)
@@ -471,6 +490,230 @@ class PurchaseOrderService:
             loaded = await self._require(tenant_id, row.id)
             requires_approval = await self.org.purchase_order_requires_approval(tenant_id)
             return self._to_response(loaded, requires_approval=requires_approval)
+
+    async def coverage_for_sales_order(
+        self, tenant_id: UUID, sales_order_id: UUID
+    ) -> SalesOrderCoverageResponse:
+        from app.erp.sales_orders.service import SalesOrderService
+
+        sales_orders = SalesOrderService(self.session, actor_permissions=self.actor_permissions)
+        order = await sales_orders.get(tenant_id, sales_order_id)
+        covering = await self.repo.list_covering_lines(tenant_id, [line.id for line in order.lines])
+        by_line: dict[UUID, list[PurchaseOrderLine]] = {}
+        for row in covering:
+            if row.source_sales_order_line_id is None:
+                continue
+            by_line.setdefault(row.source_sales_order_line_id, []).append(row)
+
+        lines: builtins.list[SalesOrderCoverageLine] = []
+        for so_line in order.lines:
+            po_lines = by_line.get(so_line.id, [])
+            qty_covered = sum((item.quantity for item in po_lines), _ZERO)
+            qty_received = sum((item.qty_received for item in po_lines), _ZERO)
+            qty_uncovered = so_line.quantity - qty_covered
+            if qty_uncovered < _ZERO:
+                qty_uncovered = _ZERO
+            lines.append(
+                SalesOrderCoverageLine(
+                    sales_order_line_id=so_line.id,
+                    product_id=so_line.product_id,
+                    description=so_line.description,
+                    quantity=so_line.quantity,
+                    qty_covered=qty_covered,
+                    qty_uncovered=qty_uncovered,
+                    qty_received=qty_received,
+                    purchase_orders=[
+                        CoveragePurchaseOrderRef(
+                            id=item.purchase_order.id,
+                            document_number=item.purchase_order.document_number,
+                            status=PurchaseOrderStatus(item.purchase_order.status),
+                            quantity=item.quantity,
+                            qty_received=item.qty_received,
+                        )
+                        for item in po_lines
+                    ],
+                )
+            )
+        return SalesOrderCoverageResponse(sales_order_id=order.id, lines=lines)
+
+    async def plan_from_sales_order(
+        self, tenant_id: UUID, sales_order_id: UUID
+    ) -> PurchaseOrderPlanResponse:
+        from app.erp.sales_orders.service import SalesOrderService
+
+        sales_orders = SalesOrderService(self.session, actor_permissions=self.actor_permissions)
+        order = await sales_orders.get(tenant_id, sales_order_id)
+        if order.status != SalesOrderStatus.CONFIRMED:
+            raise SalesOrderNotConfirmedError()
+        coverage = await self.coverage_for_sales_order(tenant_id, sales_order_id)
+        groups: dict[UUID, PurchaseOrderPlanGroup] = {}
+        unassigned: builtins.list[PurchaseOrderPlanLine] = []
+        for line in coverage.lines:
+            if line.qty_uncovered <= _ZERO:
+                continue
+            if line.product_id is None:
+                unassigned.append(
+                    PurchaseOrderPlanLine(
+                        sales_order_line_id=line.sales_order_line_id,
+                        product_id=None,
+                        description=line.description,
+                        qty_uncovered=line.qty_uncovered,
+                    )
+                )
+                continue
+            catalogs, _ = await self.supplier_products.list(
+                tenant_id,
+                page=PageParams(page=1, page_size=1),
+                product_id=line.product_id,
+                is_preferred_supplier=True,
+                is_active=True,
+            )
+            if not catalogs:
+                unassigned.append(
+                    PurchaseOrderPlanLine(
+                        sales_order_line_id=line.sales_order_line_id,
+                        product_id=line.product_id,
+                        description=line.description,
+                        qty_uncovered=line.qty_uncovered,
+                    )
+                )
+                continue
+            catalog = catalogs[0]
+            group = groups.get(catalog.supplier_id)
+            if group is None:
+                group = PurchaseOrderPlanGroup(
+                    supplier_id=catalog.supplier_id,
+                    supplier_name=catalog.supplier_name or "",
+                    currency_id=catalog.currency_id,
+                    lines=[],
+                )
+                groups[catalog.supplier_id] = group
+            group.lines.append(
+                PurchaseOrderPlanLine(
+                    sales_order_line_id=line.sales_order_line_id,
+                    product_id=line.product_id,
+                    description=line.description,
+                    qty_uncovered=line.qty_uncovered,
+                    supplier_product_id=catalog.id,
+                    supplier_sku=catalog.supplier_sku,
+                    catalog_price=catalog.price,
+                    catalog_currency_id=catalog.currency_id,
+                )
+            )
+        return PurchaseOrderPlanResponse(groups=list(groups.values()), unassigned=unassigned)
+
+    async def create_from_sales_order(
+        self,
+        tenant_id: UUID,
+        sales_order_id: UUID,
+        payload: PurchaseOrderFromSalesOrderRequest,
+        *,
+        actor_user_id: UUID,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> builtins.list[PurchaseOrderResponse]:
+        from app.erp.sales_orders.service import SalesOrderService
+
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return [PurchaseOrderResponse.model_validate(item) for item in replay["orders"]]
+            sales_orders = SalesOrderService(self.session, actor_permissions=self.actor_permissions)
+            order = await sales_orders.get(tenant_id, sales_order_id)
+            if order.status != SalesOrderStatus.CONFIRMED:
+                raise SalesOrderNotConfirmedError()
+            so_lines = {line.id: line for line in order.lines}
+            coverage = await self.coverage_for_sales_order(tenant_id, sales_order_id)
+            uncovered = {line.sales_order_line_id: line.qty_uncovered for line in coverage.lines}
+            requested: dict[UUID, Decimal] = {}
+            for group in payload.groups:
+                for line in group.lines:
+                    if line.sales_order_line_id not in so_lines:
+                        raise ValidationError(
+                            "sales_order_line_id does not belong to this sales order",
+                            details={"field": "sales_order_line_id"},
+                        )
+                    requested[line.sales_order_line_id] = (
+                        requested.get(line.sales_order_line_id, _ZERO) + line.quantity
+                    )
+            if not payload.allow_overcommit:
+                for line_id, qty in requested.items():
+                    available = uncovered.get(line_id, _ZERO)
+                    if qty > available:
+                        raise PoCoverageExceededError(
+                            details={
+                                "sales_order_line_id": str(line_id),
+                                "qty_uncovered": str(available),
+                                "qty_requested": str(qty),
+                            }
+                        )
+
+            requires_approval = await self.org.purchase_order_requires_approval(tenant_id)
+            responses: builtins.list[PurchaseOrderResponse] = []
+            for group in payload.groups:
+                create = PurchaseOrderCreate(
+                    supplier_id=group.supplier_id,
+                    branch_id=order.branch_id,
+                    warehouse_id=group.warehouse_id or order.warehouse_id,
+                    expected_delivery_date=group.expected_delivery_date,
+                    currency_id=group.currency_id,
+                    lines=[
+                        PurchaseOrderLineInput(
+                            product_id=so_lines[line.sales_order_line_id].product_id,
+                            supplier_product_id=line.supplier_product_id,
+                            description=so_lines[line.sales_order_line_id].description,
+                            quantity=line.quantity,
+                            unit_id=so_lines[line.sales_order_line_id].unit_id,
+                            rate=line.rate,
+                        )
+                        for line in group.lines
+                    ],
+                )
+                header, line_rows = await self._build_draft(tenant_id, create)
+                header["source_sales_order_id"] = sales_order_id
+                for built, input_line in zip(line_rows, group.lines, strict=True):
+                    built["source_sales_order_line_id"] = input_line.sales_order_line_id
+                order_date = cast(date, header["order_date"])
+                number = await self.sequences.allocate(
+                    tenant_id,
+                    document_type=DocumentType.PURCHASE_ORDER,
+                    series=_ORDER_SERIES,
+                    fiscal_year=order_date.year,
+                    prefix=_ORDER_SERIES,
+                )
+                row = await self.repo.create(
+                    tenant_id,
+                    {
+                        **header,
+                        "document_number": number,
+                        "status": PurchaseOrderStatus.DRAFT.value,
+                        "version": 1,
+                        "created_by": actor_user_id,
+                        "updated_by": actor_user_id,
+                    },
+                )
+                await self.repo.replace_lines(tenant_id, row.id, line_rows)
+                await self.audit.write(
+                    tenant_id=tenant_id,
+                    user_id=actor_user_id,
+                    action=AuditAction.CREATE,
+                    module=ERP_MODULE,
+                    entity_type="purchase_order",
+                    entity_id=row.id,
+                    new_values=await self._snapshot(tenant_id, row),
+                )
+                loaded = await self._require(tenant_id, row.id)
+                responses.append(self._to_response(loaded, requires_approval=requires_approval))
+
+            await self.idempotency.store(
+                tenant_id,
+                idempotency_key,
+                {"orders": [item.model_dump(mode="json") for item in responses]},
+            )
+            return responses
 
     async def delete(
         self,
@@ -886,6 +1129,7 @@ class PurchaseOrderService:
             cancelled_at=row.cancelled_at,
             cancelled_by=row.cancelled_by,
             cancel_reason=row.cancel_reason,
+            source_sales_order_id=row.source_sales_order_id,
             available_actions=self._available_actions(status, requires_approval=requires_approval),
             lines=[PurchaseOrderLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,

@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.schemas.filters import BaseFilter
-from app.core.enums import DiscountType, PlaceOfSupply, QuotationStatus, TaxTreatment
+from app.core.enums import DiscountType, Incoterm, PlaceOfSupply, QuotationStatus, TaxTreatment
 
 
 class QuotationFilter(BaseFilter):
@@ -130,13 +130,15 @@ class ConvertToSalesOrderRequest(BaseModel):
     order_date: date | None = None
     expected_shipment_date: date | None = None
     reference_number: str | None = Field(default=None, max_length=60)
+    customer_po_number: str | None = Field(default=None, max_length=60)
+    customer_po_date: date | None = None
     warehouse_id: UUID | None = None
     branch_id: UUID | None = None
     version: int | None = Field(default=None, ge=1)
 
-    @field_validator("reference_number")
+    @field_validator("reference_number", "customer_po_number")
     @classmethod
-    def normalize_reference(cls, value: str | None) -> str | None:
+    def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()
@@ -185,10 +187,60 @@ class QuotationResponse(BaseModel):
     converted_at: datetime | None
     converted_document_type: str | None
     converted_document_id: UUID | None
+    revision_number: int = 0
+    revision_count: int = 0
+    display_number: str
     available_actions: list[str] = Field(default_factory=list)
     lines: list[QuotationLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+
+class ConvertToProformaInvoiceRequest(BaseModel):
+    proforma_date: date | None = None
+    valid_until: date | None = None
+    incoterm: Incoterm | None = None
+    incoterm_place: str | None = Field(default=None, max_length=120)
+    version: int | None = Field(default=None, ge=1)
+
+    @field_validator("incoterm_place")
+    @classmethod
+    def normalize_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class QuotationReviseRequest(BaseModel):
+    revision_reason: str = Field(min_length=1, max_length=2000)
+    version: int | None = Field(default=None, ge=1)
+
+    @field_validator("revision_reason")
+    @classmethod
+    def normalize_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("revision_reason is required")
+        return normalized
+
+
+class QuotationRevisionListItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    revision_number: int
+    quote_number: str
+    status_at_revision: str
+    revision_reason: str
+    revised_at: datetime
+    revised_by: UUID | None
+    grand_total: Decimal | None = None
+
+
+class QuotationRevisionResponse(QuotationRevisionListItem):
+    header: dict[str, object]
+    lines: list[object]
 
 
 class QuotationComposeDefaults(BaseModel):

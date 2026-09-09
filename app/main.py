@@ -165,6 +165,25 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         ),
     },
     {
+        "name": "Proforma Invoices",
+        "description": (
+            "Export-facing proforma invoices with payment milestones. Confirming a PFI "
+            "accepts its source quotation; converting it creates the sales order."
+        ),
+    },
+    {
+        "name": "Sales Orders",
+        "description": (
+            "Customer sales orders with workflow, customer PO capture, and acknowledgement."
+        ),
+    },
+    {
+        "name": "Purchase Orders",
+        "description": (
+            "Supplier purchase orders, including back-to-back creation from a sales order."
+        ),
+    },
+    {
         "name": "Period Lock",
         "description": (
             "Transaction lock and books close. GET is visible with organization.read; "

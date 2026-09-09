@@ -43,8 +43,15 @@ def test_only_draft_is_editable() -> None:
 def test_transition_actions_follow_the_machine() -> None:
     assert transition_actions(QuotationStatus.DRAFT) == ["submit", "send", "cancel"]
     assert transition_actions(QuotationStatus.PENDING_APPROVAL) == ["approve", "reject", "cancel"]
-    assert transition_actions(QuotationStatus.ACCEPTED) == ["cancel", "convert"]
-    assert transition_actions(QuotationStatus.EXPIRED) == []
+    assert transition_actions(QuotationStatus.ACCEPTED) == ["revise", "cancel", "convert"]
+    assert transition_actions(QuotationStatus.EXPIRED) == ["revise"]
+
+
+def test_revise_returns_sent_expired_declined_and_accepted_to_draft() -> None:
+    assert next_status(QuotationStatus.SENT, "revise") == QuotationStatus.DRAFT
+    assert next_status(QuotationStatus.EXPIRED, "revise") == QuotationStatus.DRAFT
+    assert next_status(QuotationStatus.DECLINED, "revise") == QuotationStatus.DRAFT
+    assert next_status(QuotationStatus.ACCEPTED, "revise") == QuotationStatus.DRAFT
 
 
 def test_only_accepted_is_convertible() -> None:

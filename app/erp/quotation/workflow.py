@@ -16,13 +16,18 @@ _TRANSITIONS: dict[tuple[QuotationStatus, str], QuotationStatus] = {
     (QuotationStatus.APPROVED, "cancel"): QuotationStatus.CANCELLED,
     (QuotationStatus.SENT, "accept"): QuotationStatus.ACCEPTED,
     (QuotationStatus.SENT, "decline"): QuotationStatus.DECLINED,
+    (QuotationStatus.SENT, "revise"): QuotationStatus.DRAFT,
     (QuotationStatus.SENT, "cancel"): QuotationStatus.CANCELLED,
+    (QuotationStatus.EXPIRED, "revise"): QuotationStatus.DRAFT,
+    (QuotationStatus.DECLINED, "revise"): QuotationStatus.DRAFT,
+    (QuotationStatus.ACCEPTED, "revise"): QuotationStatus.DRAFT,
     (QuotationStatus.ACCEPTED, "cancel"): QuotationStatus.CANCELLED,
     (QuotationStatus.ACCEPTED, "convert"): QuotationStatus.CONVERTED,
 }
 
 _EDITABLE = frozenset({QuotationStatus.DRAFT})
 _CONVERTIBLE = frozenset({QuotationStatus.ACCEPTED})
+_PROFORMA_SOURCE = frozenset({QuotationStatus.SENT, QuotationStatus.ACCEPTED})
 
 
 def next_status(current: QuotationStatus, action: str) -> QuotationStatus:
@@ -47,4 +52,11 @@ def assert_convertible(status: QuotationStatus) -> None:
     if status not in _CONVERTIBLE:
         raise InvalidStatusTransitionError(
             "Only an accepted quotation can be converted to a sales order"
+        )
+
+
+def assert_proforma_source(status: QuotationStatus) -> None:
+    if status not in _PROFORMA_SOURCE:
+        raise InvalidStatusTransitionError(
+            "Only a sent or accepted quotation can raise a proforma invoice"
         )

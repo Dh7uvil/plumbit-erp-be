@@ -67,6 +67,7 @@ async def list_purchase_orders(
         branch_id=filters.branch_id,
         warehouse_id=filters.warehouse_id,
         currency_id=filters.currency_id,
+        source_sales_order_id=filters.source_sales_order_id,
     )
     return paginated_response(rows, params=page, total=total)
 

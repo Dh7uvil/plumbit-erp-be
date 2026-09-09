@@ -36,6 +36,7 @@ class PurchaseOrderFilter(BaseFilter):
     branch_id: UUID | None = None
     warehouse_id: UUID | None = None
     currency_id: UUID | None = None
+    source_sales_order_id: UUID | None = None
 
 
 class PurchaseOrderLineInput(BaseModel):
@@ -87,6 +88,7 @@ class PurchaseOrderLineResponse(BaseModel):
     amount: Decimal
     qty_received: Decimal
     qty_billed: Decimal
+    source_sales_order_line_id: UUID | None = None
 
 
 class PurchaseOrderCreate(BaseModel):
@@ -219,6 +221,7 @@ class PurchaseOrderResponse(BaseModel):
     cancelled_at: datetime | None
     cancelled_by: UUID | None
     cancel_reason: str | None
+    source_sales_order_id: UUID | None = None
     available_actions: list[str] = Field(default_factory=list)
     lines: list[PurchaseOrderLineResponse] = Field(default_factory=list)
     created_at: datetime
@@ -238,3 +241,70 @@ class PurchaseOrderComposeDefaults(BaseModel):
     supplier_address_snapshot: str | None
     deliver_to_snapshot: str | None
     terms_and_conditions: str | None
+
+
+class CoveragePurchaseOrderRef(BaseModel):
+    id: UUID
+    document_number: str
+    status: PurchaseOrderStatus
+    quantity: Decimal
+    qty_received: Decimal
+
+
+class SalesOrderCoverageLine(BaseModel):
+    sales_order_line_id: UUID
+    product_id: UUID | None
+    description: str
+    quantity: Decimal
+    qty_covered: Decimal
+    qty_uncovered: Decimal
+    qty_received: Decimal
+    purchase_orders: list[CoveragePurchaseOrderRef] = Field(default_factory=list)
+
+
+class SalesOrderCoverageResponse(BaseModel):
+    sales_order_id: UUID
+    lines: list[SalesOrderCoverageLine] = Field(default_factory=list)
+
+
+class PurchaseOrderPlanLine(BaseModel):
+    sales_order_line_id: UUID
+    product_id: UUID | None
+    description: str
+    qty_uncovered: Decimal
+    supplier_product_id: UUID | None = None
+    supplier_sku: str | None = None
+    catalog_price: Decimal | None = None
+    catalog_currency_id: UUID | None = None
+
+
+class PurchaseOrderPlanGroup(BaseModel):
+    supplier_id: UUID
+    supplier_name: str
+    currency_id: UUID
+    lines: list[PurchaseOrderPlanLine] = Field(default_factory=list)
+
+
+class PurchaseOrderPlanResponse(BaseModel):
+    groups: list[PurchaseOrderPlanGroup] = Field(default_factory=list)
+    unassigned: list[PurchaseOrderPlanLine] = Field(default_factory=list)
+
+
+class PurchaseOrderFromSalesOrderLine(BaseModel):
+    sales_order_line_id: UUID
+    quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
+    rate: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
+    supplier_product_id: UUID | None = None
+
+
+class PurchaseOrderFromSalesOrderGroup(BaseModel):
+    supplier_id: UUID
+    warehouse_id: UUID | None = None
+    expected_delivery_date: date | None = None
+    currency_id: UUID | None = None
+    lines: list[PurchaseOrderFromSalesOrderLine] = Field(min_length=1)
+
+
+class PurchaseOrderFromSalesOrderRequest(BaseModel):
+    groups: list[PurchaseOrderFromSalesOrderGroup] = Field(min_length=1)
+    allow_overcommit: bool = False

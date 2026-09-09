@@ -133,7 +133,7 @@ einvoicing → MoF-accredited ASP (planned; not in-process)
 | Feature modules | Identity, CRM, inventory, ERP — each slice has router, service, repository, schemas, models, dependencies. |
 | `app/integrations/` | Third-party adapters only. Today: `storage/`. Planned: email, WhatsApp, video, AI, forecast, `einvoicing/` (ASP adapters). |
 | `app/workers/` | Not created. Forecast, mail/import/PDF, and e-invoice submit/poll/inbound webhook belong here (or a second Lambda). |
-| `app/cli/` | `create-tenant`, `seed-tenants`, `generate-jwt-secret`. |
+| `app/cli/` | `create-tenant`, `seed-tenants`, `grant-superadmin-permissions`, `generate-jwt-secret`. |
 | `alembic/` | Schema history. |
 | `tests/` | Unit, API, and isolation tests. |
 
@@ -150,7 +150,7 @@ Solid = implemented. Dashed in draw.io = planned.
 | Identity (`app/auth/`) | tenants, auth, users, roles, permissions, branches, departments, employees (nested), audit logs; tenant columns `allow_negative_stock`, `lock_date`, `hard_lock_date`, `lock_reason`, `hard_lock_reason` | `/tenants`, `/auth/login`, `/users`, `/roles` | — |
 | CRM (`app/crm/`) | customers, contacts | `/customers`, `/contacts` | leads, opportunities, activities |
 | Inventory (`app/inventory_management/`) | units, categories, products, price lists, warehouses, stock, stock transfers, stock adjustments | `/units`, `/products`, `/warehouses`, `/stock`, `/stock-transfers`, `/stock-adjustments` | GRN, delivery notes, sales returns |
-| ERP (`app/erp/`) | currencies, exchange rates, taxes, payment terms, terms templates, document sequences, suppliers, supplier products, quotations, period lock, sales orders, purchase orders | `/quotations`, `/suppliers`, `/supplier-products`, `/exchange-rates`, `/period-lock`, `/sales-orders`, `/purchase-orders` | sales invoices, credit notes, customer payments, purchase invoices, debit notes, supplier payments, logistics, journals / AR / AP, einvoicing status APIs |
+| ERP (`app/erp/`) | currencies, exchange rates, taxes, payment terms, terms templates, document sequences, suppliers, supplier products, quotations, proforma invoices, period lock, sales orders, purchase orders | `/quotations`, `/proforma-invoices`, `/suppliers`, `/supplier-products`, `/exchange-rates`, `/period-lock`, `/sales-orders`, `/purchase-orders` | sales invoices, credit notes, customer payments, purchase invoices, debit notes, supplier payments, logistics, journals / AR / AP, einvoicing status APIs |
 | Common | attachments, activity, outbox | `/attachments`, `/activity`, `/outbox-events` | — |
 | `integrations` | storage | — | email, WhatsApp, video, AI, forecast, `einvoicing/` ASP adapters |
 | `communication_service` | — | — | email, WhatsApp, chat, meetings (Agora) |
@@ -160,6 +160,8 @@ Solid = implemented. Dashed in draw.io = planned.
 Permissions: `identity.*`, `crm.*`, `inventory.*`, `erp.*` (for example `identity.user.read`, `erp.quotation.approve`, `erp.einvoice.submit`). Do not use `users.*`.
 
 Workflow documents must return `available_actions`. Posting is `POST /{resource}/{id}/post`, not a side effect of PATCH. E-invoicing adapters live under `app/integrations/einvoicing/`; status fields live on the ERP document. Zoho/Tally are optional ASP providers, not a second ledger.
+
+Order intake: a quotation may raise a proforma invoice without consuming `converted_document_id`. Confirming the PFI accepts the source quotation. Creating a sales order from either the quotation or the PFI marks the quotation `CONVERTED` exactly once; a live PFI blocks the direct convert path. Sales-order acknowledgement is a stamp (`acknowledged_at` / `acknowledged_by`), not a status. Purchase-order coverage is computed from `purchase_order_lines.source_sales_order_line_id`.
 
 ---
 
