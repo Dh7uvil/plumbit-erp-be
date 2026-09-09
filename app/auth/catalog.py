@@ -38,8 +38,11 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "price_list": ("create", "read", "update", "delete"),
         "warehouse": ("create", "read", "update", "delete"),
         "stock": ("read", "update"),
+        "cost": ("read",),
         "stock_transfer": ("create", "read", "update", "delete", "post"),
         "stock_adjustment": ("create", "read", "update", "delete", "post"),
+        "goods_receipt": ("create", "read", "update", "delete", "post"),
+        "quality_inspection": ("create", "read", "update", "approve"),
     },
     ERP_MODULE: {
         "supplier": ("create", "read", "update", "delete"),
@@ -146,6 +149,7 @@ WAREHOUSE_UPDATE = build_permission(INVENTORY_MODULE, "warehouse", "update")
 WAREHOUSE_DELETE = build_permission(INVENTORY_MODULE, "warehouse", "delete")
 STOCK_READ = build_permission(INVENTORY_MODULE, "stock", "read")
 STOCK_UPDATE = build_permission(INVENTORY_MODULE, "stock", "update")
+COST_READ = build_permission(INVENTORY_MODULE, "cost", "read")
 STOCK_TRANSFER_CREATE = build_permission(INVENTORY_MODULE, "stock_transfer", "create")
 STOCK_TRANSFER_READ = build_permission(INVENTORY_MODULE, "stock_transfer", "read")
 STOCK_TRANSFER_UPDATE = build_permission(INVENTORY_MODULE, "stock_transfer", "update")
@@ -156,6 +160,15 @@ STOCK_ADJUSTMENT_READ = build_permission(INVENTORY_MODULE, "stock_adjustment", "
 STOCK_ADJUSTMENT_UPDATE = build_permission(INVENTORY_MODULE, "stock_adjustment", "update")
 STOCK_ADJUSTMENT_DELETE = build_permission(INVENTORY_MODULE, "stock_adjustment", "delete")
 STOCK_ADJUSTMENT_POST = build_permission(INVENTORY_MODULE, "stock_adjustment", "post")
+GOODS_RECEIPT_CREATE = build_permission(INVENTORY_MODULE, "goods_receipt", "create")
+GOODS_RECEIPT_READ = build_permission(INVENTORY_MODULE, "goods_receipt", "read")
+GOODS_RECEIPT_UPDATE = build_permission(INVENTORY_MODULE, "goods_receipt", "update")
+GOODS_RECEIPT_DELETE = build_permission(INVENTORY_MODULE, "goods_receipt", "delete")
+GOODS_RECEIPT_POST = build_permission(INVENTORY_MODULE, "goods_receipt", "post")
+QUALITY_INSPECTION_CREATE = build_permission(INVENTORY_MODULE, "quality_inspection", "create")
+QUALITY_INSPECTION_READ = build_permission(INVENTORY_MODULE, "quality_inspection", "read")
+QUALITY_INSPECTION_UPDATE = build_permission(INVENTORY_MODULE, "quality_inspection", "update")
+QUALITY_INSPECTION_APPROVE = build_permission(INVENTORY_MODULE, "quality_inspection", "approve")
 
 SUPPLIER_CREATE = build_permission(ERP_MODULE, "supplier", "create")
 SUPPLIER_READ = build_permission(ERP_MODULE, "supplier", "read")

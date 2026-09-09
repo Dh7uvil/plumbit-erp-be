@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends
 
-from app.auth.catalog import STOCK_READ, STOCK_UPDATE
+from app.auth.catalog import COST_READ, STOCK_READ, STOCK_UPDATE
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
@@ -15,6 +15,7 @@ from app.common.schemas.response import ApiResponse
 from app.inventory_management.stock.dependencies import StockServiceDependency
 from app.inventory_management.stock.schemas import (
     StockBalanceResponse,
+    StockCostLayerResponse,
     StockFilter,
     StockMovementFilter,
     StockMovementResponse,
@@ -69,3 +70,14 @@ async def update_stock_reorder(
         tenant.tenant_id, balance_id, payload, actor_user_id=tenant.user_id
     )
     return ApiResponse(data=row, message="Reorder levels updated successfully")
+
+
+@router.get("/stock/{balance_id}/layers", response_model=ApiResponse[list[StockCostLayerResponse]])
+async def list_stock_layers(
+    balance_id: UUID,
+    tenant: TenantContextDependency,
+    service: StockServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(COST_READ))],
+) -> ApiResponse[list[StockCostLayerResponse]]:
+    rows = await service.list_layers(tenant.tenant_id, balance_id)
+    return ApiResponse(data=rows)

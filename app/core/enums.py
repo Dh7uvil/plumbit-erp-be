@@ -158,6 +158,28 @@ class StockDocumentStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class CostingMethod(StrEnum):
+    FIFO = "FIFO"
+
+
+class QualityInspectionStatus(StrEnum):
+    DRAFT = "DRAFT"
+    APPROVED = "APPROVED"
+    CANCELLED = "CANCELLED"
+
+
+class QcStatus(StrEnum):
+    NOT_REQUIRED = "NOT_REQUIRED"
+    PENDING = "PENDING"
+    PARTIAL = "PARTIAL"
+    CLEARED = "CLEARED"
+
+
+class QcDisposition(StrEnum):
+    RETURN_TO_SUPPLIER = "RETURN_TO_SUPPLIER"
+    SCRAP = "SCRAP"
+
+
 class StockAdjustmentReason(StrEnum):
     OPENING_STOCK = "OPENING_STOCK"
     COUNT = "COUNT"
@@ -201,6 +223,8 @@ class StockMovementType(StrEnum):
     ADJUSTMENT = "ADJUSTMENT"
     DAMAGE = "DAMAGE"
     OPENING_STOCK = "OPENING_STOCK"
+    QC_HOLD = "QC_HOLD"
+    QC_RELEASE = "QC_RELEASE"
 
 
 class ShipmentType(StrEnum):

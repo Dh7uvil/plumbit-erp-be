@@ -42,12 +42,14 @@ app/
 │                                 utils/ attachments/ activity/ outbox/ registries/
 ├── auth/                         Identity: auth, users, roles, permissions, tenants/org-settings,
 │                                 branches, departments, employees (nested), audit-logs
-│                                 operational settings: allow_negative_stock, lock dates, reasons
+│                                 operational settings: allow_negative_stock, costing_method,
+│                                 over-receipt, qc_required_default, lock dates, reasons
 ├── crm/                          implemented: customers, contacts
 │                                 planned: leads, opportunities, activities
 ├── inventory_management/         implemented: units, categories, products, price_lists, warehouses,
-│                                 stock, stock_transfers, stock_adjustments
-│                                 planned: goods_receipts (GRN), delivery_notes, sales_returns
+│                                 stock, costing, stock_transfers, stock_adjustments,
+│                                 goods_receipts, quality_inspections
+│                                 planned: delivery_notes, sales_returns
 ├── erp/                          implemented: currencies, exchange_rates, taxes, payment_terms,
 │                                 terms_templates, document_sequences, suppliers, supplier_products,
 │                                 quotations, period_lock, sales_orders, purchase_orders

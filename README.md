@@ -62,6 +62,16 @@ uv run seed-tenants --tenant-id <uuid>
 uv run seed-tenants --tenant-code <code>
 ```
 
+Insert missing permission catalog rows on existing tenants after new
+`identity.*` / `crm.*` / `inventory.*` / `erp.*` entries land in code.
+Idempotent: present rows are skipped. Role grants are not changed:
+
+```bash
+uv run seed-permissions
+uv run seed-permissions --tenant-id <uuid>
+uv run seed-permissions --tenant-code <code>
+```
+
 Grant the full permission catalog to the Superadmin role on existing tenants
 (users inherit those grants). Use this after new catalog permissions land.
 Idempotent: missing catalog rows are inserted and missing role grants are added:

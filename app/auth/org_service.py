@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -34,7 +36,7 @@ from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
 from app.common.utils.files import MIME_JPEG, MIME_PNG, MIME_WEBP, validate_upload
-from app.core.enums import AddressType, AuditAction, BranchStatus
+from app.core.enums import AddressType, AuditAction, BranchStatus, CostingMethod
 from app.core.exceptions import (
     DuplicateResourceError,
     IntegrationError,
@@ -60,6 +62,14 @@ _SETTINGS_FIELDS = (
     "purchase_order_requires_approval",
     "headquarters",
 )
+
+
+@dataclass(frozen=True, slots=True)
+class InboundSettings:
+    costing_method: CostingMethod
+    allow_over_receipt: bool
+    over_receipt_tolerance_pct: Decimal | None
+    qc_required_default: bool
 
 
 def _address_values(payload: AddressPayload) -> dict[str, object]:
@@ -109,6 +119,17 @@ class OrganizationService:
                 tenant.default_currency_id = values["default_currency_id"]
             if "allow_negative_stock" in values and values["allow_negative_stock"] is not None:
                 tenant.allow_negative_stock = values["allow_negative_stock"]
+            if "costing_method" in values and values["costing_method"] is not None:
+                method = values["costing_method"]
+                tenant.costing_method = (
+                    method.value if isinstance(method, CostingMethod) else str(method)
+                )
+            if "allow_over_receipt" in values and values["allow_over_receipt"] is not None:
+                tenant.allow_over_receipt = values["allow_over_receipt"]
+            if "over_receipt_tolerance_pct" in values:
+                tenant.over_receipt_tolerance_pct = values["over_receipt_tolerance_pct"]
+            if "qc_required_default" in values and values["qc_required_default"] is not None:
+                tenant.qc_required_default = values["qc_required_default"]
             settings = TenantSettings.model_validate(tenant.settings or {})
             settings_update = {key: values[key] for key in _SETTINGS_FIELDS if key in values}
             if settings_update:
@@ -520,6 +541,10 @@ class OrganizationService:
             sales_order_requires_approval=settings.sales_order_requires_approval,
             purchase_order_requires_approval=settings.purchase_order_requires_approval,
             allow_negative_stock=tenant.allow_negative_stock,
+            costing_method=CostingMethod(tenant.costing_method),
+            allow_over_receipt=tenant.allow_over_receipt,
+            over_receipt_tolerance_pct=tenant.over_receipt_tolerance_pct,
+            qc_required_default=tenant.qc_required_default,
             lock_date=tenant.lock_date,
             hard_lock_date=tenant.hard_lock_date,
             headquarters=settings.headquarters,
@@ -537,6 +562,10 @@ class OrganizationService:
             "timezone": tenant.timezone,
             "settings": tenant.settings,
             "allow_negative_stock": tenant.allow_negative_stock,
+            "costing_method": tenant.costing_method,
+            "allow_over_receipt": tenant.allow_over_receipt,
+            "over_receipt_tolerance_pct": tenant.over_receipt_tolerance_pct,
+            "qc_required_default": tenant.qc_required_default,
             "lock_date": tenant.lock_date,
             "hard_lock_date": tenant.hard_lock_date,
             "has_logo": tenant.logo_storage_key is not None,
@@ -703,6 +732,17 @@ class OrganizationService:
 
         tenant = await self._require_tenant(tenant_id, for_update=for_update)
         return tenant.allow_negative_stock, self._period_lock_policy(tenant)
+
+    async def get_inbound_settings(self, tenant_id: UUID) -> InboundSettings:
+        """Return FIFO/over-receipt/QC defaults stored on the tenant row."""
+
+        tenant = await self._require_tenant(tenant_id)
+        return InboundSettings(
+            costing_method=CostingMethod(tenant.costing_method),
+            allow_over_receipt=tenant.allow_over_receipt,
+            over_receipt_tolerance_pct=tenant.over_receipt_tolerance_pct,
+            qc_required_default=tenant.qc_required_default,
+        )
 
     async def set_period_lock(
         self,

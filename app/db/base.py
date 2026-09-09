@@ -50,8 +50,11 @@ import app.erp.quotation.models as _quotation  # noqa: E402, F401
 import app.erp.sales_orders.models as _sales_orders  # noqa: E402, F401
 import app.erp.supplier_products.models as _supplier_products  # noqa: E402, F401
 import app.inventory_management.categories.models as _categories  # noqa: E402, F401
+import app.inventory_management.costing.models as _costing  # noqa: E402, F401
+import app.inventory_management.goods_receipts.models as _goods_receipts  # noqa: E402, F401
 import app.inventory_management.price_lists.models as _price_lists  # noqa: E402, F401
 import app.inventory_management.products.models as _products  # noqa: E402, F401
+import app.inventory_management.quality_inspections.models as _quality_inspections  # noqa: E402, F401
 import app.inventory_management.stock.models as _stock  # noqa: E402, F401
 import app.inventory_management.stock_adjustments.models as _stock_adjustments  # noqa: E402, F401
 import app.inventory_management.stock_transfers.models as _stock_transfers  # noqa: E402, F401

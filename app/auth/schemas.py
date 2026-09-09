@@ -1,6 +1,7 @@
 """Request and response schemas for the access-management slice."""
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, ClassVar
 from uuid import UUID
 
@@ -13,7 +14,7 @@ from app.common.utils.validators import (
     normalize_required_text,
     optional_uuid_input,
 )
-from app.core.enums import BranchStatus, EmployeeStatus, UserStatus
+from app.core.enums import BranchStatus, CostingMethod, EmployeeStatus, UserStatus
 
 MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 72
@@ -552,6 +553,10 @@ class TenantCurrentResponse(BaseModel):
     sales_order_requires_approval: bool = False
     purchase_order_requires_approval: bool = False
     allow_negative_stock: bool = False
+    costing_method: CostingMethod = CostingMethod.FIFO
+    allow_over_receipt: bool = False
+    over_receipt_tolerance_pct: Decimal | None = None
+    qc_required_default: bool = False
     lock_date: date | None = None
     hard_lock_date: date | None = None
     headquarters: AddressPayload | None = None
@@ -577,6 +582,12 @@ class TenantCurrentUpdate(BaseModel):
     sales_order_requires_approval: bool | None = None
     purchase_order_requires_approval: bool | None = None
     allow_negative_stock: bool | None = None
+    costing_method: CostingMethod | None = None
+    allow_over_receipt: bool | None = None
+    over_receipt_tolerance_pct: Decimal | None = Field(
+        default=None, ge=0, le=100, max_digits=5, decimal_places=2
+    )
+    qc_required_default: bool | None = None
     headquarters: AddressPayload | None = None
 
     @field_validator(

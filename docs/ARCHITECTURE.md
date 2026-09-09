@@ -133,7 +133,7 @@ einvoicing → MoF-accredited ASP (planned; not in-process)
 | Feature modules | Identity, CRM, inventory, ERP — each slice has router, service, repository, schemas, models, dependencies. |
 | `app/integrations/` | Third-party adapters only. Today: `storage/`. Planned: email, WhatsApp, video, AI, forecast, `einvoicing/` (ASP adapters). |
 | `app/workers/` | Not created. Forecast, mail/import/PDF, and e-invoice submit/poll/inbound webhook belong here (or a second Lambda). |
-| `app/cli/` | `create-tenant`, `seed-tenants`, `grant-superadmin-permissions`, `generate-jwt-secret`. |
+| `app/cli/` | `create-tenant`, `seed-tenants`, `seed-permissions`, `grant-superadmin-permissions`, `generate-jwt-secret`. |
 | `alembic/` | Schema history. |
 | `tests/` | Unit, API, and isolation tests. |
 
@@ -147,9 +147,9 @@ Solid = implemented. Dashed in draw.io = planned.
 
 | Top-level | Implemented slices | API examples | Planned slices |
 | --- | --- | --- | --- |
-| Identity (`app/auth/`) | tenants, auth, users, roles, permissions, branches, departments, employees (nested), audit logs; tenant columns `allow_negative_stock`, `lock_date`, `hard_lock_date`, `lock_reason`, `hard_lock_reason` | `/tenants`, `/auth/login`, `/users`, `/roles` | — |
+| Identity (`app/auth/`) | tenants, auth, users, roles, permissions, branches, departments, employees (nested), audit logs; tenant columns `allow_negative_stock`, `costing_method`, `allow_over_receipt`, `qc_required_default`, `lock_date`, `hard_lock_date`, `lock_reason`, `hard_lock_reason` | `/tenants`, `/auth/login`, `/users`, `/roles` | — |
 | CRM (`app/crm/`) | customers, contacts | `/customers`, `/contacts` | leads, opportunities, activities |
-| Inventory (`app/inventory_management/`) | units, categories, products, price lists, warehouses, stock, stock transfers, stock adjustments | `/units`, `/products`, `/warehouses`, `/stock`, `/stock-transfers`, `/stock-adjustments` | GRN, delivery notes, sales returns |
+| Inventory (`app/inventory_management/`) | units, categories, products, price lists, warehouses, stock, FIFO costing, stock transfers, stock adjustments, goods receipts, quality inspections | `/units`, `/products`, `/warehouses`, `/stock`, `/stock-transfers`, `/stock-adjustments`, `/goods-receipts`, `/quality-inspections` | delivery notes, sales returns |
 | ERP (`app/erp/`) | currencies, exchange rates, taxes, payment terms, terms templates, document sequences, suppliers, supplier products, quotations, proforma invoices, period lock, sales orders, purchase orders | `/quotations`, `/proforma-invoices`, `/suppliers`, `/supplier-products`, `/exchange-rates`, `/period-lock`, `/sales-orders`, `/purchase-orders` | sales invoices, credit notes, customer payments, purchase invoices, debit notes, supplier payments, logistics, journals / AR / AP, einvoicing status APIs |
 | Common | attachments, activity, outbox | `/attachments`, `/activity`, `/outbox-events` | — |
 | `integrations` | storage | — | email, WhatsApp, video, AI, forecast, `einvoicing/` ASP adapters |

@@ -16,6 +16,7 @@ following the same layout and the same request flow. Do not invent a new shape f
 3. Identify existing services, repositories, schemas and common utilities and reuse them.
 4. Identify related models and database relationships.
 5. Identify the permissions the feature needs (`identity.*` / `crm.*` / `inventory.*` / `erp.*`).
+   After catalog entries land, existing tenants get missing rows with `uv run seed-permissions`.
 6. Identify tenant isolation, lock-date, negative-stock, posting, VAT and e-invoicing
    requirements.
 7. Identify audit, transaction, idempotency and `version` / `If-Match` requirements.
@@ -30,9 +31,9 @@ implemented vs planned so agents do not stub a slice without an API.
 
 | Module | Owns |
 | --- | --- |
-| `auth` (Identity) | **Implemented:** auth, users, roles, permissions, tenants/org-settings, branches, departments, employees (nested), audit-logs. Attachments in `app/common/attachments/` with `identity.attachment.*`. Tenant operational settings (`allow_negative_stock`, `lock_date`, `hard_lock_date`, `lock_reason`, `hard_lock_reason`) are first-class columns. |
+| `auth` (Identity) | **Implemented:** auth, users, roles, permissions, tenants/org-settings, branches, departments, employees (nested), audit-logs. Attachments in `app/common/attachments/` with `identity.attachment.*`. Tenant operational settings (`allow_negative_stock`, `costing_method`, `allow_over_receipt`, `over_receipt_tolerance_pct`, `qc_required_default`, `lock_date`, `hard_lock_date`, `lock_reason`, `hard_lock_reason`) are first-class columns. |
 | `erp` | **Implemented:** currencies, exchange_rates, taxes, payment_terms, terms_templates, document_sequences, suppliers, supplier_products, quotations, proforma_invoices, period_lock, sales_orders, purchase_orders. **Planned:** sales_invoices, credit_notes, customer_payments, purchase_invoices, debit_notes, supplier_payments, accounting (chart of accounts, journals, AR, AP), logistics, einvoicing **status APIs** (on sales invoices and credit notes; inbound e-bills as draft purchase invoices). |
-| `inventory_management` | **Implemented:** units, categories, products, price_lists, warehouses, stock, stock_transfers, stock_adjustments. **Planned:** goods_receipts (GRN), delivery_notes, sales_returns. |
+| `inventory_management` | **Implemented:** units, categories, products, price_lists, warehouses, stock, stock_transfers, stock_adjustments, costing (internal FIFO ledger), goods_receipts, quality_inspections. **Planned:** delivery_notes, sales_returns. |
 | `crm` | **Implemented:** customers, contacts. **Planned:** leads, opportunities, activities. |
 | `communication_service` | **Planned:** email, whatsapp, chat, meetings. |
 | `notifications_service` | **Planned:** notifications, templates, delivery status. |
@@ -60,8 +61,9 @@ plumbit-erp-be/
 │   ├── core/                     config.py security.py permissions.py exceptions.py
 │   │                             error_handlers.py middleware.py logging.py constants.py enums.py
 │   ├── db/                       base.py session.py mixins.py seed.py
-│   ├── cli/                      create_tenant.py seed_tenants.py grant_superadmin_permissions.py
-│   │                             generate_jwt_secret.py export_openapi.py outbox.py attachments.py
+│   ├── cli/                      create_tenant.py seed_tenants.py seed_permissions.py
+│   │                             grant_superadmin_permissions.py generate_jwt_secret.py
+│   │                             export_openapi.py outbox.py attachments.py
 │   │
 │   ├── common/                   shared building blocks — no module business logic
 │   │   ├── models/               audit_log.py (tenant/user/role live in auth/)
@@ -93,7 +95,8 @@ plumbit-erp-be/
 │   │   ├── debit_notes/          planned
 │   │   └── einvoicing/           planned status helpers; adapters are NOT here
 │   ├── inventory_management/     units/ categories/ products/ price_lists/ warehouses/
-│   │                             stock/ stock_transfers/ stock_adjustments/
+│   │                             stock/ costing/ stock_transfers/ stock_adjustments/
+│   │                             goods_receipts/ quality_inspections/
 │   ├── crm/                      customers/ contacts/
 │   │                             leads/ opportunities/ activities/  (planned)
 │   ├── communication_service/    planned

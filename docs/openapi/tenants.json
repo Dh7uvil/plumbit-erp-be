@@ -357,6 +357,13 @@
         ],
         "title": "Body_upload_current_tenant_logo_api_v1_tenants_current_logo_post"
       },
+      "CostingMethod": {
+        "type": "string",
+        "enum": [
+          "FIFO"
+        ],
+        "title": "CostingMethod"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -511,6 +518,32 @@
           "allow_negative_stock": {
             "type": "boolean",
             "title": "Allow Negative Stock",
+            "default": false
+          },
+          "costing_method": {
+            "$ref": "#/components/schemas/CostingMethod",
+            "default": "FIFO"
+          },
+          "allow_over_receipt": {
+            "type": "boolean",
+            "title": "Allow Over Receipt",
+            "default": false
+          },
+          "over_receipt_tolerance_pct": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Over Receipt Tolerance Pct"
+          },
+          "qc_required_default": {
+            "type": "boolean",
+            "title": "Qc Required Default",
             "default": false
           },
           "lock_date": {
@@ -752,6 +785,55 @@
               }
             ],
             "title": "Allow Negative Stock"
+          },
+          "costing_method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostingMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "allow_over_receipt": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Over Receipt"
+          },
+          "over_receipt_tolerance_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,6}0*$)\\d{0,3}\\.\\d{0,2}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Over Receipt Tolerance Pct"
+          },
+          "qc_required_default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qc Required Default"
           },
           "headquarters": {
             "anyOf": [

@@ -13,11 +13,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.auth.catalog import INVENTORY_MODULE
+from app.auth.catalog import COST_READ, INVENTORY_MODULE
 from app.auth.org_service import OrganizationService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
+from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import utcnow
 from app.core.enums import AuditAction, StockMovementType
 from app.core.exceptions import (
@@ -25,9 +26,12 @@ from app.core.exceptions import (
     ResourceNotFoundError,
     ValidationError,
 )
+from app.core.permissions import has_permission
 from app.db.session import transaction
+from app.inventory_management.costing.service import CostConsumption, CostingService
 from app.inventory_management.products.schemas import ProductResponse
 from app.inventory_management.products.service import ProductService
+from app.inventory_management.stock.availability import available_qty
 from app.inventory_management.stock.models import StockBalance, StockMovement
 from app.inventory_management.stock.repository import (
     StockBalanceRepository,
@@ -35,6 +39,7 @@ from app.inventory_management.stock.repository import (
 )
 from app.inventory_management.stock.schemas import (
     StockBalanceResponse,
+    StockCostLayerResponse,
     StockMovementFilter,
     StockMovementResponse,
     StockReorderUpdate,
@@ -45,6 +50,9 @@ from app.inventory_management.warehouses.service import WarehouseService
 _ZERO = Decimal("0")
 SOURCE_STOCK_ADJUSTMENT = "stock_adjustment"
 SOURCE_STOCK_TRANSFER = "stock_transfer"
+SOURCE_GOODS_RECEIPT = "goods_receipt"
+SOURCE_QUALITY_INSPECTION = "quality_inspection"
+_HOLD_AUDIT_TYPES = frozenset({StockMovementType.QC_HOLD, StockMovementType.QC_RELEASE})
 
 
 @dataclass(slots=True)
@@ -55,17 +63,31 @@ class LockedBalance:
     allow_negative_stock: bool
 
 
+@dataclass(slots=True)
+class ApplyResult:
+    movement: StockMovement
+    consumptions: tuple[CostConsumption, ...]
+
+
 class StockService:
     """The only code that updates balances or inserts movements."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        actor_permissions: frozenset[str] = frozenset(),
+    ) -> None:
         self.session = session
+        self.actor_permissions = actor_permissions
         self.balances = StockBalanceRepository(session)
         self.movements = StockMovementRepository(session)
         self.products = ProductService(session)
         self.warehouses = WarehouseService(session)
         self.org = OrganizationService(session)
+        self.costing = CostingService(session)
         self.audit = AuditWriter(session)
+        self._can_read_cost = has_permission(actor_permissions, COST_READ)
 
     async def list_balances(
         self,
@@ -223,13 +245,15 @@ class StockService:
         product_id: UUID,
         document_date: date,
         can_override_soft_lock: bool = False,
+        assert_period: bool = True,
     ) -> LockedBalance:
         """Validate product/warehouse/period and SELECT FOR UPDATE the balance row."""
 
         product = await self.products.require_stockable(tenant_id, product_id)
         warehouse = await self.warehouses.get(tenant_id, warehouse_id)
         allow_negative, policy = await self.org.get_inventory_controls(tenant_id)
-        policy.assert_open(document_date, can_override=can_override_soft_lock)
+        if assert_period:
+            policy.assert_open(document_date, can_override=can_override_soft_lock)
         row = await self._lock_or_create(tenant_id, warehouse_id, product_id)
         return LockedBalance(
             row=row,
@@ -252,7 +276,13 @@ class StockService:
         notes: str | None,
         occurred_at: datetime | None = None,
         unit_id: UUID | None = None,
-    ) -> StockMovement:
+        unit_cost: Decimal | None = None,
+        inbound_layers: Sequence[CostConsumption] | None = None,
+        quality_hold_delta: Decimal = _ZERO,
+        skip_costing: bool = False,
+        is_estimated_cost: bool = False,
+    ) -> ApplyResult:
+        qty = quantize_quantity(qty)
         if qty == _ZERO:
             raise ValidationError("Movement quantity cannot be zero")
         if (
@@ -262,8 +292,13 @@ class StockService:
         ):
             raise ValidationError("Unit must match the product unit")
         resolved_unit = unit_id if unit_id is not None else locked.product.unit_id
-        available = locked.row.qty_on_hand - locked.row.qty_reserved
-        resulting_available = available + qty
+        hold_delta = quantize_quantity(quality_hold_delta)
+        available = available_qty(
+            locked.row.qty_on_hand,
+            locked.row.qty_reserved,
+            locked.row.qty_quality_hold,
+        )
+        resulting_available = available + qty - hold_delta
         if qty < _ZERO and resulting_available < _ZERO and not locked.allow_negative_stock:
             raise InsufficientStockError(
                 details={
@@ -275,11 +310,15 @@ class StockService:
                 }
             )
         qty_before = locked.row.qty_on_hand
-        locked.row.qty_on_hand = qty_before + qty
+        locked.row.qty_on_hand = quantize_quantity(qty_before + qty)
+        new_hold = quantize_quantity(locked.row.qty_quality_hold + hold_delta)
+        if new_hold < _ZERO:
+            raise ValidationError("Quality hold cannot be negative")
+        locked.row.qty_quality_hold = new_hold
         occurred = occurred_at or utcnow()
         locked.row.last_movement_at = occurred
         await self.session.flush()
-        return await self.movements.create(
+        movement = await self.movements.create(
             tenant_id,
             {
                 "movement_type": movement_type.value,
@@ -295,8 +334,178 @@ class StockService:
                 "document_date": document_date,
                 "occurred_at": occurred,
                 "notes": notes,
+                "is_estimated_cost": is_estimated_cost,
             },
         )
+        consumptions: tuple[CostConsumption, ...] = ()
+        resolved_cost = unit_cost
+        if resolved_cost is None:
+            resolved_cost = locked.product.purchase_rate
+        skip = skip_costing or movement_type in _HOLD_AUDIT_TYPES
+        if not skip:
+            if qty > _ZERO:
+                consumptions = await self._apply_inbound_cost(
+                    tenant_id,
+                    locked,
+                    qty=qty,
+                    unit_cost=resolved_cost,
+                    inbound_layers=inbound_layers,
+                    movement_id=movement.id,
+                    source_type=source_type,
+                    source_id=source_id,
+                    source_line_id=source_line_id,
+                    document_date=document_date,
+                    is_estimated=is_estimated_cost,
+                )
+                if inbound_layers:
+                    total_value = sum((item.qty * item.unit_cost for item in inbound_layers), _ZERO)
+                else:
+                    total_value = qty * resolved_cost
+                movement.unit_cost = quantize_money(total_value / qty) if qty else None
+                movement.value = quantize_money(total_value)
+            else:
+                outbound = -qty
+                consumptions, total_value = await self.costing.consume(
+                    tenant_id,
+                    warehouse_id=locked.warehouse.id,
+                    product_id=locked.product.id,
+                    qty=outbound,
+                    movement_id=movement.id,
+                    document_date=document_date,
+                    source_type=source_type,
+                    source_id=source_id,
+                    allow_negative=locked.allow_negative_stock,
+                    fallback_unit_cost=resolved_cost,
+                    source_line_id=source_line_id,
+                )
+                movement.unit_cost = quantize_money(total_value / outbound) if outbound else None
+                movement.value = quantize_money(-total_value)
+            await self.costing.assert_balanced(
+                tenant_id,
+                locked.warehouse.id,
+                locked.product.id,
+                locked.row.qty_on_hand,
+            )
+        await self.session.flush()
+        return ApplyResult(movement=movement, consumptions=consumptions)
+
+    async def apply_quality_hold_locked(
+        self,
+        tenant_id: UUID,
+        locked: LockedBalance,
+        *,
+        qty: Decimal,
+        movement_type: StockMovementType,
+        source_type: str,
+        source_id: UUID,
+        source_line_id: UUID | None,
+        document_date: date,
+        notes: str | None,
+        occurred_at: datetime | None = None,
+        unit_id: UUID | None = None,
+    ) -> StockMovement:
+        """Change qty_quality_hold only. On-hand and cost layers stay unchanged."""
+
+        if movement_type not in _HOLD_AUDIT_TYPES:
+            raise ValidationError("Quality-hold audit movements must be QC_HOLD or QC_RELEASE")
+        delta = quantize_quantity(qty)
+        if delta == _ZERO:
+            raise ValidationError("Quality hold quantity cannot be zero")
+        new_hold = quantize_quantity(locked.row.qty_quality_hold + delta)
+        if new_hold < _ZERO:
+            raise ValidationError("Quality hold cannot be negative")
+        locked.row.qty_quality_hold = new_hold
+        occurred = occurred_at or utcnow()
+        locked.row.last_movement_at = occurred
+        await self.session.flush()
+        return await self.movements.create(
+            tenant_id,
+            {
+                "movement_type": movement_type.value,
+                "warehouse_id": locked.warehouse.id,
+                "product_id": locked.product.id,
+                "unit_id": unit_id if unit_id is not None else locked.product.unit_id,
+                "qty": delta,
+                "qty_before": locked.row.qty_on_hand,
+                "qty_after": locked.row.qty_on_hand,
+                "source_type": source_type,
+                "source_id": source_id,
+                "source_line_id": source_line_id,
+                "document_date": document_date,
+                "occurred_at": occurred,
+                "notes": notes,
+                "is_estimated_cost": False,
+            },
+        )
+
+    async def reverse_inbound_locked(
+        self,
+        tenant_id: UUID,
+        locked: LockedBalance,
+        *,
+        qty: Decimal,
+        movement_type: StockMovementType,
+        source_type: str,
+        source_id: UUID,
+        source_line_id: UUID | None,
+        document_date: date,
+        notes: str | None,
+        quality_hold_delta: Decimal = _ZERO,
+        occurred_at: datetime | None = None,
+        unit_id: UUID | None = None,
+    ) -> StockMovement:
+        """Reverse an inbound write without FIFO consume. Deletes layers for this source line."""
+
+        inbound_qty = quantize_quantity(qty)
+        if inbound_qty <= _ZERO:
+            raise ValidationError("Reverse quantity must be positive")
+        hold = quantize_quantity(quality_hold_delta)
+        qty_before = locked.row.qty_on_hand
+        locked.row.qty_on_hand = quantize_quantity(qty_before - inbound_qty)
+        new_hold = quantize_quantity(locked.row.qty_quality_hold - hold)
+        if new_hold < _ZERO:
+            raise ValidationError("Quality hold cannot be negative")
+        locked.row.qty_quality_hold = new_hold
+        occurred = occurred_at or utcnow()
+        locked.row.last_movement_at = occurred
+        await self.costing.delete_layers_for_source(
+            tenant_id, source_type, source_id, source_line_id
+        )
+        await self.session.flush()
+        movement = await self.movements.create(
+            tenant_id,
+            {
+                "movement_type": movement_type.value,
+                "warehouse_id": locked.warehouse.id,
+                "product_id": locked.product.id,
+                "unit_id": unit_id if unit_id is not None else locked.product.unit_id,
+                "qty": -inbound_qty,
+                "qty_before": qty_before,
+                "qty_after": locked.row.qty_on_hand,
+                "source_type": source_type,
+                "source_id": source_id,
+                "source_line_id": source_line_id,
+                "document_date": document_date,
+                "occurred_at": occurred,
+                "notes": notes,
+                "is_estimated_cost": False,
+            },
+        )
+        await self.costing.assert_balanced(
+            tenant_id,
+            locked.warehouse.id,
+            locked.product.id,
+            locked.row.qty_on_hand,
+        )
+        return movement
+
+    async def adjust_incoming_locked(self, locked: LockedBalance, *, qty: Decimal) -> None:
+        delta = quantize_quantity(qty)
+        new_incoming = quantize_quantity(locked.row.qty_incoming + delta)
+        if new_incoming < _ZERO:
+            raise ValidationError("Incoming quantity cannot be negative")
+        locked.row.qty_incoming = new_incoming
+        await self.session.flush()
 
     async def apply_movement(
         self,
@@ -314,6 +523,7 @@ class StockService:
         occurred_at: datetime | None = None,
         unit_id: UUID | None = None,
         can_override_soft_lock: bool = False,
+        unit_cost: Decimal | None = None,
     ) -> StockMovement:
         locked = await self.lock_balance(
             tenant_id,
@@ -322,7 +532,7 @@ class StockService:
             document_date=document_date,
             can_override_soft_lock=can_override_soft_lock,
         )
-        return await self.apply_locked(
+        result = await self.apply_locked(
             tenant_id,
             locked,
             qty=qty,
@@ -334,7 +544,18 @@ class StockService:
             notes=notes,
             occurred_at=occurred_at,
             unit_id=unit_id,
+            unit_cost=unit_cost,
         )
+        return result.movement
+
+    async def list_layers(self, tenant_id: UUID, balance_id: UUID) -> list[StockCostLayerResponse]:
+        existing = await self.balances.get(tenant_id, balance_id)
+        if existing is None:
+            raise ResourceNotFoundError("Stock balance not found")
+        layers = await self.costing.list_layers(
+            tenant_id, existing.warehouse_id, existing.product_id
+        )
+        return [StockCostLayerResponse.model_validate(layer) for layer in layers]
 
     async def _lock_or_create(
         self, tenant_id: UUID, warehouse_id: UUID, product_id: UUID
@@ -351,6 +572,7 @@ class StockService:
                         "product_id": product_id,
                         "qty_on_hand": _ZERO,
                         "qty_reserved": _ZERO,
+                        "qty_quality_hold": _ZERO,
                         "qty_incoming": _ZERO,
                         "qty_outgoing": _ZERO,
                         "qty_in_transit": _ZERO,
@@ -364,15 +586,78 @@ class StockService:
                 raise
             return row
 
+    async def _apply_inbound_cost(
+        self,
+        tenant_id: UUID,
+        locked: LockedBalance,
+        *,
+        qty: Decimal,
+        unit_cost: Decimal,
+        inbound_layers: Sequence[CostConsumption] | None,
+        movement_id: UUID,
+        source_type: str,
+        source_id: UUID,
+        source_line_id: UUID | None,
+        document_date: date,
+        is_estimated: bool,
+    ) -> tuple[CostConsumption, ...]:
+        fragments: list[tuple[Decimal, Decimal]]
+        if inbound_layers:
+            fragments = [(item.qty, item.unit_cost) for item in inbound_layers]
+        else:
+            fragments = [(qty, unit_cost)]
+        created: list[CostConsumption] = []
+        for fragment_qty, fragment_cost in fragments:
+            remaining = await self.costing.offset_negative_layers(
+                tenant_id,
+                warehouse_id=locked.warehouse.id,
+                product_id=locked.product.id,
+                receipt_qty=fragment_qty,
+                unit_cost=fragment_cost,
+                movement_id=movement_id,
+            )
+            if remaining > _ZERO:
+                layer = await self.costing.add_layer(
+                    tenant_id,
+                    warehouse_id=locked.warehouse.id,
+                    product_id=locked.product.id,
+                    qty=remaining,
+                    unit_cost=fragment_cost,
+                    source_type=source_type,
+                    source_id=source_id,
+                    source_line_id=source_line_id,
+                    document_date=document_date,
+                    is_estimated=is_estimated,
+                )
+                created.append(
+                    CostConsumption(layer_id=layer.id, qty=remaining, unit_cost=fragment_cost)
+                )
+        return tuple(created)
+
     async def _balance_responses(
         self, tenant_id: UUID, rows: Sequence[StockBalance]
     ) -> list[StockBalanceResponse]:
         products = await self.products.get_many(tenant_id, [row.product_id for row in rows])
         warehouses = await self.warehouses.get_many(tenant_id, [row.warehouse_id for row in rows])
+        cost_by_key: dict[tuple[UUID, UUID], tuple[Decimal | None, Decimal | None]] = {}
+        if self._can_read_cost:
+            for row in rows:
+                key = (row.warehouse_id, row.product_id)
+                if key not in cost_by_key:
+                    remaining_qty, stock_value = await self.costing.remaining_value(
+                        tenant_id, row.warehouse_id, row.product_id
+                    )
+                    unit = None
+                    if row.qty_on_hand != _ZERO:
+                        unit = quantize_money(stock_value / row.qty_on_hand)
+                    cost_by_key[key] = (unit, stock_value)
         responses: list[StockBalanceResponse] = []
         for row in rows:
             product = products.get(row.product_id)
             warehouse = warehouses.get(row.warehouse_id)
+            unit_cost, stock_value = cost_by_key.get(
+                (row.warehouse_id, row.product_id), (None, None)
+            )
             responses.append(
                 StockBalanceResponse(
                     id=row.id,
@@ -385,7 +670,10 @@ class StockService:
                     product_name=product.name if product else "",
                     qty_on_hand=row.qty_on_hand,
                     qty_reserved=row.qty_reserved,
-                    qty_available=row.qty_on_hand - row.qty_reserved,
+                    qty_quality_hold=row.qty_quality_hold,
+                    qty_available=available_qty(
+                        row.qty_on_hand, row.qty_reserved, row.qty_quality_hold
+                    ),
                     qty_incoming=row.qty_incoming,
                     qty_outgoing=row.qty_outgoing,
                     qty_in_transit=row.qty_in_transit,
@@ -394,6 +682,8 @@ class StockService:
                     last_movement_at=row.last_movement_at,
                     created_at=row.created_at,
                     updated_at=row.updated_at,
+                    unit_cost=unit_cost,
+                    stock_value=stock_value,
                 )
             )
         return responses
@@ -429,6 +719,9 @@ class StockService:
                     occurred_at=row.occurred_at,
                     notes=row.notes,
                     created_at=row.created_at,
+                    unit_cost=row.unit_cost if self._can_read_cost else None,
+                    value=row.value if self._can_read_cost else None,
+                    is_estimated_cost=row.is_estimated_cost if self._can_read_cost else None,
                 )
             )
         return responses

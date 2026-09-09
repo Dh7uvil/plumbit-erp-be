@@ -2,13 +2,15 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import ClassVar
+from typing import Any, ClassVar
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from app.common.schemas.filters import BaseFilter
 from app.core.enums import StockMovementType
+
+_COST_RESPONSE_FIELDS = ("unit_cost", "stock_value", "value", "is_estimated_cost")
 
 
 class StockFilter(BaseFilter):
@@ -19,6 +21,7 @@ class StockFilter(BaseFilter):
             "qty_on_hand",
             "qty_reserved",
             "qty_available",
+            "qty_quality_hold",
             "last_movement_at",
         }
     )
@@ -78,6 +81,7 @@ class StockBalanceResponse(BaseModel):
     product_name: str
     qty_on_hand: Decimal
     qty_reserved: Decimal
+    qty_quality_hold: Decimal
     qty_available: Decimal
     qty_incoming: Decimal
     qty_outgoing: Decimal
@@ -87,6 +91,16 @@ class StockBalanceResponse(BaseModel):
     last_movement_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    unit_cost: Decimal | None = None
+    stock_value: Decimal | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_unpermissioned_cost(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        for field in _COST_RESPONSE_FIELDS:
+            if field in data and data[field] is None:
+                del data[field]
+        return data
 
 
 class StockMovementResponse(BaseModel):
@@ -111,4 +125,34 @@ class StockMovementResponse(BaseModel):
     document_date: date
     occurred_at: datetime
     notes: str | None
+    created_at: datetime
+    unit_cost: Decimal | None = None
+    value: Decimal | None = None
+    is_estimated_cost: bool | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_unpermissioned_cost(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        for field in _COST_RESPONSE_FIELDS:
+            if field in data and data[field] is None:
+                del data[field]
+        return data
+
+
+class StockCostLayerResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    warehouse_id: UUID
+    product_id: UUID
+    source_type: str
+    source_id: UUID
+    source_line_id: UUID | None
+    document_date: date
+    qty_received: Decimal
+    qty_remaining: Decimal
+    unit_cost: Decimal
+    landed_unit_cost: Decimal
+    is_estimated: bool
+    is_negative: bool
     created_at: datetime

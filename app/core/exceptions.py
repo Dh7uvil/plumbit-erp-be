@@ -30,6 +30,10 @@ class ErrorCode(StrEnum):
     EINVOICE_ASP_UNAVAILABLE = "EINVOICE_ASP_UNAVAILABLE"
     EINVOICE_ALREADY_EXCHANGED = "EINVOICE_ALREADY_EXCHANGED"
     SUPPLIER_SKU_NOT_MAPPED = "SUPPLIER_SKU_NOT_MAPPED"
+    GRN_OVER_RECEIPT = "GRN_OVER_RECEIPT"
+    GRN_CANNOT_CANCEL = "GRN_CANNOT_CANCEL"
+    QUALITY_QTY_MISMATCH = "QUALITY_QTY_MISMATCH"
+    COST_LAYER_IMBALANCE = "COST_LAYER_IMBALANCE"
     QUOTATION_HAS_LIVE_PROFORMA = "QUOTATION_HAS_LIVE_PROFORMA"
     MILESTONE_MODE_MIXED = "MILESTONE_MODE_MIXED"
     MILESTONE_TOTAL_MISMATCH = "MILESTONE_TOTAL_MISMATCH"
@@ -197,6 +201,30 @@ class SupplierSkuNotMappedError(AppError):
     default_code = ErrorCode.SUPPLIER_SKU_NOT_MAPPED
     default_status = HTTPStatus.CONFLICT
     default_message = "Supplier SKU is not mapped to a product"
+
+
+class GrnOverReceiptError(AppError):
+    default_code = ErrorCode.GRN_OVER_RECEIPT
+    default_status = HTTPStatus.CONFLICT
+    default_message = "Received quantity exceeds the purchase order outstanding plus tolerance"
+
+
+class GrnCannotCancelError(AppError):
+    default_code = ErrorCode.GRN_CANNOT_CANCEL
+    default_status = HTTPStatus.CONFLICT
+    default_message = "This goods receipt cannot be cancelled"
+
+
+class QualityQtyMismatchError(AppError):
+    default_code = ErrorCode.QUALITY_QTY_MISMATCH
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "Inspection quantities do not match the remaining quality hold"
+
+
+class CostLayerImbalanceError(AppError):
+    default_code = ErrorCode.COST_LAYER_IMBALANCE
+    default_status = HTTPStatus.INTERNAL_SERVER_ERROR
+    default_message = "Cost layer remaining quantity does not match on-hand stock"
 
 
 class QuotationHasLiveProformaError(AppError):
