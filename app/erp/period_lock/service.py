@@ -10,10 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.catalog import ERP_MODULE
 from app.auth.org_service import OrganizationService
 from app.common.period_lock import PeriodLockPolicy
+from app.common.registries.unposted_documents import registered_probes
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
 from app.common.utils.datetime import today_in_timezone
-from app.core.enums import AuditAction, StockDocumentStatus
+from app.core.enums import AuditAction
 from app.core.exceptions import PeriodLockBlockedNegativeStockError, ValidationError
 from app.db.session import transaction
 from app.erp.period_lock.schemas import (
@@ -26,8 +27,6 @@ from app.erp.period_lock.schemas import (
     PeriodLockUpdate,
 )
 from app.inventory_management.stock.service import StockService
-from app.inventory_management.stock_adjustments.service import StockAdjustmentService
-from app.inventory_management.stock_transfers.service import StockTransferService
 
 _NEGATIVE_DISALLOWED = "negative_stock_disallowed"
 _ACK_REQUIRED = "acknowledgement_required"
@@ -59,8 +58,6 @@ class PeriodLockService:
         self.session = session
         self.org = OrganizationService(session)
         self.stock = StockService(session)
-        self.adjustments = StockAdjustmentService(session)
-        self.transfers = StockTransferService(session)
         self.audit = AuditWriter(session)
 
     async def get(self, tenant_id: UUID) -> PeriodLockResponse:
@@ -241,35 +238,23 @@ class PeriodLockService:
         if as_of is None:
             return [], 0
         page = PageParams(page=1, page_size=PREVIEW_CAP)
-        status = StockDocumentStatus.DRAFT.value
-        adjustments, adj_total = await self.adjustments.list(
-            tenant_id, page=page, status=status, document_date_to=as_of
-        )
-        transfers, transfer_total = await self.transfers.list(
-            tenant_id, page=page, status=status, document_date_to=as_of
-        )
-        documents = [
-            PeriodLockUnpostedDocument(
-                id=row.id,
-                document_type="stock_adjustment",
-                document_number=row.document_number,
-                document_date=row.document_date,
-                status=row.status.value,
+        documents: list[PeriodLockUnpostedDocument] = []
+        total = 0
+        for probe in registered_probes():
+            rows, count = await probe(self.session, tenant_id, as_of, page)
+            total += count
+            documents.extend(
+                PeriodLockUnpostedDocument(
+                    id=row.id,
+                    document_type=row.document_type,
+                    document_number=row.document_number,
+                    document_date=row.document_date,
+                    status=row.status,
+                )
+                for row in rows
             )
-            for row in adjustments
-        ]
-        documents.extend(
-            PeriodLockUnpostedDocument(
-                id=row.id,
-                document_type="stock_transfer",
-                document_number=row.document_number,
-                document_date=row.document_date,
-                status=row.status.value,
-            )
-            for row in transfers
-        )
         documents.sort(key=lambda item: (item.document_date, item.document_number))
-        return documents[:PREVIEW_CAP], adj_total + transfer_total
+        return documents[:PREVIEW_CAP], total
 
     def _assert_invariants(
         self,

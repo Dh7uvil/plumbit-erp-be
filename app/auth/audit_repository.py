@@ -30,6 +30,8 @@ class AuditLogRepository:
         module: str | None = None,
         action: str | None = None,
         user_id: UUID | None = None,
+        entity_type: str | None = None,
+        entity_id: UUID | None = None,
     ) -> list[ColumnElement[bool]]:
         criteria: list[ColumnElement[bool]] = [AuditLog.tenant_id == tenant_id]
         if module is not None:
@@ -38,6 +40,10 @@ class AuditLogRepository:
             criteria.append(AuditLog.action == action)
         if user_id is not None:
             criteria.append(AuditLog.user_id == user_id)
+        if entity_type is not None:
+            criteria.append(AuditLog.entity_type == entity_type)
+        if entity_id is not None:
+            criteria.append(AuditLog.entity_id == entity_id)
         if common_filter is not None:
             if common_filter.date_from is not None:
                 criteria.append(AuditLog.created_at >= common_filter.date_from)
@@ -65,6 +71,8 @@ class AuditLogRepository:
         module: str | None = None,
         action: str | None = None,
         user_id: UUID | None = None,
+        entity_type: str | None = None,
+        entity_id: UUID | None = None,
     ) -> Select[tuple[AuditLog]]:
         statement = select(AuditLog)
         if common_filter is not None and common_filter.search is not None:
@@ -79,6 +87,8 @@ class AuditLogRepository:
                 module=module,
                 action=action,
                 user_id=user_id,
+                entity_type=entity_type,
+                entity_id=entity_id,
             )
         )
 
@@ -91,6 +101,8 @@ class AuditLogRepository:
         module: str | None = None,
         action: str | None = None,
         user_id: UUID | None = None,
+        entity_type: str | None = None,
+        entity_id: UUID | None = None,
     ) -> tuple[Sequence[AuditLog], int]:
         allowed_sort = frozenset({"created_at", "action", "module"})
         sort_by = common_filter.sort_by if common_filter else "created_at"
@@ -108,6 +120,8 @@ class AuditLogRepository:
                 module=module,
                 action=action,
                 user_id=user_id,
+                entity_type=entity_type,
+                entity_id=entity_id,
             )
             .order_by(ordering)
             .offset(page.offset)
@@ -126,6 +140,8 @@ class AuditLogRepository:
                 module=module,
                 action=action,
                 user_id=user_id,
+                entity_type=entity_type,
+                entity_id=entity_id,
             )
         )
         result = await self.session.execute(statement)

@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Index, String
+from sqlalchemy import BigInteger, Index, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +16,13 @@ class Attachment(AuditUserMixin, SoftDeleteTenantModel):
     __tablename__ = "attachments"
     __table_args__ = (
         Index("ix_attachments_tenant_entity", "tenant_id", "entity_type", "entity_id"),
+        Index(
+            "ix_attachments_tenant_entity_category",
+            "tenant_id",
+            "entity_type",
+            "entity_id",
+            "category",
+        ),
     )
 
     entity_type: Mapped[str] = mapped_column(String(30), nullable=False)
@@ -24,3 +31,7 @@ class Attachment(AuditUserMixin, SoftDeleteTenantModel):
     content_type: Mapped[str] = mapped_column(String(150), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    thumbnail_storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    image_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    image_height: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -31,7 +31,7 @@ implemented vs planned so agents do not stub a slice without an API.
 | Module | Owns |
 | --- | --- |
 | `auth` (Identity) | **Implemented:** auth, users, roles, permissions, tenants/org-settings, branches, departments, employees (nested), audit-logs. Attachments in `app/common/attachments/` with `identity.attachment.*`. Tenant operational settings (`allow_negative_stock`, `lock_date`, `hard_lock_date`, `lock_reason`, `hard_lock_reason`) are first-class columns. |
-| `erp` | **Implemented:** currencies, exchange_rates, taxes, payment_terms, terms_templates, document_sequences, suppliers, quotations, period_lock. **Planned:** sales_orders, sales_invoices, credit_notes, customer_payments, purchase_orders, purchase_invoices, debit_notes, supplier_payments, accounting (chart of accounts, journals, AR, AP), logistics, einvoicing **status APIs** (on sales invoices and credit notes; inbound e-bills as draft purchase invoices). |
+| `erp` | **Implemented:** currencies, exchange_rates, taxes, payment_terms, terms_templates, document_sequences, suppliers, quotations, period_lock, sales_orders, purchase_orders. **Planned:** sales_invoices, credit_notes, customer_payments, purchase_invoices, debit_notes, supplier_payments, accounting (chart of accounts, journals, AR, AP), logistics, einvoicing **status APIs** (on sales invoices and credit notes; inbound e-bills as draft purchase invoices). |
 | `inventory_management` | **Implemented:** units, categories, products, price_lists, warehouses, stock, stock_transfers, stock_adjustments. **Planned:** goods_receipts (GRN), delivery_notes, sales_returns. |
 | `crm` | **Implemented:** customers, contacts. **Planned:** leads, opportunities, activities. |
 | `communication_service` | **Planned:** email, whatsapp, chat, meetings. |
@@ -61,6 +61,7 @@ plumbit-erp-be/
 │   │                             error_handlers.py middleware.py logging.py constants.py enums.py
 │   ├── db/                       base.py session.py mixins.py seed.py
 │   ├── cli/                      create_tenant.py seed_tenants.py generate_jwt_secret.py
+│   │                             export_openapi.py outbox.py attachments.py
 │   │
 │   ├── common/                   shared building blocks — no module business logic
 │   │   ├── models/               audit_log.py (tenant/user/role live in auth/)
@@ -69,6 +70,9 @@ plumbit-erp-be/
 │   │   ├── services/             audit.py
 │   │   ├── dependencies/         auth.py tenant.py permissions.py pagination.py
 │   │   ├── attachments/          identity.attachment.* slice
+│   │   ├── activity/              per-record activity feed
+│   │   ├── outbox/               transactional outbox
+│   │   ├── registries/          unposted-document probes
 │   │   ├── period_lock.py       shared PeriodLockPolicy invariant (no DB)
 │   │   └── utils/                datetime.py currency.py validators.py generators.py files.py
 │   │
@@ -79,10 +83,10 @@ plumbit-erp-be/
 │   │   ├── exchange_rates/
 │   │   ├── period_lock/
 │   │   ├── accounting/           taxes, payment_terms, terms_templates, document_sequences
-│   │   ├── sales_orders/         planned
+│   │   ├── sales_orders/
 │   │   ├── sales_invoices/       planned (post + einvoice status)
 │   │   ├── credit_notes/         planned
-│   │   ├── purchase_orders/      planned
+│   │   ├── purchase_orders/
 │   │   ├── purchase_invoices/    planned
 │   │   ├── debit_notes/          planned
 │   │   └── einvoicing/           planned status helpers; adapters are NOT here

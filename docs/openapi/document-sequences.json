@@ -659,7 +659,11 @@
           "PURCHASE_INVOICE",
           "DEBIT_NOTE",
           "STOCK_TRANSFER",
-          "STOCK_ADJUSTMENT"
+          "STOCK_ADJUSTMENT",
+          "PROFORMA_INVOICE",
+          "QUALITY_INSPECTION",
+          "PACKAGE",
+          "SHIPMENT"
         ],
         "title": "DocumentType"
       },

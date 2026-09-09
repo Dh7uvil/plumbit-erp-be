@@ -1,7 +1,11 @@
 """FastAPI application entry point."""
 
+from __future__ import annotations
+
+import asyncio
+import os
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +17,7 @@ from app.core.middleware import RequestContextMiddleware
 from app.db.session import engine
 from app.health import router as health_router
 from app.router import api_router
+from app.wiring import wire_platform
 
 OPENAPI_TAGS: list[dict[str, str]] = [
     {
@@ -52,8 +57,22 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "description": "Append-only audit trail for identity and organization changes.",
     },
     {
+        "name": "Activity",
+        "description": (
+            "Per-record activity feed. Gated by the owning record's read permission, "
+            "not identity.audit_log.read."
+        ),
+    },
+    {
         "name": "Attachments",
         "description": "Generic document uploads stored in MinIO locally and S3 in production.",
+    },
+    {
+        "name": "Outbox Events",
+        "description": (
+            "Transactional outbox visibility and retry. Requires identity.outbox_event.read "
+            "or identity.outbox_event.retry."
+        ),
     },
     {
         "name": "Currencies",
@@ -153,14 +172,29 @@ APP_DESCRIPTION = "Multi-tenant ERP backend API."
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Own application-level resources for the process lifetime."""
-    yield
-    await engine.dispose()
+    settings = get_settings()
+    poller: asyncio.Task[None] | None = None
+    if settings.feature_background_workers_enabled:
+        from app.common.outbox.dispatcher import run_forever
+
+        poller = asyncio.create_task(
+            run_forever(batch=20, interval=2.0, worker_id=f"inprocess-{os.getpid()}")
+        )
+    try:
+        yield
+    finally:
+        if poller is not None:
+            poller.cancel()
+            with suppress(asyncio.CancelledError):
+                await poller
+        await engine.dispose()
 
 
 def create_app() -> FastAPI:
     """Create and configure a FastAPI application instance."""
     settings = get_settings()
     configure_logging(settings.log_level)
+    wire_platform()
 
     application = FastAPI(
         title=settings.app_name,

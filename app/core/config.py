@@ -65,6 +65,7 @@ class Settings(BaseSettings):
 
     # Uploads
     max_upload_size_mb: int = Field(default=25, ge=1)
+    attachment_retention_years: int = Field(default=5, ge=1)
     allowed_upload_mime_types: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
             "text/csv",

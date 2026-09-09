@@ -10,6 +10,7 @@ dependencies = [
     "bcrypt>=5.0.0",
     "boto3>=1.42.0",
     "fastapi>=0.141.1",
+    "pillow>=11.0.0",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.15.0",
     "python-dotenv>=1.0.1",
@@ -24,6 +25,8 @@ create-tenant = "app.cli.create_tenant:main"
 seed-tenants = "app.cli.seed_tenants:main"
 generate-jwt-secret = "app.cli.generate_jwt_secret:main"
 export-openapi = "app.cli.export_openapi:main"
+outbox = "app.cli.outbox:main"
+purge-attachments = "app.cli.attachments:main"
 
 [build-system]
 requires = ["hatchling"]

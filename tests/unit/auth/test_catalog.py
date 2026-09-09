@@ -18,7 +18,10 @@ def test_catalog_includes_organization_and_audit_permissions() -> None:
     assert "identity.permission.read" in IDENTITY_PERMISSIONS
     assert "identity.attachment.create" in IDENTITY_PERMISSIONS
     assert "identity.attachment.read" in IDENTITY_PERMISSIONS
+    assert "identity.attachment.update" in IDENTITY_PERMISSIONS
     assert "identity.attachment.delete" in IDENTITY_PERMISSIONS
+    assert "identity.outbox_event.read" in IDENTITY_PERMISSIONS
+    assert "identity.outbox_event.retry" in IDENTITY_PERMISSIONS
 
 
 def test_catalog_includes_quote_ready_permissions() -> None:

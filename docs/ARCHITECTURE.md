@@ -150,8 +150,8 @@ Solid = implemented. Dashed in draw.io = planned.
 | Identity (`app/auth/`) | tenants, auth, users, roles, permissions, branches, departments, employees (nested), audit logs; tenant columns `allow_negative_stock`, `lock_date`, `hard_lock_date`, `lock_reason`, `hard_lock_reason` | `/tenants`, `/auth/login`, `/users`, `/roles` | — |
 | CRM (`app/crm/`) | customers, contacts | `/customers`, `/contacts` | leads, opportunities, activities |
 | Inventory (`app/inventory_management/`) | units, categories, products, price lists, warehouses, stock, stock transfers, stock adjustments | `/units`, `/products`, `/warehouses`, `/stock`, `/stock-transfers`, `/stock-adjustments` | GRN, delivery notes, sales returns |
-| ERP (`app/erp/`) | currencies, exchange rates, taxes, payment terms, terms templates, document sequences, suppliers, quotations, period lock | `/quotations`, `/suppliers`, `/exchange-rates`, `/period-lock` | sales orders, sales invoices, credit notes, customer payments, purchase orders, purchase invoices, debit notes, supplier payments, logistics, journals / AR / AP, einvoicing status APIs |
-| Common | attachments | `/attachments` | — |
+| ERP (`app/erp/`) | currencies, exchange rates, taxes, payment terms, terms templates, document sequences, suppliers, quotations, period lock, sales orders, purchase orders | `/quotations`, `/suppliers`, `/exchange-rates`, `/period-lock`, `/sales-orders`, `/purchase-orders` | sales invoices, credit notes, customer payments, purchase invoices, debit notes, supplier payments, logistics, journals / AR / AP, einvoicing status APIs |
+| Common | attachments, activity, outbox | `/attachments`, `/activity`, `/outbox-events` | — |
 | `integrations` | storage | — | email, WhatsApp, video, AI, forecast, `einvoicing/` ASP adapters |
 | `communication_service` | — | — | email, WhatsApp, chat, meetings (Agora) |
 | `notifications_service` | — | — | in-app / email / WhatsApp, templates, delivery |
@@ -262,7 +262,6 @@ Keep the ERP modular. Do not turn it into microservices early.
 - SES, Agora, WhatsApp Go adapter, OpenAI, Forecast ML, `app/workers/`.
 - DRAFT → POSTED sales/purchase invoices, payments, and ledger posting.
 - `Idempotency-Key` / `If-Match` on invoice post and payments (stock documents already require both).
-- Period-close PATCH / `erp.period.lock` (lock dates are stored and enforced on stock post).
 - UAE e-invoicing ASP adapter, PINT-AE completeness fields, inbound e-bill drafts.
 - Splitting PostgreSQL per tenant.
 

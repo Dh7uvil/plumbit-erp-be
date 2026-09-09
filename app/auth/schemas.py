@@ -786,6 +786,8 @@ class AuditLogFilter(BaseFilter):
     module: str | None = None
     action: str | None = None
     user_id: UUID | None = None
+    entity_type: str | None = None
+    entity_id: UUID | None = None
 
 
 class AuditLogUserSummary(BaseModel):

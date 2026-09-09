@@ -10,6 +10,7 @@ from httpx import AsyncClient
 
 from tests.api.erp.quotation.test_routes import (
     _create_customer,
+    _create_quote,
     _seeded_ids,
 )
 from tests.api.erp.quotation.test_routes import (
@@ -79,6 +80,36 @@ async def test_preview_and_apply_lock(client: AsyncClient) -> None:
     applied = await _set_lock(client, headers, lock_date="2024-12-31")
     assert applied.status_code == 200, applied.text
     assert applied.json()["data"]["lock_date"] == "2024-12-31"
+
+
+@pytest.mark.asyncio
+async def test_preview_includes_registered_drafts_not_unregistered_slices(
+    client: AsyncClient,
+) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    today = date.today().isoformat()
+    ids = await _seeded(client, headers)
+    product_id = await _create_product(client, headers, ids)
+    created = await _create_adjustment(
+        client, headers, warehouse_id=ids["main"], product_id=product_id
+    )
+    assert created["status_code"] == 201, created["text"]
+    adjustment_id = created["body"]["data"]["id"]
+
+    quote_ids = await _seeded_ids(client, headers)
+    customer_id = await _create_customer(client, headers)
+    quote_product = await _create_quote_product(client, headers, quote_ids)
+    quoted = await _create_quote(client, headers, customer_id=customer_id, product_id=quote_product)
+    assert quoted["status_code"] == 201, quoted["text"]
+
+    preview = await client.get(f"/api/v1/period-lock/preview?lock_date={today}", headers=headers)
+    assert preview.status_code == 200, preview.text
+    docs = preview.json()["data"]["unposted_documents"]
+    types = {item["document_type"] for item in docs}
+    assert "stock_adjustment" in types
+    assert any(item["id"] == adjustment_id for item in docs)
+    assert "quotation" not in types
 
 
 @pytest.mark.asyncio

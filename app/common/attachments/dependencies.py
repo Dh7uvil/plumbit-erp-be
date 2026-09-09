@@ -6,6 +6,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.attachments.service import AttachmentService
+from app.common.dependencies.auth import CurrentUserDependency
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
 from app.integrations.storage.client import S3Storage, get_storage
@@ -15,8 +16,9 @@ def get_attachment_service(
     session: Annotated[AsyncSession, Depends(get_db)],
     storage: Annotated[S3Storage, Depends(get_storage)],
     settings: Annotated[Settings, Depends(get_settings)],
+    current_user: CurrentUserDependency,
 ) -> AttachmentService:
-    return AttachmentService(session, storage, settings)
+    return AttachmentService(session, storage, settings, actor_permissions=current_user.permissions)
 
 
 AttachmentServiceDependency = Annotated[AttachmentService, Depends(get_attachment_service)]

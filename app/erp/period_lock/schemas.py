@@ -2,7 +2,6 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -49,7 +48,7 @@ class PeriodLockNegativeBalance(BaseModel):
 
 class PeriodLockUnpostedDocument(BaseModel):
     id: UUID
-    document_type: Literal["stock_adjustment", "stock_transfer"]
+    document_type: str
     document_number: str
     document_date: date
     status: str

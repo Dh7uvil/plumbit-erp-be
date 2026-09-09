@@ -850,6 +850,8 @@ async def list_audit_logs(
         module=filters.module,
         action=filters.action,
         user_id=filters.user_id,
+        entity_type=filters.entity_type,
+        entity_id=filters.entity_id,
     )
     return paginated_response(rows, params=page, total=total)
 

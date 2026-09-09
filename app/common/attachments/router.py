@@ -5,12 +5,18 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 
-from app.auth.catalog import ATTACHMENT_CREATE, ATTACHMENT_DELETE, ATTACHMENT_READ
+from app.auth.catalog import (
+    ATTACHMENT_CREATE,
+    ATTACHMENT_DELETE,
+    ATTACHMENT_READ,
+    ATTACHMENT_UPDATE,
+)
 from app.common.attachments.dependencies import AttachmentServiceDependency
 from app.common.attachments.schemas import (
     AttachmentDetailResponse,
     AttachmentFilter,
     AttachmentResponse,
+    AttachmentUpdate,
 )
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
@@ -20,7 +26,7 @@ from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.files import max_upload_bytes
 from app.core.config import get_settings
-from app.core.enums import AttachmentEntityType
+from app.core.enums import AttachmentCategory, AttachmentEntityType
 from app.core.exceptions import ValidationError
 
 router = APIRouter(prefix="/attachments", tags=["Attachments"])
@@ -42,6 +48,7 @@ async def list_attachments(
         common_filter=filters,
         entity_type=filters.entity_type,
         entity_id=filters.entity_id,
+        category=filters.category,
     )
     return paginated_response(rows, params=page, total=total)
 
@@ -58,6 +65,7 @@ async def create_attachment(
     entity_id: Annotated[UUID, Form()],
     file: Annotated[UploadFile, File()],
     _: Annotated[CurrentUser, Depends(require_permission(ATTACHMENT_CREATE))],
+    category: Annotated[AttachmentCategory | None, Form()] = None,
 ) -> ApiResponse[AttachmentResponse]:
     content = await _read_upload(
         file, max_bytes=max_upload_bytes(get_settings().max_upload_size_mb)
@@ -69,6 +77,7 @@ async def create_attachment(
         filename=file.filename,
         content=content,
         actor_user_id=tenant.user_id,
+        category=category,
     )
     return ApiResponse(data=row, message="Attachment created successfully")
 
@@ -81,6 +90,23 @@ async def get_attachment(
     _: Annotated[CurrentUser, Depends(require_permission(ATTACHMENT_READ))],
 ) -> ApiResponse[AttachmentDetailResponse]:
     return ApiResponse(data=await service.get(tenant.tenant_id, attachment_id))
+
+
+@router.patch("/{attachment_id}", response_model=ApiResponse[AttachmentResponse])
+async def update_attachment(
+    attachment_id: UUID,
+    payload: AttachmentUpdate,
+    tenant: TenantContextDependency,
+    service: AttachmentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(ATTACHMENT_UPDATE))],
+) -> ApiResponse[AttachmentResponse]:
+    row = await service.update(
+        tenant.tenant_id,
+        attachment_id,
+        payload,
+        actor_user_id=tenant.user_id,
+    )
+    return ApiResponse(data=row, message="Attachment updated successfully")
 
 
 @router.delete("/{attachment_id}", response_model=ApiResponse[AttachmentResponse])
