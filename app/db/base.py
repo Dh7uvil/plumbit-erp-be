@@ -39,6 +39,7 @@ import app.auth.models as _auth_models  # noqa: E402, F401
 import app.common.attachments.models as _attachments  # noqa: E402, F401
 import app.common.idempotency.models as _idempotency  # noqa: E402, F401
 import app.common.models.audit_log as _audit_log  # noqa: E402, F401
+import app.common.outbox.models as _outbox  # noqa: E402, F401
 import app.crm.contacts.models as _contacts  # noqa: E402, F401
 import app.crm.customers.models as _customers  # noqa: E402, F401
 import app.erp.accounting.models as _accounting  # noqa: E402, F401

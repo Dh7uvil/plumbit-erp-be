@@ -24,7 +24,8 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "branch": ("create", "read", "update", "delete"),
         "employee": ("create", "read", "update", "delete"),
         "audit_log": ("read",),
-        "attachment": ("create", "read", "delete"),
+        "attachment": ("create", "read", "update", "delete"),
+        "outbox_event": ("read", "retry"),
     },
     CRM_MODULE: {
         "customer": ("create", "read", "update", "delete"),
@@ -98,7 +99,10 @@ EMPLOYEE_DELETE = build_permission(IDENTITY_MODULE, "employee", "delete")
 AUDIT_LOG_READ = build_permission(IDENTITY_MODULE, "audit_log", "read")
 ATTACHMENT_CREATE = build_permission(IDENTITY_MODULE, "attachment", "create")
 ATTACHMENT_READ = build_permission(IDENTITY_MODULE, "attachment", "read")
+ATTACHMENT_UPDATE = build_permission(IDENTITY_MODULE, "attachment", "update")
 ATTACHMENT_DELETE = build_permission(IDENTITY_MODULE, "attachment", "delete")
+OUTBOX_EVENT_READ = build_permission(IDENTITY_MODULE, "outbox_event", "read")
+OUTBOX_EVENT_RETRY = build_permission(IDENTITY_MODULE, "outbox_event", "retry")
 
 CUSTOMER_CREATE = build_permission(CRM_MODULE, "customer", "create")
 CUSTOMER_READ = build_permission(CRM_MODULE, "customer", "read")

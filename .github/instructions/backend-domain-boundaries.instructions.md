@@ -123,9 +123,10 @@ auth (Identity)         implemented: auth, users, roles, permissions, tenants/or
                         hard_lock_date, lock_reason, hard_lock_reason
 
 erp                     implemented: currencies, exchange_rates, taxes, payment_terms,
-                        terms_templates, document_sequences, suppliers, quotations, period_lock
-                        planned: sales_orders, sales_invoices, credit_notes, customer_payments,
-                        purchase_orders, purchase_invoices, debit_notes, supplier_payments,
+                        terms_templates, document_sequences, suppliers, quotations, period_lock,
+                        sales_orders, purchase_orders
+                        planned: sales_invoices, credit_notes, customer_payments,
+                        purchase_invoices, debit_notes, supplier_payments,
                         accounting (chart of accounts, journals, AR, AP),
                         logistics (imports, exports, shipments, containers),
                         einvoicing status APIs (on sales invoices and credit notes;

@@ -1,8 +1,10 @@
 """Attachment queries."""
 
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.attachments.models import Attachment
@@ -20,7 +22,7 @@ class AttachmentRepository:
             allowed_sort_fields=frozenset(
                 {"created_at", "updated_at", "original_filename", "size_bytes"}
             ),
-            allowed_filter_fields=frozenset({"entity_type", "entity_id"}),
+            allowed_filter_fields=frozenset({"entity_type", "entity_id", "category"}),
             search_fields=frozenset({"original_filename"}),
         )
 
@@ -49,3 +51,15 @@ class AttachmentRepository:
 
     async def soft_delete(self, tenant_id: UUID, attachment_id: UUID) -> Attachment | None:
         return await self._repo.soft_delete(tenant_id, attachment_id)
+
+    async def list_expired(
+        self, *, cutoff: datetime, tenant_id: UUID | None = None
+    ) -> Sequence[Attachment]:
+        statement = select(Attachment).where(
+            Attachment.deleted_at.is_not(None),
+            Attachment.deleted_at <= cutoff,
+        )
+        if tenant_id is not None:
+            statement = statement.where(Attachment.tenant_id == tenant_id)
+        result = await self.session.execute(statement)
+        return list(result.scalars().all())

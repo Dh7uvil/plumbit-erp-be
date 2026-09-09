@@ -395,10 +395,6 @@
           },
           "document_type": {
             "type": "string",
-            "enum": [
-              "stock_adjustment",
-              "stock_transfer"
-            ],
             "title": "Document Type"
           },
           "document_number": {

@@ -39,6 +39,8 @@ class AuditLogService:
         module: str | None = None,
         action: str | None = None,
         user_id: UUID | None = None,
+        entity_type: str | None = None,
+        entity_id: UUID | None = None,
     ) -> tuple[list[AuditLogResponse], int]:
         rows, total = await self.repo.list_logs(
             tenant_id,
@@ -47,6 +49,8 @@ class AuditLogService:
             module=module,
             action=action,
             user_id=user_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
         )
         user_ids = [row.user_id for row in rows if row.user_id is not None]
         users = await self.org.get_users_by_ids(tenant_id, user_ids)

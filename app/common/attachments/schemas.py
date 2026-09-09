@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.common.schemas.filters import BaseFilter
-from app.core.enums import AttachmentEntityType
+from app.core.enums import AttachmentCategory, AttachmentEntityType
 
 
 class AttachmentFilter(BaseFilter):
@@ -16,6 +16,11 @@ class AttachmentFilter(BaseFilter):
     )
     entity_type: AttachmentEntityType
     entity_id: UUID
+    category: AttachmentCategory | None = None
+
+
+class AttachmentUpdate(BaseModel):
+    category: AttachmentCategory | None
 
 
 class AttachmentResponse(BaseModel):
@@ -28,6 +33,10 @@ class AttachmentResponse(BaseModel):
     original_filename: str
     content_type: str
     size_bytes: int
+    category: AttachmentCategory | None
+    image_width: int | None
+    image_height: int | None
+    thumbnail_url: str | None = None
     created_by: UUID | None
     created_at: datetime
     updated_at: datetime

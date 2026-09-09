@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func, text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, desc, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -22,6 +22,13 @@ class AuditLog(UUIDPrimaryKeyMixin, TenantScopedMixin, Base):
         Index("ix_audit_logs_tenant_id_action", "tenant_id", "action"),
         Index("ix_audit_logs_tenant_id_module", "tenant_id", "module"),
         Index("ix_audit_logs_tenant_id_user_id", "tenant_id", "user_id"),
+        Index(
+            "ix_audit_logs_tenant_entity",
+            "tenant_id",
+            "entity_type",
+            "entity_id",
+            desc("created_at"),
+        ),
     )
 
     user_id: Mapped[UUID | None] = mapped_column(

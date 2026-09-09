@@ -138,6 +138,22 @@
               "format": "uuid",
               "title": "Entity Id"
             }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AttachmentCategory"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
           }
         ],
         "responses": {
@@ -239,6 +255,62 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_AttachmentDetailResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Attachments"
+        ],
+        "summary": "Update Attachment",
+        "operationId": "update_attachment_api_v1_attachments__attachment_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Attachment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachmentUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AttachmentResponse_"
                 }
               }
             }
@@ -411,6 +483,22 @@
         ],
         "title": "ApiResponse[list[AttachmentResponse]]"
       },
+      "AttachmentCategory": {
+        "type": "string",
+        "enum": [
+          "QC_PHOTO",
+          "TEST_CERTIFICATE",
+          "LOADING_PHOTO",
+          "SEAL_PHOTO",
+          "BL_DOCUMENT",
+          "CUSTOMS_DOC",
+          "CUSTOMER_PO",
+          "SUPPLIER_INVOICE",
+          "TRADE_LICENCE",
+          "OTHER"
+        ],
+        "title": "AttachmentCategory"
+      },
       "AttachmentDetailResponse": {
         "properties": {
           "id": {
@@ -442,6 +530,49 @@
           "size_bytes": {
             "type": "integer",
             "title": "Size Bytes"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttachmentCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "image_width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Width"
+          },
+          "image_height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Height"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
           },
           "created_by": {
             "anyOf": [
@@ -480,6 +611,9 @@
           "original_filename",
           "content_type",
           "size_bytes",
+          "category",
+          "image_width",
+          "image_height",
           "created_by",
           "created_at",
           "updated_at",
@@ -491,13 +625,23 @@
         "type": "string",
         "enum": [
           "CUSTOMER",
+          "SUPPLIER",
           "CONTACT",
           "PRODUCT",
           "QUOTATION",
           "SALES_ORDER",
           "PURCHASE_ORDER",
           "BRANCH",
-          "EMPLOYEE"
+          "EMPLOYEE",
+          "STOCK_TRANSFER",
+          "STOCK_ADJUSTMENT",
+          "PROFORMA_INVOICE",
+          "GOODS_RECEIPT",
+          "QUALITY_INSPECTION",
+          "PACKAGE",
+          "SHIPMENT",
+          "SALES_INVOICE",
+          "PURCHASE_INVOICE"
         ],
         "title": "AttachmentEntityType"
       },
@@ -533,6 +677,49 @@
             "type": "integer",
             "title": "Size Bytes"
           },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttachmentCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "image_width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Width"
+          },
+          "image_height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Height"
+          },
+          "thumbnail_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnail Url"
+          },
           "created_by": {
             "anyOf": [
               {
@@ -565,11 +752,33 @@
           "original_filename",
           "content_type",
           "size_bytes",
+          "category",
+          "image_width",
+          "image_height",
           "created_by",
           "created_at",
           "updated_at"
         ],
         "title": "AttachmentResponse"
+      },
+      "AttachmentUpdate": {
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttachmentCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "category"
+        ],
+        "title": "AttachmentUpdate"
       },
       "Body_create_attachment_api_v1_attachments_post": {
         "properties": {
@@ -585,6 +794,16 @@
             "type": "string",
             "contentMediaType": "application/octet-stream",
             "title": "File"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AttachmentCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

@@ -57,6 +57,7 @@ or TallyPrime.
 | Pytest + pytest-asyncio + httpx | Unit, API, and isolation tests |
 | Pre-commit | Local lint / format / type gates |
 | Structured JSON logs | `request_id`, `tenant_id`, `user_id`; CloudWatch in production |
+| Pillow | Bounded JPEG thumbnails (max 512px) for image attachments. FastAPI and SQLAlchemy cannot resize images; this is the only new Stage A dependency. |
 
 OpenAPI snapshots for review live under `docs/openapi/`, generated from the live FastAPI app.
 

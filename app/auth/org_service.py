@@ -258,6 +258,9 @@ class OrganizationService:
         branch = await self._require_branch(tenant_id, branch_id)
         return (await self._branch_responses(tenant_id, [branch]))[0]
 
+    async def employee_exists(self, tenant_id: UUID, employee_id: UUID) -> bool:
+        return await self.org.get_employee(tenant_id, employee_id) is not None
+
     async def update_branch(
         self,
         tenant_id: UUID,

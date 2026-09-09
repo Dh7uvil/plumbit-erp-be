@@ -52,6 +52,10 @@ _DOCUMENT_SEQUENCES: tuple[tuple[DocumentType, str], ...] = (
     (DocumentType.DEBIT_NOTE, "SDN"),
     (DocumentType.STOCK_TRANSFER, "STR"),
     (DocumentType.STOCK_ADJUSTMENT, "STA"),
+    (DocumentType.PROFORMA_INVOICE, "PFI"),
+    (DocumentType.QUALITY_INSPECTION, "QCR"),
+    (DocumentType.PACKAGE, "PKG"),
+    (DocumentType.SHIPMENT, "SHP"),
 )
 
 _SEQUENCE_PADDING = 6

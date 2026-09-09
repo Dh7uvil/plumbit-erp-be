@@ -39,7 +39,7 @@ app/
 ├── router.py                     mounts every module router under /api/v1
 ├── core/  db/  cli/
 ├── common/                       models/ schemas/ repositories/ services/ dependencies/
-│                                 utils/ attachments/
+│                                 utils/ attachments/ activity/ outbox/ registries/
 ├── auth/                         Identity: auth, users, roles, permissions, tenants/org-settings,
 │                                 branches, departments, employees (nested), audit-logs
 │                                 operational settings: allow_negative_stock, lock dates, reasons
@@ -73,8 +73,8 @@ concept only — they never appear in the URL, which is a flat set of hyphenated
 `/credit-notes`, `/debit-notes`, `/customer-payments`, `/supplier-payments`, `/delivery-notes`.
 
 Document-number prefixes: `QUO`, `SO`, `DN` (delivery notes), `INV`, `CN` (credit notes), `PO`,
-`GRN`, `BILL` (purchase invoices), `SDN` (debit notes). Prefer a unique prefix per type; URLs
-must be unique even if a prefix is shared.
+`GRN`, `BILL` (purchase invoices), `SDN` (debit notes), `STR`, `STA`, `PFI`, `QCR`, `PKG`, `SHP`.
+Prefer a unique prefix per type; URLs must be unique even if a prefix is shared.
 
 ## Detailed instruction files
 
