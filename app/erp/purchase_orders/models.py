@@ -185,6 +185,13 @@ class PurchaseOrderLine(TenantModel):
         nullable=True,
         index=True,
     )
+    supplier_product_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("supplier_products.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    supplier_sku: Mapped[str | None] = mapped_column(String(80), nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     quantity: Mapped[Decimal] = mapped_column(_QTY, nullable=False)
     unit_id: Mapped[UUID | None] = mapped_column(

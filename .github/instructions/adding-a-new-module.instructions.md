@@ -31,7 +31,7 @@ implemented vs planned so agents do not stub a slice without an API.
 | Module | Owns |
 | --- | --- |
 | `auth` (Identity) | **Implemented:** auth, users, roles, permissions, tenants/org-settings, branches, departments, employees (nested), audit-logs. Attachments in `app/common/attachments/` with `identity.attachment.*`. Tenant operational settings (`allow_negative_stock`, `lock_date`, `hard_lock_date`, `lock_reason`, `hard_lock_reason`) are first-class columns. |
-| `erp` | **Implemented:** currencies, exchange_rates, taxes, payment_terms, terms_templates, document_sequences, suppliers, quotations, period_lock, sales_orders, purchase_orders. **Planned:** sales_invoices, credit_notes, customer_payments, purchase_invoices, debit_notes, supplier_payments, accounting (chart of accounts, journals, AR, AP), logistics, einvoicing **status APIs** (on sales invoices and credit notes; inbound e-bills as draft purchase invoices). |
+| `erp` | **Implemented:** currencies, exchange_rates, taxes, payment_terms, terms_templates, document_sequences, suppliers, supplier_products, quotations, period_lock, sales_orders, purchase_orders. **Planned:** sales_invoices, credit_notes, customer_payments, purchase_invoices, debit_notes, supplier_payments, accounting (chart of accounts, journals, AR, AP), logistics, einvoicing **status APIs** (on sales invoices and credit notes; inbound e-bills as draft purchase invoices). |
 | `inventory_management` | **Implemented:** units, categories, products, price_lists, warehouses, stock, stock_transfers, stock_adjustments. **Planned:** goods_receipts (GRN), delivery_notes, sales_returns. |
 | `crm` | **Implemented:** customers, contacts. **Planned:** leads, opportunities, activities. |
 | `communication_service` | **Planned:** email, whatsapp, chat, meetings. |
@@ -80,6 +80,7 @@ plumbit-erp-be/
 │   ├── erp/
 │   │   ├── quotation/
 │   │   ├── suppliers/
+│   │   ├── supplier_products/
 │   │   ├── exchange_rates/
 │   │   ├── period_lock/
 │   │   ├── accounting/           taxes, payment_terms, terms_templates, document_sequences
@@ -131,11 +132,13 @@ app/crm/
 
 ```text
 app/erp/
-├── router.py                aggregates quotation, suppliers, sales, purchase_invoices, ...
+├── router.py                aggregates quotation, suppliers, supplier_products, sales, ...
 ├── quotation/
 │   ├── router.py service.py repository.py schemas.py models.py dependencies.py
 ├── suppliers/
 │   └── router.py service.py schemas.py dependencies.py
+├── supplier_products/
+│   └── router.py service.py repository.py schemas.py models.py dependencies.py
 └── sales_invoices/          planned — post() commits ledger; never calls an ASP SDK
 ```
 

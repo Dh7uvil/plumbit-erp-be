@@ -49,8 +49,8 @@ app/
 │                                 stock, stock_transfers, stock_adjustments
 │                                 planned: goods_receipts (GRN), delivery_notes, sales_returns
 ├── erp/                          implemented: currencies, exchange_rates, taxes, payment_terms,
-│                                 terms_templates, document_sequences, suppliers, quotations,
-│                                 period_lock, sales_orders, purchase_orders
+│                                 terms_templates, document_sequences, suppliers, supplier_products,
+│                                 quotations, period_lock, sales_orders, purchase_orders
 │                                 planned: sales_invoices, credit_notes,
 │                                 customer_payments, purchase_invoices,
 │                                 debit_notes, supplier_payments,

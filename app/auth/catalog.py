@@ -43,6 +43,7 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
     },
     ERP_MODULE: {
         "supplier": ("create", "read", "update", "delete"),
+        "supplier_product": ("create", "read", "update", "delete", "link"),
         "currency": ("create", "read", "update", "delete"),
         "exchange_rate": ("create", "read", "update", "delete"),
         "tax": ("create", "read", "update", "delete"),
@@ -150,6 +151,11 @@ SUPPLIER_CREATE = build_permission(ERP_MODULE, "supplier", "create")
 SUPPLIER_READ = build_permission(ERP_MODULE, "supplier", "read")
 SUPPLIER_UPDATE = build_permission(ERP_MODULE, "supplier", "update")
 SUPPLIER_DELETE = build_permission(ERP_MODULE, "supplier", "delete")
+SUPPLIER_PRODUCT_CREATE = build_permission(ERP_MODULE, "supplier_product", "create")
+SUPPLIER_PRODUCT_READ = build_permission(ERP_MODULE, "supplier_product", "read")
+SUPPLIER_PRODUCT_UPDATE = build_permission(ERP_MODULE, "supplier_product", "update")
+SUPPLIER_PRODUCT_DELETE = build_permission(ERP_MODULE, "supplier_product", "delete")
+SUPPLIER_PRODUCT_LINK = build_permission(ERP_MODULE, "supplier_product", "link")
 CURRENCY_CREATE = build_permission(ERP_MODULE, "currency", "create")
 CURRENCY_READ = build_permission(ERP_MODULE, "currency", "read")
 CURRENCY_UPDATE = build_permission(ERP_MODULE, "currency", "update")

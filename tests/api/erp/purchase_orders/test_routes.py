@@ -225,3 +225,180 @@ async def test_purchase_order_tenant_isolation(client: AsyncClient) -> None:
     listed = await client.get("/api/v1/purchase-orders", headers=headers_b)
     assert listed.status_code == 200
     assert all(item["id"] != order_id for item in listed.json()["data"])
+
+
+async def _create_catalog(
+    client: AsyncClient,
+    headers: dict[str, str],
+    *,
+    supplier_id: str,
+    supplier_sku: str,
+    product_id: str | None = None,
+    price: str | None = None,
+    currency_id: str | None = None,
+    item_name: str = "Vendor SKU",
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "supplier_id": supplier_id,
+        "supplier_sku": supplier_sku,
+        "supplier_item_name": item_name,
+    }
+    if product_id is not None:
+        payload["product_id"] = product_id
+    if price is not None:
+        payload["price"] = price
+    if currency_id is not None:
+        payload["currency_id"] = currency_id
+    created = await client.post("/api/v1/supplier-products", headers=headers, json=payload)
+    assert created.status_code == 201, created.text
+    return created.json()["data"]
+
+
+@pytest.mark.asyncio
+async def test_catalog_line_snapshot_and_rate(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded_ids(client, headers)
+    supplier_id = await _create_supplier(client, headers)
+    product_id = await _create_product(client, headers, ids, purchase_rate="80.0000")
+    catalog = await _create_catalog(
+        client,
+        headers,
+        supplier_id=supplier_id,
+        supplier_sku="789",
+        product_id=product_id,
+        price="55.0000",
+        item_name="Supplier packing name",
+    )
+    created = await client.post(
+        "/api/v1/purchase-orders",
+        headers=headers,
+        json={
+            "supplier_id": supplier_id,
+            "lines": [{"supplier_product_id": catalog["id"], "quantity": "2"}],
+        },
+    )
+    assert created.status_code == 201, created.text
+    line = created.json()["data"]["lines"][0]
+    assert line["supplier_product_id"] == catalog["id"]
+    assert line["supplier_sku"] == "789"
+    assert line["product_id"] == product_id
+    assert line["description"] == "Supplier packing name"
+    assert Decimal(line["rate"]) == Decimal("55.0000")
+
+
+@pytest.mark.asyncio
+async def test_cross_supplier_catalog_row_is_rejected(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded_ids(client, headers)
+    supplier_a = await _create_supplier(client, headers)
+    supplier_b = await _create_supplier(client, headers)
+    product_id = await _create_product(client, headers, ids)
+    catalog = await _create_catalog(
+        client,
+        headers,
+        supplier_id=supplier_b,
+        supplier_sku="OTHER",
+        product_id=product_id,
+    )
+    created = await client.post(
+        "/api/v1/purchase-orders",
+        headers=headers,
+        json={
+            "supplier_id": supplier_a,
+            "lines": [{"supplier_product_id": catalog["id"], "quantity": "1"}],
+        },
+    )
+    assert created.status_code == 422, created.text
+    assert created.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert created.json()["error"]["details"]["field"] == "supplier_product_id"
+
+
+@pytest.mark.asyncio
+async def test_currency_mismatch_falls_back_to_purchase_rate(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded_ids(client, headers)
+    currencies = await client.get(
+        "/api/v1/currencies",
+        headers=headers,
+        params={"search": "USD", "page_size": 100},
+    )
+    by_code = {item["code"]: item["id"] for item in currencies.json()["data"]}
+    assert "USD" in by_code
+    supplier_id = await _create_supplier(client, headers)
+    product_id = await _create_product(client, headers, ids, purchase_rate="80.0000")
+    catalog = await _create_catalog(
+        client,
+        headers,
+        supplier_id=supplier_id,
+        supplier_sku="USD-SKU",
+        product_id=product_id,
+        price="999.0000",
+        currency_id=by_code["USD"],
+    )
+    created = await client.post(
+        "/api/v1/purchase-orders",
+        headers=headers,
+        json={
+            "supplier_id": supplier_id,
+            "lines": [{"supplier_product_id": catalog["id"], "quantity": "1"}],
+        },
+    )
+    assert created.status_code == 201, created.text
+    line = created.json()["data"]["lines"][0]
+    assert Decimal(line["rate"]) == Decimal("80.0000")
+    assert line["supplier_sku"] == "USD-SKU"
+
+
+@pytest.mark.asyncio
+async def test_clone_preserves_supplier_sku_and_catalog_edit_does_not_mutate_issued(
+    client: AsyncClient,
+) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded_ids(client, headers)
+    supplier_id = await _create_supplier(client, headers)
+    product_id = await _create_product(client, headers, ids)
+    catalog = await _create_catalog(
+        client,
+        headers,
+        supplier_id=supplier_id,
+        supplier_sku="SNAP",
+        product_id=product_id,
+        price="40.0000",
+    )
+    created = await client.post(
+        "/api/v1/purchase-orders",
+        headers=headers,
+        json={
+            "supplier_id": supplier_id,
+            "lines": [{"supplier_product_id": catalog["id"], "quantity": "1"}],
+        },
+    )
+    assert created.status_code == 201, created.text
+    order = created.json()["data"]
+    issued = await client.post(
+        f"/api/v1/purchase-orders/{order['id']}/issue",
+        headers=_if_match(headers, order["version"]),
+    )
+    assert issued.status_code == 200, issued.text
+    cloned = await client.post(
+        f"/api/v1/purchase-orders/{order['id']}/clone",
+        headers=headers,
+    )
+    assert cloned.status_code == 200, cloned.text
+    assert cloned.json()["data"]["lines"][0]["supplier_sku"] == "SNAP"
+    assert cloned.json()["data"]["lines"][0]["supplier_product_id"] == catalog["id"]
+    patched = await client.patch(
+        f"/api/v1/supplier-products/{catalog['id']}",
+        headers=headers,
+        json={"supplier_sku": "CHANGED", "price": "1.0000"},
+    )
+    assert patched.status_code == 200, patched.text
+    fetched = await client.get(f"/api/v1/purchase-orders/{order['id']}", headers=headers)
+    assert fetched.status_code == 200, fetched.text
+    line = fetched.json()["data"]["lines"][0]
+    assert line["supplier_sku"] == "SNAP"
+    assert Decimal(line["rate"]) == Decimal("40.0000")

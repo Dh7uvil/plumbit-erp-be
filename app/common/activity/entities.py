@@ -16,6 +16,7 @@ from app.auth.catalog import (
     SALES_ORDER_READ,
     STOCK_ADJUSTMENT_READ,
     STOCK_TRANSFER_READ,
+    SUPPLIER_PRODUCT_READ,
     SUPPLIER_READ,
 )
 
@@ -156,6 +157,24 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         entity_type="supplier",
         read_permission=SUPPLIER_READ,
         changed_fields=_PARTY_FIELDS,
+    ),
+    "supplier_product": ActivityEntitySpec(
+        module=ERP_MODULE,
+        entity_type="supplier_product",
+        read_permission=SUPPLIER_PRODUCT_READ,
+        changed_fields=frozenset(
+            {
+                "supplier",
+                "product",
+                "supplier_sku",
+                "supplier_item_name",
+                "price",
+                "currency",
+                "is_preferred",
+                "is_preferred_supplier",
+                "is_active",
+            }
+        ),
     ),
     "product": ActivityEntitySpec(
         module=INVENTORY_MODULE,
