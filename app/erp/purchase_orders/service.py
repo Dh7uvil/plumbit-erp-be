@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import builtins
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 from typing import cast
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
     ERP_MODULE,
+    GOODS_RECEIPT_CREATE,
     PURCHASE_ORDER_APPROVE,
     PURCHASE_ORDER_CLOSE,
     PURCHASE_ORDER_CREATE,
@@ -26,7 +27,7 @@ from app.common.idempotency.service import IdempotencyService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
-from app.common.utils.currency import quantize_money
+from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
     compute_header_totals,
@@ -40,6 +41,7 @@ from app.core.enums import (
     BillingStatus,
     DiscountType,
     DocumentType,
+    ItemType,
     PlaceOfSupply,
     PurchaseOrderStatus,
     ReceiptStatus,
@@ -86,6 +88,7 @@ from app.erp.purchase_orders.workflow import assert_editable, next_status, trans
 from app.erp.supplier_products.service import SupplierProductService
 from app.erp.suppliers.service import SupplierService
 from app.inventory_management.products.service import ProductService
+from app.inventory_management.stock.service import StockService
 from app.inventory_management.units.service import UnitService
 from app.inventory_management.warehouses.service import WarehouseService
 
@@ -119,6 +122,7 @@ class PurchaseOrderService:
         self.products = ProductService(session)
         self.units = UnitService(session)
         self.warehouses = WarehouseService(session)
+        self.stock = StockService(session)
         self.taxes = TaxService(session)
         self.payment_terms = PaymentTermService(session)
         self.terms = TermsTemplateService(session)
@@ -360,6 +364,7 @@ class PurchaseOrderService:
             row.status = target.value
             row.issued_at = utcnow()
             row.issued_by = actor_user_id
+            await self._apply_incoming_on_issue(tenant_id, row)
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
@@ -771,6 +776,8 @@ class PurchaseOrderService:
             self._assert_version(row, expected_version)
             if action == "cancel":
                 self._assert_cancellable(row, current)
+                if current == PurchaseOrderStatus.ISSUED:
+                    await self._reverse_incoming_on_cancel(tenant_id, row)
             target = next_status(current, action)
             row.status = target.value
             row.version += 1
@@ -804,6 +811,109 @@ class PurchaseOrderService:
             raise InvalidStatusTransitionError(
                 "An issued purchase order cannot be cancelled after receipt or billing has started"
             )
+
+    async def apply_line_receipts(
+        self,
+        tenant_id: UUID,
+        purchase_order_id: UUID,
+        receipts: Mapping[UUID, Decimal],
+    ) -> None:
+        """Caller owns the transaction. qty may be negative to reverse a GRN."""
+
+        row = await self._require(tenant_id, purchase_order_id, for_update=True)
+        by_id = {line.id: line for line in row.lines}
+        for line_id, qty in receipts.items():
+            line = by_id.get(line_id)
+            if line is None:
+                raise ValidationError("Purchase order line not found on this order")
+            line.qty_received = quantize_quantity(line.qty_received + qty)
+            if line.qty_received < _ZERO:
+                raise ValidationError("Received quantity cannot be negative")
+        self._refresh_receipt_status(row)
+        await self.session.flush()
+
+    async def outstanding_by_line(
+        self, tenant_id: UUID, purchase_order_id: UUID
+    ) -> dict[UUID, Decimal]:
+        row = await self._require(tenant_id, purchase_order_id)
+        return {line.id: quantize_quantity(line.quantity - line.qty_received) for line in row.lines}
+
+    async def line_qty_billed_total(self, tenant_id: UUID, purchase_order_id: UUID) -> Decimal:
+        row = await self._require(tenant_id, purchase_order_id)
+        return sum((line.qty_billed for line in row.lines), _ZERO)
+
+    def _refresh_receipt_status(self, row: PurchaseOrder) -> None:
+        if not row.lines:
+            row.receipt_status = ReceiptStatus.NOT_RECEIVED.value
+            return
+        states: list[str] = []
+        for line in row.lines:
+            if line.qty_received <= _ZERO:
+                states.append("none")
+            elif line.qty_received >= line.quantity:
+                states.append("full")
+            else:
+                states.append("partial")
+        if all(item == "none" for item in states):
+            row.receipt_status = ReceiptStatus.NOT_RECEIVED.value
+        elif all(item == "full" for item in states):
+            row.receipt_status = ReceiptStatus.RECEIVED.value
+        else:
+            row.receipt_status = ReceiptStatus.PARTIALLY_RECEIVED.value
+
+    async def _tracked_outstanding(
+        self, tenant_id: UUID, row: PurchaseOrder
+    ) -> list[tuple[PurchaseOrderLine, Decimal]]:
+        tracked: list[tuple[PurchaseOrderLine, Decimal]] = []
+        for line in row.lines:
+            if line.product_id is None:
+                continue
+            product = await self.products.get(tenant_id, line.product_id)
+            if product.item_type == ItemType.SERVICE or not product.track_inventory:
+                continue
+            outstanding = quantize_quantity(line.quantity - line.qty_received)
+            if outstanding > _ZERO:
+                tracked.append((line, outstanding))
+        return tracked
+
+    async def _apply_incoming_on_issue(self, tenant_id: UUID, row: PurchaseOrder) -> None:
+        tracked = await self._tracked_outstanding(tenant_id, row)
+        if not tracked:
+            return
+        warehouse_id = row.warehouse_id
+        if warehouse_id is None:
+            default_warehouse = await self.warehouses.get_default(tenant_id)
+            if default_warehouse is None:
+                raise ValidationError(
+                    "A warehouse is required to issue a purchase order with tracked items"
+                )
+            row.warehouse_id = default_warehouse.id
+            warehouse_id = default_warehouse.id
+            if not row.deliver_to_snapshot:
+                row.deliver_to_snapshot = format_address_snapshot(default_warehouse.address)
+        for line, outstanding in tracked:
+            locked = await self.stock.lock_balance(
+                tenant_id,
+                warehouse_id=warehouse_id,
+                product_id=line.product_id,
+                document_date=row.order_date,
+                assert_period=False,
+            )
+            await self.stock.adjust_incoming_locked(locked, qty=outstanding)
+
+    async def _reverse_incoming_on_cancel(self, tenant_id: UUID, row: PurchaseOrder) -> None:
+        tracked = await self._tracked_outstanding(tenant_id, row)
+        if not tracked or row.warehouse_id is None:
+            return
+        for line, outstanding in tracked:
+            locked = await self.stock.lock_balance(
+                tenant_id,
+                warehouse_id=row.warehouse_id,
+                product_id=line.product_id,
+                document_date=row.order_date,
+                assert_period=False,
+            )
+            await self.stock.adjust_incoming_locked(locked, qty=-outstanding)
 
     async def _resolve_warehouse(
         self, tenant_id: UUID, warehouse_id: UUID | None
@@ -1065,7 +1175,11 @@ class PurchaseOrderService:
         )
 
     def _available_actions(
-        self, status: PurchaseOrderStatus, *, requires_approval: bool
+        self,
+        row: PurchaseOrder,
+        status: PurchaseOrderStatus,
+        *,
+        requires_approval: bool,
     ) -> builtins.list[str]:
         actions: builtins.list[str] = []
         for action in transition_actions(status):
@@ -1080,6 +1194,12 @@ class PurchaseOrderService:
             self.actor_permissions, PURCHASE_ORDER_DELETE
         ):
             actions.append("delete")
+        if (
+            status == PurchaseOrderStatus.ISSUED
+            and row.receipt_status != ReceiptStatus.RECEIVED.value
+            and has_permission(self.actor_permissions, GOODS_RECEIPT_CREATE)
+        ):
+            actions.append("create_goods_receipt")
         return actions
 
     def _to_response(self, row: PurchaseOrder, *, requires_approval: bool) -> PurchaseOrderResponse:
@@ -1130,7 +1250,9 @@ class PurchaseOrderService:
             cancelled_by=row.cancelled_by,
             cancel_reason=row.cancel_reason,
             source_sales_order_id=row.source_sales_order_id,
-            available_actions=self._available_actions(status, requires_approval=requires_approval),
+            available_actions=self._available_actions(
+                row, status, requires_approval=requires_approval
+            ),
             lines=[PurchaseOrderLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,

@@ -41,6 +41,21 @@ def test_regional_form_payload_is_valid() -> None:
     assert payload.allow_negative_stock is False
 
 
+def test_inbound_settings_payload_is_valid() -> None:
+    payload = TenantCurrentUpdate.model_validate(
+        {
+            "costing_method": "FIFO",
+            "allow_over_receipt": True,
+            "over_receipt_tolerance_pct": "5.00",
+            "qc_required_default": True,
+        }
+    )
+    assert payload.costing_method is not None
+    assert payload.costing_method.value == "FIFO"
+    assert payload.allow_over_receipt is True
+    assert payload.qc_required_default is True
+
+
 def test_invalid_contact_email_is_rejected() -> None:
     try:
         TenantCurrentUpdate.model_validate({"contact_email": "info"})

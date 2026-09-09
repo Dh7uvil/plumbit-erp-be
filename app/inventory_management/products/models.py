@@ -66,3 +66,9 @@ class Product(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
         default=False,
         server_default=text("false"),
     )
+    requires_qc: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )

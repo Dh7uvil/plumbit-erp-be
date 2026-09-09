@@ -22,6 +22,7 @@ _BALANCE_SORT = frozenset(
         "qty_on_hand",
         "qty_reserved",
         "qty_available",
+        "qty_quality_hold",
         "last_movement_at",
     }
 )
@@ -43,7 +44,7 @@ class StockBalanceRepository:
         return column
 
     def _available_expr(self) -> ColumnElement[Decimal]:
-        return StockBalance.qty_on_hand - StockBalance.qty_reserved
+        return StockBalance.qty_on_hand - StockBalance.qty_reserved - StockBalance.qty_quality_hold
 
     def _criteria(
         self,
@@ -156,6 +157,7 @@ class StockBalanceRepository:
                     StockBalance.qty_incoming != _ZERO,
                     StockBalance.qty_outgoing != _ZERO,
                     StockBalance.qty_in_transit != _ZERO,
+                    StockBalance.qty_quality_hold != _ZERO,
                 ),
             )
             .limit(1)
@@ -166,7 +168,7 @@ class StockBalanceRepository:
     def below_reorder_clause(self) -> ColumnElement[bool]:
         return sql.and_(
             StockBalance.reorder_level.is_not(None),
-            StockBalance.qty_on_hand < StockBalance.reorder_level,
+            self._available_expr() < StockBalance.reorder_level,
         )
 
     def negative_only_clause(self) -> ColumnElement[bool]:

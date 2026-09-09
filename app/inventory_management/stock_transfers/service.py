@@ -283,7 +283,7 @@ class StockTransferService:
                 line.qty_source_before = source.row.qty_on_hand
                 line.qty_dest_before = dest.row.qty_on_hand
                 line.qty_transferred = line.qty
-                await self.stock.apply_locked(
+                out_result = await self.stock.apply_locked(
                     tenant_id,
                     source,
                     qty=-line.qty,
@@ -308,6 +308,7 @@ class StockTransferService:
                     notes=line.notes or row.notes or row.reason,
                     occurred_at=occurred_at,
                     unit_id=line.unit_id,
+                    inbound_layers=out_result.consumptions,
                 )
             row.status = target.value
             row.is_posted = True

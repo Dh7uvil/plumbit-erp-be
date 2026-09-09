@@ -304,6 +304,7 @@ class StockAdjustmentService:
                         notes=line.notes or row.notes or reason.value,
                         occurred_at=occurred_at,
                         unit_id=line.unit_id,
+                        unit_cost=line.unit_cost,
                     )
             row.status = target.value
             row.is_posted = True
@@ -385,6 +386,7 @@ class StockAdjustmentService:
                     if source.reason != StockAdjustmentReason.COUNT.value
                     else None,
                     qty_counted=line.qty_counted,
+                    unit_cost=line.unit_cost,
                     notes=line.notes,
                 )
                 for line in source.lines
@@ -453,6 +455,7 @@ class StockAdjustmentService:
                     "qty_counted": qty_counted,
                     "qty_booked": None,
                     "qty_delta": qty_delta,
+                    "unit_cost": line.unit_cost,
                     "notes": line.notes,
                 }
             )
@@ -477,6 +480,7 @@ class StockAdjustmentService:
                     unit_id=line.unit_id,
                     qty_delta=line.qty_delta,
                     qty_counted=line.qty_counted,
+                    unit_cost=line.unit_cost,
                     notes=line.notes,
                 )
                 for line in existing.lines

@@ -1,6 +1,7 @@
 """Access-management ORM models."""
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -10,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -52,6 +54,28 @@ class Tenant(TimestampedModel):
         server_default=text("'ACTIVE'"),
     )
     allow_negative_stock: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    costing_method: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="FIFO",
+        server_default=text("'FIFO'"),
+    )
+    allow_over_receipt: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    over_receipt_tolerance_pct: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2),
+        nullable=True,
+    )
+    qc_required_default: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import date
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-
-import logging
 
 from app.auth.catalog import (
     BRANCH_READ,
@@ -19,12 +18,16 @@ from app.auth.catalog import (
     CUSTOMER_UPDATE,
     EMPLOYEE_READ,
     EMPLOYEE_UPDATE,
+    GOODS_RECEIPT_READ,
+    GOODS_RECEIPT_UPDATE,
     PRODUCT_READ,
     PRODUCT_UPDATE,
     PROFORMA_INVOICE_READ,
     PROFORMA_INVOICE_UPDATE,
     PURCHASE_ORDER_READ,
     PURCHASE_ORDER_UPDATE,
+    QUALITY_INSPECTION_READ,
+    QUALITY_INSPECTION_UPDATE,
     QUOTATION_READ,
     QUOTATION_UPDATE,
     SALES_ORDER_READ,
@@ -66,6 +69,7 @@ def wire_platform() -> None:
 def _register_unposted_probes() -> None:
     register_unposted("stock_adjustment", _probe_unposted_adjustments)
     register_unposted("stock_transfer", _probe_unposted_transfers)
+    register_unposted("goods_receipt", _probe_unposted_goods_receipts)
 
 
 async def _probe_unposted_adjustments(
@@ -113,6 +117,33 @@ async def _probe_unposted_transfers(
         UnpostedDocument(
             id=row.id,
             document_type="stock_transfer",
+            document_number=row.document_number,
+            document_date=row.document_date,
+            status=str(row.status),
+        )
+        for row in rows
+    ]
+    return documents, total
+
+
+async def _probe_unposted_goods_receipts(
+    session: AsyncSession,
+    tenant_id: UUID,
+    as_of: date,
+    page: PageParams,
+) -> tuple[list[UnpostedDocument], int]:
+    from app.inventory_management.goods_receipts.service import GoodsReceiptService
+
+    rows, total = await GoodsReceiptService(session).list(
+        tenant_id,
+        page=page,
+        status=StockDocumentStatus.DRAFT.value,
+        document_date_to=as_of,
+    )
+    documents = [
+        UnpostedDocument(
+            id=row.id,
+            document_type="goods_receipt",
             document_number=row.document_number,
             document_date=row.document_date,
             status=str(row.status),
@@ -219,6 +250,22 @@ def _register_attachment_entities() -> None:
             _probe_via_get(_proforma_invoice_get),
         )
     )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.GOODS_RECEIPT,
+            GOODS_RECEIPT_READ,
+            GOODS_RECEIPT_UPDATE,
+            _probe_via_get(_goods_receipt_get),
+        )
+    )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.QUALITY_INSPECTION,
+            QUALITY_INSPECTION_READ,
+            QUALITY_INSPECTION_UPDATE,
+            _probe_via_get(_quality_inspection_get),
+        )
+    )
 
 
 def _probe_via_get(
@@ -321,6 +368,20 @@ async def _proforma_invoice_get(session: AsyncSession, tenant_id: UUID, entity_i
     return await ProformaInvoiceService(session).get(tenant_id, entity_id)
 
 
+async def _goods_receipt_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.inventory_management.goods_receipts.service import GoodsReceiptService
+
+    return await GoodsReceiptService(session).get(tenant_id, entity_id)
+
+
+async def _quality_inspection_get(
+    session: AsyncSession, tenant_id: UUID, entity_id: UUID
+) -> object:
+    from app.inventory_management.quality_inspections.service import QualityInspectionService
+
+    return await QualityInspectionService(session).get(tenant_id, entity_id)
+
+
 def _register_outbox_handlers() -> None:
     # Phases 34 and 35 replace these logging no-ops with real handlers.
     from app.common.outbox.handlers import register as register_outbox
@@ -330,6 +391,9 @@ def _register_outbox_handlers() -> None:
         "erp.proforma_invoice.sent",
         "erp.proforma_invoice.confirmed",
         "erp.sales_order.acknowledged",
+        "inventory.goods_receipt.posted",
+        "inventory.goods_receipt.cancelled",
+        "inventory.quality_inspection.approved",
     ):
         register_outbox(event_type, _log_outbox_event)
 

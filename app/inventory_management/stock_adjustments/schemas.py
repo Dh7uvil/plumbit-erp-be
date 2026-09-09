@@ -39,6 +39,7 @@ class StockAdjustmentLineInput(BaseModel):
     unit_id: UUID | None = None
     qty_delta: Decimal | None = Field(default=None, max_digits=18, decimal_places=6)
     qty_counted: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
+    unit_cost: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     notes: str | None = None
 
     @field_validator("notes")
@@ -60,6 +61,7 @@ class StockAdjustmentLineResponse(BaseModel):
     qty_counted: Decimal | None
     qty_booked: Decimal | None
     qty_delta: Decimal | None
+    unit_cost: Decimal | None
     notes: str | None
 
 

@@ -10,7 +10,7 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 
 from app.db.session import async_session_factory
-from app.inventory_management.stock.models import StockMovement
+from app.inventory_management.stock.models import StockBalance, StockMovement
 from tests.conftest import login_headers, provision_admin
 
 
@@ -77,6 +77,8 @@ async def _create_product(
     *,
     purchase_rate: str = "80.0000",
     purchase_description: str = "Supplier copper pipe",
+    track_inventory: bool = False,
+    requires_qc: bool = False,
 ) -> str:
     suffix = uuid4().hex[:8]
     response = await client.post(
@@ -91,6 +93,8 @@ async def _create_product(
             "selling_rate": "100.0000",
             "purchase_rate": purchase_rate,
             "tax_id": ids["standard_tax"],
+            "track_inventory": track_inventory,
+            "requires_qc": requires_qc,
         },
     )
     assert response.status_code == 201, response.text
@@ -177,6 +181,7 @@ async def test_issue_writes_no_stock_movements(client: AsyncClient) -> None:
     )
     assert issued.status_code == 200, issued.text
     assert issued.json()["data"]["status"] == "ISSUED"
+    assert "create_goods_receipt" in issued.json()["data"]["available_actions"]
 
     async with async_session_factory() as session:
         count = await session.scalar(
@@ -184,7 +189,13 @@ async def test_issue_writes_no_stock_movements(client: AsyncClient) -> None:
             .select_from(StockMovement)
             .where(StockMovement.tenant_id == UUID(tenant_id))
         )
+        incoming = await session.scalar(
+            select(func.coalesce(func.sum(StockBalance.qty_incoming), 0)).where(
+                StockBalance.tenant_id == UUID(tenant_id)
+            )
+        )
     assert int(count or 0) == 0
+    assert Decimal(incoming or 0) == Decimal("0")
 
 
 @pytest.mark.asyncio
@@ -402,3 +413,34 @@ async def test_clone_preserves_supplier_sku_and_catalog_edit_does_not_mutate_iss
     line = fetched.json()["data"]["lines"][0]
     assert line["supplier_sku"] == "SNAP"
     assert Decimal(line["rate"]) == Decimal("40.0000")
+
+
+@pytest.mark.asyncio
+async def test_issue_tracked_product_increments_qty_incoming(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded_ids(client, headers)
+    supplier_id = await _create_supplier(client, headers)
+    product_id = await _create_product(client, headers, ids, track_inventory=True)
+    created = await _create_order(
+        client, headers, supplier_id=supplier_id, product_id=product_id, quantity="4"
+    )
+    order = created["body"]["data"]
+    issued = await client.post(
+        f"/api/v1/purchase-orders/{order['id']}/issue",
+        headers=_if_match(headers, order["version"]),
+    )
+    assert issued.status_code == 200, issued.text
+    stock = await client.get(f"/api/v1/stock?product_id={product_id}", headers=headers)
+    assert stock.status_code == 200, stock.text
+    assert Decimal(stock.json()["data"][0]["qty_incoming"]) == Decimal("4")
+    assert Decimal(stock.json()["data"][0]["qty_on_hand"]) == Decimal("0")
+
+    cancelled = await client.post(
+        f"/api/v1/purchase-orders/{order['id']}/cancel",
+        headers=_if_match(headers, issued.json()["data"]["version"]),
+        json={"reason": "supplier delayed"},
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    stock_after = await client.get(f"/api/v1/stock?product_id={product_id}", headers=headers)
+    assert Decimal(stock_after.json()["data"][0]["qty_incoming"]) == Decimal("0")

@@ -542,6 +542,54 @@
           }
         }
       }
+    },
+    "/api/v1/stock/{balance_id}/layers": {
+      "get": {
+        "tags": [
+          "Stock"
+        ],
+        "summary": "List Stock Layers",
+        "operationId": "list_stock_layers_api_v1_stock__balance_id__layers_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "balance_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Balance Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_StockCostLayerResponse__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -618,6 +666,44 @@
         ],
         "title": "ApiResponse[list[StockBalanceResponse]]"
       },
+      "ApiResponse_list_StockCostLayerResponse__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/StockCostLayerResponse"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[list[StockCostLayerResponse]]"
+      },
       "ApiResponse_list_StockMovementResponse__": {
         "properties": {
           "success": {
@@ -670,211 +756,25 @@
         "title": "HTTPValidationError"
       },
       "StockBalanceResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "tenant_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Tenant Id"
-          },
-          "warehouse_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Warehouse Id"
-          },
-          "warehouse_code": {
-            "type": "string",
-            "title": "Warehouse Code"
-          },
-          "warehouse_name": {
-            "type": "string",
-            "title": "Warehouse Name"
-          },
-          "product_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Product Id"
-          },
-          "sku": {
-            "type": "string",
-            "title": "Sku"
-          },
-          "product_name": {
-            "type": "string",
-            "title": "Product Name"
-          },
-          "qty_on_hand": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Qty On Hand"
-          },
-          "qty_reserved": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Qty Reserved"
-          },
-          "qty_available": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Qty Available"
-          },
-          "qty_incoming": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Qty Incoming"
-          },
-          "qty_outgoing": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Qty Outgoing"
-          },
-          "qty_in_transit": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Qty In Transit"
-          },
-          "reorder_level": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reorder Level"
-          },
-          "reorder_qty": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reorder Qty"
-          },
-          "last_movement_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Movement At"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "tenant_id",
-          "warehouse_id",
-          "warehouse_code",
-          "warehouse_name",
-          "product_id",
-          "sku",
-          "product_name",
-          "qty_on_hand",
-          "qty_reserved",
-          "qty_available",
-          "qty_incoming",
-          "qty_outgoing",
-          "qty_in_transit",
-          "reorder_level",
-          "reorder_qty",
-          "last_movement_at",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "StockBalanceResponse"
+        "additionalProperties": true,
+        "type": "object"
       },
-      "StockMovementResponse": {
+      "StockCostLayerResponse": {
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid",
             "title": "Id"
           },
-          "tenant_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Tenant Id"
-          },
-          "movement_type": {
-            "$ref": "#/components/schemas/StockMovementType"
-          },
           "warehouse_id": {
             "type": "string",
             "format": "uuid",
             "title": "Warehouse Id"
           },
-          "warehouse_code": {
-            "type": "string",
-            "title": "Warehouse Code"
-          },
-          "warehouse_name": {
-            "type": "string",
-            "title": "Warehouse Name"
-          },
           "product_id": {
             "type": "string",
             "format": "uuid",
             "title": "Product Id"
-          },
-          "sku": {
-            "type": "string",
-            "title": "Sku"
-          },
-          "product_name": {
-            "type": "string",
-            "title": "Product Name"
-          },
-          "unit_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Id"
-          },
-          "qty": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Qty"
-          },
-          "qty_before": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Qty Before"
-          },
-          "qty_after": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Qty After"
           },
           "source_type": {
             "type": "string",
@@ -902,21 +802,33 @@
             "format": "date",
             "title": "Document Date"
           },
-          "occurred_at": {
+          "qty_received": {
             "type": "string",
-            "format": "date-time",
-            "title": "Occurred At"
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Received"
           },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
+          "qty_remaining": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Remaining"
+          },
+          "unit_cost": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Unit Cost"
+          },
+          "landed_unit_cost": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Landed Unit Cost"
+          },
+          "is_estimated": {
+            "type": "boolean",
+            "title": "Is Estimated"
+          },
+          "is_negative": {
+            "type": "boolean",
+            "title": "Is Negative"
           },
           "created_at": {
             "type": "string",
@@ -927,27 +839,25 @@
         "type": "object",
         "required": [
           "id",
-          "tenant_id",
-          "movement_type",
           "warehouse_id",
-          "warehouse_code",
-          "warehouse_name",
           "product_id",
-          "sku",
-          "product_name",
-          "unit_id",
-          "qty",
-          "qty_before",
-          "qty_after",
           "source_type",
           "source_id",
           "source_line_id",
           "document_date",
-          "occurred_at",
-          "notes",
+          "qty_received",
+          "qty_remaining",
+          "unit_cost",
+          "landed_unit_cost",
+          "is_estimated",
+          "is_negative",
           "created_at"
         ],
-        "title": "StockMovementResponse"
+        "title": "StockCostLayerResponse"
+      },
+      "StockMovementResponse": {
+        "additionalProperties": true,
+        "type": "object"
       },
       "StockMovementType": {
         "type": "string",
@@ -962,7 +872,9 @@
           "RETURN_OUT",
           "ADJUSTMENT",
           "DAMAGE",
-          "OPENING_STOCK"
+          "OPENING_STOCK",
+          "QC_HOLD",
+          "QC_RELEASE"
         ],
         "title": "StockMovementType"
       },

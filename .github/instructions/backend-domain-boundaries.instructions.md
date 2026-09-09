@@ -90,7 +90,9 @@ erp.einvoice.submit         erp.einvoice.read          erp.credit_note.create
 ```
 
 Do not invent `users.*` codes. The live catalog in `app/auth/catalog.py` is `identity.*` /
-`crm.*` / `inventory.*` / `erp.*`.
+`crm.*` / `inventory.*` / `erp.*`. Existing tenants get missing catalog rows with
+`uv run seed-permissions` (role grants are unchanged). Superadmin inherits the full catalog
+via `uv run grant-superadmin-permissions`.
 
 A role such as `Sales Manager` is a bundle of those permissions. Authorization is enforced at
 the API/service boundary using the shared permission dependency in `app/common/dependencies/` —
@@ -119,8 +121,9 @@ Identity is the Python package `app/auth/` — keep that name.
 auth (Identity)         implemented: auth, users, roles, permissions, tenants/org-settings,
                         branches, departments, employees (nested), audit-logs
                         (attachments live in app/common/attachments/ with identity.attachment.*)
-                        tenant operational settings: allow_negative_stock, lock_date,
-                        hard_lock_date, lock_reason, hard_lock_reason
+                        tenant operational settings: allow_negative_stock, costing_method,
+                        allow_over_receipt, over_receipt_tolerance_pct, qc_required_default,
+                        lock_date, hard_lock_date, lock_reason, hard_lock_reason
 
 erp                     implemented: currencies, exchange_rates, taxes, payment_terms,
                         terms_templates, document_sequences, suppliers, supplier_products,
@@ -134,8 +137,9 @@ erp                     implemented: currencies, exchange_rates, taxes, payment_
                         inbound e-bills as draft purchase invoices)
 
 inventory_management    implemented: units, categories, products, price_lists, warehouses,
-                        stock, stock_transfers, stock_adjustments
-                        planned: goods_receipts (GRN), delivery_notes, sales_returns
+                        stock, costing (internal FIFO ledger), stock_transfers,
+                        stock_adjustments, goods_receipts, quality_inspections
+                        planned: delivery_notes, sales_returns
 
 crm                     implemented: customers, contacts
                         planned: leads, opportunities, activities

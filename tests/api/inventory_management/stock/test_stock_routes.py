@@ -46,6 +46,8 @@ async def _create_product(
     track_inventory: bool = True,
     item_type: str = "PRODUCT",
     category_id: str | None = None,
+    purchase_rate: str | None = None,
+    requires_qc: bool | None = None,
 ) -> str:
     suffix = uuid4().hex[:8]
     payload: dict[str, object] = {
@@ -58,6 +60,10 @@ async def _create_product(
     }
     if category_id is not None:
         payload["category_id"] = category_id
+    if purchase_rate is not None:
+        payload["purchase_rate"] = purchase_rate
+    if requires_qc is not None:
+        payload["requires_qc"] = requires_qc
     response = await client.post(
         "/api/v1/products",
         headers=headers,
@@ -96,16 +102,27 @@ async def _create_adjustment(
     reason: str = "OPENING_STOCK",
     qty_delta: str | None = "10",
     qty_counted: str | None = None,
+    unit_cost: str | None = None,
+    document_date: str | None = None,
 ) -> dict[str, object]:
     line: dict[str, object] = {"product_id": product_id}
     if qty_delta is not None:
         line["qty_delta"] = qty_delta
     if qty_counted is not None:
         line["qty_counted"] = qty_counted
+    if unit_cost is not None:
+        line["unit_cost"] = unit_cost
+    payload: dict[str, object] = {
+        "warehouse_id": warehouse_id,
+        "reason": reason,
+        "lines": [line],
+    }
+    if document_date is not None:
+        payload["document_date"] = document_date
     response = await client.post(
         "/api/v1/stock-adjustments",
         headers=headers,
-        json={"warehouse_id": warehouse_id, "reason": reason, "lines": [line]},
+        json=payload,
     )
     return {"status_code": response.status_code, "body": response.json(), "text": response.text}
 
@@ -739,3 +756,237 @@ async def test_list_extra_filters(client: AsyncClient) -> None:
     )
     assert listed_transfers.status_code == 200, listed_transfers.text
     assert [row["id"] for row in listed_transfers.json()["data"]] == [transfer.json()["data"]["id"]]
+
+
+@pytest.mark.asyncio
+async def test_opening_adjustment_creates_fifo_layer(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded(client, headers)
+    product_id = await _create_product(client, headers, ids, purchase_rate="12.5000")
+    created = await _create_adjustment(
+        client,
+        headers,
+        warehouse_id=ids["main"],
+        product_id=product_id,
+        qty_delta="8",
+        unit_cost="12.5000",
+    )
+    doc = created["body"]["data"]
+    posted = await _post_document(
+        client, headers, f"/api/v1/stock-adjustments/{doc['id']}/post", doc["version"]
+    )
+    assert posted.status_code == 200, posted.text
+
+    stock = await client.get(f"/api/v1/stock?product_id={product_id}", headers=headers)
+    assert stock.status_code == 200, stock.text
+    row = stock.json()["data"][0]
+    assert Decimal(row["qty_on_hand"]) == Decimal("8")
+    assert Decimal(row["qty_quality_hold"]) == Decimal("0")
+    assert Decimal(row["unit_cost"]) == Decimal("12.5000")
+    assert Decimal(row["stock_value"]) == Decimal("100.0000")
+
+    layers = await client.get(f"/api/v1/stock/{row['id']}/layers", headers=headers)
+    assert layers.status_code == 200, layers.text
+    lots = layers.json()["data"]
+    assert len(lots) == 1
+    assert Decimal(lots[0]["qty_remaining"]) == Decimal("8")
+    assert Decimal(lots[0]["unit_cost"]) == Decimal("12.5000")
+    assert lots[0]["is_estimated"] is False
+
+    clerk = await _user_headers(client, headers, tenant_id, codes=("inventory.stock.read",))
+    hidden = await client.get(f"/api/v1/stock?product_id={product_id}", headers=clerk)
+    assert hidden.status_code == 200, hidden.text
+    assert "unit_cost" not in hidden.json()["data"][0]
+    assert "stock_value" not in hidden.json()["data"][0]
+    denied = await client.get(f"/api/v1/stock/{row['id']}/layers", headers=clerk)
+    assert denied.status_code == 403, denied.text
+
+
+@pytest.mark.asyncio
+async def test_fifo_consume_oldest_layer_first(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded(client, headers)
+    product_id = await _create_product(client, headers, ids)
+    first = await _create_adjustment(
+        client,
+        headers,
+        warehouse_id=ids["main"],
+        product_id=product_id,
+        qty_delta="5",
+        unit_cost="10.0000",
+        document_date="2026-01-01",
+    )
+    posted_first = await _post_document(
+        client,
+        headers,
+        f"/api/v1/stock-adjustments/{first['body']['data']['id']}/post",
+        first["body"]["data"]["version"],
+    )
+    assert posted_first.status_code == 200, posted_first.text
+    second = await _create_adjustment(
+        client,
+        headers,
+        warehouse_id=ids["main"],
+        product_id=product_id,
+        reason="FOUND",
+        qty_delta="5",
+        unit_cost="20.0000",
+        document_date="2026-02-01",
+    )
+    posted_second = await _post_document(
+        client,
+        headers,
+        f"/api/v1/stock-adjustments/{second['body']['data']['id']}/post",
+        second["body"]["data"]["version"],
+    )
+    assert posted_second.status_code == 200, posted_second.text
+
+    damage = await _create_adjustment(
+        client,
+        headers,
+        warehouse_id=ids["main"],
+        product_id=product_id,
+        reason="DAMAGE",
+        qty_delta="-6",
+    )
+    posted_damage = await _post_document(
+        client,
+        headers,
+        f"/api/v1/stock-adjustments/{damage['body']['data']['id']}/post",
+        damage["body"]["data"]["version"],
+    )
+    assert posted_damage.status_code == 200, posted_damage.text
+
+    stock = await client.get(f"/api/v1/stock?product_id={product_id}", headers=headers)
+    row = stock.json()["data"][0]
+    assert Decimal(row["qty_on_hand"]) == Decimal("4")
+    layers = await client.get(f"/api/v1/stock/{row['id']}/layers", headers=headers)
+    remaining = sorted(layers.json()["data"], key=lambda item: item["document_date"])
+    assert Decimal(remaining[0]["qty_remaining"]) == Decimal("0")
+    assert Decimal(remaining[0]["unit_cost"]) == Decimal("10.0000")
+    assert Decimal(remaining[1]["qty_remaining"]) == Decimal("4")
+    assert Decimal(remaining[1]["unit_cost"]) == Decimal("20.0000")
+    assert Decimal(row["stock_value"]) == Decimal("80.0000")
+
+
+@pytest.mark.asyncio
+async def test_transfer_preserves_consumed_layer_cost(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded(client, headers)
+    dest_id = await _create_warehouse(client, headers)
+    product_id = await _create_product(client, headers, ids)
+    opening = await _create_adjustment(
+        client,
+        headers,
+        warehouse_id=ids["main"],
+        product_id=product_id,
+        qty_delta="10",
+        unit_cost="15.0000",
+    )
+    posted_open = await _post_document(
+        client,
+        headers,
+        f"/api/v1/stock-adjustments/{opening['body']['data']['id']}/post",
+        opening["body"]["data"]["version"],
+    )
+    assert posted_open.status_code == 200, posted_open.text
+    transfer = await client.post(
+        "/api/v1/stock-transfers",
+        headers=headers,
+        json={
+            "from_warehouse_id": ids["main"],
+            "to_warehouse_id": dest_id,
+            "lines": [{"product_id": product_id, "qty": "10"}],
+        },
+    )
+    assert transfer.status_code == 201, transfer.text
+    doc = transfer.json()["data"]
+    posted = await _post_document(
+        client, headers, f"/api/v1/stock-transfers/{doc['id']}/post", doc["version"]
+    )
+    assert posted.status_code == 200, posted.text
+
+    dest_stock = await client.get(
+        f"/api/v1/stock?product_id={product_id}&warehouse_id={dest_id}",
+        headers=headers,
+    )
+    assert dest_stock.status_code == 200, dest_stock.text
+    dest_row = dest_stock.json()["data"][0]
+    assert Decimal(dest_row["qty_on_hand"]) == Decimal("10")
+    assert Decimal(dest_row["unit_cost"]) == Decimal("15.0000")
+    assert Decimal(dest_row["stock_value"]) == Decimal("150.0000")
+
+
+@pytest.mark.asyncio
+async def test_negative_stock_then_inbound_offsets_negative_layer(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded(client, headers)
+    toggled = await client.patch(
+        "/api/v1/tenants/current",
+        headers=headers,
+        json={"allow_negative_stock": True},
+    )
+    assert toggled.status_code == 200, toggled.text
+    product_id = await _create_product(client, headers, ids, purchase_rate="9.0000")
+    opening = await _create_adjustment(
+        client,
+        headers,
+        warehouse_id=ids["main"],
+        product_id=product_id,
+        qty_delta="2",
+        unit_cost="9.0000",
+    )
+    posted_open = await _post_document(
+        client,
+        headers,
+        f"/api/v1/stock-adjustments/{opening['body']['data']['id']}/post",
+        opening["body"]["data"]["version"],
+    )
+    assert posted_open.status_code == 200, posted_open.text
+    damage = await _create_adjustment(
+        client,
+        headers,
+        warehouse_id=ids["main"],
+        product_id=product_id,
+        reason="DAMAGE",
+        qty_delta="-5",
+    )
+    posted_damage = await _post_document(
+        client,
+        headers,
+        f"/api/v1/stock-adjustments/{damage['body']['data']['id']}/post",
+        damage["body"]["data"]["version"],
+    )
+    assert posted_damage.status_code == 200, posted_damage.text
+    stock = await client.get(f"/api/v1/stock?product_id={product_id}", headers=headers)
+    assert Decimal(stock.json()["data"][0]["qty_on_hand"]) == Decimal("-3")
+
+    inbound = await _create_adjustment(
+        client,
+        headers,
+        warehouse_id=ids["main"],
+        product_id=product_id,
+        reason="FOUND",
+        qty_delta="4",
+        unit_cost="11.0000",
+    )
+    posted_in = await _post_document(
+        client,
+        headers,
+        f"/api/v1/stock-adjustments/{inbound['body']['data']['id']}/post",
+        inbound["body"]["data"]["version"],
+    )
+    assert posted_in.status_code == 200, posted_in.text
+    stock_after = await client.get(f"/api/v1/stock?product_id={product_id}", headers=headers)
+    row = stock_after.json()["data"][0]
+    assert Decimal(row["qty_on_hand"]) == Decimal("1")
+    layers = await client.get(f"/api/v1/stock/{row['id']}/layers", headers=headers)
+    remaining = [item for item in layers.json()["data"] if Decimal(item["qty_remaining"]) != 0]
+    assert len(remaining) == 1
+    assert Decimal(remaining[0]["qty_remaining"]) == Decimal("1")
+    assert Decimal(remaining[0]["unit_cost"]) == Decimal("11.0000")
+    assert remaining[0]["is_negative"] is False

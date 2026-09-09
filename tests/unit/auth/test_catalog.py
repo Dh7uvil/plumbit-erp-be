@@ -61,3 +61,13 @@ def test_catalog_includes_quote_ready_permissions() -> None:
     assert "inventory.stock_transfer.post" in CATALOG_PERMISSIONS
     assert "inventory.stock_adjustment.create" in CATALOG_PERMISSIONS
     assert "inventory.stock_adjustment.post" in CATALOG_PERMISSIONS
+    assert "inventory.cost.read" in CATALOG_PERMISSIONS
+    assert "inventory.goods_receipt.create" in CATALOG_PERMISSIONS
+    assert "inventory.goods_receipt.read" in CATALOG_PERMISSIONS
+    assert "inventory.goods_receipt.update" in CATALOG_PERMISSIONS
+    assert "inventory.goods_receipt.delete" in CATALOG_PERMISSIONS
+    assert "inventory.goods_receipt.post" in CATALOG_PERMISSIONS
+    assert "inventory.quality_inspection.create" in CATALOG_PERMISSIONS
+    assert "inventory.quality_inspection.read" in CATALOG_PERMISSIONS
+    assert "inventory.quality_inspection.update" in CATALOG_PERMISSIONS
+    assert "inventory.quality_inspection.approve" in CATALOG_PERMISSIONS

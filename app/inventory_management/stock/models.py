@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -19,10 +20,11 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.constants import QUANTITY_PRECISION, QUANTITY_SCALE
+from app.core.constants import MONEY_PRECISION, MONEY_SCALE, QUANTITY_PRECISION, QUANTITY_SCALE
 from app.db.base import TenantModel
 
 _QTY = Numeric(QUANTITY_PRECISION, QUANTITY_SCALE)
+_MONEY = Numeric(MONEY_PRECISION, MONEY_SCALE)
 
 
 class StockBalance(TenantModel):
@@ -37,6 +39,9 @@ class StockBalance(TenantModel):
             name="uq_stock_balances_tenant_warehouse_product",
         ),
         CheckConstraint("qty_reserved >= 0", name="ck_stock_balances_qty_reserved_non_negative"),
+        CheckConstraint(
+            "qty_quality_hold >= 0", name="ck_stock_balances_qty_quality_hold_non_negative"
+        ),
         CheckConstraint("qty_incoming >= 0", name="ck_stock_balances_qty_incoming_non_negative"),
         CheckConstraint("qty_outgoing >= 0", name="ck_stock_balances_qty_outgoing_non_negative"),
         CheckConstraint(
@@ -60,6 +65,9 @@ class StockBalance(TenantModel):
     )
     qty_on_hand: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     qty_reserved: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
+    qty_quality_hold: Mapped[Decimal] = mapped_column(
+        _QTY, nullable=False, server_default=text("0")
+    )
     qty_incoming: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     qty_outgoing: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     qty_in_transit: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
@@ -116,4 +124,9 @@ class StockMovement(TenantModel):
     source_line_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=True)
     document_date: Mapped[date] = mapped_column(Date, nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    unit_cost: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    value: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    is_estimated_cost: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

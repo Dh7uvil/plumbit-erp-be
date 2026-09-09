@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import INVENTORY_MODULE
+from app.auth.org_service import OrganizationService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
@@ -31,6 +32,7 @@ class ProductService:
         self.units = UnitService(session)
         self.categories = CategoryService(session)
         self.taxes = TaxService(session)
+        self.org = OrganizationService(session)
         self.audit = AuditWriter(session)
 
     async def list(
@@ -93,6 +95,9 @@ class ProductService:
             )
             values = payload.model_dump()
             values["item_type"] = payload.item_type.value
+            if payload.requires_qc is None:
+                inbound = await self.org.get_inbound_settings(tenant_id)
+                values["requires_qc"] = inbound.qc_required_default
             values["created_by"] = actor_user_id
             values["updated_by"] = actor_user_id
             try:
@@ -192,6 +197,7 @@ class ProductService:
             "tax": tax_name,
             "hs_code": row.hs_code,
             "track_inventory": row.track_inventory,
+            "requires_qc": row.requires_qc,
             "is_active": row.is_active,
         }
 

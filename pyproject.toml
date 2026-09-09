@@ -23,6 +23,7 @@ dependencies = [
 [project.scripts]
 create-tenant = "app.cli.create_tenant:main"
 seed-tenants = "app.cli.seed_tenants:main"
+seed-permissions = "app.cli.seed_permissions:main"
 grant-superadmin-permissions = "app.cli.grant_superadmin_permissions:main"
 generate-jwt-secret = "app.cli.generate_jwt_secret:main"
 export-openapi = "app.cli.export_openapi:main"

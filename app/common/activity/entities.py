@@ -9,10 +9,12 @@ from app.auth.catalog import (
     CRM_MODULE,
     CUSTOMER_READ,
     ERP_MODULE,
+    GOODS_RECEIPT_READ,
     INVENTORY_MODULE,
     PRODUCT_READ,
     PROFORMA_INVOICE_READ,
     PURCHASE_ORDER_READ,
+    QUALITY_INSPECTION_READ,
     QUOTATION_READ,
     SALES_ORDER_READ,
     STOCK_ADJUSTMENT_READ,
@@ -166,6 +168,38 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         read_permission=STOCK_ADJUSTMENT_READ,
         changed_fields=_STOCK_FIELDS | frozenset({"warehouse", "reason"}),
     ),
+    "goods_receipt": ActivityEntitySpec(
+        module=INVENTORY_MODULE,
+        entity_type="goods_receipt",
+        read_permission=GOODS_RECEIPT_READ,
+        changed_fields=_STOCK_FIELDS
+        | frozenset(
+            {
+                "supplier",
+                "warehouse",
+                "purchase_order",
+                "qc_status",
+                "supplier_invoice_number",
+                "container_number",
+                "bl_number",
+            }
+        ),
+    ),
+    "quality_inspection": ActivityEntitySpec(
+        module=INVENTORY_MODULE,
+        entity_type="quality_inspection",
+        read_permission=QUALITY_INSPECTION_READ,
+        changed_fields=frozenset(
+            {
+                "document_number",
+                "status",
+                "version",
+                "inspection_date",
+                "goods_receipt",
+                "notes",
+            }
+        ),
+    ),
     "customer": ActivityEntitySpec(
         module=CRM_MODULE,
         entity_type="customer",
@@ -201,7 +235,16 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         entity_type="product",
         read_permission=PRODUCT_READ,
         changed_fields=frozenset(
-            {"sku", "name", "item_type", "unit", "selling_rate", "is_active", "track_inventory"}
+            {
+                "sku",
+                "name",
+                "item_type",
+                "unit",
+                "selling_rate",
+                "is_active",
+                "track_inventory",
+                "requires_qc",
+            }
         ),
     ),
     "contact": ActivityEntitySpec(

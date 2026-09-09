@@ -20,11 +20,12 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.constants import QUANTITY_PRECISION, QUANTITY_SCALE
+from app.core.constants import MONEY_PRECISION, MONEY_SCALE, QUANTITY_PRECISION, QUANTITY_SCALE
 from app.db.base import SoftDeleteTenantModel, TenantModel
 from app.db.mixins import AuditUserMixin
 
 _QTY = Numeric(QUANTITY_PRECISION, QUANTITY_SCALE)
+_MONEY = Numeric(MONEY_PRECISION, MONEY_SCALE)
 
 
 class StockAdjustment(AuditUserMixin, SoftDeleteTenantModel):
@@ -122,6 +123,7 @@ class StockAdjustmentLine(TenantModel):
     qty_counted: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     qty_booked: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     qty_delta: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    unit_cost: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     adjustment: Mapped[StockAdjustment] = relationship(back_populates="lines")
