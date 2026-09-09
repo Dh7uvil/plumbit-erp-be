@@ -152,6 +152,13 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "description": "Purchase-side party master sharing customer rows via company_type.",
     },
     {
+        "name": "Supplier Products",
+        "description": (
+            "Supplier catalog cross-reference: the supplier's SKU versus ours, "
+            "with resolve for packing-list matching."
+        ),
+    },
+    {
         "name": "Quotations",
         "description": (
             "Commercial quotations with server-side totals, UAE VAT, and status workflow."

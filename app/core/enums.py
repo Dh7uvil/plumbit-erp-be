@@ -226,6 +226,8 @@ class AuditAction(StrEnum):
     ISSUE = "ISSUE"
     CLOSE = "CLOSE"
     CONVERT = "CONVERT"
+    LINK = "LINK"
+    UNLINK = "UNLINK"
     LOGIN = "LOGIN"
     LOGOUT = "LOGOUT"
 

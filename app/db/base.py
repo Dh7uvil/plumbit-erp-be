@@ -47,6 +47,7 @@ import app.erp.exchange_rates.models as _exchange_rates  # noqa: E402, F401
 import app.erp.purchase_orders.models as _purchase_orders  # noqa: E402, F401
 import app.erp.quotation.models as _quotation  # noqa: E402, F401
 import app.erp.sales_orders.models as _sales_orders  # noqa: E402, F401
+import app.erp.supplier_products.models as _supplier_products  # noqa: E402, F401
 import app.inventory_management.categories.models as _categories  # noqa: E402, F401
 import app.inventory_management.price_lists.models as _price_lists  # noqa: E402, F401
 import app.inventory_management.products.models as _products  # noqa: E402, F401

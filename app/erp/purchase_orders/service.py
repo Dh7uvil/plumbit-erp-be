@@ -72,6 +72,7 @@ from app.erp.purchase_orders.schemas import (
     PurchaseOrderUpdate,
 )
 from app.erp.purchase_orders.workflow import assert_editable, next_status, transition_actions
+from app.erp.supplier_products.service import SupplierProductService
 from app.erp.suppliers.service import SupplierService
 from app.inventory_management.products.service import ProductService
 from app.inventory_management.units.service import UnitService
@@ -102,6 +103,7 @@ class PurchaseOrderService:
         self.repo = PurchaseOrderRepository(session)
         self.org = OrganizationService(session)
         self.suppliers = SupplierService(session)
+        self.supplier_products = SupplierProductService(session)
         self.contacts = ContactService(session)
         self.products = ProductService(session)
         self.units = UnitService(session)
@@ -420,6 +422,7 @@ class PurchaseOrderService:
                 lines=[
                     PurchaseOrderLineInput(
                         product_id=line.product_id,
+                        supplier_product_id=line.supplier_product_id,
                         description=line.description,
                         quantity=line.quantity,
                         unit_id=line.unit_id,
@@ -615,6 +618,8 @@ class PurchaseOrderService:
         line_rows, line_nets, line_taxes = await self._build_lines(
             tenant_id,
             payload.lines,
+            supplier_id=supplier.id,
+            currency_id=currency_id,
             tax_treatment=supplier.tax_treatment,
             place_of_supply=place,
         )
@@ -667,6 +672,8 @@ class PurchaseOrderService:
         tenant_id: UUID,
         lines: Sequence[PurchaseOrderLineInput],
         *,
+        supplier_id: UUID,
+        currency_id: UUID,
         tax_treatment: TaxTreatment,
         place_of_supply: PlaceOfSupply,
     ) -> tuple[builtins.list[dict[str, object]], builtins.list[Decimal], builtins.list[Decimal]]:
@@ -675,11 +682,30 @@ class PurchaseOrderService:
         taxes: builtins.list[Decimal] = []
         default_tax = await self.taxes.get_default(tenant_id)
         for index, line in enumerate(lines, start=1):
+            catalog = None
+            if line.supplier_product_id is not None:
+                catalog = await self.supplier_products.get(tenant_id, line.supplier_product_id)
+                if catalog.supplier_id != supplier_id:
+                    raise ValidationError(
+                        "supplier_product_id does not belong to this purchase order's supplier",
+                        details={"field": "supplier_product_id"},
+                    )
+                if (
+                    catalog.product_id is not None
+                    and line.product_id is not None
+                    and catalog.product_id != line.product_id
+                ):
+                    raise ValidationError(
+                        "product_id does not match the mapped supplier catalog product",
+                        details={"field": "product_id"},
+                    )
             product = None
-            if line.product_id is not None:
-                product = await self.products.get(tenant_id, line.product_id)
+            product_id = line.product_id or (catalog.product_id if catalog is not None else None)
+            if product_id is not None:
+                product = await self.products.get(tenant_id, product_id)
             description = (
                 line.description
+                or (catalog.supplier_item_name if catalog is not None else None)
                 or (product.purchase_description if product else None)
                 or (product.name if product else None)
             )
@@ -690,6 +716,12 @@ class PurchaseOrderService:
                 await self.units.require_id(tenant_id, unit_id)
             if line.rate is not None:
                 rate = quantize_money(line.rate)
+            elif (
+                catalog is not None
+                and catalog.price is not None
+                and catalog.currency_id == currency_id
+            ):
+                rate = quantize_money(catalog.price)
             elif product is not None:
                 rate = quantize_money(product.purchase_rate)
             else:
@@ -720,6 +752,8 @@ class PurchaseOrderService:
                 {
                     "line_number": index,
                     "product_id": product.id if product else None,
+                    "supplier_product_id": catalog.id if catalog is not None else None,
+                    "supplier_sku": catalog.supplier_sku if catalog is not None else None,
                     "description": description,
                     "quantity": qty,
                     "unit_id": unit_id,
@@ -750,6 +784,7 @@ class PurchaseOrderService:
             else [
                 PurchaseOrderLineInput(
                     product_id=line.product_id,
+                    supplier_product_id=line.supplier_product_id,
                     description=line.description,
                     quantity=line.quantity,
                     unit_id=line.unit_id,

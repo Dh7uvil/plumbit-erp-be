@@ -40,6 +40,7 @@ class PurchaseOrderFilter(BaseFilter):
 
 class PurchaseOrderLineInput(BaseModel):
     product_id: UUID | None = None
+    supplier_product_id: UUID | None = None
     description: str | None = None
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
     unit_id: UUID | None = None
@@ -58,8 +59,10 @@ class PurchaseOrderLineInput(BaseModel):
 
     @model_validator(mode="after")
     def require_product_or_description(self) -> "PurchaseOrderLineInput":
-        if self.product_id is None and not self.description:
-            raise ValueError("Each line requires a product_id or a description")
+        if self.product_id is None and self.supplier_product_id is None and not self.description:
+            raise ValueError(
+                "Each line requires a product_id, supplier_product_id, or a description"
+            )
         return self
 
 
@@ -69,6 +72,8 @@ class PurchaseOrderLineResponse(BaseModel):
     id: UUID
     line_number: int
     product_id: UUID | None
+    supplier_product_id: UUID | None = None
+    supplier_sku: str | None = None
     description: str
     quantity: Decimal
     unit_id: UUID | None

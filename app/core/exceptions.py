@@ -29,6 +29,7 @@ class ErrorCode(StrEnum):
     EINVOICE_REJECTED = "EINVOICE_REJECTED"
     EINVOICE_ASP_UNAVAILABLE = "EINVOICE_ASP_UNAVAILABLE"
     EINVOICE_ALREADY_EXCHANGED = "EINVOICE_ALREADY_EXCHANGED"
+    SUPPLIER_SKU_NOT_MAPPED = "SUPPLIER_SKU_NOT_MAPPED"
     INTEGRATION_ERROR = "INTEGRATION_ERROR"
     INTERNAL_ERROR = "INTERNAL_ERROR"
     RATE_LIMITED = "RATE_LIMITED"
@@ -183,6 +184,12 @@ class EinvoiceAlreadyExchangedError(AppError):
     default_code = ErrorCode.EINVOICE_ALREADY_EXCHANGED
     default_status = HTTPStatus.CONFLICT
     default_message = "E-invoice has already been exchanged"
+
+
+class SupplierSkuNotMappedError(AppError):
+    default_code = ErrorCode.SUPPLIER_SKU_NOT_MAPPED
+    default_status = HTTPStatus.CONFLICT
+    default_message = "Supplier SKU is not mapped to a product"
 
 
 class IntegrationError(AppError):
