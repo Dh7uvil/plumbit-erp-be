@@ -6,7 +6,7 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, or_
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
@@ -15,7 +15,7 @@ from app.common.repositories.base import BaseRepository
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.core.enums import QuotationStatus
-from app.erp.quotation.models import Quotation, QuotationLine
+from app.erp.quotation.models import Quotation, QuotationLine, QuotationRevision
 
 
 class QuotationRepository:
@@ -149,3 +149,46 @@ class QuotationRepository:
             created.append(row)
         await self.session.flush()
         return created
+
+    async def insert_revision(
+        self, tenant_id: UUID, values: Mapping[str, object]
+    ) -> QuotationRevision:
+        row = QuotationRevision(tenant_id=tenant_id)
+        for name, value in values.items():
+            setattr(row, name, value)
+        self.session.add(row)
+        await self.session.flush()
+        return row
+
+    async def list_revisions(
+        self, tenant_id: UUID, quotation_id: UUID
+    ) -> builtins.list[QuotationRevision]:
+        statement = (
+            select(QuotationRevision)
+            .where(
+                QuotationRevision.tenant_id == tenant_id,
+                QuotationRevision.quotation_id == quotation_id,
+            )
+            .order_by(QuotationRevision.revision_number.desc())
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars().all())
+
+    async def get_revision(
+        self, tenant_id: UUID, quotation_id: UUID, revision_number: int
+    ) -> QuotationRevision | None:
+        statement = select(QuotationRevision).where(
+            QuotationRevision.tenant_id == tenant_id,
+            QuotationRevision.quotation_id == quotation_id,
+            QuotationRevision.revision_number == revision_number,
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def count_revisions(self, tenant_id: UUID, quotation_id: UUID) -> int:
+        statement = select(func.count()).select_from(QuotationRevision).where(
+            QuotationRevision.tenant_id == tenant_id,
+            QuotationRevision.quotation_id == quotation_id,
+        )
+        result = await self.session.execute(statement)
+        return int(result.scalar_one())

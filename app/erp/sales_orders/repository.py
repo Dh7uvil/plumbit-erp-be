@@ -35,6 +35,7 @@ _FILTER_FIELDS = frozenset(
         "currency_id",
         "salesperson_id",
         "source_quotation_id",
+        "source_proforma_invoice_id",
     }
 )
 
@@ -124,3 +125,21 @@ class SalesOrderRepository:
             created.append(row)
         await self.session.flush()
         return created
+
+    async def find_by_customer_po(
+        self,
+        tenant_id: UUID,
+        *,
+        customer_id: UUID,
+        customer_po_number: str,
+        exclude_id: UUID | None = None,
+    ) -> builtins.list[SalesOrder]:
+        statement = self._repo.base_query(tenant_id).where(
+            SalesOrder.customer_id == customer_id,
+            SalesOrder.customer_po_number == customer_po_number,
+        )
+        if exclude_id is not None:
+            statement = statement.where(SalesOrder.id != exclude_id)
+        statement = statement.order_by(SalesOrder.created_at.desc())
+        result = await self.session.execute(statement)
+        return list(result.scalars().all())

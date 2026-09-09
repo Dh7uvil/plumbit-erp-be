@@ -10,7 +10,13 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.catalog import IDENTITY_MODULE, SYSTEM_ADMIN_ROLE_NAME, seed_tenant_permissions
+from app.auth.catalog import (
+    IDENTITY_MODULE,
+    SYSTEM_ADMIN_ROLE_NAME,
+    get_system_admin_role,
+    grant_catalog_to_role,
+    seed_tenant_permissions,
+)
 from app.auth.models import Employee, Permission, Role, User
 from app.auth.org_repository import OrganizationRepository
 from app.auth.repository import AccessRepository
@@ -137,6 +143,7 @@ class AuthService:
                     raise InvalidCredentialsError()
 
                 user.last_login_at = utcnow()
+                await self._ensure_tenant_catalog(user.tenant_id)
                 tokens = await self._issue_token_pair(user)
                 await self.audit.write(
                     tenant_id=user.tenant_id,
@@ -215,6 +222,11 @@ class AuthService:
             )
 
     async def me(self, *, tenant_id: UUID, user_id: UUID) -> MeResponse:
+        try:
+            async with transaction(self.session):
+                await self._ensure_tenant_catalog(tenant_id)
+        except IntegrityError:
+            await self.session.rollback()
         user = await self._require_user(tenant_id, user_id)
         detail = await self._user_detail(tenant_id, user)
         permissions = await self.repo.list_user_permission_strings(tenant_id, user_id)
@@ -653,6 +665,12 @@ class AuthService:
         *,
         role_id: UUID | None = None,
     ) -> PermissionMatrixResponse:
+        try:
+            async with transaction(self.session):
+                await self._ensure_tenant_catalog(tenant_id)
+        except IntegrityError:
+            await self.session.rollback()
+
         granted_ids: set[UUID] = set()
         if role_id is not None:
             role = await self._require_role(tenant_id, role_id)
@@ -870,6 +888,19 @@ class AuthService:
         if len(roles) != len(unique_ids):
             raise ResourceNotFoundError("Role not found")
         await self.repo.replace_user_roles(tenant_id, user_id, unique_ids)
+
+    async def _ensure_tenant_catalog(self, tenant_id: UUID) -> None:
+        """Insert new catalog permissions and grant them to Superadmin.
+
+        Tenant create grants the catalog once. Later modules (proforma invoices,
+        quotation revise, sales-order acknowledge) would otherwise stay missing
+        from existing Superadmin roles and never appear in the UI.
+        """
+        admin = await get_system_admin_role(self.session, tenant_id)
+        if admin is not None:
+            await grant_catalog_to_role(self.session, tenant_id, admin.id)
+            return
+        await seed_tenant_permissions(self.session, tenant_id)
 
     async def _replace_role_permissions(
         self,

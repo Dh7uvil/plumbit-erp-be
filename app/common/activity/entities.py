@@ -11,6 +11,7 @@ from app.auth.catalog import (
     ERP_MODULE,
     INVENTORY_MODULE,
     PRODUCT_READ,
+    PROFORMA_INVOICE_READ,
     PURCHASE_ORDER_READ,
     QUOTATION_READ,
     SALES_ORDER_READ,
@@ -54,11 +55,24 @@ _QUOTATION_FIELDS: frozenset[str] = _DOCUMENT_MONEY_FIELDS | frozenset(
         "salesperson",
     }
 )
+_PROFORMA_INVOICE_FIELDS: frozenset[str] = _DOCUMENT_MONEY_FIELDS | frozenset(
+    {
+        "document_number",
+        "proforma_date",
+        "valid_until",
+        "customer",
+        "price_list",
+        "salesperson",
+        "incoterm",
+        "advance_required_amount",
+    }
+)
 _SALES_ORDER_FIELDS: frozenset[str] = _DOCUMENT_MONEY_FIELDS | frozenset(
     {
         "document_number",
         "order_date",
         "reference_number",
+        "customer_po_number",
         "warehouse",
         "customer",
         "price_list",
@@ -120,7 +134,13 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         module=ERP_MODULE,
         entity_type="quotation",
         read_permission=QUOTATION_READ,
-        changed_fields=_QUOTATION_FIELDS,
+        changed_fields=_QUOTATION_FIELDS | frozenset({"revision_number", "revision_reason"}),
+    ),
+    "proforma_invoice": ActivityEntitySpec(
+        module=ERP_MODULE,
+        entity_type="proforma_invoice",
+        read_permission=PROFORMA_INVOICE_READ,
+        changed_fields=_PROFORMA_INVOICE_FIELDS,
     ),
     "sales_order": ActivityEntitySpec(
         module=ERP_MODULE,

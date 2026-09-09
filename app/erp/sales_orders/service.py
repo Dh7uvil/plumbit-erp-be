@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
     ERP_MODULE,
+    SALES_ORDER_ACKNOWLEDGE,
     SALES_ORDER_APPROVE,
     SALES_ORDER_CLOSE,
     SALES_ORDER_CONFIRM,
@@ -21,6 +22,8 @@ from app.auth.catalog import (
     SALES_ORDER_UPDATE,
 )
 from app.auth.org_service import OrganizationService
+from app.common.idempotency.service import IdempotencyService
+from app.common.outbox.service import OutboxService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
@@ -45,6 +48,8 @@ from app.core.enums import (
     TaxTreatment,
 )
 from app.core.exceptions import (
+    AlreadyAcknowledgedError,
+    CustomerPoRequiredError,
     DocumentStaleError,
     InvalidStatusTransitionError,
     ResourceNotFoundError,
@@ -65,6 +70,7 @@ from app.erp.quotation.service import QuotationService
 from app.erp.sales_orders.models import SalesOrder
 from app.erp.sales_orders.repository import SalesOrderRepository
 from app.erp.sales_orders.schemas import (
+    CustomerPoDuplicate,
     SalesOrderComposeDefaults,
     SalesOrderCreate,
     SalesOrderLineInput,
@@ -88,6 +94,7 @@ _ACTION_PERMISSIONS: dict[str, str] = {
     "confirm": SALES_ORDER_CONFIRM,
     "close": SALES_ORDER_CLOSE,
     "cancel": SALES_ORDER_UPDATE,
+    "acknowledge": SALES_ORDER_ACKNOWLEDGE,
 }
 
 
@@ -115,6 +122,8 @@ class SalesOrderService:
         self.currencies = CurrencyService(session)
         self.fx = ExchangeRateService(session)
         self.audit = AuditWriter(session)
+        self.outbox = OutboxService(session)
+        self.idempotency = IdempotencyService(session)
 
     async def list(
         self,
@@ -131,6 +140,7 @@ class SalesOrderService:
         currency_id: UUID | None = None,
         salesperson_id: UUID | None = None,
         source_quotation_id: UUID | None = None,
+        source_proforma_invoice_id: UUID | None = None,
     ) -> tuple[list[SalesOrderResponse], int]:
         requires_approval = await self.org.sales_order_requires_approval(tenant_id)
         filters: dict[str, object] = {}
@@ -152,6 +162,8 @@ class SalesOrderService:
             filters["salesperson_id"] = salesperson_id
         if source_quotation_id is not None:
             filters["source_quotation_id"] = source_quotation_id
+        if source_proforma_invoice_id is not None:
+            filters["source_proforma_invoice_id"] = source_proforma_invoice_id
         rows, total = await self.repo.list(
             tenant_id,
             page=page,
@@ -240,10 +252,20 @@ class SalesOrderService:
         order_date: date | None = None,
         expected_shipment_date: date | None = None,
         reference_number: str | None = None,
+        customer_po_number: str | None = None,
+        customer_po_date: date | None = None,
         warehouse_id: UUID | None = None,
         branch_id: UUID | None = None,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
     ) -> SalesOrderResponse:
         async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return SalesOrderResponse.model_validate(replay)
             quotes = QuotationService(self.session, actor_permissions=self.actor_permissions)
             quotation = await quotes.require_convertible(
                 tenant_id, quotation_id, expected_version=expected_version
@@ -256,6 +278,8 @@ class SalesOrderService:
                 order_date=order_date,
                 expected_shipment_date=expected_shipment_date,
                 reference_number=reference_number,
+                customer_po_number=customer_po_number,
+                customer_po_date=customer_po_date,
                 currency_id=quotation.currency_id,
                 price_list_id=quotation.price_list_id,
                 payment_terms_id=quotation.payment_terms_id,
@@ -314,7 +338,7 @@ class SalesOrderService:
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, row),
             )
-            await quotes.mark_converted(
+            await quotes._apply_converted(
                 tenant_id,
                 quotation_id,
                 document_type=DocumentType.SALES_ORDER,
@@ -324,7 +348,135 @@ class SalesOrderService:
             )
             loaded = await self._require(tenant_id, row.id)
             requires_approval = await self.org.sales_order_requires_approval(tenant_id)
-            return self._to_response(loaded, requires_approval=requires_approval)
+            response = self._to_response(loaded, requires_approval=requires_approval)
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
+            return response
+
+    async def create_from_proforma_invoice(
+        self,
+        tenant_id: UUID,
+        proforma_invoice_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        order_date: date | None = None,
+        expected_shipment_date: date | None = None,
+        customer_po_number: str | None = None,
+        customer_po_date: date | None = None,
+        warehouse_id: UUID | None = None,
+        branch_id: UUID | None = None,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> SalesOrderResponse:
+        from app.erp.proforma_invoices.service import ProformaInvoiceService
+
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return SalesOrderResponse.model_validate(replay)
+            pfis = ProformaInvoiceService(self.session, actor_permissions=self.actor_permissions)
+            pfi = await pfis.require_convertible(
+                tenant_id, proforma_invoice_id, expected_version=expected_version
+            )
+            payload = SalesOrderCreate(
+                customer_id=pfi.customer_id,
+                contact_id=pfi.contact_id,
+                branch_id=pfi.branch_id if branch_id is None else branch_id,
+                warehouse_id=warehouse_id,
+                order_date=order_date,
+                expected_shipment_date=expected_shipment_date,
+                customer_po_number=customer_po_number,
+                customer_po_date=customer_po_date,
+                currency_id=pfi.currency_id,
+                price_list_id=pfi.price_list_id,
+                payment_terms_id=pfi.payment_terms_id,
+                salesperson_id=pfi.salesperson_id,
+                notes=pfi.notes,
+                terms_and_conditions=pfi.terms_and_conditions,
+                discount_type=pfi.discount_type,
+                discount_value=pfi.discount_value,
+                shipping_amount=pfi.shipping_amount,
+                adjustment_amount=pfi.adjustment_amount,
+                place_of_supply=pfi.place_of_supply,
+                lines=[
+                    SalesOrderLineInput(
+                        product_id=line.product_id,
+                        description=line.description,
+                        quantity=line.quantity,
+                        unit_id=line.unit_id,
+                        rate=line.rate,
+                        discount_type=line.discount_type,
+                        discount_value=line.discount_value,
+                        tax_id=line.tax_id,
+                    )
+                    for line in pfi.lines
+                ],
+            )
+            header, line_rows = await self._build_draft(tenant_id, payload)
+            header["source_proforma_invoice_id"] = pfi.id
+            header["source_quotation_id"] = pfi.source_quotation_id
+            for built, source in zip(line_rows, pfi.lines, strict=True):
+                built["source_proforma_invoice_line_id"] = source.id
+            order_date_value = cast(date, header["order_date"])
+            number = await self.sequences.allocate(
+                tenant_id,
+                document_type=DocumentType.SALES_ORDER,
+                series=_ORDER_SERIES,
+                fiscal_year=order_date_value.year,
+                prefix=_ORDER_SERIES,
+            )
+            row = await self.repo.create(
+                tenant_id,
+                {
+                    **header,
+                    "document_number": number,
+                    "status": SalesOrderStatus.DRAFT.value,
+                    "version": 1,
+                    "created_by": actor_user_id,
+                    "updated_by": actor_user_id,
+                },
+            )
+            await self.repo.replace_lines(tenant_id, row.id, line_rows)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.CREATE,
+                module=ERP_MODULE,
+                entity_type="sales_order",
+                entity_id=row.id,
+                new_values=await self._snapshot(tenant_id, row),
+            )
+            await pfis._apply_converted(
+                tenant_id,
+                proforma_invoice_id,
+                document_type=DocumentType.SALES_ORDER,
+                document_id=row.id,
+                actor_user_id=actor_user_id,
+                expected_version=pfi.version,
+            )
+            if pfi.source_quotation_id is not None:
+                quotes = QuotationService(self.session, actor_permissions=self.actor_permissions)
+                quotation = await quotes.get(tenant_id, pfi.source_quotation_id)
+                await quotes._apply_converted(
+                    tenant_id,
+                    pfi.source_quotation_id,
+                    document_type=DocumentType.SALES_ORDER,
+                    document_id=row.id,
+                    actor_user_id=actor_user_id,
+                    expected_version=quotation.version,
+                )
+            loaded = await self._require(tenant_id, row.id)
+            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            response = self._to_response(loaded, requires_approval=requires_approval)
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
+            return response
 
     async def update(
         self,
@@ -346,9 +498,13 @@ class SalesOrderService:
             header["updated_by"] = actor_user_id
             header["version"] = existing.version + 1
             header["source_quotation_id"] = existing.source_quotation_id
+            header["source_proforma_invoice_id"] = existing.source_proforma_invoice_id
             if payload.lines is None:
                 for built, existing_line in zip(line_rows, existing.lines, strict=True):
                     built["source_quotation_line_id"] = existing_line.source_quotation_line_id
+                    built["source_proforma_invoice_line_id"] = (
+                        existing_line.source_proforma_invoice_line_id
+                    )
             await self.repo.update(tenant_id, sales_order_id, header)
             await self.repo.replace_lines(tenant_id, sales_order_id, line_rows)
             loaded = await self._require(tenant_id, sales_order_id)
@@ -484,6 +640,8 @@ class SalesOrderService:
                 order_date=None,
                 expected_shipment_date=source.expected_shipment_date,
                 reference_number=source.reference_number,
+                customer_po_number=source.customer_po_number,
+                customer_po_date=source.customer_po_date,
                 currency_id=source.currency_id,
                 price_list_id=source.price_list_id,
                 payment_terms_id=source.payment_terms_id,
@@ -546,6 +704,78 @@ class SalesOrderService:
             loaded = await self._require(tenant_id, row.id)
             requires_approval = await self.org.sales_order_requires_approval(tenant_id)
             return self._to_response(loaded, requires_approval=requires_approval)
+
+    async def acknowledge(
+        self,
+        tenant_id: UUID,
+        sales_order_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+    ) -> SalesOrderResponse:
+        async with transaction(self.session):
+            row = await self._require(tenant_id, sales_order_id, for_update=True)
+            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            self._assert_version(row, expected_version)
+            if SalesOrderStatus(row.status) != SalesOrderStatus.CONFIRMED:
+                raise InvalidStatusTransitionError(
+                    "Only a confirmed sales order can be acknowledged"
+                )
+            if not (row.customer_po_number or "").strip():
+                raise CustomerPoRequiredError()
+            if row.acknowledged_at is not None:
+                raise AlreadyAcknowledgedError()
+            old_values = await self._snapshot(tenant_id, row)
+            row.acknowledged_at = utcnow()
+            row.acknowledged_by = actor_user_id
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            await self.session.refresh(row, attribute_names=["updated_at"])
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.ACKNOWLEDGE,
+                module=ERP_MODULE,
+                entity_type="sales_order",
+                entity_id=row.id,
+                old_values=old_values,
+                new_values=await self._snapshot(tenant_id, row),
+            )
+            await self.outbox.enqueue(
+                tenant_id,
+                event_type="erp.sales_order.acknowledged",
+                aggregate_type="sales_order",
+                aggregate_id=row.id,
+                payload={"sales_order_id": str(row.id)},
+                dedupe_key=f"sales-order-acknowledged:{row.id}",
+            )
+            return self._to_response(row, requires_approval=requires_approval)
+
+    async def find_duplicate_customer_po(
+        self,
+        tenant_id: UUID,
+        *,
+        customer_id: UUID,
+        customer_po_number: str,
+        exclude_sales_order_id: UUID | None = None,
+    ) -> builtins.list[CustomerPoDuplicate]:
+        rows = await self.repo.find_by_customer_po(
+            tenant_id,
+            customer_id=customer_id,
+            customer_po_number=customer_po_number.strip(),
+            exclude_id=exclude_sales_order_id,
+        )
+        return [
+            CustomerPoDuplicate(
+                id=row.id,
+                document_number=row.document_number,
+                customer_po_number=row.customer_po_number,
+                customer_po_date=row.customer_po_date,
+                status=SalesOrderStatus(row.status),
+            )
+            for row in rows
+        ]
 
     async def delete(
         self,
@@ -702,6 +932,8 @@ class SalesOrderService:
             "order_date": order_date,
             "expected_shipment_date": payload.expected_shipment_date,
             "reference_number": payload.reference_number,
+            "customer_po_number": payload.customer_po_number,
+            "customer_po_date": payload.customer_po_date,
             "branch_id": payload.branch_id,
             "warehouse_id": warehouse_id,
             "customer_id": customer.id,
@@ -850,6 +1082,8 @@ class SalesOrderService:
                 "expected_shipment_date", existing.expected_shipment_date
             ),
             reference_number=values.get("reference_number", existing.reference_number),
+            customer_po_number=values.get("customer_po_number", existing.customer_po_number),
+            customer_po_date=values.get("customer_po_date", existing.customer_po_date),
             currency_id=values.get("currency_id", existing.currency_id),
             price_list_id=values.get("price_list_id", existing.price_list_id),
             payment_terms_id=values.get("payment_terms_id", existing.payment_terms_id),
@@ -867,9 +1101,8 @@ class SalesOrderService:
             lines=line_inputs,
         )
 
-    def _available_actions(
-        self, status: SalesOrderStatus, *, requires_approval: bool
-    ) -> builtins.list[str]:
+    def _available_actions(self, row: SalesOrder, *, requires_approval: bool) -> builtins.list[str]:
+        status = SalesOrderStatus(row.status)
         actions: builtins.list[str] = []
         for action in transition_actions(status):
             if action == "confirm" and status == SalesOrderStatus.DRAFT and requires_approval:
@@ -877,6 +1110,13 @@ class SalesOrderService:
             required = _ACTION_PERMISSIONS[action]
             if has_permission(self.actor_permissions, required):
                 actions.append(action)
+        if (
+            status == SalesOrderStatus.CONFIRMED
+            and (row.customer_po_number or "").strip()
+            and row.acknowledged_at is None
+            and has_permission(self.actor_permissions, SALES_ORDER_ACKNOWLEDGE)
+        ):
+            actions.append("acknowledge")
         if has_permission(self.actor_permissions, SALES_ORDER_CREATE):
             actions.append("clone")
         if status == SalesOrderStatus.DRAFT and has_permission(
@@ -895,6 +1135,8 @@ class SalesOrderService:
             version=row.version,
             is_posted=False,
             reference_number=row.reference_number,
+            customer_po_number=row.customer_po_number,
+            customer_po_date=row.customer_po_date,
             order_date=row.order_date,
             document_date=row.order_date,
             expected_shipment_date=row.expected_shipment_date,
@@ -928,6 +1170,7 @@ class SalesOrderService:
             fulfillment_status=FulfillmentStatus(row.fulfillment_status),
             billing_status=BillingStatus(row.billing_status),
             source_quotation_id=row.source_quotation_id,
+            source_proforma_invoice_id=row.source_proforma_invoice_id,
             confirmed_at=row.confirmed_at,
             confirmed_by=row.confirmed_by,
             closed_at=row.closed_at,
@@ -935,7 +1178,9 @@ class SalesOrderService:
             cancelled_at=row.cancelled_at,
             cancelled_by=row.cancelled_by,
             cancel_reason=row.cancel_reason,
-            available_actions=self._available_actions(status, requires_approval=requires_approval),
+            acknowledged_at=row.acknowledged_at,
+            acknowledged_by=row.acknowledged_by,
+            available_actions=self._available_actions(row, requires_approval=requires_approval),
             lines=[SalesOrderLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,
@@ -1002,6 +1247,7 @@ class SalesOrderService:
             "base_amount": row.base_amount,
             "fulfillment_status": row.fulfillment_status,
             "billing_status": row.billing_status,
+            "customer_po_number": row.customer_po_number,
         }
 
     async def _require(

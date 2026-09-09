@@ -44,6 +44,14 @@ def test_catalog_includes_quote_ready_permissions() -> None:
     assert "erp.tax.read" in CATALOG_PERMISSIONS
     assert "erp.quotation.approve" in CATALOG_PERMISSIONS
     assert "erp.quotation.send" in CATALOG_PERMISSIONS
+    assert "erp.quotation.revise" in CATALOG_PERMISSIONS
+    assert "erp.sales_order.acknowledge" in CATALOG_PERMISSIONS
+    assert "erp.proforma_invoice.create" in CATALOG_PERMISSIONS
+    assert "erp.proforma_invoice.read" in CATALOG_PERMISSIONS
+    assert "erp.proforma_invoice.update" in CATALOG_PERMISSIONS
+    assert "erp.proforma_invoice.delete" in CATALOG_PERMISSIONS
+    assert "erp.proforma_invoice.send" in CATALOG_PERMISSIONS
+    assert "erp.proforma_invoice.confirm" in CATALOG_PERMISSIONS
     assert "erp.period.lock" in CATALOG_PERMISSIONS
     assert "erp.period.override" in CATALOG_PERMISSIONS
     assert "erp.document_sequence.create" in CATALOG_PERMISSIONS

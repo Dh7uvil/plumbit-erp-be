@@ -50,8 +50,18 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "payment_term": ("create", "read", "update", "delete"),
         "terms_template": ("create", "read", "update", "delete"),
         "document_sequence": ("create", "read", "update", "delete"),
-        "quotation": ("create", "read", "update", "delete", "approve", "send"),
-        "sales_order": ("create", "read", "update", "delete", "approve", "confirm", "close"),
+        "quotation": ("create", "read", "update", "delete", "approve", "send", "revise"),
+        "sales_order": (
+            "create",
+            "read",
+            "update",
+            "delete",
+            "approve",
+            "confirm",
+            "close",
+            "acknowledge",
+        ),
+        "proforma_invoice": ("create", "read", "update", "delete", "send", "confirm"),
         "purchase_order": ("create", "read", "update", "delete", "approve", "issue", "close"),
         "period": ("lock", "override"),
     },
@@ -186,6 +196,7 @@ QUOTATION_UPDATE = build_permission(ERP_MODULE, "quotation", "update")
 QUOTATION_DELETE = build_permission(ERP_MODULE, "quotation", "delete")
 QUOTATION_APPROVE = build_permission(ERP_MODULE, "quotation", "approve")
 QUOTATION_SEND = build_permission(ERP_MODULE, "quotation", "send")
+QUOTATION_REVISE = build_permission(ERP_MODULE, "quotation", "revise")
 SALES_ORDER_CREATE = build_permission(ERP_MODULE, "sales_order", "create")
 SALES_ORDER_READ = build_permission(ERP_MODULE, "sales_order", "read")
 SALES_ORDER_UPDATE = build_permission(ERP_MODULE, "sales_order", "update")
@@ -193,6 +204,13 @@ SALES_ORDER_DELETE = build_permission(ERP_MODULE, "sales_order", "delete")
 SALES_ORDER_APPROVE = build_permission(ERP_MODULE, "sales_order", "approve")
 SALES_ORDER_CONFIRM = build_permission(ERP_MODULE, "sales_order", "confirm")
 SALES_ORDER_CLOSE = build_permission(ERP_MODULE, "sales_order", "close")
+SALES_ORDER_ACKNOWLEDGE = build_permission(ERP_MODULE, "sales_order", "acknowledge")
+PROFORMA_INVOICE_CREATE = build_permission(ERP_MODULE, "proforma_invoice", "create")
+PROFORMA_INVOICE_READ = build_permission(ERP_MODULE, "proforma_invoice", "read")
+PROFORMA_INVOICE_UPDATE = build_permission(ERP_MODULE, "proforma_invoice", "update")
+PROFORMA_INVOICE_DELETE = build_permission(ERP_MODULE, "proforma_invoice", "delete")
+PROFORMA_INVOICE_SEND = build_permission(ERP_MODULE, "proforma_invoice", "send")
+PROFORMA_INVOICE_CONFIRM = build_permission(ERP_MODULE, "proforma_invoice", "confirm")
 PURCHASE_ORDER_CREATE = build_permission(ERP_MODULE, "purchase_order", "create")
 PURCHASE_ORDER_READ = build_permission(ERP_MODULE, "purchase_order", "read")
 PURCHASE_ORDER_UPDATE = build_permission(ERP_MODULE, "purchase_order", "update")

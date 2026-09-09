@@ -42,6 +42,12 @@ class SalesOrder(AuditUserMixin, SoftDeleteTenantModel):
         Index("ix_sales_orders_tenant_id_status", "tenant_id", "status"),
         Index("ix_sales_orders_tenant_id_order_date", "tenant_id", "order_date"),
         Index("ix_sales_orders_tenant_id_customer_id", "tenant_id", "customer_id"),
+        Index(
+            "ix_sales_orders_tenant_id_customer_id_customer_po_number",
+            "tenant_id",
+            "customer_id",
+            "customer_po_number",
+        ),
     )
 
     document_number: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -149,6 +155,14 @@ class SalesOrder(AuditUserMixin, SoftDeleteTenantModel):
         nullable=True,
         index=True,
     )
+    source_proforma_invoice_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("proforma_invoices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    customer_po_number: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    customer_po_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     confirmed_by: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
@@ -168,6 +182,12 @@ class SalesOrder(AuditUserMixin, SoftDeleteTenantModel):
         nullable=True,
     )
     cancel_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acknowledged_by: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     lines: Mapped[list["SalesOrderLine"]] = relationship(
         back_populates="sales_order",
@@ -227,6 +247,11 @@ class SalesOrderLine(TenantModel):
     source_quotation_line_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("quotation_lines.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_proforma_invoice_line_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("proforma_invoice_lines.id", ondelete="SET NULL"),
         nullable=True,
     )
 

@@ -1,4 +1,4 @@
-"""Sales order request/response schemas."""
+"""Proforma invoice request/response schemas."""
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -9,39 +9,34 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.common.schemas.filters import BaseFilter
 from app.core.enums import (
-    BillingStatus,
     DiscountType,
-    FulfillmentStatus,
+    Incoterm,
+    PaymentMilestoneTrigger,
     PlaceOfSupply,
-    SalesOrderStatus,
+    ProformaInvoiceStatus,
     TaxTreatment,
 )
 
 
-class SalesOrderFilter(BaseFilter):
+class ProformaInvoiceFilter(BaseFilter):
     allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
         {
             "created_at",
             "updated_at",
             "document_number",
-            "order_date",
+            "proforma_date",
             "status",
             "grand_total",
         }
     )
-    status: SalesOrderStatus | None = None
-    fulfillment_status: FulfillmentStatus | None = None
-    billing_status: BillingStatus | None = None
+    status: ProformaInvoiceStatus | None = None
     customer_id: UUID | None = None
     branch_id: UUID | None = None
-    warehouse_id: UUID | None = None
     currency_id: UUID | None = None
-    salesperson_id: UUID | None = None
     source_quotation_id: UUID | None = None
-    source_proforma_invoice_id: UUID | None = None
 
 
-class SalesOrderLineInput(BaseModel):
+class ProformaInvoiceLineInput(BaseModel):
     product_id: UUID | None = None
     description: str | None = None
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
@@ -50,23 +45,25 @@ class SalesOrderLineInput(BaseModel):
     discount_type: DiscountType | None = None
     discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     tax_id: UUID | None = None
+    hs_code: str | None = Field(default=None, max_length=20)
+    source_quotation_line_id: UUID | None = None
 
-    @field_validator("description")
+    @field_validator("description", "hs_code")
     @classmethod
-    def normalize_description(cls, value: str | None) -> str | None:
+    def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()
         return normalized or None
 
     @model_validator(mode="after")
-    def require_product_or_description(self) -> "SalesOrderLineInput":
+    def require_product_or_description(self) -> "ProformaInvoiceLineInput":
         if self.product_id is None and not self.description:
             raise ValueError("Each line requires a product_id or a description")
         return self
 
 
-class SalesOrderLineResponse(BaseModel):
+class ProformaInvoiceLineResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -83,22 +80,50 @@ class SalesOrderLineResponse(BaseModel):
     tax_rate: Decimal
     tax_amount: Decimal
     amount: Decimal
-    qty_delivered: Decimal
-    qty_invoiced: Decimal
+    hs_code: str | None
     source_quotation_line_id: UUID | None
-    source_proforma_invoice_line_id: UUID | None = None
 
 
-class SalesOrderCreate(BaseModel):
+class ProformaInvoiceMilestoneInput(BaseModel):
+    sequence: int | None = Field(default=None, ge=1)
+    label: str = Field(min_length=1, max_length=120)
+    trigger: PaymentMilestoneTrigger
+    percent: Decimal | None = Field(default=None, ge=0, max_digits=9, decimal_places=4)
+    amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
+    net_days: int | None = Field(default=None, ge=0)
+    due_date: date | None = None
+    notes: str | None = None
+
+    @field_validator("label", "notes")
+    @classmethod
+    def normalize_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class ProformaInvoiceMilestoneResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    sequence: int
+    label: str
+    trigger: PaymentMilestoneTrigger
+    percent: Decimal | None
+    amount: Decimal | None
+    net_days: int | None
+    due_date: date | None
+    computed_amount: Decimal
+    notes: str | None
+
+
+class ProformaInvoiceCreate(BaseModel):
     customer_id: UUID
     contact_id: UUID | None = None
     branch_id: UUID | None = None
-    warehouse_id: UUID | None = None
-    order_date: date | None = None
-    expected_shipment_date: date | None = None
-    reference_number: str | None = Field(default=None, max_length=60)
-    customer_po_number: str | None = Field(default=None, max_length=60)
-    customer_po_date: date | None = None
+    proforma_date: date | None = None
+    valid_until: date | None = None
     currency_id: UUID | None = None
     price_list_id: UUID | None = None
     payment_terms_id: UUID | None = None
@@ -111,9 +136,28 @@ class SalesOrderCreate(BaseModel):
     shipping_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
-    lines: list[SalesOrderLineInput] = Field(default_factory=list)
+    source_quotation_id: UUID | None = None
+    incoterm: Incoterm | None = None
+    incoterm_place: str | None = Field(default=None, max_length=120)
+    port_of_loading: str | None = Field(default=None, max_length=120)
+    port_of_discharge: str | None = Field(default=None, max_length=120)
+    country_of_origin: str | None = Field(default=None, max_length=2)
+    country_of_final_destination: str | None = Field(default=None, max_length=2)
+    expected_shipment_date: date | None = None
+    partial_shipment_allowed: bool = False
+    transhipment_allowed: bool = False
+    bank_details_snapshot: str | None = None
+    lines: list[ProformaInvoiceLineInput] = Field(default_factory=list)
+    milestones: list[ProformaInvoiceMilestoneInput] = Field(default_factory=list)
 
-    @field_validator("reference_number", "customer_po_number")
+    @field_validator(
+        "incoterm_place",
+        "port_of_loading",
+        "port_of_discharge",
+        "country_of_origin",
+        "country_of_final_destination",
+        "bank_details_snapshot",
+    )
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -121,16 +165,19 @@ class SalesOrderCreate(BaseModel):
         normalized = value.strip()
         return normalized or None
 
+    @field_validator("country_of_origin", "country_of_final_destination")
+    @classmethod
+    def normalize_country(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.upper()
 
-class SalesOrderUpdate(BaseModel):
+
+class ProformaInvoiceUpdate(BaseModel):
     contact_id: UUID | None = None
     branch_id: UUID | None = None
-    warehouse_id: UUID | None = None
-    order_date: date | None = None
-    expected_shipment_date: date | None = None
-    reference_number: str | None = Field(default=None, max_length=60)
-    customer_po_number: str | None = Field(default=None, max_length=60)
-    customer_po_date: date | None = None
+    proforma_date: date | None = None
+    valid_until: date | None = None
     currency_id: UUID | None = None
     price_list_id: UUID | None = None
     payment_terms_id: UUID | None = None
@@ -142,10 +189,28 @@ class SalesOrderUpdate(BaseModel):
     shipping_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
-    lines: list[SalesOrderLineInput] | None = None
+    incoterm: Incoterm | None = None
+    incoterm_place: str | None = Field(default=None, max_length=120)
+    port_of_loading: str | None = Field(default=None, max_length=120)
+    port_of_discharge: str | None = Field(default=None, max_length=120)
+    country_of_origin: str | None = Field(default=None, max_length=2)
+    country_of_final_destination: str | None = Field(default=None, max_length=2)
+    expected_shipment_date: date | None = None
+    partial_shipment_allowed: bool | None = None
+    transhipment_allowed: bool | None = None
+    bank_details_snapshot: str | None = None
+    lines: list[ProformaInvoiceLineInput] | None = None
+    milestones: list[ProformaInvoiceMilestoneInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
-    @field_validator("reference_number", "customer_po_number")
+    @field_validator(
+        "incoterm_place",
+        "port_of_loading",
+        "port_of_discharge",
+        "country_of_origin",
+        "country_of_final_destination",
+        "bank_details_snapshot",
+    )
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -153,8 +218,15 @@ class SalesOrderUpdate(BaseModel):
         normalized = value.strip()
         return normalized or None
 
+    @field_validator("country_of_origin", "country_of_final_destination")
+    @classmethod
+    def normalize_country(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.upper()
 
-class SalesOrderRejectRequest(BaseModel):
+
+class ProformaInvoiceReasonRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=2000)
     version: int | None = Field(default=None, ge=1)
 
@@ -167,36 +239,38 @@ class SalesOrderRejectRequest(BaseModel):
         return normalized or None
 
 
-class SalesOrderCancelRequest(BaseModel):
-    reason: str | None = Field(default=None, max_length=2000)
+class ConvertProformaToSalesOrderRequest(BaseModel):
+    order_date: date | None = None
+    expected_shipment_date: date | None = None
+    customer_po_number: str | None = Field(default=None, max_length=60)
+    customer_po_date: date | None = None
+    warehouse_id: UUID | None = None
+    branch_id: UUID | None = None
     version: int | None = Field(default=None, ge=1)
 
-    @field_validator("reason")
+    @field_validator("customer_po_number")
     @classmethod
-    def normalize_reason(cls, value: str | None) -> str | None:
+    def normalize_po(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()
         return normalized or None
 
 
-class SalesOrderResponse(BaseModel):
+class ProformaInvoiceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     tenant_id: UUID
     document_number: str
-    status: SalesOrderStatus
+    display_number: str
+    status: ProformaInvoiceStatus
     version: int
     is_posted: bool
-    reference_number: str | None
-    customer_po_number: str | None = None
-    customer_po_date: date | None = None
-    order_date: date
+    proforma_date: date
     document_date: date
-    expected_shipment_date: date | None
+    valid_until: date | None
     branch_id: UUID | None
-    warehouse_id: UUID | None
     customer_id: UUID
     contact_id: UUID | None
     customer_trn: str | None
@@ -222,26 +296,39 @@ class SalesOrderResponse(BaseModel):
     grand_total: Decimal
     foreign_amount: Decimal
     base_amount: Decimal
-    fulfillment_status: FulfillmentStatus
-    billing_status: BillingStatus
     source_quotation_id: UUID | None
-    source_proforma_invoice_id: UUID | None = None
+    incoterm: Incoterm | None
+    incoterm_place: str | None
+    port_of_loading: str | None
+    port_of_discharge: str | None
+    country_of_origin: str | None
+    country_of_final_destination: str | None
+    expected_shipment_date: date | None
+    partial_shipment_allowed: bool
+    transhipment_allowed: bool
+    bank_details_snapshot: str | None
+    sent_at: datetime | None
+    sent_by: UUID | None
     confirmed_at: datetime | None
     confirmed_by: UUID | None
-    closed_at: datetime | None
-    closed_by: UUID | None
+    declined_at: datetime | None
+    declined_by: UUID | None
+    decline_reason: str | None
     cancelled_at: datetime | None
     cancelled_by: UUID | None
     cancel_reason: str | None
-    acknowledged_at: datetime | None = None
-    acknowledged_by: UUID | None = None
+    converted_at: datetime | None
+    converted_document_type: str | None
+    converted_document_id: UUID | None
+    advance_required_amount: Decimal
     available_actions: list[str] = Field(default_factory=list)
-    lines: list[SalesOrderLineResponse] = Field(default_factory=list)
+    lines: list[ProformaInvoiceLineResponse] = Field(default_factory=list)
+    milestones: list[ProformaInvoiceMilestoneResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
 
-class SalesOrderComposeDefaults(BaseModel):
+class ProformaInvoiceComposeDefaults(BaseModel):
     customer_id: UUID
     customer_name: str
     customer_trn: str | None
@@ -251,16 +338,7 @@ class SalesOrderComposeDefaults(BaseModel):
     payment_terms_id: UUID | None
     salesperson_id: UUID | None
     contact_id: UUID | None
-    warehouse_id: UUID | None
     place_of_supply: PlaceOfSupply
     bill_to_snapshot: str | None
     ship_to_snapshot: str | None
     terms_and_conditions: str | None
-
-
-class CustomerPoDuplicate(BaseModel):
-    id: UUID
-    document_number: str
-    customer_po_number: str | None
-    customer_po_date: date | None
-    status: SalesOrderStatus

@@ -122,6 +122,8 @@ Read the relevant file before working in that area — each one is the authority
 - Posting is local (stock + AR/AP + tax + GL in one transaction). Peppol/FTA exchange is an ASP
   job after commit, via `app/integrations/einvoicing/` and the transactional outbox — never from
   `erp/sales_invoices/service.py`.
+- Register a handler for every new outbox `event_type`. Unknown types are dead-lettered (`DEAD`),
+  not skipped. Use a logging no-op until the real handler exists.
 - Never allow invalid workflow status transitions.
 - Use database transactions for multi-step business operations; do not call `commit()` inside
   repositories.

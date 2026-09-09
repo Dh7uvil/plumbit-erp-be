@@ -19,6 +19,12 @@ from tests.api.erp.quotation.test_routes import (
 from tests.conftest import login_headers, provision_admin
 
 
+def _convert_headers(
+    headers: dict[str, str], version: object, *, key: str | None = None
+) -> dict[str, str]:
+    return {**_if_match(headers, version), "Idempotency-Key": key or str(uuid4())}
+
+
 async def _accept_quote(
     client: AsyncClient, headers: dict[str, str], quote: dict[str, object]
 ) -> dict[str, object]:
@@ -42,7 +48,7 @@ async def test_convert_accepted_quotation_copies_totals(client: AsyncClient) -> 
     quote = await _accept_quote(client, headers, created["body"]["data"])
     converted = await client.post(
         f"/api/v1/quotations/{quote['id']}/convert-to-sales-order",
-        headers=_if_match(headers, quote["version"]),
+        headers=_convert_headers(headers, quote["version"]),
     )
     assert converted.status_code == 200, converted.text
     order = converted.json()["data"]
@@ -70,7 +76,7 @@ async def test_convert_rejects_non_accepted_quotation(client: AsyncClient) -> No
     created = await _create_quote(client, headers, customer_id=customer_id, product_id=product_id)
     rejected = await client.post(
         f"/api/v1/quotations/{created['body']['data']['id']}/convert-to-sales-order",
-        headers=_if_match(headers, created["body"]["data"]["version"]),
+        headers=_convert_headers(headers, created["body"]["data"]["version"]),
     )
     assert rejected.status_code == 409, rejected.text
     assert rejected.json()["error"]["code"] == "INVALID_STATUS_TRANSITION"
@@ -87,13 +93,13 @@ async def test_second_convert_is_rejected(client: AsyncClient) -> None:
     quote = await _accept_quote(client, headers, created["body"]["data"])
     first = await client.post(
         f"/api/v1/quotations/{quote['id']}/convert-to-sales-order",
-        headers=_if_match(headers, quote["version"]),
+        headers=_convert_headers(headers, quote["version"]),
     )
     assert first.status_code == 200, first.text
     quotation = await client.get(f"/api/v1/quotations/{quote['id']}", headers=headers)
     second = await client.post(
         f"/api/v1/quotations/{quote['id']}/convert-to-sales-order",
-        headers=_if_match(headers, quotation.json()["data"]["version"]),
+        headers=_convert_headers(headers, quotation.json()["data"]["version"]),
     )
     assert second.status_code == 409, second.text
     assert second.json()["error"]["code"] == "INVALID_STATUS_TRANSITION"
@@ -121,7 +127,7 @@ async def test_convert_failure_leaves_quotation_accepted(
     with pytest.raises(RuntimeError, match="allocate failed"):
         await client.post(
             f"/api/v1/quotations/{quote['id']}/convert-to-sales-order",
-            headers=_if_match(headers, quote["version"]),
+            headers=_convert_headers(headers, quote["version"]),
         )
     fetched = await client.get(f"/api/v1/quotations/{quote['id']}", headers=headers)
     assert fetched.status_code == 200, fetched.text
@@ -169,7 +175,7 @@ async def test_convert_requires_sales_order_create(client: AsyncClient) -> None:
     limited_headers = await login_headers(client, tenant_id, limited_email, "password12")
     denied = await client.post(
         f"/api/v1/quotations/{quote['id']}/convert-to-sales-order",
-        headers=_if_match(limited_headers, quote["version"]),
+        headers=_convert_headers(limited_headers, quote["version"]),
     )
     assert denied.status_code == 403
     fetched = await client.get(f"/api/v1/quotations/{quote['id']}", headers=limited_headers)

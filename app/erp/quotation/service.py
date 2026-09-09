@@ -4,23 +4,27 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
-from typing import cast
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
     ERP_MODULE,
+    PROFORMA_INVOICE_CREATE,
     QUOTATION_APPROVE,
     QUOTATION_CREATE,
     QUOTATION_DELETE,
+    QUOTATION_REVISE,
     QUOTATION_SEND,
     QUOTATION_UPDATE,
     SALES_ORDER_CREATE,
 )
 from app.auth.org_service import OrganizationService
+from app.common.outbox.service import OutboxService
+from app.common.registries.quotation_dependents import registered_probes
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
@@ -45,6 +49,7 @@ from app.core.enums import (
 from app.core.exceptions import (
     DocumentStaleError,
     InvalidStatusTransitionError,
+    QuotationHasLiveProformaError,
     ResourceNotFoundError,
     ValidationError,
 )
@@ -59,7 +64,7 @@ from app.erp.accounting.service import (
     TermsTemplateService,
 )
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
-from app.erp.quotation.models import Quotation
+from app.erp.quotation.models import Quotation, QuotationRevision
 from app.erp.quotation.repository import QuotationRepository
 from app.erp.quotation.schemas import (
     QuotationComposeDefaults,
@@ -67,11 +72,14 @@ from app.erp.quotation.schemas import (
     QuotationLineInput,
     QuotationLineResponse,
     QuotationResponse,
+    QuotationRevisionListItem,
+    QuotationRevisionResponse,
     QuotationUpdate,
 )
 from app.erp.quotation.workflow import (
     assert_convertible,
     assert_editable,
+    assert_proforma_source,
     next_status,
     transition_actions,
 )
@@ -90,6 +98,7 @@ _ACTION_PERMISSIONS: dict[str, str] = {
     "accept": QUOTATION_UPDATE,
     "decline": QUOTATION_UPDATE,
     "cancel": QUOTATION_UPDATE,
+    "revise": QUOTATION_REVISE,
     "convert": SALES_ORDER_CREATE,
 }
 
@@ -117,6 +126,7 @@ class QuotationService:
         self.currencies = CurrencyService(session)
         self.fx = ExchangeRateService(session)
         self.audit = AuditWriter(session)
+        self.outbox = OutboxService(session)
 
     async def list(
         self,
@@ -344,6 +354,98 @@ class QuotationService:
             tenant_id, quotation_id, "cancel", actor_user_id, expected_version=expected_version
         )
 
+    async def revise(
+        self,
+        tenant_id: UUID,
+        quotation_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        revision_reason: str,
+    ) -> QuotationResponse:
+        reason = revision_reason.strip()
+        if not reason:
+            raise ValidationError("revision_reason is required")
+        async with transaction(self.session):
+            row = await self._require(tenant_id, quotation_id, for_update=True)
+            old_values = await self._quotation_snapshot(tenant_id, row)
+            today, requires_approval = await self._response_context(tenant_id)
+            current = self._effective_status(row, today)
+            self._assert_version(row, expected_version)
+            if row.converted_document_id is not None:
+                raise InvalidStatusTransitionError("Quotation has already been converted")
+            await self._assert_no_live_dependents(tenant_id, quotation_id)
+            target = next_status(current, "revise")
+            revision_number = row.revision_number + 1
+            now = utcnow()
+            await self.repo.insert_revision(
+                tenant_id,
+                {
+                    "quotation_id": row.id,
+                    "revision_number": revision_number,
+                    "quote_number": row.quote_number,
+                    "status_at_revision": current.value,
+                    "header": _jsonable(old_values),
+                    "lines": _jsonable(await self._revision_line_snapshots(tenant_id, row)),
+                    "revision_reason": reason,
+                    "revised_at": now,
+                    "revised_by": actor_user_id,
+                },
+            )
+            row.revision_number = revision_number
+            row.revised_at = now
+            row.status = target.value
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            await self.session.refresh(row, attribute_names=["updated_at"])
+            new_values = await self._quotation_snapshot(tenant_id, row)
+            new_values["revision_reason"] = reason
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.REVISE,
+                module=ERP_MODULE,
+                entity_type="quotation",
+                entity_id=row.id,
+                old_values=old_values,
+                new_values=new_values,
+            )
+            await self.outbox.enqueue(
+                tenant_id,
+                event_type="erp.quotation.revised",
+                aggregate_type="quotation",
+                aggregate_id=row.id,
+                payload={
+                    "quotation_id": str(row.id),
+                    "revision_number": revision_number,
+                    "quote_number": row.quote_number,
+                },
+                dedupe_key=f"quotation-revised:{row.id}:{revision_number}",
+            )
+            return self._to_response(row, today, requires_approval=requires_approval)
+
+    async def list_revisions(
+        self, tenant_id: UUID, quotation_id: UUID
+    ) -> builtins.list[QuotationRevisionListItem]:
+        await self._require(tenant_id, quotation_id)
+        rows = await self.repo.list_revisions(tenant_id, quotation_id)
+        return [self._revision_list_item(row) for row in rows]
+
+    async def get_revision(
+        self, tenant_id: UUID, quotation_id: UUID, revision_number: int
+    ) -> QuotationRevisionResponse:
+        await self._require(tenant_id, quotation_id)
+        row = await self.repo.get_revision(tenant_id, quotation_id, revision_number)
+        if row is None:
+            raise ResourceNotFoundError("Quotation revision not found")
+        item = self._revision_list_item(row)
+        return QuotationRevisionResponse(
+            **item.model_dump(),
+            header=dict(row.header),
+            lines=list(row.lines),
+        )
+
     async def clone(
         self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID
     ) -> QuotationResponse:
@@ -457,6 +559,49 @@ class QuotationService:
         assert_convertible(current)
         if row.converted_document_id is not None:
             raise InvalidStatusTransitionError("Quotation has already been converted")
+        await self._assert_no_live_dependents(tenant_id, quotation_id)
+        return self._to_response(row, today, requires_approval=requires_approval)
+
+    async def require_proforma_source(
+        self, tenant_id: UUID, quotation_id: UUID, *, expected_version: int
+    ) -> QuotationResponse:
+        row = await self._require(tenant_id, quotation_id, for_update=True)
+        today, requires_approval = await self._response_context(tenant_id)
+        current = self._effective_status(row, today)
+        self._assert_version(row, expected_version)
+        assert_proforma_source(current)
+        if row.converted_document_id is not None:
+            raise InvalidStatusTransitionError("Quotation has already been converted")
+        await self._assert_no_live_dependents(tenant_id, quotation_id)
+        return self._to_response(row, today, requires_approval=requires_approval)
+
+    async def accept_from_proforma(
+        self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID
+    ) -> QuotationResponse | None:
+        row = await self.repo.get(tenant_id, quotation_id, for_update=True)
+        if row is None:
+            return None
+        today, requires_approval = await self._response_context(tenant_id)
+        if row.status == QuotationStatus.ACCEPTED.value:
+            return self._to_response(row, today, requires_approval=requires_approval)
+        if row.status != QuotationStatus.SENT.value:
+            return self._to_response(row, today, requires_approval=requires_approval)
+        old_values = await self._quotation_snapshot(tenant_id, row)
+        row.status = QuotationStatus.ACCEPTED.value
+        row.version += 1
+        row.updated_by = actor_user_id
+        await self.session.flush()
+        await self.session.refresh(row, attribute_names=["updated_at"])
+        await self.audit.write(
+            tenant_id=tenant_id,
+            user_id=actor_user_id,
+            action=AuditAction.ACCEPT,
+            module=ERP_MODULE,
+            entity_type="quotation",
+            entity_id=row.id,
+            old_values=old_values,
+            new_values=await self._quotation_snapshot(tenant_id, row),
+        )
         return self._to_response(row, today, requires_approval=requires_approval)
 
     async def mark_converted(
@@ -470,34 +615,53 @@ class QuotationService:
         expected_version: int,
     ) -> QuotationResponse:
         async with transaction(self.session):
-            row = await self._require(tenant_id, quotation_id, for_update=True)
-            old_values = await self._quotation_snapshot(tenant_id, row)
-            today, requires_approval = await self._response_context(tenant_id)
-            current = self._effective_status(row, today)
-            self._assert_version(row, expected_version)
-            assert_convertible(current)
-            if row.converted_document_id is not None:
-                raise InvalidStatusTransitionError("Quotation has already been converted")
-            target = next_status(current, "convert")
-            row.status = target.value
-            row.converted_at = utcnow()
-            row.converted_document_type = document_type.value
-            row.converted_document_id = document_id
-            row.version += 1
-            row.updated_by = actor_user_id
-            await self.session.flush()
-            await self.session.refresh(row, attribute_names=["updated_at"])
-            await self.audit.write(
-                tenant_id=tenant_id,
-                user_id=actor_user_id,
-                action=AuditAction.CONVERT,
-                module=ERP_MODULE,
-                entity_type="quotation",
-                entity_id=row.id,
-                old_values=old_values,
-                new_values=await self._quotation_snapshot(tenant_id, row),
+            return await self._apply_converted(
+                tenant_id,
+                quotation_id,
+                document_type=document_type,
+                document_id=document_id,
+                actor_user_id=actor_user_id,
+                expected_version=expected_version,
             )
-            return self._to_response(row, today, requires_approval=requires_approval)
+
+    async def _apply_converted(
+        self,
+        tenant_id: UUID,
+        quotation_id: UUID,
+        *,
+        document_type: DocumentType,
+        document_id: UUID,
+        actor_user_id: UUID,
+        expected_version: int,
+    ) -> QuotationResponse:
+        row = await self._require(tenant_id, quotation_id, for_update=True)
+        old_values = await self._quotation_snapshot(tenant_id, row)
+        today, requires_approval = await self._response_context(tenant_id)
+        current = self._effective_status(row, today)
+        self._assert_version(row, expected_version)
+        assert_convertible(current)
+        if row.converted_document_id is not None:
+            raise InvalidStatusTransitionError("Quotation has already been converted")
+        target = next_status(current, "convert")
+        row.status = target.value
+        row.converted_at = utcnow()
+        row.converted_document_type = document_type.value
+        row.converted_document_id = document_id
+        row.version += 1
+        row.updated_by = actor_user_id
+        await self.session.flush()
+        await self.session.refresh(row, attribute_names=["updated_at"])
+        await self.audit.write(
+            tenant_id=tenant_id,
+            user_id=actor_user_id,
+            action=AuditAction.CONVERT,
+            module=ERP_MODULE,
+            entity_type="quotation",
+            entity_id=row.id,
+            old_values=old_values,
+            new_values=await self._quotation_snapshot(tenant_id, row),
+        )
+        return self._to_response(row, today, requires_approval=requires_approval)
 
     async def _transition(
         self,
@@ -783,6 +947,10 @@ class QuotationService:
             self.actor_permissions, QUOTATION_DELETE
         ):
             actions.append("delete")
+        if status in {QuotationStatus.SENT, QuotationStatus.ACCEPTED} and has_permission(
+            self.actor_permissions, PROFORMA_INVOICE_CREATE
+        ):
+            actions.append("create_proforma")
         return actions
 
     def _to_response(
@@ -829,6 +997,9 @@ class QuotationService:
             converted_at=row.converted_at,
             converted_document_type=row.converted_document_type,
             converted_document_id=row.converted_document_id,
+            revision_number=row.revision_number,
+            revision_count=row.revision_number,
+            display_number=_display_number(row.quote_number, row.revision_number),
             available_actions=self._available_actions(status, requires_approval=requires_approval),
             lines=[QuotationLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
@@ -895,6 +1066,7 @@ class QuotationService:
             "grand_total": row.grand_total,
             "foreign_amount": row.foreign_amount,
             "base_amount": row.base_amount,
+            "revision_number": row.revision_number,
         }
 
     async def _require(
@@ -904,3 +1076,89 @@ class QuotationService:
         if row is None:
             raise ResourceNotFoundError("Quotation not found")
         return row
+
+    async def _assert_no_live_dependents(self, tenant_id: UUID, quotation_id: UUID) -> None:
+        for probe in registered_probes():
+            if await probe(self.session, tenant_id, quotation_id):
+                raise QuotationHasLiveProformaError()
+
+    async def _revision_line_snapshots(
+        self, tenant_id: UUID, row: Quotation
+    ) -> builtins.list[dict[str, object]]:
+        snapshots: builtins.list[dict[str, object]] = []
+        for line in row.lines:
+            product_sku: str | None = None
+            product_name: str | None = None
+            unit_name: str | None = None
+            tax_name: str | None = None
+            if line.product_id is not None:
+                product = await self.products.get(tenant_id, line.product_id)
+                product_sku = product.sku
+                product_name = product.name
+            if line.unit_id is not None:
+                unit_name = (await self.units.get(tenant_id, line.unit_id)).name
+            if line.tax_id is not None:
+                tax_name = (await self.taxes.get(tenant_id, line.tax_id)).name
+            snapshots.append(
+                {
+                    "line_number": line.line_number,
+                    "product_id": line.product_id,
+                    "product_sku": product_sku,
+                    "product_name": product_name,
+                    "description": line.description,
+                    "quantity": line.quantity,
+                    "unit_id": line.unit_id,
+                    "unit_name": unit_name,
+                    "rate": line.rate,
+                    "discount_type": line.discount_type,
+                    "discount_value": line.discount_value,
+                    "discount_amount": line.discount_amount,
+                    "tax_id": line.tax_id,
+                    "tax_name": tax_name,
+                    "tax_rate": line.tax_rate,
+                    "tax_amount": line.tax_amount,
+                    "amount": line.amount,
+                }
+            )
+        return snapshots
+
+    def _revision_list_item(self, row: QuotationRevision) -> QuotationRevisionListItem:
+        header = row.header if isinstance(row.header, dict) else {}
+        grand_total = header.get("grand_total")
+        parsed_total: Decimal | None
+        try:
+            parsed_total = Decimal(str(grand_total)) if grand_total is not None else None
+        except (ArithmeticError, ValueError, TypeError):
+            parsed_total = None
+        return QuotationRevisionListItem(
+            id=row.id,
+            revision_number=row.revision_number,
+            quote_number=row.quote_number,
+            status_at_revision=row.status_at_revision,
+            revision_reason=row.revision_reason,
+            revised_at=row.revised_at,
+            revised_by=row.revised_by,
+            grand_total=parsed_total,
+        )
+
+
+def _display_number(quote_number: str, revision_number: int) -> str:
+    if revision_number == 0:
+        return quote_number
+    return f"{quote_number}-R{revision_number}"
+
+
+def _jsonable(value: object) -> Any:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_jsonable(item) for item in value]
+    return value
