@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import builtins
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 from typing import Any, cast
@@ -48,6 +48,7 @@ from app.core.exceptions import (
 from app.core.permissions import has_permission
 from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
+from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 from app.erp.sales_orders.service import SalesOrderService
@@ -100,6 +101,7 @@ class DeliveryNoteService:
         self.idempotency = IdempotencyService(session)
         self.outbox = OutboxService(session)
         self.audit = AuditWriter(session)
+        self.inventory_ledger = InventoryLedgerService(session, actor_permissions=actor_permissions)
         self._can_override = has_permission(actor_permissions, PERIOD_OVERRIDE)
         self._period_policy: PeriodLockPolicy | None = None
 
@@ -391,6 +393,7 @@ class DeliveryNoteService:
             occurred_at = utcnow()
             movement_type = self._movement_type(row)
             deliveries: dict[UUID, Decimal] = {}
+            cogs_value = _ZERO
             for line in row.lines:
                 so_line = so_lines.get(line.sales_order_line_id)
                 if so_line is None:
@@ -413,7 +416,7 @@ class DeliveryNoteService:
                     if release_qty > _ZERO:
                         await self.stock.release_reserved_locked(locked, qty=release_qty)
                         so_line.qty_reserved = quantize_quantity(so_line.qty_reserved - release_qty)
-                    await self.stock.apply_locked(
+                    result = await self.stock.apply_locked(
                         tenant_id,
                         locked,
                         qty=-line.quantity,
@@ -426,6 +429,8 @@ class DeliveryNoteService:
                         occurred_at=occurred_at,
                         unit_id=line.unit_id,
                     )
+                    if result.movement.value is not None:
+                        cogs_value += result.movement.value
                 deliveries[line.sales_order_line_id] = (
                     deliveries.get(line.sales_order_line_id, _ZERO) + line.quantity
                 )
@@ -437,6 +442,15 @@ class DeliveryNoteService:
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
+            await self.inventory_ledger.post_delivery_note(
+                tenant_id,
+                source_id=row.id,
+                entry_date=row.document_date,
+                amount=cogs_value,
+                actor_id=actor_user_id,
+                branch_id=row.branch_id,
+                document_number=row.document_number,
+            )
             await self.session.refresh(row, attribute_names=["updated_at"])
             loaded = await self._require(tenant_id, note_id)
             await self.audit.write(
@@ -487,7 +501,7 @@ class DeliveryNoteService:
             current = StockDocumentStatus(row.status)
             old_values = await self._snapshot(tenant_id, row)
             if current == StockDocumentStatus.POSTED:
-                await self._cancel_posted(tenant_id, row)
+                await self._cancel_posted(tenant_id, row, actor_user_id=actor_user_id)
             target = next_status(current, "cancel")
             row.status = target.value
             row.cancelled_at = utcnow()
@@ -563,7 +577,28 @@ class DeliveryNoteService:
         row.shipment_id = None
         await self.session.flush()
 
-    async def _cancel_posted(self, tenant_id: UUID, row: DeliveryNote) -> None:
+    async def apply_line_invoices(
+        self,
+        tenant_id: UUID,
+        note_id: UUID,
+        invoices: Mapping[UUID, Decimal],
+    ) -> None:
+        """Caller owns the transaction. qty may be negative to reverse an invoice."""
+
+        row = await self._require(tenant_id, note_id, for_update=True)
+        by_id = {line.id: line for line in row.lines}
+        for line_id, qty in invoices.items():
+            line = by_id.get(line_id)
+            if line is None:
+                raise ValidationError("Delivery note line not found on this document")
+            line.qty_invoiced = quantize_quantity(line.qty_invoiced + qty)
+            if line.qty_invoiced < _ZERO:
+                raise ValidationError("Invoiced quantity cannot be negative")
+        await self.session.flush()
+
+    async def _cancel_posted(
+        self, tenant_id: UUID, row: DeliveryNote, *, actor_user_id: UUID
+    ) -> None:
         policy = await self._ensure_policy(tenant_id)
         if policy.is_locked(row.document_date, can_override=self._can_override):
             raise DeliveryNoteCannotCancelError("The period is locked")
@@ -607,6 +642,14 @@ class DeliveryNoteService:
                 )
         await self.sales_orders.apply_line_deliveries(
             tenant_id, row.sales_order_id, {key: -qty for key, qty in reversals.items()}
+        )
+        await self.inventory_ledger.reverse(
+            tenant_id,
+            source_type=SOURCE_DELIVERY_NOTE,
+            source_id=row.id,
+            reversal_date=row.document_date,
+            reason=row.cancel_reason or "Delivery note cancel",
+            actor_id=actor_user_id,
         )
         row.is_posted = False
 

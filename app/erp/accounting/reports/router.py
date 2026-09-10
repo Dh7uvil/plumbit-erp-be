@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
-from app.auth.catalog import REPORT_LEDGER
+from app.auth.catalog import REPORT_LEDGER, REPORT_TAX
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
@@ -15,7 +15,9 @@ from app.core.enums import PartyType
 from app.erp.accounting.reports.dependencies import ReportServiceDependency
 from app.erp.accounting.reports.schemas import (
     AccountStatementResponse,
+    ExportEvidenceExceptionResponse,
     GeneralLedgerResponse,
+    InvoicedNotDispatchedResponse,
     TrialBalanceResponse,
 )
 
@@ -85,3 +87,30 @@ async def get_account_statement(
             to_date=to_date,
         )
     )
+
+
+@router.get(
+    "/export-evidence-exceptions",
+    response_model=ApiResponse[ExportEvidenceExceptionResponse],
+)
+async def get_export_evidence_exceptions(
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(REPORT_TAX))],
+    as_of: date | None = None,
+) -> ApiResponse[ExportEvidenceExceptionResponse]:
+    return ApiResponse(
+        data=await service.export_evidence_exceptions(tenant.tenant_id, as_of=as_of)
+    )
+
+
+@router.get(
+    "/invoiced-not-dispatched",
+    response_model=ApiResponse[InvoicedNotDispatchedResponse],
+)
+async def get_invoiced_not_dispatched(
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(REPORT_TAX))],
+) -> ApiResponse[InvoicedNotDispatchedResponse]:
+    return ApiResponse(data=await service.invoiced_not_dispatched(tenant.tenant_id))

@@ -32,7 +32,7 @@ implemented vs planned so agents do not stub a slice without an API.
 | Module | Owns |
 | --- | --- |
 | `auth` (Identity) | **Implemented:** auth, users, roles, permissions, tenants/org-settings, branches, departments, employees (nested), audit-logs. Attachments in `app/common/attachments/` with `identity.attachment.*`. Tenant operational settings (`allow_negative_stock`, `costing_method`, `allow_over_receipt`, `over_receipt_tolerance_pct`, `qc_required_default`, `lock_date`, `hard_lock_date`, `lock_reason`, `hard_lock_reason`) are first-class columns. |
-| `erp` | **Implemented:** currencies, exchange_rates, taxes, payment_terms, terms_templates, document_sequences, suppliers, supplier_products, quotations, proforma_invoices, period_lock, sales_orders, purchase_orders, accounting/accounts, accounting/ledger, accounting/opening_balances, accounting/reports. **Planned:** sales_invoices, credit_notes, customer_payments, purchase_invoices, debit_notes, supplier_payments, einvoicing **status APIs** (on sales invoices and credit notes; inbound e-bills as draft purchase invoices). |
+| `erp` | **Implemented:** currencies, exchange_rates, taxes, payment_terms, terms_templates, document_sequences, suppliers, supplier_products, quotations, proforma_invoices, period_lock, sales_orders, sales_invoices, credit_notes, purchase_orders, purchase_invoices, debit_notes, accounting/accounts, accounting/ledger, accounting/opening_balances, accounting/reports. **Planned:** customer_payments, supplier_payments, einvoicing **status APIs** (on sales invoices and credit notes; inbound e-bills as draft purchase invoices). |
 | `inventory_management` | **Implemented:** units, categories, products, price_lists, warehouses, stock, stock_transfers, stock_adjustments, costing (internal FIFO ledger), goods_receipts, quality_inspections, delivery_notes, packages, shipments, sales_returns, history (query layer). **Planned:** — |
 | `crm` | **Implemented:** customers, contacts. **Planned:** leads, opportunities, activities. |
 | `communication_service` | **Planned:** email, whatsapp, chat, meetings. |
@@ -89,11 +89,11 @@ plumbit-erp-be/
 │   │   ├── accounting/           taxes, payment_terms, terms_templates, document_sequences;
 │   │   │                         nested: accounts/, ledger/, opening_balances/, reports/
 │   │   ├── sales_orders/
-│   │   ├── sales_invoices/       planned (post + einvoice status)
-│   │   ├── credit_notes/         planned
+│   │   ├── sales_invoices/
+│   │   ├── credit_notes/
 │   │   ├── purchase_orders/
-│   │   ├── purchase_invoices/    planned
-│   │   ├── debit_notes/          planned
+│   │   ├── purchase_invoices/
+│   │   ├── debit_notes/
 │   │   └── einvoicing/           planned status helpers; adapters are NOT here
 │   ├── inventory_management/     units/ categories/ products/ price_lists/ warehouses/
 │   │                             stock/ costing/ stock_transfers/ stock_adjustments/
@@ -292,9 +292,9 @@ class OrderService:
 
     async def post(self, tenant_id: UUID, invoice_id: UUID):
         # If-Match / version; Idempotency-Key
-        # Inventory service checks allow_negative_stock under SELECT FOR UPDATE
-        # If false and qty unavailable → INVENTORY_INSUFFICIENT_STOCK
-        # Post AR / tax / GL in the same transaction as the stock movement
+        # Sales/purchase invoices do not move stock. Delivery notes post COGS;
+        # GRNs post inventory vs GRNI. Invoice post writes AR/AP, tax, and GL
+        # through LedgerPostingService in the same transaction.
         # After commit: outbox EinvoiceSubmitRequested (never call ASP here)
         ...
 ```
@@ -343,9 +343,7 @@ Transactions are controlled at the service / use-case level, not inside reposito
 
 ```text
 Post Sales Invoice
-      ├── Lock stock rows (SELECT FOR UPDATE)
-      ├── Move stock
-      ├── Post AR / tax / GL
+      ├── Post AR / tax / GL (no stock; COGS already posted by the delivery note)
       ├── Write audit log
       ├── Commit
       └── Outbox: PDF, notification, EinvoiceSubmitRequested

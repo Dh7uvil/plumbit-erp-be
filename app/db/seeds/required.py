@@ -197,6 +197,7 @@ async def seed_required_masters(session: AsyncSession, tenant_id: UUID) -> None:
 
     await _upsert_document_sequences(session, tenant_id)
     await seed_chart_of_accounts(session, tenant_id)
+    await reconcile_chart_of_accounts(session, tenant_id)
     await session.flush()
 
 
@@ -272,4 +273,55 @@ async def seed_chart_of_accounts(session: AsyncSession, tenant_id: UUID) -> None
         session.add(account)
         await session.flush()
         by_code[row.code] = account
+
+
+async def reconcile_chart_of_accounts(session: AsyncSession, tenant_id: UUID) -> None:
+    """Insert missing seeded rows and map unmapped system roles without resetting counters."""
+
+    existing = list(
+        (
+            await session.execute(
+                select(Account).where(Account.tenant_id == tenant_id, Account.deleted_at.is_(None))
+            )
+        ).scalars().all()
+    )
+    if not existing:
+        return
+    by_code = {row.code: row for row in existing}
+    mapped_roles = {row.system_role for row in existing if row.system_role}
+    for row in UAE_CHART:
+        account = by_code.get(row.code)
+        if account is None:
+            parent = by_code.get(row.parent_code) if row.parent_code else None
+            depth = 0 if parent is None else parent.depth + 1
+            role_value = None if row.system_role is None else row.system_role.value
+            if role_value is not None and role_value in mapped_roles:
+                role_value = None
+            account = Account(
+                tenant_id=tenant_id,
+                code=row.code,
+                name=row.name,
+                account_type=row.account_type.value,
+                account_subtype=row.account_subtype.value,
+                parent_id=None if parent is None else parent.id,
+                depth=depth,
+                is_group=row.is_group,
+                is_system=True,
+                system_role=role_value,
+            )
+            session.add(account)
+            await session.flush()
+            by_code[row.code] = account
+            if role_value is not None:
+                mapped_roles.add(role_value)
+            continue
+        if row.system_role is None:
+            continue
+        role_value = row.system_role.value
+        if role_value in mapped_roles:
+            continue
+        if account.system_role is None:
+            account.system_role = role_value
+            account.is_system = True
+            mapped_roles.add(role_value)
 

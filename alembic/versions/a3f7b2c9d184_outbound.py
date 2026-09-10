@@ -1,4 +1,4 @@
-"""Outbound Stage E: delivery notes, packages, shipments, sales returns.
+"""Delivery notes, packages, shipments, and sales returns.
 
 Revision ID: a3f7b2c9d184
 Revises: f0c1d5e8a247

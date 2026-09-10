@@ -159,5 +159,6 @@ class DeliveryNoteLine(TenantModel):
         nullable=True,
     )
     rate: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
+    qty_invoiced: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
 
     delivery_note: Mapped[DeliveryNote] = relationship(back_populates="lines")

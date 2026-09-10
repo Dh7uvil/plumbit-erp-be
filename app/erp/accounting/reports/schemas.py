@@ -83,3 +83,39 @@ class AccountStatementResponse(BaseModel):
     opening_balance: Decimal
     closing_balance: Decimal
     lines: list[AccountStatementLine] = Field(default_factory=list)
+
+
+class ExportEvidenceExceptionLine(BaseModel):
+    sales_invoice_id: UUID
+    document_number: str
+    invoice_date: date
+    customer_id: UUID
+    customer_name: str
+    grand_total: Decimal
+    days_elapsed: int
+    window_days: int
+    overdue: bool
+
+
+class ExportEvidenceExceptionResponse(BaseModel):
+    as_of: date
+    window_days: int
+    lines: list[ExportEvidenceExceptionLine] = Field(default_factory=list)
+
+
+class InvoicedNotDispatchedLine(BaseModel):
+    sales_invoice_id: UUID
+    sales_invoice_line_id: UUID
+    document_number: str
+    invoice_date: date
+    customer_id: UUID
+    customer_name: str
+    product_id: UUID | None
+    description: str
+    quantity: Decimal
+    amount: Decimal
+    cogs_status: str
+
+
+class InvoicedNotDispatchedResponse(BaseModel):
+    lines: list[InvoicedNotDispatchedLine] = Field(default_factory=list)

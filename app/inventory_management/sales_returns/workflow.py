@@ -6,6 +6,7 @@ from app.core.exceptions import InvalidStatusTransitionError
 _TRANSITIONS: dict[tuple[StockDocumentStatus, str], StockDocumentStatus] = {
     (StockDocumentStatus.DRAFT, "post"): StockDocumentStatus.POSTED,
     (StockDocumentStatus.DRAFT, "cancel"): StockDocumentStatus.CANCELLED,
+    (StockDocumentStatus.POSTED, "cancel"): StockDocumentStatus.CANCELLED,
 }
 
 _EDITABLE = frozenset({StockDocumentStatus.DRAFT})

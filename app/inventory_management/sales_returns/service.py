@@ -39,11 +39,13 @@ from app.core.exceptions import (
     DocumentStaleError,
     InvalidStatusTransitionError,
     ResourceNotFoundError,
+    SalesReturnCannotCancelError,
     ValidationError,
 )
 from app.core.permissions import has_permission
 from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
+from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.sales_orders.service import SalesOrderService
 from app.inventory_management.delivery_notes.service import DeliveryNoteService
@@ -101,6 +103,7 @@ class SalesReturnService:
         self.idempotency = IdempotencyService(session)
         self.outbox = OutboxService(session)
         self.audit = AuditWriter(session)
+        self.inventory_ledger = InventoryLedgerService(session, actor_permissions=actor_permissions)
         self._can_override = has_permission(actor_permissions, PERIOD_OVERRIDE)
         self._period_policy: PeriodLockPolicy | None = None
 
@@ -292,6 +295,8 @@ class SalesReturnService:
             dn_lines = {line.id: line for line in note.lines}
             occurred_at = utcnow()
             so_returns: dict[UUID, Decimal] = {}
+            restored_value = _ZERO
+            scrap_value = _ZERO
             for line in row.lines:
                 dn_line = dn_lines.get(line.delivery_note_line_id)
                 if dn_line is None:
@@ -313,7 +318,7 @@ class SalesReturnService:
                         can_override_soft_lock=self._can_override,
                     )
                     hold = line.quantity if disposition == ReturnDisposition.QC_HOLD else _ZERO
-                    await self.stock.reverse_outbound_locked(
+                    restored = await self.stock.reverse_outbound_locked(
                         tenant_id,
                         locked,
                         qty=line.quantity,
@@ -330,8 +335,10 @@ class SalesReturnService:
                         occurred_at=occurred_at,
                         unit_id=line.unit_id,
                     )
+                    if restored.value is not None:
+                        restored_value += restored.value
                     if disposition == ReturnDisposition.SCRAP:
-                        await self.stock.apply_locked(
+                        scrapped = await self.stock.apply_locked(
                             tenant_id,
                             locked,
                             qty=-line.quantity,
@@ -344,6 +351,8 @@ class SalesReturnService:
                             occurred_at=occurred_at,
                             unit_id=line.unit_id,
                         )
+                        if scrapped.movement.value is not None:
+                            scrap_value += scrapped.movement.value
                 so_returns[dn_line.sales_order_line_id] = (
                     so_returns.get(dn_line.sales_order_line_id, _ZERO) + line.quantity
                 )
@@ -355,6 +364,15 @@ class SalesReturnService:
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
+            await self.inventory_ledger.post_sales_return(
+                tenant_id,
+                source_id=row.id,
+                entry_date=row.document_date,
+                restored_amount=restored_value,
+                scrap_amount=scrap_value,
+                actor_id=actor_user_id,
+                document_number=row.document_number,
+            )
             await self.session.refresh(row, attribute_names=["updated_at"])
             loaded = await self._require(tenant_id, return_id)
             await self.audit.write(
@@ -393,6 +411,8 @@ class SalesReturnService:
             row = await self._require(tenant_id, return_id, for_update=True)
             self._assert_version(row, expected_version)
             current = StockDocumentStatus(row.status)
+            if current == StockDocumentStatus.POSTED:
+                await self._cancel_posted(tenant_id, row, actor_user_id=actor_user_id)
             target = next_status(current, "cancel")
             row.status = target.value
             row.cancelled_at = utcnow()
@@ -421,6 +441,79 @@ class SalesReturnService:
                     dedupe_key=f"sales-return-cancelled:{return_id}",
                 )
             return self._to_response(row)
+
+    async def _cancel_posted(
+        self, tenant_id: UUID, row: SalesReturn, *, actor_user_id: UUID
+    ) -> None:
+        policy = await self._ensure_policy(tenant_id)
+        if policy.is_locked(row.document_date, can_override=self._can_override):
+            raise SalesReturnCannotCancelError("The period is locked")
+        occurred_at = utcnow()
+        so_returns: dict[UUID, Decimal] = {}
+        note = await self.delivery_notes.get(tenant_id, row.delivery_note_id)
+        dn_lines = {line.id: line for line in note.lines}
+        for line in row.lines:
+            dn_line = dn_lines.get(line.delivery_note_line_id)
+            if dn_line is None:
+                raise ValidationError("Delivery note line not found on this note")
+            so_returns[dn_line.sales_order_line_id] = (
+                so_returns.get(dn_line.sales_order_line_id, _ZERO) + line.quantity
+            )
+            stockable = await self._is_stockable(tenant_id, line.product_id)
+            if not stockable or line.product_id is None:
+                continue
+            locked = await self.stock.lock_balance(
+                tenant_id,
+                warehouse_id=row.warehouse_id,
+                product_id=line.product_id,
+                document_date=row.document_date,
+                can_override_soft_lock=self._can_override,
+            )
+            disposition = ReturnDisposition(line.disposition)
+            if disposition == ReturnDisposition.SCRAP:
+                await self.stock.reverse_outbound_locked(
+                    tenant_id,
+                    locked,
+                    qty=line.quantity,
+                    movement_type=StockMovementType.RETURN_IN,
+                    source_type=SOURCE_SALES_RETURN,
+                    source_id=row.id,
+                    source_line_id=line.id,
+                    document_date=row.document_date,
+                    notes=row.cancel_reason or "Sales return cancel scrap",
+                    occurred_at=occurred_at,
+                    unit_id=line.unit_id,
+                )
+            hold = -line.quantity if disposition == ReturnDisposition.QC_HOLD else _ZERO
+            await self.stock.reconsume_outbound_locked(
+                tenant_id,
+                locked,
+                qty=line.quantity,
+                movement_type=StockMovementType.SALE,
+                source_type=SOURCE_SALES_RETURN,
+                source_id=row.id,
+                source_line_id=line.id,
+                document_date=row.document_date,
+                notes=row.cancel_reason or "Sales return cancel",
+                original_source_type=SOURCE_DELIVERY_NOTE,
+                original_source_id=row.delivery_note_id,
+                original_source_line_id=dn_line.id,
+                quality_hold_delta=hold,
+                occurred_at=occurred_at,
+                unit_id=line.unit_id,
+            )
+        await self.sales_orders.apply_line_returns(
+            tenant_id, row.sales_order_id, {key: -qty for key, qty in so_returns.items()}
+        )
+        await self.inventory_ledger.reverse(
+            tenant_id,
+            source_type=SOURCE_SALES_RETURN,
+            source_id=row.id,
+            reversal_date=row.document_date,
+            reason=row.cancel_reason or "Sales return cancel",
+            actor_id=actor_user_id,
+        )
+        row.is_posted = False
 
     async def _build_draft(
         self,

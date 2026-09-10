@@ -1,4 +1,4 @@
-"""Trial balance, general ledger, and party account statement."""
+"""Trial balance, general ledger, party statements, and tax exception reports."""
 
 from __future__ import annotations
 
@@ -8,23 +8,39 @@ from uuid import UUID
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.common.utils.currency import quantize_money
-from app.core.enums import AccountType, JournalEntryStatus, PartyType
+from app.common.utils.datetime import utcnow
+from app.common.utils.export_evidence import has_export_evidence
+from app.core.enums import (
+    AccountType,
+    CogsStatus,
+    InvoiceDocumentStatus,
+    JournalEntryStatus,
+    PartyType,
+)
 from app.core.exceptions import ValidationError
+from app.crm.customers.models import Customer
 from app.erp.accounting.accounts.service import AccountService
 from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
 from app.erp.accounting.reports.schemas import (
     AccountStatementLine,
     AccountStatementResponse,
+    ExportEvidenceExceptionLine,
+    ExportEvidenceExceptionResponse,
     GeneralLedgerLine,
     GeneralLedgerResponse,
+    InvoicedNotDispatchedLine,
+    InvoicedNotDispatchedResponse,
     TrialBalanceLine,
     TrialBalanceResponse,
 )
+from app.erp.sales_invoices.models import SalesInvoice, SalesInvoiceLine
 
 _ZERO = Decimal("0")
 _DEBIT_NORMAL = frozenset({AccountType.ASSET.value, AccountType.EXPENSE.value})
+EXPORT_EVIDENCE_WINDOW_DAYS = 90
 
 
 def _posted_join():
@@ -248,6 +264,124 @@ class ReportService:
             opening_balance=quantize_money(opening_d - opening_c),
             closing_balance=running,
             lines=lines,
+        )
+
+    async def export_evidence_exceptions(
+        self,
+        tenant_id: UUID,
+        *,
+        as_of: date | None = None,
+    ) -> ExportEvidenceExceptionResponse:
+        as_of_date = as_of or utcnow().date()
+        statement = (
+            select(SalesInvoice)
+            .where(
+                SalesInvoice.tenant_id == tenant_id,
+                SalesInvoice.deleted_at.is_(None),
+                SalesInvoice.status == InvoiceDocumentStatus.POSTED.value,
+                SalesInvoice.is_export.is_(True),
+            )
+            .options(selectinload(SalesInvoice.lines))
+            .order_by(SalesInvoice.invoice_date, SalesInvoice.document_number)
+        )
+        invoices = list((await self.session.execute(statement)).scalars().unique().all())
+        customer_ids = {row.customer_id for row in invoices}
+        names: dict[UUID, str] = {}
+        if customer_ids:
+            name_rows = (
+                await self.session.execute(
+                    select(Customer.id, Customer.name).where(
+                        Customer.tenant_id == tenant_id,
+                        Customer.id.in_(list(customer_ids)),
+                    )
+                )
+            ).all()
+            names = {row[0]: row[1] for row in name_rows}
+        lines: list[ExportEvidenceExceptionLine] = []
+        for invoice in invoices:
+            dn_ids = list(
+                {
+                    line.delivery_note_id
+                    for line in invoice.lines
+                    if line.delivery_note_id is not None
+                }
+            )
+            evidence_ok = bool(dn_ids) and await has_export_evidence(
+                self.session, tenant_id, dn_ids
+            )
+            if evidence_ok:
+                continue
+            days_elapsed = (as_of_date - invoice.invoice_date).days
+            lines.append(
+                ExportEvidenceExceptionLine(
+                    sales_invoice_id=invoice.id,
+                    document_number=invoice.document_number,
+                    invoice_date=invoice.invoice_date,
+                    customer_id=invoice.customer_id,
+                    customer_name=names.get(invoice.customer_id, ""),
+                    grand_total=invoice.grand_total,
+                    days_elapsed=days_elapsed,
+                    window_days=EXPORT_EVIDENCE_WINDOW_DAYS,
+                    overdue=days_elapsed > EXPORT_EVIDENCE_WINDOW_DAYS,
+                )
+            )
+        return ExportEvidenceExceptionResponse(
+            as_of=as_of_date,
+            window_days=EXPORT_EVIDENCE_WINDOW_DAYS,
+            lines=lines,
+        )
+
+    async def invoiced_not_dispatched(
+        self, tenant_id: UUID
+    ) -> InvoicedNotDispatchedResponse:
+        statement = (
+            select(
+                SalesInvoice.id,
+                SalesInvoiceLine.id,
+                SalesInvoice.document_number,
+                SalesInvoice.invoice_date,
+                SalesInvoice.customer_id,
+                Customer.name,
+                SalesInvoiceLine.product_id,
+                SalesInvoiceLine.description,
+                SalesInvoiceLine.quantity,
+                SalesInvoiceLine.amount,
+                SalesInvoiceLine.cogs_status,
+            )
+            .select_from(SalesInvoiceLine)
+            .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.sales_invoice_id)
+            .join(Customer, Customer.id == SalesInvoice.customer_id)
+            .where(
+                SalesInvoice.tenant_id == tenant_id,
+                SalesInvoice.deleted_at.is_(None),
+                SalesInvoice.status == InvoiceDocumentStatus.POSTED.value,
+                SalesInvoiceLine.tenant_id == tenant_id,
+                SalesInvoiceLine.cogs_status == CogsStatus.PENDING.value,
+            )
+            .order_by(
+                SalesInvoice.invoice_date,
+                SalesInvoice.document_number,
+                SalesInvoiceLine.line_number,
+            )
+        )
+        rows = (await self.session.execute(statement)).all()
+        return InvoicedNotDispatchedResponse(
+            lines=[
+                InvoicedNotDispatchedLine(
+                    sales_invoice_id=row[0],
+                    sales_invoice_line_id=row[1],
+                    document_number=str(row[2]),
+                    invoice_date=row[3],
+                    customer_id=row[4],
+                    customer_name=str(row[5]),
+                    product_id=row[6],
+                    description=str(row[7]),
+                    quantity=row[8],
+                    amount=row[9],
+                    cogs_status=str(row[10]),
+                )
+                for row in rows
+            ]
         )
 
     async def _sum_by_account(

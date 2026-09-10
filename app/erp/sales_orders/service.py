@@ -1012,6 +1012,45 @@ class SalesOrderService:
         self._refresh_fulfillment_status(row)
         await self.session.flush()
 
+    async def apply_line_invoices(
+        self,
+        tenant_id: UUID,
+        sales_order_id: UUID,
+        invoices: Mapping[UUID, Decimal],
+    ) -> None:
+        """Caller owns the transaction. qty may be negative to reverse an invoice."""
+
+        row = await self._require(tenant_id, sales_order_id, for_update=True)
+        by_id = {line.id: line for line in row.lines}
+        for line_id, qty in invoices.items():
+            line = by_id.get(line_id)
+            if line is None:
+                raise ValidationError("Sales order line not found on this order")
+            line.qty_invoiced = quantize_quantity(line.qty_invoiced + qty)
+            if line.qty_invoiced < _ZERO:
+                raise ValidationError("Invoiced quantity cannot be negative")
+        self._refresh_billing_status(row)
+        await self.session.flush()
+
+    def _refresh_billing_status(self, row: SalesOrder) -> None:
+        if not row.lines:
+            row.billing_status = BillingStatus.NOT_INVOICED.value
+            return
+        states: builtins.list[str] = []
+        for line in row.lines:
+            if line.qty_invoiced <= _ZERO:
+                states.append("none")
+            elif line.qty_invoiced >= line.quantity:
+                states.append("full")
+            else:
+                states.append("partial")
+        if all(item == "none" for item in states):
+            row.billing_status = BillingStatus.NOT_INVOICED.value
+        elif all(item == "full" for item in states):
+            row.billing_status = BillingStatus.INVOICED.value
+        else:
+            row.billing_status = BillingStatus.PARTIALLY_INVOICED.value
+
     async def deliverable_lines(
         self, tenant_id: UUID, sales_order_id: UUID
     ) -> builtins.list[SalesOrderLine]:
@@ -1024,7 +1063,7 @@ class SalesOrderService:
         return self._outstanding_delivery(line)
 
     async def tracker(self, tenant_id: UUID, sales_order_id: UUID) -> OrderTrackerResponse:
-        """Read-only projection of related documents. Invoice/payment rows join in Stage H."""
+        """Read-only projection of related documents. Payment rows join in a later stage."""
 
         from app.erp.proforma_invoices.service import ProformaInvoiceService
         from app.erp.purchase_orders.service import PurchaseOrderService
@@ -1220,7 +1259,30 @@ class SalesOrderService:
         else:
             rows.append(self._tracker_pending("sales_return", DocumentType.SALES_RETURN.value))
 
-        rows.append(self._tracker_pending("sales_invoice", DocumentType.SALES_INVOICE.value))
+        from app.erp.sales_invoices.repository import SalesInvoiceRepository
+
+        invoices = await SalesInvoiceRepository(self.session).list_for_sales_order(
+            tenant_id, sales_order_id
+        )
+        if invoices:
+            for item in invoices:
+                rows.append(
+                    self._tracker_row(
+                        stage="sales_invoice",
+                        document_type=DocumentType.SALES_INVOICE.value,
+                        document_id=item.id,
+                        document_number=item.document_number,
+                        status=item.status,
+                        document_date=item.invoice_date,
+                        quantity_summary=self._qty_summary(
+                            [line.quantity for line in item.lines]
+                        ),
+                    )
+                )
+        else:
+            rows.append(
+                self._tracker_pending("sales_invoice", DocumentType.SALES_INVOICE.value)
+            )
         rows.append(self._tracker_pending("customer_payment", "CUSTOMER_PAYMENT"))
         return OrderTrackerResponse(sales_order_id=row.id, rows=rows)
 

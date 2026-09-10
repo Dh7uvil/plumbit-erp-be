@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
 
+from tests.api.erp.sales_orders.test_routes import _create_customer
+from tests.api.erp.sales_orders.test_routes import _create_order as _create_sales_order
+from tests.api.inventory_management.delivery_notes.test_routes import _receive_stock
 from tests.conftest import login_headers, provision_admin
 
 
@@ -128,3 +132,62 @@ async def test_account_statement_includes_party_open_item(client: AsyncClient) -
     assert data["closing_balance"] == "12.0000"
     assert data["lines"][0]["external_reference"] == "INV-OPEN-2"
     assert data["lines"][0]["journal_entry_id"] == posted.json()["data"]["id"]
+
+
+@pytest.mark.asyncio
+async def test_export_and_cogs_pending_tax_reports(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    today = datetime.now(UTC).date().isoformat()
+    updated = await client.patch(
+        "/api/v1/tenants/current",
+        headers=headers,
+        json={"books_start_date": today},
+    )
+    assert updated.status_code == 200, updated.text
+    ctx = await _receive_stock(client, headers, quantity="2")
+    product_id = str(ctx["product_id"])
+    customer_id = await _create_customer(client, headers, tax_treatment="EXPORT", trn=None)
+    created = await _create_sales_order(
+        client, headers, customer_id=customer_id, product_id=product_id, quantity="2"
+    )
+    assert created["status_code"] == 201, created["text"]
+    confirmed = await client.post(
+        f"/api/v1/sales-orders/{created['body']['data']['id']}/confirm",
+        headers=_if_match(headers, created["body"]["data"]["version"]),
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    order = confirmed.json()["data"]
+    invoice_created = await client.post(
+        "/api/v1/sales-invoices/from-sales-order",
+        headers={**headers, "Idempotency-Key": uuid4().hex},
+        json={"sales_order_id": order["id"]},
+    )
+    assert invoice_created.status_code == 201, invoice_created.text
+    invoice = invoice_created.json()["data"]
+    assert invoice["is_export"] is True
+    posted = await client.post(
+        f"/api/v1/sales-invoices/{invoice['id']}/post",
+        headers=_if_match(headers, invoice["version"], key=uuid4().hex),
+    )
+    assert posted.status_code == 200, posted.text
+    data = posted.json()["data"]
+    assert data["export_evidence_ok"] is False
+    assert data["cogs_status"] == "PENDING"
+
+    exceptions = await client.get(
+        "/api/v1/reports/export-evidence-exceptions", headers=headers
+    )
+    assert exceptions.status_code == 200, exceptions.text
+    exception_rows = exceptions.json()["data"]["lines"]
+    assert len(exception_rows) == 1
+    assert exception_rows[0]["sales_invoice_id"] == data["id"]
+    assert exception_rows[0]["window_days"] == 90
+    assert exception_rows[0]["overdue"] is False
+
+    pending = await client.get("/api/v1/reports/invoiced-not-dispatched", headers=headers)
+    assert pending.status_code == 200, pending.text
+    pending_rows = pending.json()["data"]["lines"]
+    assert len(pending_rows) == 1
+    assert pending_rows[0]["sales_invoice_id"] == data["id"]
+    assert pending_rows[0]["cogs_status"] == "PENDING"

@@ -37,6 +37,8 @@ class ProductCreate(BaseModel):
     hs_code: str | None = Field(default=None, max_length=20)
     track_inventory: bool = False
     requires_qc: bool | None = None
+    income_account_id: UUID | None = None
+    purchase_account_id: UUID | None = None
 
     @field_validator("sku")
     @classmethod
@@ -71,6 +73,8 @@ class ProductUpdate(BaseModel):
     track_inventory: bool | None = None
     requires_qc: bool | None = None
     is_active: bool | None = None
+    income_account_id: UUID | None = None
+    purchase_account_id: UUID | None = None
 
     @field_validator("name")
     @classmethod
@@ -106,6 +110,8 @@ class ProductResponse(BaseModel):
     hs_code: str | None
     track_inventory: bool
     requires_qc: bool
+    income_account_id: UUID | None = None
+    purchase_account_id: UUID | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime

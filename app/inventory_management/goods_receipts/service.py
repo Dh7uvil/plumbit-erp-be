@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import builtins
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 from typing import Any, cast
@@ -52,6 +52,7 @@ from app.core.exceptions import (
 from app.core.permissions import has_permission
 from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
+from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 from app.erp.purchase_orders.service import PurchaseOrderService
@@ -108,6 +109,7 @@ class GoodsReceiptService:
         self.idempotency = IdempotencyService(session)
         self.outbox = OutboxService(session)
         self.audit = AuditWriter(session)
+        self.inventory_ledger = InventoryLedgerService(session, actor_permissions=actor_permissions)
         self._can_override = has_permission(actor_permissions, PERIOD_OVERRIDE)
         self._period_policy: PeriodLockPolicy | None = None
 
@@ -372,6 +374,7 @@ class GoodsReceiptService:
             occurred_at = utcnow()
             movement_type = self._movement_type(row)
             received_this_doc: dict[UUID, Decimal] = {}
+            inventory_value = _ZERO
             for line in row.lines:
                 await self._assert_supplier_sku_mapped(tenant_id, row.supplier_id, line)
                 stockable = await self._is_stockable(tenant_id, line.product_id)
@@ -403,7 +406,7 @@ class GoodsReceiptService:
                     document_date=row.document_date,
                     can_override_soft_lock=self._can_override,
                 )
-                await self.stock.apply_locked(
+                result = await self.stock.apply_locked(
                     tenant_id,
                     locked,
                     qty=line.quantity,
@@ -418,6 +421,8 @@ class GoodsReceiptService:
                     unit_cost=unit_cost,
                     quality_hold_delta=hold_delta,
                 )
+                if result.movement.value is not None:
+                    inventory_value += result.movement.value
                 if row.purchase_order_id is not None:
                     await self.stock.adjust_incoming_locked(
                         locked, qty=-min(locked.row.qty_incoming, line.quantity)
@@ -436,6 +441,15 @@ class GoodsReceiptService:
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
+            await self.inventory_ledger.post_goods_receipt(
+                tenant_id,
+                source_id=row.id,
+                entry_date=row.document_date,
+                amount=inventory_value,
+                actor_id=actor_user_id,
+                branch_id=row.branch_id,
+                document_number=row.document_number,
+            )
             if needs_qc:
                 from app.inventory_management.quality_inspections.service import (
                     QualityInspectionService,
@@ -559,6 +573,25 @@ class GoodsReceiptService:
         await self.session.flush()
         return row
 
+    async def apply_line_bills(
+        self,
+        tenant_id: UUID,
+        receipt_id: UUID,
+        bills: Mapping[UUID, Decimal],
+    ) -> None:
+        """Caller owns the transaction. qty may be negative to reverse a bill."""
+
+        row = await self._require(tenant_id, receipt_id, for_update=True)
+        by_id = {line.id: line for line in row.lines}
+        for line_id, qty in bills.items():
+            line = by_id.get(line_id)
+            if line is None:
+                raise ValidationError("Goods receipt line not found on this receipt")
+            line.qty_billed = quantize_quantity(line.qty_billed + qty)
+            if line.qty_billed < _ZERO:
+                raise ValidationError("Billed quantity cannot be negative")
+        await self.session.flush()
+
     async def _cancel_posted(
         self, tenant_id: UUID, row: GoodsReceipt, *, actor_user_id: UUID
     ) -> None:
@@ -578,6 +611,8 @@ class GoodsReceiptService:
             tenant_id, SOURCE_GOODS_RECEIPT, row.id
         ):
             raise GrnCannotCancelError("Cost layers from this receipt have been consumed")
+        if any(line.qty_billed > _ZERO for line in row.lines):
+            raise GrnCannotCancelError("This goods receipt has already been billed")
         if row.purchase_order_id is not None:
             billed = await self.purchase_orders.line_qty_billed_total(
                 tenant_id, row.purchase_order_id
@@ -628,6 +663,14 @@ class GoodsReceiptService:
             )
         await inspections.cancel_drafts_for_goods_receipt(
             tenant_id, row.id, actor_user_id=actor_user_id
+        )
+        await self.inventory_ledger.reverse(
+            tenant_id,
+            source_type=SOURCE_GOODS_RECEIPT,
+            source_id=row.id,
+            reversal_date=row.document_date,
+            reason=row.cancel_reason or "Goods receipt cancel",
+            actor_id=actor_user_id,
         )
         row.qc_status = QcStatus.NOT_REQUIRED.value
         row.is_posted = False

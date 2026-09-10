@@ -2,13 +2,13 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Plumbit ERP API \u2014 Sales Returns",
-    "description": "Sales Returns",
+    "description": "Customer returns against a posted delivery note. Posting restocks, holds, or scraps quantity.",
     "version": "0.1.0"
   },
   "tags": [
     {
       "name": "Sales Returns",
-      "description": "Sales Returns"
+      "description": "Customer returns against a posted delivery note. Posting restocks, holds, or scraps quantity."
     }
   ],
   "paths": {

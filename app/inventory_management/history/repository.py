@@ -12,8 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.schemas.pagination import PageParams
-from app.core.enums import StockDocumentStatus
+from app.core.enums import InvoiceDocumentStatus, StockDocumentStatus
 from app.crm.customers.models import Customer
+from app.erp.purchase_invoices.models import PurchaseInvoice, PurchaseInvoiceLine
+from app.erp.sales_invoices.models import SalesInvoice, SalesInvoiceLine
 from app.erp.sales_orders.models import SalesOrder
 from app.inventory_management.delivery_notes.models import DeliveryNote, DeliveryNoteLine
 from app.inventory_management.goods_receipts.models import GoodsReceipt, GoodsReceiptLine
@@ -60,8 +62,102 @@ class HistoryRepository:
             .scalar_subquery()
         )
 
+    def _posted_invoice_qty_for_dn_line(self, tenant_id: UUID) -> ColumnElement[Decimal]:
+        return func.coalesce(
+            select(func.coalesce(func.sum(SalesInvoiceLine.quantity), _ZERO))
+            .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.sales_invoice_id)
+            .where(
+                SalesInvoiceLine.delivery_note_line_id == DeliveryNoteLine.id,
+                SalesInvoice.tenant_id == tenant_id,
+                SalesInvoice.deleted_at.is_(None),
+                SalesInvoice.status == InvoiceDocumentStatus.POSTED.value,
+                SalesInvoiceLine.tenant_id == tenant_id,
+            )
+            .correlate(DeliveryNoteLine)
+            .scalar_subquery(),
+            _ZERO,
+        )
+
+    def _posted_invoice_amount_for_dn_line(self, tenant_id: UUID) -> ColumnElement[Decimal]:
+        return func.coalesce(
+            select(func.coalesce(func.sum(SalesInvoiceLine.amount), _ZERO))
+            .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.sales_invoice_id)
+            .where(
+                SalesInvoiceLine.delivery_note_line_id == DeliveryNoteLine.id,
+                SalesInvoice.tenant_id == tenant_id,
+                SalesInvoice.deleted_at.is_(None),
+                SalesInvoice.status == InvoiceDocumentStatus.POSTED.value,
+                SalesInvoiceLine.tenant_id == tenant_id,
+            )
+            .correlate(DeliveryNoteLine)
+            .scalar_subquery(),
+            _ZERO,
+        )
+
+    def _posted_bill_amount_for_grn_line(self, tenant_id: UUID) -> ColumnElement[Decimal]:
+        return func.coalesce(
+            select(func.coalesce(func.sum(PurchaseInvoiceLine.amount), _ZERO))
+            .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.purchase_invoice_id)
+            .where(
+                PurchaseInvoiceLine.goods_receipt_line_id == GoodsReceiptLine.id,
+                PurchaseInvoice.tenant_id == tenant_id,
+                PurchaseInvoice.deleted_at.is_(None),
+                PurchaseInvoice.status == InvoiceDocumentStatus.POSTED.value,
+                PurchaseInvoiceLine.tenant_id == tenant_id,
+            )
+            .correlate(GoodsReceiptLine)
+            .scalar_subquery(),
+            _ZERO,
+        )
+
+    def _invoice_stats_by_customer(self, tenant_id: UUID, product_id: UUID):
+        return (
+            select(
+                SalesInvoice.customer_id.label("customer_id"),
+                func.coalesce(func.sum(SalesInvoiceLine.quantity), _ZERO).label(
+                    "invoiced_quantity"
+                ),
+                func.coalesce(func.sum(SalesInvoiceLine.amount), _ZERO).label("revenue"),
+            )
+            .select_from(SalesInvoiceLine)
+            .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.sales_invoice_id)
+            .where(
+                SalesInvoice.tenant_id == tenant_id,
+                SalesInvoice.deleted_at.is_(None),
+                SalesInvoice.status == InvoiceDocumentStatus.POSTED.value,
+                SalesInvoiceLine.tenant_id == tenant_id,
+                SalesInvoiceLine.product_id == product_id,
+            )
+            .group_by(SalesInvoice.customer_id)
+            .subquery()
+        )
+
+    def _invoice_stats_by_product(self, tenant_id: UUID, customer_id: UUID):
+        return (
+            select(
+                SalesInvoiceLine.product_id.label("product_id"),
+                func.coalesce(func.sum(SalesInvoiceLine.quantity), _ZERO).label(
+                    "invoiced_quantity"
+                ),
+                func.coalesce(func.sum(SalesInvoiceLine.amount), _ZERO).label("revenue"),
+            )
+            .select_from(SalesInvoiceLine)
+            .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.sales_invoice_id)
+            .where(
+                SalesInvoice.tenant_id == tenant_id,
+                SalesInvoice.deleted_at.is_(None),
+                SalesInvoice.status == InvoiceDocumentStatus.POSTED.value,
+                SalesInvoice.customer_id == customer_id,
+                SalesInvoiceLine.tenant_id == tenant_id,
+                SalesInvoiceLine.product_id.is_not(None),
+            )
+            .group_by(SalesInvoiceLine.product_id)
+            .subquery()
+        )
+
     async def product_customers(self, tenant_id: UUID, product_id: UUID) -> Sequence[Any]:
         net_qty = DeliveryNoteLine.quantity - self._posted_return_qty(tenant_id)
+        invoice_stats = self._invoice_stats_by_customer(tenant_id, product_id)
         statement = (
             select(
                 Customer.id,
@@ -91,11 +187,14 @@ class HistoryRepository:
                         DeliveryNote.created_at.desc(),
                     )
                 )[1],
+                func.coalesce(invoice_stats.c.invoiced_quantity, _ZERO),
+                func.coalesce(invoice_stats.c.revenue, _ZERO),
             )
             .select_from(DeliveryNoteLine)
             .join(DeliveryNote, DeliveryNote.id == DeliveryNoteLine.delivery_note_id)
             .join(Customer, Customer.id == DeliveryNote.customer_id)
             .outerjoin(SalesOrder, SalesOrder.id == DeliveryNote.sales_order_id)
+            .outerjoin(invoice_stats, invoice_stats.c.customer_id == Customer.id)
             .where(
                 DeliveryNote.tenant_id == tenant_id,
                 DeliveryNote.deleted_at.is_(None),
@@ -103,7 +202,12 @@ class HistoryRepository:
                 DeliveryNoteLine.tenant_id == tenant_id,
                 DeliveryNoteLine.product_id == product_id,
             )
-            .group_by(Customer.id, Customer.name)
+            .group_by(
+                Customer.id,
+                Customer.name,
+                invoice_stats.c.invoiced_quantity,
+                invoice_stats.c.revenue,
+            )
             .having(func.sum(net_qty) > 0)
             .order_by(func.max(DeliveryNote.document_date).desc())
         )
@@ -133,6 +237,7 @@ class HistoryRepository:
 
     async def customer_products(self, tenant_id: UUID, customer_id: UUID) -> Sequence[Any]:
         net_qty = DeliveryNoteLine.quantity - self._posted_return_qty(tenant_id)
+        invoice_stats = self._invoice_stats_by_product(tenant_id, customer_id)
         statement = (
             select(
                 Product.id,
@@ -163,11 +268,14 @@ class HistoryRepository:
                         DeliveryNote.created_at.desc(),
                     )
                 )[1],
+                func.coalesce(invoice_stats.c.invoiced_quantity, _ZERO),
+                func.coalesce(invoice_stats.c.revenue, _ZERO),
             )
             .select_from(DeliveryNoteLine)
             .join(DeliveryNote, DeliveryNote.id == DeliveryNoteLine.delivery_note_id)
             .join(Product, Product.id == DeliveryNoteLine.product_id)
             .outerjoin(SalesOrder, SalesOrder.id == DeliveryNote.sales_order_id)
+            .outerjoin(invoice_stats, invoice_stats.c.product_id == Product.id)
             .where(
                 DeliveryNote.tenant_id == tenant_id,
                 DeliveryNote.deleted_at.is_(None),
@@ -176,7 +284,13 @@ class HistoryRepository:
                 DeliveryNoteLine.tenant_id == tenant_id,
                 DeliveryNoteLine.product_id.is_not(None),
             )
-            .group_by(Product.id, Product.name, Product.sku)
+            .group_by(
+                Product.id,
+                Product.name,
+                Product.sku,
+                invoice_stats.c.invoiced_quantity,
+                invoice_stats.c.revenue,
+            )
             .having(func.sum(net_qty) > 0)
             .order_by(func.max(DeliveryNote.document_date).desc())
         )
@@ -250,6 +364,8 @@ class HistoryRepository:
                 self._outbound_unit_cost(tenant_id),
                 DeliveryNote.posted_by,
                 SalesOrder.salesperson_id,
+                self._posted_invoice_qty_for_dn_line(tenant_id),
+                self._posted_invoice_amount_for_dn_line(tenant_id),
             )
             .select_from(DeliveryNoteLine)
             .join(DeliveryNote, DeliveryNote.id == DeliveryNoteLine.delivery_note_id)
@@ -352,6 +468,7 @@ class HistoryRepository:
                 GoodsReceiptLine.quantity,
                 GoodsReceiptLine.rate,
                 GoodsReceipt.posted_by,
+                self._posted_bill_amount_for_grn_line(tenant_id),
             )
             .select_from(GoodsReceiptLine)
             .join(GoodsReceipt, GoodsReceipt.id == GoodsReceiptLine.goods_receipt_id)

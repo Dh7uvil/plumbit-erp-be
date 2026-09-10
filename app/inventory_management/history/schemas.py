@@ -17,6 +17,8 @@ class TradingPartyAggregate(BaseModel):
     last_rate: Decimal
     last_posted_by: UUID | None = None
     salesperson_id: UUID | None = None
+    invoiced_quantity: Decimal = Decimal("0")
+    revenue: Decimal = Decimal("0")
 
 
 class TradingProductAggregate(BaseModel):
@@ -30,6 +32,8 @@ class TradingProductAggregate(BaseModel):
     last_rate: Decimal
     last_posted_by: UUID | None = None
     salesperson_id: UUID | None = None
+    invoiced_quantity: Decimal = Decimal("0")
+    revenue: Decimal = Decimal("0")
 
 
 class TradingHistoryLine(BaseModel):
@@ -48,6 +52,9 @@ class TradingHistoryLine(BaseModel):
     margin: Decimal | None = None
     posted_by: UUID | None = None
     salesperson_id: UUID | None = None
+    invoiced_quantity: Decimal = Decimal("0")
+    revenue: Decimal = Decimal("0")
+    billed_cost: Decimal | None = None
 
 
 class TradingHistoryFilter(BaseModel):

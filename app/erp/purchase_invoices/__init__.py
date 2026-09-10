@@ -1,0 +1,1 @@
+"""Purchase invoice slice."""

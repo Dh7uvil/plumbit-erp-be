@@ -178,9 +178,37 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         ),
     },
     {
+        "name": "Sales Invoices",
+        "description": (
+            "AR sales invoices. Post writes AR/revenue/VAT, not stock or COGS. "
+            "COGS is posted by the delivery note; cogs_amount is a reporting snapshot."
+        ),
+    },
+    {
+        "name": "Credit Notes",
+        "description": (
+            "AR credit notes against a posted sales invoice or sales return. "
+            "Post reverses AR/revenue/VAT and does not move stock."
+        ),
+    },
+    {
         "name": "Purchase Orders",
         "description": (
             "Supplier purchase orders, including back-to-back creation from a sales order."
+        ),
+    },
+    {
+        "name": "Purchase Invoices",
+        "description": (
+            "Supplier bills (GOODS/EXPENSE/IMPORT). Post clears GRNI or purchases and "
+            "writes AP/VAT; stock already moved on the GRN."
+        ),
+    },
+    {
+        "name": "Debit Notes",
+        "description": (
+            "Supplier debit notes against a posted purchase invoice. "
+            "Post reverses AP/expense/VAT and does not move stock."
         ),
     },
     {
@@ -212,8 +240,9 @@ OPENAPI_TAGS: list[dict[str, str]] = [
     {
         "name": "Delivery Notes",
         "description": (
-            "Outbound delivery notes that deduct stock on post. "
-            "Posted notes may be cancelled only when no dependent shipment or return exists."
+            "Outbound delivery notes that deduct stock on post and write COGS "
+            "(DR COGS / CR INVENTORY). Posted notes may be cancelled only when no "
+            "dependent shipment, return, or live sales invoice exists."
         ),
     },
     {
@@ -252,8 +281,8 @@ OPENAPI_TAGS: list[dict[str, str]] = [
     {
         "name": "Reports",
         "description": (
-            "Trial balance, general ledger, and party account statement. "
-            "Totals and running balances are computed on the server."
+            "Trial balance, general ledger, party account statement, "
+            "export-evidence exceptions, and invoiced-not-dispatched."
         ),
     },
 ]

@@ -126,6 +126,15 @@ UAE_CHART: tuple[ChartSeedRow, ...] = (
         AccountSystemRole.ADVANCE_FROM_CUSTOMER,
     ),
     ChartSeedRow(
+        "2030",
+        "Goods Received Not Invoiced",
+        AccountType.LIABILITY,
+        AccountSubtype.OTHER_CURRENT_LIABILITY,
+        "2000",
+        False,
+        AccountSystemRole.GOODS_RECEIVED_NOT_INVOICED,
+    ),
+    ChartSeedRow(
         "2100",
         "VAT Output",
         AccountType.LIABILITY,
@@ -181,6 +190,15 @@ UAE_CHART: tuple[ChartSeedRow, ...] = (
         AccountSystemRole.SALES_REVENUE,
     ),
     ChartSeedRow(
+        "4110",
+        "Shipping Income",
+        AccountType.INCOME,
+        AccountSubtype.INCOME,
+        "4000",
+        False,
+        AccountSystemRole.SHIPPING_INCOME,
+    ),
+    ChartSeedRow(
         "4200",
         "Sales Returns",
         AccountType.INCOME,
@@ -190,7 +208,13 @@ UAE_CHART: tuple[ChartSeedRow, ...] = (
         AccountSystemRole.SALES_RETURNS,
     ),
     ChartSeedRow(
-        "4300", "Other Income", AccountType.INCOME, AccountSubtype.OTHER_INCOME, "4000", False
+        "4300",
+        "Other Income",
+        AccountType.INCOME,
+        AccountSubtype.OTHER_INCOME,
+        "4000",
+        False,
+        AccountSystemRole.OTHER_CHARGES,
     ),
     ChartSeedRow(
         "4400",

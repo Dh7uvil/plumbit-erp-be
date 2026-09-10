@@ -1204,6 +1204,30 @@
             ],
             "title": "Salesperson Id"
           },
+          "receivable_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receivable Account Id"
+          },
+          "payable_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payable Account Id"
+          },
           "billing_address": {
             "anyOf": [
               {
@@ -1409,6 +1433,30 @@
             ],
             "title": "Salesperson Id"
           },
+          "receivable_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receivable Account Id"
+          },
+          "payable_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payable Account Id"
+          },
           "billing_address": {
             "anyOf": [
               {
@@ -1594,6 +1642,30 @@
             ],
             "title": "Salesperson Id"
           },
+          "receivable_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receivable Account Id"
+          },
+          "payable_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payable Account Id"
+          },
           "billing_address": {
             "anyOf": [
               {
@@ -1765,6 +1837,30 @@
               }
             ],
             "title": "Salesperson Id"
+          },
+          "invoiced_quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Invoiced Quantity",
+            "default": "0"
+          },
+          "revenue": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Revenue",
+            "default": "0"
+          },
+          "billed_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billed Cost"
           }
         },
         "type": "object",
@@ -1845,6 +1941,18 @@
               }
             ],
             "title": "Salesperson Id"
+          },
+          "invoiced_quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Invoiced Quantity",
+            "default": "0"
+          },
+          "revenue": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Revenue",
+            "default": "0"
           }
         },
         "type": "object",

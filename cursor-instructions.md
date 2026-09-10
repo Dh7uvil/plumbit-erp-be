@@ -53,11 +53,11 @@ app/
 ├── erp/                          implemented: currencies, exchange_rates, taxes, payment_terms,
 │                                 terms_templates, document_sequences, suppliers, supplier_products,
 │                                 quotations, proforma_invoices, period_lock, sales_orders,
-│                                 purchase_orders, accounting/accounts, accounting/ledger,
-│                                 accounting/opening_balances, accounting/reports
-│                                 planned: sales_invoices, credit_notes,
-│                                 customer_payments, purchase_invoices,
-│                                 debit_notes, supplier_payments,
+│                                 sales_invoices, credit_notes, purchase_orders,
+│                                 purchase_invoices, debit_notes, accounting/accounts,
+│                                 accounting/ledger, accounting/opening_balances,
+│                                 accounting/reports
+│                                 planned: customer_payments, supplier_payments,
 │                                 einvoicing (status APIs on sales invoices and credit notes;
 │                                 inbound e-bills as draft purchase invoices)
 ├── integrations/                 implemented: storage/
@@ -119,11 +119,17 @@ Read the relevant file before working in that area — each one is the authority
   any warehouse is negative unless negatives are allowed and acknowledged.
 - Invoices stay `DRAFT` until explicit Confirm/Post. Drafts do not touch stock, AR, tax or GL.
   Posting is `POST /{resource}/{id}/post` (or `/confirm`), never a side effect of PATCH.
+  The delivery note (not the invoice) posts COGS: `DR COGS / CR INVENTORY`. Sales invoice post
+  writes AR / revenue / VAT only; `cogs_amount` is a non-GL snapshot. GRN post writes
+  `DR INVENTORY / CR GRNI`. Inventory journals go through `InventoryLedgerService` →
+  `LedgerPostingService` and are skipped when `books_start_date` is unset. Stock transfers
+  write no journal.
 - Every workflow document response includes `available_actions`. That list is the only legal
   source of UI buttons.
 - UAE VAT: require TRN when `REGISTERED`; place of supply from emirate; never recompute posted tax.
-- Posting is local (stock + AR/AP + tax + GL in one transaction). Peppol/FTA exchange is an ASP
-  job after commit, via `app/integrations/einvoicing/` and the transactional outbox — never from
+- Posting is local (stock documents post inventory + GL; invoices post AR/AP + tax + GL) in
+  one transaction. Peppol/FTA exchange is an ASP job after commit, via
+  `app/integrations/einvoicing/` and the transactional outbox — never from
   `erp/sales_invoices/service.py`.
 - Register a handler for every new outbox `event_type`. Unknown types are dead-lettered (`DEAD`),
   not skipped. Use a logging no-op until the real handler exists.

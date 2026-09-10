@@ -33,6 +33,10 @@ class ErrorCode(StrEnum):
     GRN_OVER_RECEIPT = "GRN_OVER_RECEIPT"
     GRN_CANNOT_CANCEL = "GRN_CANNOT_CANCEL"
     DELIVERY_NOTE_CANNOT_CANCEL = "DELIVERY_NOTE_CANNOT_CANCEL"
+    SALES_RETURN_CANNOT_CANCEL = "SALES_RETURN_CANNOT_CANCEL"
+    INVOICE_QTY_EXCEEDED = "INVOICE_QTY_EXCEEDED"
+    INVOICE_CANNOT_VOID = "INVOICE_CANNOT_VOID"
+    EXPORT_EVIDENCE_MISSING = "EXPORT_EVIDENCE_MISSING"
     QUALITY_QTY_MISMATCH = "QUALITY_QTY_MISMATCH"
     COST_LAYER_IMBALANCE = "COST_LAYER_IMBALANCE"
     UNSUPPORTED_COSTING_METHOD = "UNSUPPORTED_COSTING_METHOD"
@@ -228,6 +232,30 @@ class DeliveryNoteCannotCancelError(AppError):
     default_code = ErrorCode.DELIVERY_NOTE_CANNOT_CANCEL
     default_status = HTTPStatus.CONFLICT
     default_message = "This delivery note cannot be cancelled"
+
+
+class SalesReturnCannotCancelError(AppError):
+    default_code = ErrorCode.SALES_RETURN_CANNOT_CANCEL
+    default_status = HTTPStatus.CONFLICT
+    default_message = "This sales return cannot be cancelled"
+
+
+class InvoiceQtyExceededError(AppError):
+    default_code = ErrorCode.INVOICE_QTY_EXCEEDED
+    default_status = HTTPStatus.CONFLICT
+    default_message = "Invoiced quantity exceeds the source document outstanding"
+
+
+class InvoiceCannotVoidError(AppError):
+    default_code = ErrorCode.INVOICE_CANNOT_VOID
+    default_status = HTTPStatus.CONFLICT
+    default_message = "This invoice cannot be voided"
+
+
+class ExportEvidenceMissingError(AppError):
+    default_code = ErrorCode.EXPORT_EVIDENCE_MISSING
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "Export invoice is missing bill of lading or customs evidence"
 
 
 class QualityQtyMismatchError(AppError):

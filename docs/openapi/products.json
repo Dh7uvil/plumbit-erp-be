@@ -1064,6 +1064,30 @@
               }
             ],
             "title": "Requires Qc"
+          },
+          "income_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Income Account Id"
+          },
+          "purchase_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Account Id"
           }
         },
         "type": "object",
@@ -1182,6 +1206,30 @@
           "requires_qc": {
             "type": "boolean",
             "title": "Requires Qc"
+          },
+          "income_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Income Account Id"
+          },
+          "purchase_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Account Id"
           },
           "is_active": {
             "type": "boolean",
@@ -1380,6 +1428,30 @@
               }
             ],
             "title": "Is Active"
+          },
+          "income_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Income Account Id"
+          },
+          "purchase_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Account Id"
           }
         },
         "type": "object",
@@ -1485,6 +1557,30 @@
               }
             ],
             "title": "Salesperson Id"
+          },
+          "invoiced_quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Invoiced Quantity",
+            "default": "0"
+          },
+          "revenue": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Revenue",
+            "default": "0"
+          },
+          "billed_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Billed Cost"
           }
         },
         "type": "object",
@@ -1561,6 +1657,18 @@
               }
             ],
             "title": "Salesperson Id"
+          },
+          "invoiced_quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Invoiced Quantity",
+            "default": "0"
+          },
+          "revenue": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Revenue",
+            "default": "0"
           }
         },
         "type": "object",

@@ -61,6 +61,9 @@ class CategoryService:
         async with transaction(self.session):
             if payload.parent_id is not None:
                 await self._require(tenant_id, payload.parent_id)
+            await self._validate_account_refs(
+                tenant_id, payload.income_account_id, payload.purchase_account_id
+            )
             try:
                 row = await self.repo.create(
                     tenant_id,
@@ -95,6 +98,11 @@ class CategoryService:
                 if values["parent_id"] == category_id:
                     raise ValidationError("A category cannot be its own parent")
                 await self._require(tenant_id, values["parent_id"])
+            await self._validate_account_refs(
+                tenant_id,
+                values.get("income_account_id"),
+                values.get("purchase_account_id"),
+            )
             try:
                 row = await self.repo.update(tenant_id, category_id, values)
             except IntegrityError as exc:
@@ -145,6 +153,22 @@ class CategoryService:
             "parent": parent_name,
             "is_active": row.is_active,
         }
+
+    async def _validate_account_refs(
+        self,
+        tenant_id: UUID,
+        income_account_id: UUID | None,
+        purchase_account_id: UUID | None,
+    ) -> None:
+        if income_account_id is None and purchase_account_id is None:
+            return
+        from app.erp.accounting.accounts.service import AccountService
+
+        accounts = AccountService(self.session)
+        if income_account_id is not None:
+            await accounts.require_postable(tenant_id, income_account_id)
+        if purchase_account_id is not None:
+            await accounts.require_postable(tenant_id, purchase_account_id)
 
     async def _require(self, tenant_id: UUID, category_id: UUID) -> Category:
         row = await self.repo.get(tenant_id, category_id)

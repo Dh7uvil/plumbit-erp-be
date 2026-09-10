@@ -176,5 +176,6 @@ class GoodsReceiptLine(TenantModel):
     qty_accepted: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     qty_rejected: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     qty_on_hold: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
+    qty_billed: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
 
     goods_receipt: Mapped[GoodsReceipt] = relationship(back_populates="lines")

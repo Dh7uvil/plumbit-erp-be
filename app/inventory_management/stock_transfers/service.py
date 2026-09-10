@@ -320,6 +320,7 @@ class StockTransferService:
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
+            # Stock transfers are GL-neutral: one inventory account per tenant.
             await self.session.refresh(row, attribute_names=["updated_at"])
             loaded = await self._require(tenant_id, transfer_id)
             await self._ensure_policy(tenant_id)

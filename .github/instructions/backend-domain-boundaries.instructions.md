@@ -128,10 +128,11 @@ auth (Identity)         implemented: auth, users, roles, permissions, tenants/or
 erp                     implemented: currencies, exchange_rates, taxes, payment_terms,
                         terms_templates, document_sequences, suppliers, supplier_products,
                         quotations, proforma_invoices, period_lock, sales_orders,
-                        purchase_orders, chart of accounts, journals, opening balances,
-                        ledger reports (trial balance, general ledger, account statement)
-                        planned: sales_invoices, credit_notes, customer_payments,
-                        purchase_invoices, debit_notes, supplier_payments,
+                        sales_invoices, credit_notes, purchase_orders, purchase_invoices,
+                        debit_notes, chart of accounts, journals, opening balances,
+                        ledger reports (trial balance, general ledger, account statement,
+                        export-evidence exceptions, invoiced-not-dispatched)
+                        planned: customer_payments, supplier_payments,
                         einvoicing status APIs (on sales invoices and credit notes;
                         inbound e-bills as draft purchase invoices)
 
@@ -359,11 +360,27 @@ On post, in one transaction:
 
 ```text
 DRAFT → POSTED
-  ├── inventory service (if goods) — respects allow_negative_stock (SELECT FOR UPDATE)
+  ├── inventory service (if the document moves goods) — respects allow_negative_stock
+  │   (SELECT FOR UPDATE). Sales/purchase invoices do not move stock.
   ├── AR / AP and tax ledgers
-  ├── GL
+  ├── GL through LedgerPostingService only
   └── audit log
 ```
+
+Inventory documents post journals via `InventoryLedgerService`
+(`app/erp/accounting/ledger/inventory_posting.py`), which only calls `LedgerPostingService`.
+Inventory services never construct journals. Posting is a no-op when `books_start_date` is
+unset, and skipped for documents dated before it.
+
+- GRN post: `DR INVENTORY` / `CR GOODS_RECEIVED_NOT_INVOICED`
+- Delivery note post: `DR COGS` / `CR INVENTORY` — the delivery note owns COGS, not the invoice
+- Sales return post: `DR INVENTORY` / `CR COGS` (plus scrap when applicable)
+- QC scrap and stock adjustment: against `INVENTORY`
+- Stock transfer: no journal (one inventory account per tenant)
+
+Sales invoice post writes AR / revenue / VAT / shipping / other charges / round-off. It does
+not post COGS. `cogs_amount` on the invoice is a reporting snapshot. Purchase invoice post
+clears GRNI (or purchases) and writes AP / VAT_INPUT.
 
 `Sent` / `Approved` in the product UI maps to `POSTED` on the API for invoices. Never post as
 a side effect of "save". A draft that has not been posted must not be treated as a ledger
@@ -587,15 +604,16 @@ that slot; confirming the PFI promotes a `SENT` quotation to `ACCEPTED`, and cre
 order from the PFI marks both documents `CONVERTED`. Direct quotation-to-sales-order stays
 available until a live PFI exists.
 
-Quotations, proforma invoices, sales orders, purchase orders, the chart of accounts, journals,
-opening balances and ledger reports already ship. Sales/purchase invoices and payments still
-follow so they can post through `LedgerPostingService`. E-invoicing ASP adapters come after posted
-sales invoices and credit notes exist.
+Quotations, proforma invoices, sales orders, purchase orders, sales invoices, purchase
+invoices, credit notes, debit notes, the chart of accounts, journals, opening balances and
+ledger reports already ship. Customer/supplier payments still follow so they can post through
+`LedgerPostingService`. E-invoicing ASP adapters come after posted sales invoices and credit
+notes exist.
 
 ## 20. Posting atomicity, branch, and outbox
 
-Posting atomicity: stock + AR/AP + tax + GL succeed or roll back together in one database
-transaction. Side effects (notifications, PDF, AI, ASP submit) go through the transactional
+Posting atomicity: each document's stock (when it moves), AR/AP, tax and GL succeed or roll
+back together in one database transaction. Sales invoices do not move stock. Side effects (notifications, PDF, AI, ASP submit) go through the transactional
 outbox **after** that commit. The outbox is not a substitute for the posting transaction.
 
 Branch: documents may carry `branch_id` for defaults and reporting. Tenant isolation remains

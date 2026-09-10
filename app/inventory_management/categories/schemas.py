@@ -22,6 +22,8 @@ class CategoryCreate(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     code: str = Field(min_length=1, max_length=50)
     parent_id: UUID | None = None
+    income_account_id: UUID | None = None
+    purchase_account_id: UUID | None = None
 
     @field_validator("name")
     @classmethod
@@ -38,6 +40,8 @@ class CategoryUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=150)
     parent_id: UUID | None = None
     is_active: bool | None = None
+    income_account_id: UUID | None = None
+    purchase_account_id: UUID | None = None
 
     @field_validator("name")
     @classmethod
@@ -55,6 +59,8 @@ class CategoryResponse(BaseModel):
     name: str
     code: str
     parent_id: UUID | None
+    income_account_id: UUID | None = None
+    purchase_account_id: UUID | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
