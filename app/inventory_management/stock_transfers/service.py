@@ -21,6 +21,7 @@ from app.auth.catalog import (
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
+from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
@@ -82,6 +83,7 @@ class StockTransferService:
         self.org = OrganizationService(session)
         self.sequences = DocumentSequenceService(session)
         self.idempotency = IdempotencyService(session)
+        self.outbox = OutboxService(session)
         self.audit = AuditWriter(session)
         self._can_override = has_permission(actor_permissions, PERIOD_OVERRIDE)
         self._period_policy: PeriodLockPolicy | None = None
@@ -330,6 +332,14 @@ class StockTransferService:
                 old_values=old_values,
                 new_values=await self._snapshot(tenant_id, loaded),
             )
+            await self.outbox.enqueue(
+                tenant_id,
+                event_type="inventory.stock_transfer.posted",
+                aggregate_type="stock_transfer",
+                aggregate_id=transfer_id,
+                payload={"stock_transfer_id": str(transfer_id)},
+                dedupe_key=f"stock-transfer-posted:{transfer_id}",
+            )
             response = self._to_response(loaded)
             await self.idempotency.store(
                 tenant_id, idempotency_key, response.model_dump(mode="json")
@@ -368,6 +378,14 @@ class StockTransferService:
                 entity_id=transfer_id,
                 old_values=old_values,
                 new_values=await self._snapshot(tenant_id, row),
+            )
+            await self.outbox.enqueue(
+                tenant_id,
+                event_type="inventory.stock_transfer.cancelled",
+                aggregate_type="stock_transfer",
+                aggregate_id=transfer_id,
+                payload={"stock_transfer_id": str(transfer_id)},
+                dedupe_key=f"stock-transfer-cancelled:{transfer_id}",
             )
             return self._to_response(row)
 

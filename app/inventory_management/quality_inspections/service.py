@@ -255,7 +255,7 @@ class QualityInspectionService:
             unit_by_grn_line = {line.id: line.unit_id for line in receipt.lines}
             old_values = await self._snapshot(row)
             occurred_at = utcnow()
-            deltas: list[tuple[UUID, Decimal, Decimal]] = []
+            deltas: list[tuple[UUID, Decimal, Decimal, Decimal]] = []
             for line in row.lines:
                 remaining = hold_by_line.get(line.goods_receipt_line_id, _ZERO)
                 disposition = QcDisposition(line.disposition) if line.disposition else None
@@ -311,7 +311,30 @@ class QualityInspectionService:
                         unit_id=unit_by_grn_line.get(line.goods_receipt_line_id),
                         quality_hold_delta=-line.qty_rejected,
                     )
-                deltas.append((line.goods_receipt_line_id, line.qty_accepted, line.qty_rejected))
+                rework_released = _ZERO
+                if line.qty_rework > _ZERO and disposition == QcDisposition.REWORK_RELEASE:
+                    await self.stock.apply_quality_hold_locked(
+                        tenant_id,
+                        locked,
+                        qty=-line.qty_rework,
+                        movement_type=StockMovementType.QC_RELEASE,
+                        source_type=SOURCE_QUALITY_INSPECTION,
+                        source_id=row.id,
+                        source_line_id=line.id,
+                        document_date=row.inspection_date,
+                        notes=line.notes or row.notes,
+                        occurred_at=occurred_at,
+                        unit_id=unit_by_grn_line.get(line.goods_receipt_line_id),
+                    )
+                    rework_released = line.qty_rework
+                deltas.append(
+                    (
+                        line.goods_receipt_line_id,
+                        line.qty_accepted,
+                        line.qty_rejected,
+                        rework_released,
+                    )
+                )
             await self.receipts.apply_inspection_quantities(tenant_id, row.goods_receipt_id, deltas)
             row.status = target.value
             row.approved_at = occurred_at

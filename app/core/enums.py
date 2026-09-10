@@ -150,6 +150,7 @@ class DocumentType(StrEnum):
     QUALITY_INSPECTION = "QUALITY_INSPECTION"
     PACKAGE = "PACKAGE"
     SHIPMENT = "SHIPMENT"
+    SALES_RETURN = "SALES_RETURN"
 
 
 class StockDocumentStatus(StrEnum):
@@ -177,6 +178,45 @@ class QcStatus(StrEnum):
 
 class QcDisposition(StrEnum):
     RETURN_TO_SUPPLIER = "RETURN_TO_SUPPLIER"
+    SCRAP = "SCRAP"
+    REWORK_RELEASE = "REWORK_RELEASE"
+
+
+class PackageStatus(StrEnum):
+    DRAFT = "DRAFT"
+    PACKED = "PACKED"
+    CANCELLED = "CANCELLED"
+
+
+class ShipmentStatus(StrEnum):
+    DRAFT = "DRAFT"
+    DISPATCHED = "DISPATCHED"
+    IN_TRANSIT = "IN_TRANSIT"
+    ARRIVED = "ARRIVED"
+    CLOSED = "CLOSED"
+    CANCELLED = "CANCELLED"
+
+
+class TransportMode(StrEnum):
+    SEA = "SEA"
+    AIR = "AIR"
+    ROAD = "ROAD"
+    RAIL = "RAIL"
+    COURIER = "COURIER"
+
+
+class SalesReturnReason(StrEnum):
+    DAMAGED_IN_TRANSIT = "DAMAGED_IN_TRANSIT"
+    WRONG_ITEM_SHIPPED = "WRONG_ITEM_SHIPPED"
+    QUALITY_REJECTION = "QUALITY_REJECTION"
+    CUSTOMER_CANCELLATION = "CUSTOMER_CANCELLATION"
+    SHORT_SHIPMENT = "SHORT_SHIPMENT"
+    OTHER = "OTHER"
+
+
+class ReturnDisposition(StrEnum):
+    RESTOCK = "RESTOCK"
+    QC_HOLD = "QC_HOLD"
     SCRAP = "SCRAP"
 
 
@@ -286,6 +326,9 @@ class AuditAction(StrEnum):
     REVISE = "REVISE"
     LINK = "LINK"
     UNLINK = "UNLINK"
+    PACK = "PACK"
+    DISPATCH = "DISPATCH"
+    ARRIVE = "ARRIVE"
     LOGIN = "LOGIN"
     LOGOUT = "LOGOUT"
 
@@ -333,6 +376,8 @@ class AttachmentEntityType(StrEnum):
     SHIPMENT = "SHIPMENT"
     SALES_INVOICE = "SALES_INVOICE"
     PURCHASE_INVOICE = "PURCHASE_INVOICE"
+    DELIVERY_NOTE = "DELIVERY_NOTE"
+    SALES_RETURN = "SALES_RETURN"
 
 
 class AttachmentCategory(StrEnum):
@@ -345,6 +390,10 @@ class AttachmentCategory(StrEnum):
     CUSTOMER_PO = "CUSTOMER_PO"
     SUPPLIER_INVOICE = "SUPPLIER_INVOICE"
     TRADE_LICENCE = "TRADE_LICENCE"
+    POD = "POD"
+    RETURN_PHOTO = "RETURN_PHOTO"
+    PACKING_LIST = "PACKING_LIST"
+    DISPATCH_PHOTO = "DISPATCH_PHOTO"
     OTHER = "OTHER"
 
 

@@ -5,13 +5,25 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from app.auth.catalog import PRODUCT_CREATE, PRODUCT_DELETE, PRODUCT_READ, PRODUCT_UPDATE
+from app.auth.catalog import (
+    PRODUCT_CREATE,
+    PRODUCT_DELETE,
+    PRODUCT_HISTORY,
+    PRODUCT_READ,
+    PRODUCT_UPDATE,
+)
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
+from app.inventory_management.history.dependencies import HistoryServiceDependency
+from app.inventory_management.history.schemas import (
+    TradingHistoryFilter,
+    TradingHistoryLine,
+    TradingPartyAggregate,
+)
 from app.inventory_management.products.dependencies import ProductServiceDependency
 from app.inventory_management.products.schemas import (
     ProductCreate,
@@ -86,3 +98,62 @@ async def delete_product(
 ) -> ApiResponse[ProductResponse]:
     row = await service.delete(tenant.tenant_id, product_id, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Product deleted successfully")
+
+
+@router.get("/{product_id}/customers", response_model=ApiResponse[list[TradingPartyAggregate]])
+async def list_product_customers(
+    product_id: UUID,
+    tenant: TenantContextDependency,
+    history: HistoryServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(PRODUCT_HISTORY))],
+) -> ApiResponse[list[TradingPartyAggregate]]:
+    rows = await history.product_customers(tenant.tenant_id, product_id)
+    return ApiResponse(data=rows)
+
+
+@router.get(
+    "/{product_id}/sales-history",
+    response_model=ApiResponse[list[TradingHistoryLine]],
+)
+async def list_product_sales_history(
+    product_id: UUID,
+    tenant: TenantContextDependency,
+    page: PaginationDependency,
+    history: HistoryServiceDependency,
+    filters: Annotated[TradingHistoryFilter, Depends()],
+    _: Annotated[CurrentUser, Depends(require_permission(PRODUCT_HISTORY))],
+) -> ApiResponse[list[TradingHistoryLine]]:
+    rows, total = await history.product_sales_history(
+        tenant.tenant_id,
+        product_id,
+        page=page,
+        party_id=filters.party_id,
+        warehouse_id=filters.warehouse_id,
+        document_date_from=filters.document_date_from,
+        document_date_to=filters.document_date_to,
+    )
+    return paginated_response(rows, params=page, total=total)
+
+
+@router.get(
+    "/{product_id}/purchase-history",
+    response_model=ApiResponse[list[TradingHistoryLine]],
+)
+async def list_product_purchase_history(
+    product_id: UUID,
+    tenant: TenantContextDependency,
+    page: PaginationDependency,
+    history: HistoryServiceDependency,
+    filters: Annotated[TradingHistoryFilter, Depends()],
+    _: Annotated[CurrentUser, Depends(require_permission(PRODUCT_HISTORY))],
+) -> ApiResponse[list[TradingHistoryLine]]:
+    rows, total = await history.product_purchase_history(
+        tenant.tenant_id,
+        product_id,
+        page=page,
+        party_id=filters.party_id,
+        warehouse_id=filters.warehouse_id,
+        document_date_from=filters.document_date_from,
+        document_date_to=filters.document_date_to,
+    )
+    return paginated_response(rows, params=page, total=total)

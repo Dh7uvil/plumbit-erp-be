@@ -1,0 +1,1966 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Plumbit ERP API \u2014 Shipments",
+    "description": "Shipments",
+    "version": "0.1.0"
+  },
+  "tags": [
+    {
+      "name": "Shipments",
+      "description": "Shipments"
+    }
+  ],
+  "paths": {
+    "/api/v1/shipments": {
+      "get": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "List Shipments",
+        "operationId": "list_shipments_api_v1_shipments_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "created_at",
+              "title": "Sort By"
+            }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string",
+              "default": "desc",
+              "title": "Sort Order"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ShipmentStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "shipment_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ShipmentType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Shipment Type"
+            }
+          },
+          {
+            "name": "transport_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TransportMode"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Transport Mode"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_ShipmentResponse__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Create Shipment",
+        "operationId": "create_shipment_api_v1_shipments_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShipmentCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shipments/{shipment_id}": {
+      "get": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Get Shipment",
+        "operationId": "get_shipment_api_v1_shipments__shipment_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shipment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Shipment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Update Shipment",
+        "operationId": "update_shipment_api_v1_shipments__shipment_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shipment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Shipment Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShipmentUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Delete Shipment",
+        "operationId": "delete_shipment_api_v1_shipments__shipment_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shipment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Shipment Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shipments/{shipment_id}/dispatch": {
+      "post": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Dispatch Shipment",
+        "operationId": "dispatch_shipment_api_v1_shipments__shipment_id__dispatch_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shipment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Shipment Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shipments/{shipment_id}/arrive": {
+      "post": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Arrive Shipment",
+        "operationId": "arrive_shipment_api_v1_shipments__shipment_id__arrive_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shipment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Shipment Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shipments/{shipment_id}/close": {
+      "post": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Close Shipment",
+        "operationId": "close_shipment_api_v1_shipments__shipment_id__close_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shipment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Shipment Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shipments/{shipment_id}/cancel": {
+      "post": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Cancel Shipment",
+        "operationId": "cancel_shipment_api_v1_shipments__shipment_id__cancel_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shipment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Shipment Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shipments/{shipment_id}/tracking": {
+      "patch": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Update Shipment Tracking",
+        "operationId": "update_shipment_tracking_api_v1_shipments__shipment_id__tracking_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shipment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Shipment Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShipmentTrackingUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shipments/{shipment_id}/delivery-notes": {
+      "post": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Attach Delivery Notes",
+        "operationId": "attach_delivery_notes_api_v1_shipments__shipment_id__delivery_notes_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shipment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Shipment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShipmentAttachNotesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/shipments/{shipment_id}/delivery-notes/{note_id}": {
+      "delete": {
+        "tags": [
+          "Shipments"
+        ],
+        "summary": "Detach Delivery Note",
+        "operationId": "detach_delivery_note_api_v1_shipments__shipment_id__delivery_notes__note_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shipment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Shipment Id"
+            }
+          },
+          {
+            "name": "note_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Note Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiResponse_ShipmentResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/ShipmentResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[ShipmentResponse]"
+      },
+      "ApiResponse_list_ShipmentResponse__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ShipmentResponse"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[list[ShipmentResponse]]"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Incoterm": {
+        "type": "string",
+        "enum": [
+          "EXW",
+          "FCA",
+          "FAS",
+          "FOB",
+          "CFR",
+          "CIF",
+          "CPT",
+          "CIP",
+          "DAP",
+          "DPU",
+          "DDP"
+        ],
+        "title": "Incoterm"
+      },
+      "ShipmentAttachNotesRequest": {
+        "properties": {
+          "delivery_note_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Delivery Note Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "delivery_note_ids"
+        ],
+        "title": "ShipmentAttachNotesRequest"
+      },
+      "ShipmentCreate": {
+        "properties": {
+          "shipment_type": {
+            "$ref": "#/components/schemas/ShipmentType"
+          },
+          "transport_mode": {
+            "$ref": "#/components/schemas/TransportMode"
+          },
+          "incoterm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Incoterm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "container_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Number"
+          },
+          "seal_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seal Number"
+          },
+          "carrier_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carrier Name"
+          },
+          "vessel_or_flight_no": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vessel Or Flight No"
+          },
+          "voyage_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voyage Number"
+          },
+          "bl_awb_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bl Awb Number"
+          },
+          "bl_awb_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bl Awb Date"
+          },
+          "freight_forwarder_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Forwarder Id"
+          },
+          "port_of_loading": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port Of Loading"
+          },
+          "port_of_discharge": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port Of Discharge"
+          },
+          "etd": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etd"
+          },
+          "eta": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta"
+          },
+          "gross_weight": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gross Weight"
+          },
+          "net_weight": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Weight"
+          },
+          "total_packages": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Packages"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "shipment_type",
+          "transport_mode"
+        ],
+        "title": "ShipmentCreate"
+      },
+      "ShipmentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tenant Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ShipmentStatus"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "shipment_type": {
+            "$ref": "#/components/schemas/ShipmentType"
+          },
+          "transport_mode": {
+            "$ref": "#/components/schemas/TransportMode"
+          },
+          "incoterm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Incoterm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "container_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Number"
+          },
+          "seal_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seal Number"
+          },
+          "carrier_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carrier Name"
+          },
+          "vessel_or_flight_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vessel Or Flight No"
+          },
+          "voyage_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voyage Number"
+          },
+          "bl_awb_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bl Awb Number"
+          },
+          "bl_awb_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bl Awb Date"
+          },
+          "freight_forwarder_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Forwarder Id"
+          },
+          "port_of_loading": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port Of Loading"
+          },
+          "port_of_discharge": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port Of Discharge"
+          },
+          "etd": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etd"
+          },
+          "eta": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta"
+          },
+          "actual_departure_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Departure Date"
+          },
+          "actual_arrival_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Arrival Date"
+          },
+          "gross_weight": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gross Weight"
+          },
+          "net_weight": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Weight"
+          },
+          "total_packages": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Packages"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "available_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Actions"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "document_number",
+          "status",
+          "version",
+          "shipment_type",
+          "transport_mode",
+          "incoterm",
+          "container_number",
+          "seal_number",
+          "carrier_name",
+          "vessel_or_flight_no",
+          "voyage_number",
+          "bl_awb_number",
+          "bl_awb_date",
+          "freight_forwarder_id",
+          "port_of_loading",
+          "port_of_discharge",
+          "etd",
+          "eta",
+          "actual_departure_date",
+          "actual_arrival_date",
+          "gross_weight",
+          "net_weight",
+          "total_packages",
+          "notes",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ShipmentResponse"
+      },
+      "ShipmentStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "DISPATCHED",
+          "IN_TRANSIT",
+          "ARRIVED",
+          "CLOSED",
+          "CANCELLED"
+        ],
+        "title": "ShipmentStatus"
+      },
+      "ShipmentTrackingUpdate": {
+        "properties": {
+          "carrier_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carrier Name"
+          },
+          "vessel_or_flight_no": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vessel Or Flight No"
+          },
+          "voyage_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voyage Number"
+          },
+          "bl_awb_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bl Awb Number"
+          },
+          "bl_awb_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bl Awb Date"
+          },
+          "etd": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etd"
+          },
+          "eta": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta"
+          },
+          "actual_departure_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Departure Date"
+          },
+          "actual_arrival_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Arrival Date"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "title": "ShipmentTrackingUpdate"
+      },
+      "ShipmentType": {
+        "type": "string",
+        "enum": [
+          "IMPORT",
+          "EXPORT",
+          "DOMESTIC"
+        ],
+        "title": "ShipmentType"
+      },
+      "ShipmentUpdate": {
+        "properties": {
+          "shipment_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShipmentType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transport_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransportMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "incoterm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Incoterm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "container_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Number"
+          },
+          "seal_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seal Number"
+          },
+          "carrier_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carrier Name"
+          },
+          "vessel_or_flight_no": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vessel Or Flight No"
+          },
+          "voyage_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voyage Number"
+          },
+          "bl_awb_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bl Awb Number"
+          },
+          "bl_awb_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bl Awb Date"
+          },
+          "freight_forwarder_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Forwarder Id"
+          },
+          "port_of_loading": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port Of Loading"
+          },
+          "port_of_discharge": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port Of Discharge"
+          },
+          "etd": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etd"
+          },
+          "eta": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta"
+          },
+          "gross_weight": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gross Weight"
+          },
+          "net_weight": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Weight"
+          },
+          "total_packages": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Packages"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "title": "ShipmentUpdate"
+      },
+      "TransportMode": {
+        "type": "string",
+        "enum": [
+          "SEA",
+          "AIR",
+          "ROAD",
+          "RAIL",
+          "COURIER"
+        ],
+        "title": "TransportMode"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

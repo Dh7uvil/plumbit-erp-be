@@ -692,7 +692,8 @@
         "type": "string",
         "enum": [
           "RETURN_TO_SUPPLIER",
-          "SCRAP"
+          "SCRAP",
+          "REWORK_RELEASE"
         ],
         "title": "QcDisposition"
       },

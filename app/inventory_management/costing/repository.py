@@ -130,7 +130,7 @@ class CostingRepository:
         return entity
 
     async def list_consumptions_for_movement(
-        self, tenant_id: UUID, movement_id: UUID
+        self, tenant_id: UUID, movement_id: UUID, *, for_update: bool = False
     ) -> Sequence[StockCostConsumption]:
         statement = (
             select(StockCostConsumption)
@@ -140,6 +140,8 @@ class CostingRepository:
             )
             .order_by(StockCostConsumption.created_at.asc())
         )
+        if for_update:
+            statement = statement.with_for_update()
         result = await self.session.execute(statement)
         return result.scalars().all()
 

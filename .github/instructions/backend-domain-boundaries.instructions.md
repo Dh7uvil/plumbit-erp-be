@@ -132,14 +132,14 @@ erp                     implemented: currencies, exchange_rates, taxes, payment_
                         planned: sales_invoices, credit_notes, customer_payments,
                         purchase_invoices, debit_notes, supplier_payments,
                         accounting (chart of accounts, journals, AR, AP),
-                        logistics (imports, exports, shipments, containers),
                         einvoicing status APIs (on sales invoices and credit notes;
                         inbound e-bills as draft purchase invoices)
 
 inventory_management    implemented: units, categories, products, price_lists, warehouses,
                         stock, costing (internal FIFO ledger), stock_transfers,
-                        stock_adjustments, goods_receipts, quality_inspections
-                        planned: delivery_notes, sales_returns
+                        stock_adjustments, goods_receipts, quality_inspections,
+                        delivery_notes, packages, shipments, sales_returns, history
+                        planned: —
 
 crm                     implemented: customers, contacts
                         planned: leads, opportunities, activities
@@ -408,7 +408,8 @@ SDN-2026-000001
 ```
 
 Prefixes: `QUO`, `SO`, `DN` (delivery notes), `INV`, `CN` (credit notes), `PO`, `GRN`, `BILL`
-(purchase invoices), `SDN` (debit notes). URL resources are unique even if a prefix is shared
+(purchase invoices), `SDN` (debit notes), `STR`, `STA`, `PFI`, `QCR`, `PKG`, `SHP`, `SR`
+(sales returns). URL resources are unique even if a prefix is shared
 (`/credit-notes`, `/debit-notes`, `/delivery-notes`, `/customer-payments`, `/supplier-payments`).
 
 Do not generate these with application-level counters alone. Use a database-safe mechanism

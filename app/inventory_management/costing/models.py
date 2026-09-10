@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     ForeignKey,
     Index,
@@ -77,6 +78,10 @@ class StockCostConsumption(TenantModel):
     __table_args__ = (
         Index("ix_stock_cost_consumptions_movement_id", "movement_id"),
         Index("ix_stock_cost_consumptions_layer_id", "layer_id"),
+        CheckConstraint(
+            "qty_restored >= 0 AND qty_restored <= qty",
+            name="ck_stock_cost_consumptions_qty_restored",
+        ),
     )
 
     movement_id: Mapped[UUID] = mapped_column(
@@ -90,4 +95,5 @@ class StockCostConsumption(TenantModel):
         nullable=False,
     )
     qty: Mapped[Decimal] = mapped_column(_QTY, nullable=False)
+    qty_restored: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     unit_cost: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)

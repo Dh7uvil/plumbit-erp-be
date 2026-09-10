@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import builtins
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from decimal import Decimal
 from typing import cast
@@ -27,7 +27,7 @@ from app.common.outbox.service import OutboxService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
-from app.common.utils.currency import quantize_money
+from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
     compute_header_totals,
@@ -42,6 +42,7 @@ from app.core.enums import (
     DiscountType,
     DocumentType,
     FulfillmentStatus,
+    ItemType,
     PlaceOfSupply,
     SalesOrderStatus,
     TaxCategory,
@@ -67,10 +68,13 @@ from app.erp.accounting.service import (
 )
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 from app.erp.quotation.service import QuotationService
-from app.erp.sales_orders.models import SalesOrder
+from app.erp.sales_orders.models import SalesOrder, SalesOrderLine
 from app.erp.sales_orders.repository import SalesOrderRepository
 from app.erp.sales_orders.schemas import (
     CustomerPoDuplicate,
+    OrderTrackerResponse,
+    OrderTrackerRow,
+    ReservationShortfall,
     SalesOrderComposeDefaults,
     SalesOrderCreate,
     SalesOrderLineInput,
@@ -81,6 +85,8 @@ from app.erp.sales_orders.schemas import (
 from app.erp.sales_orders.workflow import assert_editable, next_status, transition_actions
 from app.inventory_management.price_lists.service import PriceListService
 from app.inventory_management.products.service import ProductService
+from app.inventory_management.stock.availability import available_qty
+from app.inventory_management.stock.service import StockService
 from app.inventory_management.units.service import UnitService
 from app.inventory_management.warehouses.service import WarehouseService
 
@@ -112,6 +118,7 @@ class SalesOrderService:
         self.customers = CustomerService(session)
         self.contacts = ContactService(session)
         self.products = ProductService(session)
+        self.stock = StockService(session)
         self.price_lists = PriceListService(session)
         self.units = UnitService(session)
         self.warehouses = WarehouseService(session)
@@ -579,6 +586,7 @@ class SalesOrderService:
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
+            shortfalls = await self.apply_line_reservations(tenant_id, row)
             await self.session.refresh(row, attribute_names=["updated_at"])
             await self.audit.write(
                 tenant_id=tenant_id,
@@ -590,7 +598,9 @@ class SalesOrderService:
                 old_values=old_values,
                 new_values=await self._snapshot(tenant_id, row),
             )
-            return self._to_response(row, requires_approval=requires_approval)
+            return self._to_response(
+                row, requires_approval=requires_approval, reservation_shortfalls=shortfalls
+            )
 
     async def close(
         self, tenant_id: UUID, sales_order_id: UUID, *, actor_user_id: UUID, expected_version: int
@@ -840,6 +850,10 @@ class SalesOrderService:
             for name, value in (extra or {}).items():
                 setattr(row, name, value)
             await self.session.flush()
+            if action in {"cancel", "close"}:
+                await self._release_line_reservations(tenant_id, row)
+            elif action == "reopen" and target == SalesOrderStatus.CONFIRMED:
+                await self.apply_line_reservations(tenant_id, row)
             await self.session.refresh(row, attribute_names=["updated_at"])
             new_values = await self._snapshot(tenant_id, row)
             if action == "reject" and reason:
@@ -867,6 +881,436 @@ class SalesOrderService:
                 "A confirmed sales order cannot be cancelled after fulfillment "
                 "or billing has started"
             )
+
+    async def apply_line_reservations(
+        self, tenant_id: UUID, row: SalesOrder
+    ) -> builtins.list[ReservationShortfall]:
+        """Recompute reserved qty from quantity - qty_delivered - qty_returned.
+
+        Reservation must never fail a confirm. If available stock is short, reserve
+        what exists and report the shortfall. Repeat calls are a no-op when the
+        derived target already matches ``line.qty_reserved``. Caller owns the
+        transaction.
+        """
+
+        if SalesOrderStatus(row.status) != SalesOrderStatus.CONFIRMED:
+            return []
+        warehouse_id = await self._reservation_warehouse_id(tenant_id, row)
+        shortfalls: builtins.list[ReservationShortfall] = []
+        for line in row.lines:
+            if line.product_id is None:
+                continue
+            product = await self.products.get(tenant_id, line.product_id)
+            if product.item_type == ItemType.SERVICE or not product.track_inventory:
+                if line.qty_reserved > _ZERO and warehouse_id is not None:
+                    locked = await self.stock.lock_balance(
+                        tenant_id,
+                        warehouse_id=warehouse_id,
+                        product_id=line.product_id,
+                        document_date=row.order_date,
+                        assert_period=False,
+                    )
+                    await self.stock.release_reserved_locked(locked, qty=line.qty_reserved)
+                    line.qty_reserved = _ZERO
+                continue
+            target = quantize_quantity(line.quantity - line.qty_delivered - line.qty_returned)
+            if target < _ZERO:
+                target = _ZERO
+            current = quantize_quantity(line.qty_reserved)
+            delta = quantize_quantity(target - current)
+            if warehouse_id is None:
+                if delta > _ZERO:
+                    shortfalls.append(
+                        ReservationShortfall(
+                            sales_order_line_id=line.id,
+                            product_id=line.product_id,
+                            requested=target,
+                            reserved=current,
+                            shortfall=delta,
+                        )
+                    )
+                continue
+            locked = await self.stock.lock_balance(
+                tenant_id,
+                warehouse_id=warehouse_id,
+                product_id=line.product_id,
+                document_date=row.order_date,
+                assert_period=False,
+            )
+            if delta > _ZERO:
+                available = available_qty(
+                    locked.row.qty_on_hand,
+                    locked.row.qty_reserved,
+                    locked.row.qty_quality_hold,
+                )
+                take = delta if available >= delta else max(available, _ZERO)
+                take = quantize_quantity(take)
+                if take > _ZERO:
+                    await self.stock.reserve_locked(locked, qty=take)
+                    current = quantize_quantity(current + take)
+                    line.qty_reserved = current
+                leftover = quantize_quantity(delta - take)
+                if leftover > _ZERO:
+                    shortfalls.append(
+                        ReservationShortfall(
+                            sales_order_line_id=line.id,
+                            product_id=line.product_id,
+                            requested=target,
+                            reserved=current,
+                            shortfall=leftover,
+                        )
+                    )
+            elif delta < _ZERO:
+                await self.stock.release_reserved_locked(locked, qty=-delta)
+                line.qty_reserved = target
+        await self.session.flush()
+        return shortfalls
+
+    async def apply_line_deliveries(
+        self,
+        tenant_id: UUID,
+        sales_order_id: UUID,
+        deliveries: Mapping[UUID, Decimal],
+    ) -> None:
+        """Caller owns the transaction. qty may be negative to reverse a delivery note."""
+
+        row = await self._require(tenant_id, sales_order_id, for_update=True)
+        by_id = {line.id: line for line in row.lines}
+        for line_id, qty in deliveries.items():
+            line = by_id.get(line_id)
+            if line is None:
+                raise ValidationError("Sales order line not found on this order")
+            line.qty_delivered = quantize_quantity(line.qty_delivered + qty)
+            if line.qty_delivered < _ZERO:
+                raise ValidationError("Delivered quantity cannot be negative")
+        self._refresh_fulfillment_status(row)
+        if SalesOrderStatus(row.status) == SalesOrderStatus.CONFIRMED:
+            await self.apply_line_reservations(tenant_id, row)
+        await self.session.flush()
+
+    async def apply_line_returns(
+        self,
+        tenant_id: UUID,
+        sales_order_id: UUID,
+        returns: Mapping[UUID, Decimal],
+    ) -> None:
+        """Caller owns the transaction. qty may be negative to reverse a return.
+
+        Does not re-reserve remaining undelivered quantity.
+        """
+
+        row = await self._require(tenant_id, sales_order_id, for_update=True)
+        by_id = {line.id: line for line in row.lines}
+        for line_id, qty in returns.items():
+            line = by_id.get(line_id)
+            if line is None:
+                raise ValidationError("Sales order line not found on this order")
+            line.qty_returned = quantize_quantity(line.qty_returned + qty)
+            if line.qty_returned < _ZERO:
+                raise ValidationError("Returned quantity cannot be negative")
+        self._refresh_fulfillment_status(row)
+        await self.session.flush()
+
+    async def deliverable_lines(
+        self, tenant_id: UUID, sales_order_id: UUID
+    ) -> builtins.list[SalesOrderLine]:
+        row = await self._require(tenant_id, sales_order_id)
+        if SalesOrderStatus(row.status) != SalesOrderStatus.CONFIRMED:
+            raise ValidationError("Delivery notes can only be created from a confirmed sales order")
+        return [line for line in row.lines if self._outstanding_delivery(line) > _ZERO]
+
+    def outstanding_delivery(self, line: SalesOrderLine) -> Decimal:
+        return self._outstanding_delivery(line)
+
+    async def tracker(self, tenant_id: UUID, sales_order_id: UUID) -> OrderTrackerResponse:
+        """Read-only projection of related documents. Invoice/payment rows join in Stage H."""
+
+        from app.erp.proforma_invoices.service import ProformaInvoiceService
+        from app.erp.purchase_orders.service import PurchaseOrderService
+        from app.inventory_management.delivery_notes.repository import DeliveryNoteRepository
+        from app.inventory_management.goods_receipts.repository import GoodsReceiptRepository
+        from app.inventory_management.packages.repository import PackageRepository
+        from app.inventory_management.quality_inspections.repository import (
+            QualityInspectionRepository,
+        )
+        from app.inventory_management.sales_returns.repository import SalesReturnRepository
+        from app.inventory_management.shipments.repository import ShipmentRepository
+
+        row = await self._require(tenant_id, sales_order_id)
+        rows: builtins.list[OrderTrackerRow] = []
+        if row.source_proforma_invoice_id is not None:
+            pfi = await ProformaInvoiceService(
+                self.session, actor_permissions=self.actor_permissions
+            ).get(tenant_id, row.source_proforma_invoice_id)
+            rows.append(
+                self._tracker_row(
+                    stage="proforma_invoice",
+                    document_type=DocumentType.PROFORMA_INVOICE.value,
+                    document_id=pfi.id,
+                    document_number=pfi.document_number,
+                    status=pfi.status.value,
+                    document_date=pfi.document_date,
+                    quantity_summary=self._qty_summary([line.quantity for line in pfi.lines]),
+                )
+            )
+        else:
+            rows.append(
+                self._tracker_pending("proforma_invoice", DocumentType.PROFORMA_INVOICE.value)
+            )
+
+        rows.append(
+            self._tracker_row(
+                stage="sales_order",
+                document_type=DocumentType.SALES_ORDER.value,
+                document_id=row.id,
+                document_number=row.document_number,
+                status=row.status,
+                document_date=row.order_date,
+                quantity_summary=self._qty_summary([line.quantity for line in row.lines]),
+            )
+        )
+
+        purchase_orders = PurchaseOrderService(
+            self.session, actor_permissions=self.actor_permissions
+        )
+        coverage = await purchase_orders.coverage_for_sales_order(tenant_id, sales_order_id)
+        po_seen: dict[UUID, OrderTrackerRow] = {}
+        for line in coverage.lines:
+            for ref in line.purchase_orders:
+                if ref.id in po_seen:
+                    continue
+                po_seen[ref.id] = self._tracker_row(
+                    stage="purchase_order",
+                    document_type=DocumentType.PURCHASE_ORDER.value,
+                    document_id=ref.id,
+                    document_number=ref.document_number,
+                    status=ref.status.value,
+                    document_date=None,
+                    quantity_summary=self._qty_summary([ref.quantity]),
+                )
+        if po_seen:
+            rows.extend(po_seen.values())
+        else:
+            rows.append(self._tracker_pending("purchase_order", DocumentType.PURCHASE_ORDER.value))
+
+        receipts = await GoodsReceiptRepository(self.session).list_for_purchase_orders(
+            tenant_id, list(po_seen)
+        )
+        if receipts:
+            for receipt in receipts:
+                rows.append(
+                    self._tracker_row(
+                        stage="goods_receipt",
+                        document_type=DocumentType.GOODS_RECEIPT.value,
+                        document_id=receipt.id,
+                        document_number=receipt.document_number,
+                        status=receipt.status,
+                        document_date=receipt.document_date,
+                        quantity_summary=self._qty_summary(
+                            [line.quantity for line in receipt.lines]
+                        ),
+                    )
+                )
+        else:
+            rows.append(self._tracker_pending("goods_receipt", DocumentType.GOODS_RECEIPT.value))
+
+        inspections: builtins.list[OrderTrackerRow] = []
+        qc_repo = QualityInspectionRepository(self.session)
+        for receipt in receipts:
+            for inspection in await qc_repo.list_for_goods_receipt(tenant_id, receipt.id):
+                inspections.append(
+                    self._tracker_row(
+                        stage="quality_inspection",
+                        document_type=DocumentType.QUALITY_INSPECTION.value,
+                        document_id=inspection.id,
+                        document_number=inspection.document_number,
+                        status=inspection.status,
+                        document_date=inspection.inspection_date,
+                        quantity_summary=self._qty_summary(
+                            [line.qty_inspected for line in inspection.lines]
+                        ),
+                    )
+                )
+        if inspections:
+            rows.extend(inspections)
+        else:
+            rows.append(
+                self._tracker_pending("quality_inspection", DocumentType.QUALITY_INSPECTION.value)
+            )
+
+        packages = await PackageRepository(self.session).list_for_sales_order(
+            tenant_id, sales_order_id
+        )
+        if packages:
+            for package in packages:
+                rows.append(
+                    self._tracker_row(
+                        stage="package",
+                        document_type=DocumentType.PACKAGE.value,
+                        document_id=package.id,
+                        document_number=package.document_number,
+                        status=package.status,
+                        document_date=package.created_at.date(),
+                        quantity_summary=self._qty_summary(
+                            [line.quantity for line in package.lines]
+                        ),
+                    )
+                )
+        else:
+            rows.append(self._tracker_pending("package", DocumentType.PACKAGE.value))
+
+        notes = await DeliveryNoteRepository(self.session).list_for_sales_order(
+            tenant_id, sales_order_id
+        )
+        if notes:
+            for note in notes:
+                rows.append(
+                    self._tracker_row(
+                        stage="delivery_note",
+                        document_type=DocumentType.DELIVERY_NOTE.value,
+                        document_id=note.id,
+                        document_number=note.document_number,
+                        status=note.status,
+                        document_date=note.document_date,
+                        quantity_summary=self._qty_summary([line.quantity for line in note.lines]),
+                    )
+                )
+        else:
+            rows.append(self._tracker_pending("delivery_note", DocumentType.DELIVERY_NOTE.value))
+
+        shipment_ids = [note.shipment_id for note in notes if note.shipment_id is not None]
+        shipments = await ShipmentRepository(self.session).list_by_ids(tenant_id, shipment_ids)
+        if shipments:
+            for shipment in shipments:
+                rows.append(
+                    self._tracker_row(
+                        stage="shipment",
+                        document_type=DocumentType.SHIPMENT.value,
+                        document_id=shipment.id,
+                        document_number=shipment.document_number,
+                        status=shipment.status,
+                        document_date=shipment.etd or shipment.created_at.date(),
+                        quantity_summary=(
+                            str(shipment.total_packages)
+                            if shipment.total_packages is not None
+                            else None
+                        ),
+                    )
+                )
+        else:
+            rows.append(self._tracker_pending("shipment", DocumentType.SHIPMENT.value))
+
+        returns = await SalesReturnRepository(self.session).list_for_sales_order(
+            tenant_id, sales_order_id
+        )
+        if returns:
+            for item in returns:
+                rows.append(
+                    self._tracker_row(
+                        stage="sales_return",
+                        document_type=DocumentType.SALES_RETURN.value,
+                        document_id=item.id,
+                        document_number=item.document_number,
+                        status=item.status,
+                        document_date=item.document_date,
+                        quantity_summary=self._qty_summary([line.quantity for line in item.lines]),
+                    )
+                )
+        else:
+            rows.append(self._tracker_pending("sales_return", DocumentType.SALES_RETURN.value))
+
+        rows.append(self._tracker_pending("sales_invoice", DocumentType.SALES_INVOICE.value))
+        rows.append(self._tracker_pending("customer_payment", "CUSTOMER_PAYMENT"))
+        return OrderTrackerResponse(sales_order_id=row.id, rows=rows)
+
+    def _tracker_row(
+        self,
+        *,
+        stage: str,
+        document_type: str,
+        document_id: UUID,
+        document_number: str,
+        status: str,
+        document_date: date | None,
+        quantity_summary: str | None,
+    ) -> OrderTrackerRow:
+        return OrderTrackerRow(
+            stage=stage,
+            document_type=document_type,
+            document_id=document_id,
+            document_number=document_number,
+            status=status,
+            document_date=document_date,
+            quantity_summary=quantity_summary,
+        )
+
+    def _tracker_pending(self, stage: str, document_type: str) -> OrderTrackerRow:
+        return OrderTrackerRow(
+            stage=stage,
+            document_type=document_type,
+            status="PENDING",
+        )
+
+    def _qty_summary(self, quantities: Sequence[Decimal]) -> str:
+        total = sum(quantities, _ZERO)
+        return f"{len(quantities)} lines · qty {total}"
+
+    def _outstanding_delivery(self, line: SalesOrderLine) -> Decimal:
+        outstanding = quantize_quantity(line.quantity - line.qty_delivered)
+        return outstanding if outstanding > _ZERO else _ZERO
+
+    async def _release_line_reservations(self, tenant_id: UUID, row: SalesOrder) -> None:
+        warehouse_id = row.warehouse_id
+        if warehouse_id is None:
+            default_warehouse = await self.warehouses.get_default(tenant_id)
+            warehouse_id = default_warehouse.id if default_warehouse is not None else None
+        for line in row.lines:
+            reserved = quantize_quantity(line.qty_reserved)
+            if reserved <= _ZERO or line.product_id is None:
+                line.qty_reserved = _ZERO
+                continue
+            if warehouse_id is None:
+                line.qty_reserved = _ZERO
+                continue
+            locked = await self.stock.lock_balance(
+                tenant_id,
+                warehouse_id=warehouse_id,
+                product_id=line.product_id,
+                document_date=row.order_date,
+                assert_period=False,
+            )
+            await self.stock.release_reserved_locked(locked, qty=reserved)
+            line.qty_reserved = _ZERO
+        await self.session.flush()
+
+    async def _reservation_warehouse_id(self, tenant_id: UUID, row: SalesOrder) -> UUID | None:
+        if row.warehouse_id is not None:
+            return row.warehouse_id
+        default_warehouse = await self.warehouses.get_default(tenant_id)
+        if default_warehouse is None:
+            return None
+        row.warehouse_id = default_warehouse.id
+        return default_warehouse.id
+
+    def _refresh_fulfillment_status(self, row: SalesOrder) -> None:
+        if not row.lines:
+            row.fulfillment_status = FulfillmentStatus.NOT_DELIVERED.value
+            return
+        states: builtins.list[str] = []
+        for line in row.lines:
+            net = quantize_quantity(line.qty_delivered - line.qty_returned)
+            if net <= _ZERO:
+                states.append("none")
+            elif net >= line.quantity:
+                states.append("full")
+            else:
+                states.append("partial")
+        if all(item == "none" for item in states):
+            row.fulfillment_status = FulfillmentStatus.NOT_DELIVERED.value
+        elif all(item == "full" for item in states):
+            row.fulfillment_status = FulfillmentStatus.DELIVERED.value
+        else:
+            row.fulfillment_status = FulfillmentStatus.PARTIALLY_DELIVERED.value
 
     async def _build_draft(
         self, tenant_id: UUID, payload: SalesOrderCreate
@@ -1043,6 +1487,8 @@ class SalesOrderService:
                     "tax_amount": tax_amount,
                     "amount": net,
                     "qty_delivered": _ZERO,
+                    "qty_returned": _ZERO,
+                    "qty_reserved": _ZERO,
                     "qty_invoiced": _ZERO,
                 }
             )
@@ -1125,7 +1571,13 @@ class SalesOrderService:
             actions.append("delete")
         return actions
 
-    def _to_response(self, row: SalesOrder, *, requires_approval: bool) -> SalesOrderResponse:
+    def _to_response(
+        self,
+        row: SalesOrder,
+        *,
+        requires_approval: bool,
+        reservation_shortfalls: builtins.list[ReservationShortfall] | None = None,
+    ) -> SalesOrderResponse:
         status = SalesOrderStatus(row.status)
         return SalesOrderResponse(
             id=row.id,
@@ -1182,6 +1634,7 @@ class SalesOrderService:
             acknowledged_by=row.acknowledged_by,
             available_actions=self._available_actions(row, requires_approval=requires_approval),
             lines=[SalesOrderLineResponse.model_validate(line) for line in row.lines],
+            reservation_shortfalls=reservation_shortfalls or [],
             created_at=row.created_at,
             updated_at=row.updated_at,
         )

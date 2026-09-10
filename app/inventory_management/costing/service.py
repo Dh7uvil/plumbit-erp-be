@@ -194,6 +194,41 @@ class CostingService:
             layer.qty_remaining = quantize_quantity(layer.qty_remaining + item.qty)
         await self.session.flush()
 
+    async def restore_partial(
+        self, tenant_id: UUID, movement_id: UUID, qty: Decimal
+    ) -> tuple[CostConsumption, ...]:
+        remaining = quantize_quantity(qty)
+        if remaining <= _ZERO:
+            raise ValidationError("Restore quantity must be positive")
+        rows = await self.repo.list_consumptions_for_movement(
+            tenant_id, movement_id, for_update=True
+        )
+        restored: list[CostConsumption] = []
+        for row in rows:
+            restorable = quantize_quantity(row.qty - row.qty_restored)
+            if restorable <= _ZERO:
+                continue
+            take = restorable if restorable <= remaining else remaining
+            take = quantize_quantity(take)
+            layer = await self.repo.get(tenant_id, row.layer_id)
+            if layer is None:
+                raise ValidationError("Cost layer not found for restore")
+            layer.qty_remaining = quantize_quantity(layer.qty_remaining + take)
+            row.qty_restored = quantize_quantity(row.qty_restored + take)
+            restored.append(
+                CostConsumption(layer_id=row.layer_id, qty=take, unit_cost=row.unit_cost)
+            )
+            remaining = quantize_quantity(remaining - take)
+            if remaining <= _ZERO:
+                break
+        if remaining > _ZERO:
+            raise ValidationError(
+                "Restore quantity exceeds restorable consumptions",
+                details={"unrestorable_qty": str(remaining)},
+            )
+        await self.session.flush()
+        return tuple(restored)
+
     async def revalue(
         self, tenant_id: UUID, layer_id: UUID, new_landed_unit_cost: Decimal
     ) -> StockCostLayer:

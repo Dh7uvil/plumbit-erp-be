@@ -32,6 +32,7 @@ class ErrorCode(StrEnum):
     SUPPLIER_SKU_NOT_MAPPED = "SUPPLIER_SKU_NOT_MAPPED"
     GRN_OVER_RECEIPT = "GRN_OVER_RECEIPT"
     GRN_CANNOT_CANCEL = "GRN_CANNOT_CANCEL"
+    DELIVERY_NOTE_CANNOT_CANCEL = "DELIVERY_NOTE_CANNOT_CANCEL"
     QUALITY_QTY_MISMATCH = "QUALITY_QTY_MISMATCH"
     COST_LAYER_IMBALANCE = "COST_LAYER_IMBALANCE"
     QUOTATION_HAS_LIVE_PROFORMA = "QUOTATION_HAS_LIVE_PROFORMA"
@@ -213,6 +214,12 @@ class GrnCannotCancelError(AppError):
     default_code = ErrorCode.GRN_CANNOT_CANCEL
     default_status = HTTPStatus.CONFLICT
     default_message = "This goods receipt cannot be cancelled"
+
+
+class DeliveryNoteCannotCancelError(AppError):
+    default_code = ErrorCode.DELIVERY_NOTE_CANNOT_CANCEL
+    default_status = HTTPStatus.CONFLICT
+    default_message = "This delivery note cannot be cancelled"
 
 
 class QualityQtyMismatchError(AppError):

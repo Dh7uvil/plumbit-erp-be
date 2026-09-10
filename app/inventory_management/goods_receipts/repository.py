@@ -97,6 +97,20 @@ class GoodsReceiptRepository:
         ordered = [loaded[row.id] for row in rows if row.id in loaded]
         return ordered, total
 
+    async def list_for_purchase_orders(
+        self, tenant_id: UUID, purchase_order_ids: Sequence[UUID]
+    ) -> Sequence[GoodsReceipt]:
+        if not purchase_order_ids:
+            return []
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(GoodsReceipt.purchase_order_id.in_(list(purchase_order_ids)))
+            .options(self._with_lines())
+            .order_by(GoodsReceipt.document_date, GoodsReceipt.created_at)
+        )
+        result = await self.session.execute(statement)
+        return result.scalars().all()
+
     async def create(self, tenant_id: UUID, values: Mapping[str, object]) -> GoodsReceipt:
         return await self._repo.create(tenant_id, values)
 

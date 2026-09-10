@@ -66,11 +66,19 @@ def assert_line_quantities(
                 "remaining_hold": str(remaining_hold),
             },
         )
-    if qty_rejected > _ZERO and disposition is None:
+    if qty_rejected > _ZERO and (
+        disposition is None or disposition == QcDisposition.REWORK_RELEASE
+    ):
         raise ValidationError(
             "A disposition is required when rejected quantity is greater than zero"
         )
-    if qty_rejected == _ZERO and disposition is not None:
+    if (
+        qty_rejected == _ZERO
+        and disposition is not None
+        and disposition != QcDisposition.REWORK_RELEASE
+    ):
         raise ValidationError(
             "Disposition can only be set when rejected quantity is greater than zero"
         )
+    if disposition == QcDisposition.REWORK_RELEASE and qty_rework <= _ZERO:
+        raise ValidationError("REWORK_RELEASE requires rework quantity greater than zero")

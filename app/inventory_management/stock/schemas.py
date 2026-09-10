@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
@@ -96,7 +96,7 @@ class StockBalanceResponse(BaseModel):
 
     @model_serializer(mode="wrap")
     def _omit_unpermissioned_cost(self, handler: Any) -> dict[str, Any]:
-        data = handler(self)
+        data = cast(dict[str, Any], handler(self))
         for field in _COST_RESPONSE_FIELDS:
             if field in data and data[field] is None:
                 del data[field]
@@ -132,7 +132,7 @@ class StockMovementResponse(BaseModel):
 
     @model_serializer(mode="wrap")
     def _omit_unpermissioned_cost(self, handler: Any) -> dict[str, Any]:
-        data = handler(self)
+        data = cast(dict[str, Any], handler(self))
         for field in _COST_RESPONSE_FIELDS:
             if field in data and data[field] is None:
                 del data[field]

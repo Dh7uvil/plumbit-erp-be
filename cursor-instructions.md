@@ -48,8 +48,8 @@ app/
 │                                 planned: leads, opportunities, activities
 ├── inventory_management/         implemented: units, categories, products, price_lists, warehouses,
 │                                 stock, costing, stock_transfers, stock_adjustments,
-│                                 goods_receipts, quality_inspections
-│                                 planned: delivery_notes, sales_returns
+│                                 goods_receipts, quality_inspections, delivery_notes,
+│                                 packages, shipments, sales_returns, history
 ├── erp/                          implemented: currencies, exchange_rates, taxes, payment_terms,
 │                                 terms_templates, document_sequences, suppliers, supplier_products,
 │                                 quotations, period_lock, sales_orders, purchase_orders
@@ -57,7 +57,6 @@ app/
 │                                 customer_payments, purchase_invoices,
 │                                 debit_notes, supplier_payments,
 │                                 accounting (chart_of_accounts, journals, AR, AP),
-│                                 logistics (imports, exports, shipments, containers),
 │                                 einvoicing (status APIs on sales invoices and credit notes;
 │                                 inbound e-bills as draft purchase invoices)
 ├── integrations/                 implemented: storage/
@@ -75,7 +74,8 @@ concept only — they never appear in the URL, which is a flat set of hyphenated
 `/credit-notes`, `/debit-notes`, `/customer-payments`, `/supplier-payments`, `/delivery-notes`.
 
 Document-number prefixes: `QUO`, `SO`, `DN` (delivery notes), `INV`, `CN` (credit notes), `PO`,
-`GRN`, `BILL` (purchase invoices), `SDN` (debit notes), `STR`, `STA`, `PFI`, `QCR`, `PKG`, `SHP`.
+`GRN`, `BILL` (purchase invoices), `SDN` (debit notes), `STR`, `STA`, `PFI`, `QCR`, `PKG`, `SHP`,
+`SR` (sales returns).
 Prefer a unique prefix per type; URLs must be unique even if a prefix is shared.
 
 ## Detailed instruction files

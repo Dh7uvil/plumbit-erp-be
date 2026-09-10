@@ -3339,6 +3339,44 @@
         "type": "object",
         "title": "ProformaInvoiceUpdate"
       },
+      "ReservationShortfall": {
+        "properties": {
+          "sales_order_line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sales Order Line Id"
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Product Id"
+          },
+          "requested": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Requested"
+          },
+          "reserved": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Reserved"
+          },
+          "shortfall": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Shortfall"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sales_order_line_id",
+          "product_id",
+          "requested",
+          "reserved",
+          "shortfall"
+        ],
+        "title": "ReservationShortfall"
+      },
       "SalesOrderLineResponse": {
         "properties": {
           "id": {
@@ -3446,6 +3484,18 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Qty Delivered"
+          },
+          "qty_returned": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Returned",
+            "default": "0"
+          },
+          "qty_reserved": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Reserved",
+            "default": "0"
           },
           "qty_invoiced": {
             "type": "string",
@@ -3947,6 +3997,13 @@
             },
             "type": "array",
             "title": "Lines"
+          },
+          "reservation_shortfalls": {
+            "items": {
+              "$ref": "#/components/schemas/ReservationShortfall"
+            },
+            "type": "array",
+            "title": "Reservation Shortfalls"
           },
           "created_at": {
             "type": "string",

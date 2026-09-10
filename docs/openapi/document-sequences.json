@@ -663,7 +663,8 @@
           "PROFORMA_INVOICE",
           "QUALITY_INSPECTION",
           "PACKAGE",
-          "SHIPMENT"
+          "SHIPMENT",
+          "SALES_RETURN"
         ],
         "title": "DocumentType"
       },

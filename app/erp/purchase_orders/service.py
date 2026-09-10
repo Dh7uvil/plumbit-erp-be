@@ -527,6 +527,9 @@ class PurchaseOrderService:
                     qty_covered=qty_covered,
                     qty_uncovered=qty_uncovered,
                     qty_received=qty_received,
+                    qty_reserved=so_line.qty_reserved,
+                    qty_delivered=so_line.qty_delivered,
+                    qty_returned=so_line.qty_returned,
                     purchase_orders=[
                         CoveragePurchaseOrderRef(
                             id=item.purchase_order.id,
@@ -863,8 +866,8 @@ class PurchaseOrderService:
 
     async def _tracked_outstanding(
         self, tenant_id: UUID, row: PurchaseOrder
-    ) -> list[tuple[PurchaseOrderLine, Decimal]]:
-        tracked: list[tuple[PurchaseOrderLine, Decimal]] = []
+    ) -> builtins.list[tuple[PurchaseOrderLine, Decimal]]:
+        tracked: builtins.list[tuple[PurchaseOrderLine, Decimal]] = []
         for line in row.lines:
             if line.product_id is None:
                 continue
@@ -892,6 +895,8 @@ class PurchaseOrderService:
             if not row.deliver_to_snapshot:
                 row.deliver_to_snapshot = format_address_snapshot(default_warehouse.address)
         for line, outstanding in tracked:
+            if line.product_id is None:
+                continue
             locked = await self.stock.lock_balance(
                 tenant_id,
                 warehouse_id=warehouse_id,
@@ -906,6 +911,8 @@ class PurchaseOrderService:
         if not tracked or row.warehouse_id is None:
             return
         for line, outstanding in tracked:
+            if line.product_id is None:
+                continue
             locked = await self.stock.lock_balance(
                 tenant_id,
                 warehouse_id=row.warehouse_id,
