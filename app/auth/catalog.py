@@ -74,7 +74,11 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "account": ("create", "read", "update", "delete"),
         "journal_entry": ("create", "read", "update", "delete", "post", "reverse"),
         "opening_balance": ("manage",),
-        "report": ("ledger",),
+        "report": ("ledger", "tax"),
+        "sales_invoice": ("create", "read", "update", "delete", "post", "cancel"),
+        "purchase_invoice": ("create", "read", "update", "delete", "post", "cancel"),
+        "credit_note": ("create", "read", "update", "delete", "post", "cancel"),
+        "debit_note": ("create", "read", "update", "delete", "post", "cancel"),
     },
 }
 
@@ -276,6 +280,31 @@ JOURNAL_ENTRY_POST = build_permission(ERP_MODULE, "journal_entry", "post")
 JOURNAL_ENTRY_REVERSE = build_permission(ERP_MODULE, "journal_entry", "reverse")
 OPENING_BALANCE_MANAGE = build_permission(ERP_MODULE, "opening_balance", "manage")
 REPORT_LEDGER = build_permission(ERP_MODULE, "report", "ledger")
+REPORT_TAX = build_permission(ERP_MODULE, "report", "tax")
+SALES_INVOICE_CREATE = build_permission(ERP_MODULE, "sales_invoice", "create")
+SALES_INVOICE_READ = build_permission(ERP_MODULE, "sales_invoice", "read")
+SALES_INVOICE_UPDATE = build_permission(ERP_MODULE, "sales_invoice", "update")
+SALES_INVOICE_DELETE = build_permission(ERP_MODULE, "sales_invoice", "delete")
+SALES_INVOICE_POST = build_permission(ERP_MODULE, "sales_invoice", "post")
+SALES_INVOICE_CANCEL = build_permission(ERP_MODULE, "sales_invoice", "cancel")
+PURCHASE_INVOICE_CREATE = build_permission(ERP_MODULE, "purchase_invoice", "create")
+PURCHASE_INVOICE_READ = build_permission(ERP_MODULE, "purchase_invoice", "read")
+PURCHASE_INVOICE_UPDATE = build_permission(ERP_MODULE, "purchase_invoice", "update")
+PURCHASE_INVOICE_DELETE = build_permission(ERP_MODULE, "purchase_invoice", "delete")
+PURCHASE_INVOICE_POST = build_permission(ERP_MODULE, "purchase_invoice", "post")
+PURCHASE_INVOICE_CANCEL = build_permission(ERP_MODULE, "purchase_invoice", "cancel")
+CREDIT_NOTE_CREATE = build_permission(ERP_MODULE, "credit_note", "create")
+CREDIT_NOTE_READ = build_permission(ERP_MODULE, "credit_note", "read")
+CREDIT_NOTE_UPDATE = build_permission(ERP_MODULE, "credit_note", "update")
+CREDIT_NOTE_DELETE = build_permission(ERP_MODULE, "credit_note", "delete")
+CREDIT_NOTE_POST = build_permission(ERP_MODULE, "credit_note", "post")
+CREDIT_NOTE_CANCEL = build_permission(ERP_MODULE, "credit_note", "cancel")
+DEBIT_NOTE_CREATE = build_permission(ERP_MODULE, "debit_note", "create")
+DEBIT_NOTE_READ = build_permission(ERP_MODULE, "debit_note", "read")
+DEBIT_NOTE_UPDATE = build_permission(ERP_MODULE, "debit_note", "update")
+DEBIT_NOTE_DELETE = build_permission(ERP_MODULE, "debit_note", "delete")
+DEBIT_NOTE_POST = build_permission(ERP_MODULE, "debit_note", "post")
+DEBIT_NOTE_CANCEL = build_permission(ERP_MODULE, "debit_note", "cancel")
 
 SYSTEM_ADMIN_ROLE_NAME = "Superadmin"
 

@@ -865,6 +865,45 @@ class PurchaseOrderService:
         else:
             row.receipt_status = ReceiptStatus.PARTIALLY_RECEIVED.value
 
+    async def apply_line_bills(
+        self,
+        tenant_id: UUID,
+        purchase_order_id: UUID,
+        bills: Mapping[UUID, Decimal],
+    ) -> None:
+        """Caller owns the transaction. qty may be negative to reverse a bill."""
+
+        row = await self._require(tenant_id, purchase_order_id, for_update=True)
+        by_id = {line.id: line for line in row.lines}
+        for line_id, qty in bills.items():
+            line = by_id.get(line_id)
+            if line is None:
+                raise ValidationError("Purchase order line not found on this order")
+            line.qty_billed = quantize_quantity(line.qty_billed + qty)
+            if line.qty_billed < _ZERO:
+                raise ValidationError("Billed quantity cannot be negative")
+        self._refresh_billing_status(row)
+        await self.session.flush()
+
+    def _refresh_billing_status(self, row: PurchaseOrder) -> None:
+        if not row.lines:
+            row.billing_status = BillingStatus.NOT_INVOICED.value
+            return
+        states: list[str] = []
+        for line in row.lines:
+            if line.qty_billed <= _ZERO:
+                states.append("none")
+            elif line.qty_billed >= line.quantity:
+                states.append("full")
+            else:
+                states.append("partial")
+        if all(item == "none" for item in states):
+            row.billing_status = BillingStatus.NOT_INVOICED.value
+        elif all(item == "full" for item in states):
+            row.billing_status = BillingStatus.INVOICED.value
+        else:
+            row.billing_status = BillingStatus.PARTIALLY_INVOICED.value
+
     async def _tracked_outstanding(
         self, tenant_id: UUID, row: PurchaseOrder
     ) -> builtins.list[tuple[PurchaseOrderLine, Decimal]]:

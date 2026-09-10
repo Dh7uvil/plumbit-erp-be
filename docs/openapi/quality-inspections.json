@@ -2,13 +2,13 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Plumbit ERP API \u2014 Quality Inspections",
-    "description": "Quality Inspections",
+    "description": "QC documents against goods receipts. Approving releases or scraps the remaining quality hold.",
     "version": "0.1.0"
   },
   "tags": [
     {
       "name": "Quality Inspections",
-      "description": "Quality Inspections"
+      "description": "QC documents against goods receipts. Approving releases or scraps the remaining quality hold."
     }
   ],
   "paths": {

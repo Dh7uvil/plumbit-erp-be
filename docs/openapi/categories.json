@@ -473,6 +473,30 @@
               }
             ],
             "title": "Parent Id"
+          },
+          "income_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Income Account Id"
+          },
+          "purchase_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Account Id"
           }
         },
         "type": "object",
@@ -513,6 +537,30 @@
               }
             ],
             "title": "Parent Id"
+          },
+          "income_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Income Account Id"
+          },
+          "purchase_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Account Id"
           },
           "is_active": {
             "type": "boolean",
@@ -579,6 +627,30 @@
               }
             ],
             "title": "Is Active"
+          },
+          "income_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Income Account Id"
+          },
+          "purchase_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Account Id"
           }
         },
         "type": "object",

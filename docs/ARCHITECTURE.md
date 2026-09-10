@@ -150,7 +150,7 @@ Solid = implemented. Dashed in draw.io = planned.
 | Identity (`app/auth/`) | tenants, auth, users, roles, permissions, branches, departments, employees (nested), audit logs; tenant columns `allow_negative_stock`, `costing_method`, `allow_over_receipt`, `qc_required_default`, `lock_date`, `hard_lock_date`, `lock_reason`, `hard_lock_reason`, `fiscal_year_start_month`, `fiscal_year_start_day`, `books_start_date` | `/tenants`, `/auth/login`, `/users`, `/roles` | — |
 | CRM (`app/crm/`) | customers, contacts | `/customers`, `/contacts` | leads, opportunities, activities |
 | Inventory (`app/inventory_management/`) | units, categories, products, price lists, warehouses, stock, FIFO costing, stock transfers, stock adjustments, goods receipts, quality inspections, delivery notes, packages, shipments, sales returns, trading history | `/units`, `/products`, `/warehouses`, `/stock`, `/stock-transfers`, `/stock-adjustments`, `/goods-receipts`, `/quality-inspections`, `/delivery-notes`, `/packages`, `/shipments`, `/sales-returns` | — |
-| ERP (`app/erp/`) | currencies, exchange rates, taxes, payment terms, terms templates, document sequences, suppliers, supplier products, quotations, proforma invoices, period lock, sales orders, purchase orders, chart of accounts, journals, opening balances, ledger reports | `/quotations`, `/proforma-invoices`, `/suppliers`, `/supplier-products`, `/exchange-rates`, `/period-lock`, `/sales-orders`, `/purchase-orders`, `/accounts`, `/journals`, `/opening-balances`, `/reports/trial-balance` | sales invoices, credit notes, customer payments, purchase invoices, debit notes, supplier payments, einvoicing status APIs |
+| ERP (`app/erp/`) | currencies, exchange rates, taxes, payment terms, terms templates, document sequences, suppliers, supplier products, quotations, proforma invoices, period lock, sales orders, sales invoices, credit notes, purchase orders, purchase invoices, debit notes, chart of accounts, journals, opening balances, ledger reports | `/quotations`, `/proforma-invoices`, `/suppliers`, `/supplier-products`, `/exchange-rates`, `/period-lock`, `/sales-orders`, `/sales-invoices`, `/credit-notes`, `/purchase-orders`, `/purchase-invoices`, `/debit-notes`, `/accounts`, `/journals`, `/opening-balances`, `/reports/trial-balance` | customer payments, supplier payments, einvoicing status APIs |
 | Common | attachments, activity, outbox | `/attachments`, `/activity`, `/outbox-events` | — |
 | `integrations` | storage | — | email, WhatsApp, video, AI, forecast, `einvoicing/` ASP adapters |
 | `communication_service` | — | — | email, WhatsApp, chat, meetings (Agora) |
@@ -208,7 +208,9 @@ Locked sequences (`lock_for_allocate`). `Decimal` only. Quotation VAT in `app/er
 
 ### Immutability and double-entry
 
-Posted rows are never overwritten. An AED 1,000 July invoice is not edited to AED 800 in August. The user posts a credit note or reversal in the **open** period. That is the ledger. Every GL write goes through `LedgerPostingService` (`app/erp/accounting/ledger/posting.py`): manual journals, opening balances, and future document posts share `journal_entries` / `journal_entry_lines`. AR/AP open items are lines with `party_id` and `due_date`, not a parallel subledger table.
+Posted rows are never overwritten. An AED 1,000 July invoice is not edited to AED 800 in August. The user posts a credit note or reversal in the **open** period. That is the ledger. Every GL write goes through `LedgerPostingService` (`app/erp/accounting/ledger/posting.py`): manual journals, opening balances, inventory documents (via `InventoryLedgerService`), and invoice-family posts share `journal_entries` / `journal_entry_lines`. AR/AP open items are lines with `party_id` and `due_date`, not a parallel subledger table.
+
+The delivery note owns COGS (`DR COGS / CR INVENTORY` at consumed FIFO cost). The sales invoice posts AR / revenue / VAT only and stamps a non-GL `cogs_amount` snapshot for margin. GRN post writes `DR INVENTORY / CR GOODS_RECEIVED_NOT_INVOICED`. Stock transfers are GL-neutral. Inventory GL posting is skipped when the tenant has no `books_start_date`.
 
 ### Negative stock
 
@@ -220,7 +222,7 @@ Tenant `lock_date` (transaction lock, bypassable with `erp.period.override`) and
 
 ### Invoice posting
 
-`DRAFT` save does not touch stock, AR, tax or GL. Explicit Confirm/Post (or a permissioned batch) moves `DRAFT → POSTED` and, in one transaction, updates inventory, tax, AR/AP and GL. UI "Sent" / "Approved" maps to `POSTED`. After commit, e-invoice submit is an outbox/worker job to an MoF-accredited ASP; posting does not wait on Peppol.
+`DRAFT` save does not touch stock, AR, tax or GL. Explicit Confirm/Post (or a permissioned batch) moves `DRAFT → POSTED` and, in one transaction, updates tax, AR/AP and GL. Inventory documents (GRN, delivery note, sales return, QC scrap, stock adjustment) post their own journals in the same post transaction; sales invoices do not move stock or post COGS. UI "Sent" / "Approved" maps to `POSTED`. After commit, e-invoice submit is an outbox/worker job to an MoF-accredited ASP; posting does not wait on Peppol.
 
 ### UAE VAT and e-invoicing
 
@@ -262,8 +264,7 @@ Keep the ERP modular. Do not turn it into microservices early.
 
 - Amplify, API Gateway, and Lambda packaging.
 - SES, Agora, WhatsApp Go adapter, OpenAI, Forecast ML, `app/workers/`.
-- DRAFT → POSTED sales/purchase invoices and payments (manual journals and opening balances already post through `LedgerPostingService`).
-- `Idempotency-Key` / `If-Match` on invoice post and payments (stock documents and journals already require both).
+- Customer and supplier payments (sales/purchase invoices, credit notes, and debit notes already post through `LedgerPostingService`; inventory documents post via `InventoryLedgerService`).
 - UAE e-invoicing ASP adapter, PINT-AE completeness fields, inbound e-bill drafts.
 - Splitting PostgreSQL per tenant.
 

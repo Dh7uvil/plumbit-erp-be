@@ -224,7 +224,7 @@ async def test_attachment_unregistered_entity_type(
 ) -> None:
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)
-    created = await _upload(client, headers, entity_type="SALES_INVOICE", entity_id=str(uuid4()))
+    created = await _upload(client, headers, entity_type="CUSTOMER_PAYMENT", entity_id=str(uuid4()))
     assert created.status_code == 422, created.text
     assert created.json()["error"]["code"] == "VALIDATION_ERROR"
 

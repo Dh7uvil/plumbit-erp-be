@@ -2,13 +2,13 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Plumbit ERP API \u2014 Goods Receipts",
-    "description": "Goods Receipts",
+    "description": "Inbound receipts against purchase orders. Save stays DRAFT; POST /goods-receipts/{id}/post writes stock and cost layers.",
     "version": "0.1.0"
   },
   "tags": [
     {
       "name": "Goods Receipts",
-      "description": "Goods Receipts"
+      "description": "Inbound receipts against purchase orders. Save stays DRAFT; POST /goods-receipts/{id}/post writes stock and cost layers."
     }
   ],
   "paths": {
@@ -1322,6 +1322,12 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Qty On Hold"
+          },
+          "qty_billed": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Billed",
+            "default": "0"
           }
         },
         "type": "object",

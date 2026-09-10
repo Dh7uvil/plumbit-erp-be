@@ -7,18 +7,26 @@ from dataclasses import dataclass
 from app.auth.catalog import (
     ACCOUNT_READ,
     CONTACT_READ,
+    CREDIT_NOTE_READ,
     CRM_MODULE,
     CUSTOMER_READ,
+    DEBIT_NOTE_READ,
+    DELIVERY_NOTE_READ,
     ERP_MODULE,
     GOODS_RECEIPT_READ,
     INVENTORY_MODULE,
     JOURNAL_ENTRY_READ,
+    PACKAGE_READ,
     PRODUCT_READ,
     PROFORMA_INVOICE_READ,
+    PURCHASE_INVOICE_READ,
     PURCHASE_ORDER_READ,
     QUALITY_INSPECTION_READ,
     QUOTATION_READ,
+    SALES_INVOICE_READ,
     SALES_ORDER_READ,
+    SALES_RETURN_READ,
+    SHIPMENT_READ,
     STOCK_ADJUSTMENT_READ,
     STOCK_TRANSFER_READ,
     SUPPLIER_PRODUCT_READ,
@@ -152,11 +160,75 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         read_permission=SALES_ORDER_READ,
         changed_fields=_SALES_ORDER_FIELDS,
     ),
+    "sales_invoice": ActivityEntitySpec(
+        module=ERP_MODULE,
+        entity_type="sales_invoice",
+        read_permission=SALES_INVOICE_READ,
+        changed_fields=_DOCUMENT_MONEY_FIELDS
+        | frozenset(
+            {
+                "document_number",
+                "invoice_date",
+                "customer",
+                "due_date",
+                "payment_status",
+                "cogs_status",
+                "grand_total",
+            }
+        ),
+    ),
     "purchase_order": ActivityEntitySpec(
         module=ERP_MODULE,
         entity_type="purchase_order",
         read_permission=PURCHASE_ORDER_READ,
         changed_fields=_PURCHASE_ORDER_FIELDS,
+    ),
+    "purchase_invoice": ActivityEntitySpec(
+        module=ERP_MODULE,
+        entity_type="purchase_invoice",
+        read_permission=PURCHASE_INVOICE_READ,
+        changed_fields=_DOCUMENT_MONEY_FIELDS
+        | frozenset(
+            {
+                "document_number",
+                "invoice_date",
+                "supplier",
+                "bill_type",
+                "due_date",
+                "payment_status",
+                "grand_total",
+            }
+        ),
+    ),
+    "credit_note": ActivityEntitySpec(
+        module=ERP_MODULE,
+        entity_type="credit_note",
+        read_permission=CREDIT_NOTE_READ,
+        changed_fields=_DOCUMENT_MONEY_FIELDS
+        | frozenset(
+            {
+                "document_number",
+                "credit_note_date",
+                "customer",
+                "reason_code",
+                "grand_total",
+            }
+        ),
+    ),
+    "debit_note": ActivityEntitySpec(
+        module=ERP_MODULE,
+        entity_type="debit_note",
+        read_permission=DEBIT_NOTE_READ,
+        changed_fields=_DOCUMENT_MONEY_FIELDS
+        | frozenset(
+            {
+                "document_number",
+                "debit_note_date",
+                "supplier",
+                "reason_code",
+                "grand_total",
+            }
+        ),
     ),
     "stock_transfer": ActivityEntitySpec(
         module=INVENTORY_MODULE,
@@ -199,6 +271,58 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
                 "inspection_date",
                 "goods_receipt",
                 "notes",
+            }
+        ),
+    ),
+    "delivery_note": ActivityEntitySpec(
+        module=INVENTORY_MODULE,
+        entity_type="delivery_note",
+        read_permission=DELIVERY_NOTE_READ,
+        changed_fields=_STOCK_FIELDS
+        | frozenset(
+            {
+                "customer",
+                "warehouse",
+                "sales_order",
+                "shipment",
+                "vehicle_number",
+            }
+        ),
+    ),
+    "sales_return": ActivityEntitySpec(
+        module=INVENTORY_MODULE,
+        entity_type="sales_return",
+        read_permission=SALES_RETURN_READ,
+        changed_fields=_STOCK_FIELDS
+        | frozenset(
+            {
+                "customer",
+                "warehouse",
+                "delivery_note",
+                "sales_order",
+                "reason_code",
+            }
+        ),
+    ),
+    "package": ActivityEntitySpec(
+        module=INVENTORY_MODULE,
+        entity_type="package",
+        read_permission=PACKAGE_READ,
+        changed_fields=_STOCK_FIELDS
+        | frozenset({"sales_order", "warehouse", "package_type", "gross_weight"}),
+    ),
+    "shipment": ActivityEntitySpec(
+        module=INVENTORY_MODULE,
+        entity_type="shipment",
+        read_permission=SHIPMENT_READ,
+        changed_fields=_STOCK_FIELDS
+        | frozenset(
+            {
+                "shipment_type",
+                "transport_mode",
+                "bl_awb_number",
+                "container_number",
+                "carrier_name",
             }
         ),
     ),

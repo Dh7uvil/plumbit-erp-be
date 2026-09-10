@@ -91,7 +91,12 @@ class ProductService:
     ) -> ProductResponse:
         async with transaction(self.session):
             await self._validate_refs(
-                tenant_id, payload.unit_id, payload.category_id, payload.tax_id
+                tenant_id,
+                payload.unit_id,
+                payload.category_id,
+                payload.tax_id,
+                payload.income_account_id,
+                payload.purchase_account_id,
             )
             values = payload.model_dump()
             values["item_type"] = payload.item_type.value
@@ -137,6 +142,8 @@ class ProductService:
                 values.get("unit_id"),
                 values.get("category_id"),
                 values.get("tax_id"),
+                values.get("income_account_id"),
+                values.get("purchase_account_id"),
             )
             try:
                 row = await self.repo.update(tenant_id, product_id, values)
@@ -207,6 +214,8 @@ class ProductService:
         unit_id: UUID | None,
         category_id: UUID | None,
         tax_id: UUID | None,
+        income_account_id: UUID | None = None,
+        purchase_account_id: UUID | None = None,
     ) -> None:
         if unit_id is not None:
             await self.units.require_id(tenant_id, unit_id)
@@ -214,6 +223,14 @@ class ProductService:
             await self.categories.require_id(tenant_id, category_id)
         if tax_id is not None:
             await self.taxes.get(tenant_id, tax_id)
+        if income_account_id is not None or purchase_account_id is not None:
+            from app.erp.accounting.accounts.service import AccountService
+
+            accounts = AccountService(self.session)
+            if income_account_id is not None:
+                await accounts.require_postable(tenant_id, income_account_id)
+            if purchase_account_id is not None:
+                await accounts.require_postable(tenant_id, purchase_account_id)
 
     async def _require(self, tenant_id: UUID, product_id: UUID) -> Product:
         row = await self.repo.get(tenant_id, product_id)

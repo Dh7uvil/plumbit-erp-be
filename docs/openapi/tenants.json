@@ -477,6 +477,28 @@
             ],
             "title": "Fiscal Year Start"
           },
+          "fiscal_year_start_month": {
+            "type": "integer",
+            "title": "Fiscal Year Start Month",
+            "default": 1
+          },
+          "fiscal_year_start_day": {
+            "type": "integer",
+            "title": "Fiscal Year Start Day",
+            "default": 1
+          },
+          "books_start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Books Start Date"
+          },
           "default_currency": {
             "anyOf": [
               {
@@ -717,6 +739,49 @@
               }
             ],
             "title": "Fiscal Year Start"
+          },
+          "fiscal_year_start_month": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 12.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fiscal Year Start Month"
+          },
+          "fiscal_year_start_day": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 31.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fiscal Year Start Day"
+          },
+          "books_start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Books Start Date"
+          },
+          "acknowledge_fiscal_year_change": {
+            "type": "boolean",
+            "title": "Acknowledge Fiscal Year Change",
+            "default": false
           },
           "default_currency": {
             "anyOf": [

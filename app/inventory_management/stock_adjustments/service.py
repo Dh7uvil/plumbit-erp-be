@@ -42,6 +42,7 @@ from app.core.exceptions import (
 from app.core.permissions import has_permission
 from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
+from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
 from app.erp.accounting.service import DocumentSequenceService
 from app.inventory_management.products.service import ProductService
 from app.inventory_management.stock.service import SOURCE_STOCK_ADJUSTMENT, StockService
@@ -93,6 +94,7 @@ class StockAdjustmentService:
         self.sequences = DocumentSequenceService(session)
         self.idempotency = IdempotencyService(session)
         self.audit = AuditWriter(session)
+        self.inventory_ledger = InventoryLedgerService(session, actor_permissions=actor_permissions)
         self._can_override = has_permission(actor_permissions, PERIOD_OVERRIDE)
         self._period_policy: PeriodLockPolicy | None = None
 
@@ -277,6 +279,7 @@ class StockAdjustmentService:
             occurred_at = utcnow()
             reason = StockAdjustmentReason(row.reason)
             movement_type = _REASON_MOVEMENT[reason]
+            inventory_delta = _ZERO
             for line in row.lines:
                 locked = await self.stock.lock_balance(
                     tenant_id,
@@ -293,7 +296,7 @@ class StockAdjustmentService:
                 elif line.qty_delta is None or line.qty_delta == _ZERO:
                     raise ValidationError("qty_delta must be non-zero")
                 if line.qty_delta != _ZERO:
-                    await self.stock.apply_locked(
+                    result = await self.stock.apply_locked(
                         tenant_id,
                         locked,
                         qty=line.qty_delta,
@@ -307,6 +310,9 @@ class StockAdjustmentService:
                         unit_id=line.unit_id,
                         unit_cost=line.unit_cost,
                     )
+                    if result.movement.value is not None:
+                        sign = Decimal("1") if line.qty_delta > _ZERO else Decimal("-1")
+                        inventory_delta += result.movement.value * sign
             row.status = target.value
             row.is_posted = True
             row.posted_at = occurred_at
@@ -314,6 +320,15 @@ class StockAdjustmentService:
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
+            await self.inventory_ledger.post_stock_adjustment(
+                tenant_id,
+                source_id=row.id,
+                entry_date=row.document_date,
+                inventory_delta=inventory_delta,
+                actor_id=actor_user_id,
+                branch_id=row.branch_id,
+                document_number=row.document_number,
+            )
             await self.session.refresh(row, attribute_names=["updated_at"])
             loaded = await self._require(tenant_id, adjustment_id)
             await self._ensure_policy(tenant_id)

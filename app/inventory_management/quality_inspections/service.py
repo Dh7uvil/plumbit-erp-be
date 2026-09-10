@@ -41,6 +41,7 @@ from app.core.exceptions import (
 from app.core.permissions import has_permission
 from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
+from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
 from app.erp.accounting.service import DocumentSequenceService
 from app.inventory_management.goods_receipts.service import GoodsReceiptService
 from app.inventory_management.quality_inspections.models import QualityInspection
@@ -84,6 +85,7 @@ class QualityInspectionService:
         self.sequences = DocumentSequenceService(session)
         self.outbox = OutboxService(session)
         self.audit = AuditWriter(session)
+        self.inventory_ledger = InventoryLedgerService(session, actor_permissions=actor_permissions)
         self._can_override = has_permission(actor_permissions, PERIOD_OVERRIDE)
         self._period_policy: PeriodLockPolicy | None = None
 
@@ -257,6 +259,7 @@ class QualityInspectionService:
             old_values = await self._snapshot(row)
             occurred_at = utcnow()
             deltas: list[tuple[UUID, Decimal, Decimal, Decimal]] = []
+            scrap_value = _ZERO
             for line in row.lines:
                 remaining = hold_by_line.get(line.goods_receipt_line_id, _ZERO)
                 disposition = QcDisposition(line.disposition) if line.disposition else None
@@ -298,7 +301,7 @@ class QualityInspectionService:
                         if disposition == QcDisposition.SCRAP
                         else StockMovementType.RETURN_OUT
                     )
-                    await self.stock.apply_locked(
+                    result = await self.stock.apply_locked(
                         tenant_id,
                         locked,
                         qty=-line.qty_rejected,
@@ -312,6 +315,11 @@ class QualityInspectionService:
                         unit_id=unit_by_grn_line.get(line.goods_receipt_line_id),
                         quality_hold_delta=-line.qty_rejected,
                     )
+                    if (
+                        disposition == QcDisposition.SCRAP
+                        and result.movement.value is not None
+                    ):
+                        scrap_value += result.movement.value
                 rework_released = _ZERO
                 if line.qty_rework > _ZERO and disposition == QcDisposition.REWORK_RELEASE:
                     await self.stock.apply_quality_hold_locked(
@@ -344,6 +352,14 @@ class QualityInspectionService:
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
+            await self.inventory_ledger.post_quality_scrap(
+                tenant_id,
+                source_id=row.id,
+                entry_date=row.inspection_date,
+                amount=scrap_value,
+                actor_id=actor_user_id,
+                document_number=row.document_number,
+            )
             await self.session.refresh(row, attribute_names=["updated_at"])
             loaded = await self._require(tenant_id, inspection_id)
             await self.audit.write(

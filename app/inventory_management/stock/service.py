@@ -586,6 +586,85 @@ class StockService:
         )
         return movement
 
+    async def reconsume_outbound_locked(
+        self,
+        tenant_id: UUID,
+        locked: LockedBalance,
+        *,
+        qty: Decimal,
+        movement_type: StockMovementType,
+        source_type: str,
+        source_id: UUID,
+        source_line_id: UUID | None,
+        document_date: date,
+        notes: str | None,
+        original_source_type: str | None = None,
+        original_source_id: UUID | None = None,
+        original_source_line_id: UUID | None = None,
+        quality_hold_delta: Decimal = _ZERO,
+        occurred_at: datetime | None = None,
+        unit_id: UUID | None = None,
+    ) -> StockMovement:
+        """Undo a reverse_outbound restore: re-consume original layers and decrease on-hand."""
+
+        outbound_qty = quantize_quantity(qty)
+        if outbound_qty <= _ZERO:
+            raise ValidationError("Reconsume quantity must be positive")
+        original_type = original_source_type or source_type
+        original_id = original_source_id or source_id
+        original_line = (
+            original_source_line_id if original_source_line_id is not None else source_line_id
+        )
+        originals = await self.movements.list_for_source(
+            tenant_id,
+            source_type=original_type,
+            source_id=original_id,
+            source_line_id=original_line,
+        )
+        original = next((row for row in originals if row.qty < _ZERO), None)
+        if original is None:
+            raise ValidationError("Original outbound movement not found for reconsume")
+        undone = await self.costing.unrestore_partial(tenant_id, original.id, outbound_qty)
+        hold = quantize_quantity(quality_hold_delta)
+        qty_before = locked.row.qty_on_hand
+        locked.row.qty_on_hand = quantize_quantity(qty_before - outbound_qty)
+        new_hold = quantize_quantity(locked.row.qty_quality_hold + hold)
+        if new_hold < _ZERO:
+            raise ValidationError("Quality hold cannot be negative")
+        locked.row.qty_quality_hold = new_hold
+        occurred = occurred_at or utcnow()
+        locked.row.last_movement_at = occurred
+        await self.session.flush()
+        total_value = sum((item.qty * item.unit_cost for item in undone), _ZERO)
+        movement = await self.movements.create(
+            tenant_id,
+            {
+                "movement_type": movement_type.value,
+                "warehouse_id": locked.warehouse.id,
+                "product_id": locked.product.id,
+                "unit_id": unit_id if unit_id is not None else locked.product.unit_id,
+                "qty": -outbound_qty,
+                "qty_before": qty_before,
+                "qty_after": locked.row.qty_on_hand,
+                "source_type": source_type,
+                "source_id": source_id,
+                "source_line_id": source_line_id,
+                "document_date": document_date,
+                "occurred_at": occurred,
+                "notes": notes,
+                "is_estimated_cost": False,
+                "unit_cost": quantize_money(total_value / outbound_qty) if outbound_qty else None,
+                "value": quantize_money(total_value),
+            },
+        )
+        await self.costing.assert_balanced(
+            tenant_id,
+            locked.warehouse.id,
+            locked.product.id,
+            locked.row.qty_on_hand,
+        )
+        return movement
+
     async def reserve_locked(self, locked: LockedBalance, *, qty: Decimal) -> Decimal:
         """Increase qty_reserved only. Reservation is not a stock movement."""
 

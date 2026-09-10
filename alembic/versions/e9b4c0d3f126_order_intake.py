@@ -21,7 +21,7 @@ UUID = postgresql.UUID(as_uuid=True)
 
 
 def upgrade() -> None:
-    """Add Stage C order-intake columns to sales and purchase orders."""
+    """Add order-intake columns to sales and purchase orders."""
 
     op.add_column("sales_orders", sa.Column("source_proforma_invoice_id", UUID, nullable=True))
     op.add_column(
@@ -112,7 +112,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop Stage C order-intake columns."""
+    """Drop order-intake columns."""
 
     op.drop_index(
         "ix_purchase_order_lines_source_sales_order_line_id",

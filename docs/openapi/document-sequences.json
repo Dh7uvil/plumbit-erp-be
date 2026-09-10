@@ -664,7 +664,8 @@
           "QUALITY_INSPECTION",
           "PACKAGE",
           "SHIPMENT",
-          "SALES_RETURN"
+          "SALES_RETURN",
+          "JOURNAL_ENTRY"
         ],
         "title": "DocumentType"
       },

@@ -1,4 +1,4 @@
-"""Stage F ledger: chart of accounts, journals, fiscal year columns.
+"""Chart of accounts, journals, and fiscal year columns.
 
 Revision ID: c1d4e8a6b902
 Revises: a3f7b2c9d184

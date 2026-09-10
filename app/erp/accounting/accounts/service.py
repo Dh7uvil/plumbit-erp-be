@@ -52,11 +52,62 @@ class AccountResolver:
         return row
 
 
+class PartyAccountResolver:
+    """Resolve a party's AR/AP control account, then fall back to the system role."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.repo = AccountRepository(session)
+        self.resolver = AccountResolver(session)
+
+    async def resolve_receivable(self, tenant_id: UUID, customer_id: UUID) -> Account:
+        from app.crm.customers.service import CUSTOMER_PARTY_ROLE, CustomerService
+
+        party = await CustomerService(self.session, role=CUSTOMER_PARTY_ROLE).get(
+            tenant_id, customer_id
+        )
+        if party.receivable_account_id is not None:
+            return await self._require_control(
+                tenant_id, party.receivable_account_id, AccountSubtype.ACCOUNTS_RECEIVABLE
+            )
+        return await self.resolver.require(tenant_id, AccountSystemRole.ACCOUNTS_RECEIVABLE)
+
+    async def resolve_payable(self, tenant_id: UUID, supplier_id: UUID) -> Account:
+        from app.crm.customers.service import SUPPLIER_PARTY_ROLE, CustomerService
+
+        party = await CustomerService(self.session, role=SUPPLIER_PARTY_ROLE).get(
+            tenant_id, supplier_id
+        )
+        if party.payable_account_id is not None:
+            return await self._require_control(
+                tenant_id, party.payable_account_id, AccountSubtype.ACCOUNTS_PAYABLE
+            )
+        return await self.resolver.require(tenant_id, AccountSystemRole.ACCOUNTS_PAYABLE)
+
+    async def _require_control(
+        self, tenant_id: UUID, account_id: UUID, subtype: AccountSubtype
+    ) -> Account:
+        row = await self.repo.get(tenant_id, account_id)
+        if row is None:
+            raise ResourceNotFoundError("Account not found")
+        if row.is_group or not row.is_active:
+            raise AccountNotPostableError(
+                details={"account_id": str(account_id), "is_group": row.is_group}
+            )
+        if row.account_subtype != subtype.value:
+            raise ValidationError(
+                f"Account must have subtype {subtype.value}",
+                details={"account_id": str(account_id), "account_subtype": row.account_subtype},
+            )
+        return row
+
+
 class AccountService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repo = AccountRepository(session)
         self.resolver = AccountResolver(session)
+        self.party_resolver = PartyAccountResolver(session)
         self.currencies = CurrencyService(session)
         self.audit = AuditWriter(session)
 
@@ -118,6 +169,38 @@ class AccountService:
                 details={"account_id": str(account_id), "account_subtype": row.account_subtype},
             )
         return row
+
+    async def resolve_income_account(self, tenant_id: UUID, product_id: UUID) -> Account:
+        return await self._resolve_product_account(
+            tenant_id, product_id, field="income_account_id", role=AccountSystemRole.SALES_REVENUE
+        )
+
+    async def resolve_purchase_account(self, tenant_id: UUID, product_id: UUID) -> Account:
+        return await self._resolve_product_account(
+            tenant_id, product_id, field="purchase_account_id", role=AccountSystemRole.PURCHASES
+        )
+
+    async def _resolve_product_account(
+        self,
+        tenant_id: UUID,
+        product_id: UUID,
+        *,
+        field: str,
+        role: AccountSystemRole,
+    ) -> Account:
+        from app.inventory_management.categories.service import CategoryService
+        from app.inventory_management.products.service import ProductService
+
+        product = await ProductService(self.session).get(tenant_id, product_id)
+        account_id = getattr(product, field)
+        if account_id is not None:
+            return await self.require_postable(tenant_id, account_id)
+        if product.category_id is not None:
+            category = await CategoryService(self.session).get(tenant_id, product.category_id)
+            category_account_id = getattr(category, field)
+            if category_account_id is not None:
+                return await self.require_postable(tenant_id, category_account_id)
+        return await self.resolver.require(tenant_id, role)
 
     def is_control_account(self, row: Account) -> bool:
         return row.account_subtype in _CONTROL_SUBTYPES

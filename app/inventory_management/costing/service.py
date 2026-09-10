@@ -1,4 +1,4 @@
-"""FIFO costing: add, consume, offset negatives, restore. Called only from StockService."""
+"""FIFO costing: add, consume, offset negatives, restore. Mutations from StockService."""
 
 from __future__ import annotations
 
@@ -8,12 +8,14 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.core.exceptions import CostLayerImbalanceError, ValidationError
-from app.inventory_management.costing.models import StockCostLayer
+from app.inventory_management.costing.models import StockCostConsumption, StockCostLayer
 from app.inventory_management.costing.repository import CostingRepository
+from app.inventory_management.stock.models import StockMovement
 
 _ZERO = Decimal("0")
 
@@ -229,6 +231,92 @@ class CostingService:
         await self.session.flush()
         return tuple(restored)
 
+    async def unrestore_partial(
+        self, tenant_id: UUID, movement_id: UUID, qty: Decimal
+    ) -> tuple[CostConsumption, ...]:
+        """Undo a previous restore against this outbound movement's consumptions."""
+
+        remaining = quantize_quantity(qty)
+        if remaining <= _ZERO:
+            raise ValidationError("Unrestore quantity must be positive")
+        rows = await self.repo.list_consumptions_for_movement(
+            tenant_id, movement_id, for_update=True
+        )
+        undone: list[CostConsumption] = []
+        for row in reversed(list(rows)):
+            available = quantize_quantity(row.qty_restored)
+            if available <= _ZERO:
+                continue
+            take = available if available <= remaining else remaining
+            take = quantize_quantity(take)
+            layer = await self.repo.get(tenant_id, row.layer_id)
+            if layer is None:
+                raise ValidationError("Cost layer not found for unrestore")
+            layer.qty_remaining = quantize_quantity(layer.qty_remaining - take)
+            row.qty_restored = quantize_quantity(row.qty_restored - take)
+            undone.append(CostConsumption(layer_id=row.layer_id, qty=take, unit_cost=row.unit_cost))
+            remaining = quantize_quantity(remaining - take)
+            if remaining <= _ZERO:
+                break
+        if remaining > _ZERO:
+            raise ValidationError(
+                "Unrestore quantity exceeds restored consumptions",
+                details={"unrestorable_qty": str(remaining)},
+            )
+        await self.session.flush()
+        return tuple(undone)
+
+    async def net_cost_for_source_line(
+        self,
+        tenant_id: UUID,
+        source_type: str,
+        source_id: UUID,
+        source_line_id: UUID,
+    ) -> tuple[Decimal, Decimal]:
+        """Return (qty, value) still consumed for one source line, net of returns."""
+
+        return await self._net_cost(
+            tenant_id, source_type, source_id, source_line_id=source_line_id
+        )
+
+    async def net_cost_for_source(
+        self, tenant_id: UUID, source_type: str, source_id: UUID
+    ) -> tuple[Decimal, Decimal]:
+        """Return (qty, value) still consumed for a source document, net of returns."""
+
+        return await self._net_cost(tenant_id, source_type, source_id, source_line_id=None)
+
+    async def _net_cost(
+        self,
+        tenant_id: UUID,
+        source_type: str,
+        source_id: UUID,
+        *,
+        source_line_id: UUID | None,
+    ) -> tuple[Decimal, Decimal]:
+        open_qty = StockCostConsumption.qty - StockCostConsumption.qty_restored
+        criteria = [
+            StockCostConsumption.tenant_id == tenant_id,
+            StockMovement.tenant_id == tenant_id,
+            StockMovement.source_type == source_type,
+            StockMovement.source_id == source_id,
+        ]
+        if source_line_id is not None:
+            criteria.append(StockMovement.source_line_id == source_line_id)
+        statement = (
+            select(
+                func.coalesce(func.sum(open_qty), _ZERO),
+                func.coalesce(func.sum(open_qty * StockCostConsumption.unit_cost), _ZERO),
+            )
+            .select_from(StockCostConsumption)
+            .join(StockMovement, StockMovement.id == StockCostConsumption.movement_id)
+            .where(*criteria)
+        )
+        qty, value = (await self.session.execute(statement)).one()
+        qty_value = qty if isinstance(qty, Decimal) else Decimal(str(qty or 0))
+        money_value = value if isinstance(value, Decimal) else Decimal(str(value or 0))
+        return quantize_quantity(qty_value), quantize_money(money_value)
+
     async def revalue(
         self, tenant_id: UUID, layer_id: UUID, new_landed_unit_cost: Decimal
     ) -> StockCostLayer:
@@ -258,6 +346,17 @@ class CostingService:
     ) -> bool:
         layers = await self.repo.list_layers_for_source(tenant_id, source_type, source_id)
         return all(layer.qty_remaining == layer.qty_received for layer in layers)
+
+    async def layers_for_source(
+        self,
+        tenant_id: UUID,
+        source_type: str,
+        source_id: UUID,
+        source_line_id: UUID | None = None,
+    ) -> Sequence[StockCostLayer]:
+        return await self.repo.list_layers_for_source(
+            tenant_id, source_type, source_id, source_line_id
+        )
 
     async def list_layers(
         self, tenant_id: UUID, warehouse_id: UUID, product_id: UUID

@@ -16,8 +16,12 @@ from app.auth.catalog import (
     BRANCH_UPDATE,
     CONTACT_READ,
     CONTACT_UPDATE,
+    CREDIT_NOTE_READ,
+    CREDIT_NOTE_UPDATE,
     CUSTOMER_READ,
     CUSTOMER_UPDATE,
+    DEBIT_NOTE_READ,
+    DEBIT_NOTE_UPDATE,
     DELIVERY_NOTE_READ,
     DELIVERY_NOTE_UPDATE,
     EMPLOYEE_READ,
@@ -32,6 +36,8 @@ from app.auth.catalog import (
     PRODUCT_UPDATE,
     PROFORMA_INVOICE_READ,
     PROFORMA_INVOICE_UPDATE,
+    PURCHASE_INVOICE_READ,
+    PURCHASE_INVOICE_UPDATE,
     PURCHASE_ORDER_READ,
     PURCHASE_ORDER_UPDATE,
     QUALITY_INSPECTION_READ,
@@ -40,6 +46,8 @@ from app.auth.catalog import (
     QUOTATION_UPDATE,
     SALES_ORDER_READ,
     SALES_ORDER_UPDATE,
+    SALES_INVOICE_READ,
+    SALES_INVOICE_UPDATE,
     SALES_RETURN_READ,
     SALES_RETURN_UPDATE,
     SHIPMENT_READ,
@@ -56,13 +64,20 @@ from app.common.outbox.models import OutboxEvent
 from app.common.registries.delivery_note_dependents import (
     register as register_delivery_note_dependent,
 )
+from app.common.registries.purchase_invoice_dependents import (
+    register as register_purchase_invoice_dependent,
+)
 from app.common.registries.quotation_dependents import register as register_quotation_dependent
+from app.common.registries.sales_invoice_dependents import (
+    register as register_sales_invoice_dependent,
+)
 from app.common.registries.unposted_documents import UnpostedDocument
 from app.common.registries.unposted_documents import register as register_unposted
 from app.common.schemas.pagination import PageParams
 from app.core.enums import (
     AttachmentEntityType,
     CompanyType,
+    InvoiceDocumentStatus,
     JournalEntryStatus,
     QualityInspectionStatus,
     StockDocumentStatus,
@@ -85,6 +100,8 @@ def wire_platform() -> None:
     _register_outbox_handlers()
     _register_quotation_dependents()
     _register_delivery_note_dependents()
+    _register_sales_invoice_dependents()
+    _register_purchase_invoice_dependents()
     _WIRED = True
 
 
@@ -96,6 +113,10 @@ def _register_unposted_probes() -> None:
     register_unposted("delivery_note", _probe_unposted_delivery_notes)
     register_unposted("sales_return", _probe_unposted_sales_returns)
     register_unposted("journal_entry", _probe_unposted_journals)
+    register_unposted("sales_invoice", _probe_unposted_sales_invoices)
+    register_unposted("purchase_invoice", _probe_unposted_purchase_invoices)
+    register_unposted("credit_note", _probe_unposted_credit_notes)
+    register_unposted("debit_note", _probe_unposted_debit_notes)
 
 
 async def _probe_unposted_adjustments(
@@ -287,6 +308,114 @@ async def _probe_unposted_journals(
     return documents, total
 
 
+async def _probe_unposted_sales_invoices(
+    session: AsyncSession,
+    tenant_id: UUID,
+    as_of: date,
+    page: PageParams,
+) -> tuple[list[UnpostedDocument], int]:
+    from app.erp.sales_invoices.service import SalesInvoiceService
+
+    rows, total = await SalesInvoiceService(session).list(
+        tenant_id,
+        page=page,
+        status=InvoiceDocumentStatus.DRAFT.value,
+        invoice_date_to=as_of,
+    )
+    documents = [
+        UnpostedDocument(
+            id=row.id,
+            document_type="sales_invoice",
+            document_number=row.document_number,
+            document_date=row.invoice_date,
+            status=str(row.status),
+        )
+        for row in rows
+    ]
+    return documents, total
+
+
+async def _probe_unposted_purchase_invoices(
+    session: AsyncSession,
+    tenant_id: UUID,
+    as_of: date,
+    page: PageParams,
+) -> tuple[list[UnpostedDocument], int]:
+    from app.erp.purchase_invoices.service import PurchaseInvoiceService
+
+    rows, total = await PurchaseInvoiceService(session).list(
+        tenant_id,
+        page=page,
+        status=InvoiceDocumentStatus.DRAFT.value,
+        invoice_date_to=as_of,
+    )
+    documents = [
+        UnpostedDocument(
+            id=row.id,
+            document_type="purchase_invoice",
+            document_number=row.document_number,
+            document_date=row.invoice_date,
+            status=str(row.status),
+        )
+        for row in rows
+    ]
+    return documents, total
+
+
+async def _probe_unposted_credit_notes(
+    session: AsyncSession,
+    tenant_id: UUID,
+    as_of: date,
+    page: PageParams,
+) -> tuple[list[UnpostedDocument], int]:
+    from app.erp.credit_notes.service import CreditNoteService
+
+    rows, total = await CreditNoteService(session).list(
+        tenant_id,
+        page=page,
+        status=InvoiceDocumentStatus.DRAFT.value,
+        credit_note_date_to=as_of,
+    )
+    documents = [
+        UnpostedDocument(
+            id=row.id,
+            document_type="credit_note",
+            document_number=row.document_number,
+            document_date=row.credit_note_date,
+            status=str(row.status),
+        )
+        for row in rows
+    ]
+    return documents, total
+
+
+async def _probe_unposted_debit_notes(
+    session: AsyncSession,
+    tenant_id: UUID,
+    as_of: date,
+    page: PageParams,
+) -> tuple[list[UnpostedDocument], int]:
+    from app.erp.debit_notes.service import DebitNoteService
+
+    rows, total = await DebitNoteService(session).list(
+        tenant_id,
+        page=page,
+        status=InvoiceDocumentStatus.DRAFT.value,
+        debit_note_date_to=as_of,
+    )
+    documents = [
+        UnpostedDocument(
+            id=row.id,
+            document_type="debit_note",
+            document_number=row.document_number,
+            document_date=row.debit_note_date,
+            status=str(row.status),
+        )
+        for row in rows
+    ]
+    return documents, total
+
+
 def _register_attachment_entities() -> None:
     register(
         AttachmentEntitySpec(
@@ -448,6 +577,38 @@ def _register_attachment_entities() -> None:
             _probe_via_get(_account_get),
         )
     )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.SALES_INVOICE,
+            SALES_INVOICE_READ,
+            SALES_INVOICE_UPDATE,
+            _probe_via_get(_sales_invoice_get),
+        )
+    )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.PURCHASE_INVOICE,
+            PURCHASE_INVOICE_READ,
+            PURCHASE_INVOICE_UPDATE,
+            _probe_via_get(_purchase_invoice_get),
+        )
+    )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.CREDIT_NOTE,
+            CREDIT_NOTE_READ,
+            CREDIT_NOTE_UPDATE,
+            _probe_via_get(_credit_note_get),
+        )
+    )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.DEBIT_NOTE,
+            DEBIT_NOTE_READ,
+            DEBIT_NOTE_UPDATE,
+            _probe_via_get(_debit_note_get),
+        )
+    )
 
 
 def _probe_via_get(
@@ -600,6 +761,30 @@ async def _account_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) 
     return await AccountService(session).get(tenant_id, entity_id)
 
 
+async def _sales_invoice_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.erp.sales_invoices.service import SalesInvoiceService
+
+    return await SalesInvoiceService(session).get(tenant_id, entity_id)
+
+
+async def _purchase_invoice_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.erp.purchase_invoices.service import PurchaseInvoiceService
+
+    return await PurchaseInvoiceService(session).get(tenant_id, entity_id)
+
+
+async def _credit_note_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.erp.credit_notes.service import CreditNoteService
+
+    return await CreditNoteService(session).get(tenant_id, entity_id)
+
+
+async def _debit_note_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.erp.debit_notes.service import DebitNoteService
+
+    return await DebitNoteService(session).get(tenant_id, entity_id)
+
+
 def _register_outbox_handlers() -> None:
     # Phases 34 and 35 replace these logging no-ops with real handlers.
     from app.common.outbox.handlers import register as register_outbox
@@ -616,10 +801,19 @@ def _register_outbox_handlers() -> None:
         "inventory.stock_transfer.cancelled",
         "inventory.delivery_note.posted",
         "inventory.delivery_note.cancelled",
-            "inventory.sales_return.posted",
-            "inventory.sales_return.cancelled",
-            "erp.journal_entry.posted",
-            "erp.journal_entry.reversed",
+        "inventory.sales_return.posted",
+        "inventory.sales_return.cancelled",
+        "erp.journal_entry.posted",
+        "erp.journal_entry.reversed",
+        "erp.sales_invoice.posted",
+        "erp.sales_invoice.cancelled",
+        "erp.einvoice.submit_requested",
+        "erp.purchase_invoice.posted",
+        "erp.purchase_invoice.cancelled",
+        "erp.credit_note.posted",
+        "erp.credit_note.cancelled",
+        "erp.debit_note.posted",
+        "erp.debit_note.cancelled",
     ):
         register_outbox(event_type, _log_outbox_event)
 
@@ -650,6 +844,7 @@ async def _probe_live_proforma_for_quotation(
 def _register_delivery_note_dependents() -> None:
     register_delivery_note_dependent("shipment", _probe_shipment_for_delivery_note)
     register_delivery_note_dependent("sales_return", _probe_sales_return_for_delivery_note)
+    register_delivery_note_dependent("sales_invoice", _probe_sales_invoice_for_delivery_note)
 
 
 async def _probe_shipment_for_delivery_note(
@@ -666,3 +861,37 @@ async def _probe_sales_return_for_delivery_note(
     from app.inventory_management.sales_returns.service import SalesReturnService
 
     return await SalesReturnService(session).has_live_for_delivery_note(tenant_id, delivery_note_id)
+
+
+async def _probe_sales_invoice_for_delivery_note(
+    session: AsyncSession, tenant_id: UUID, delivery_note_id: UUID
+) -> bool:
+    from app.erp.sales_invoices.service import SalesInvoiceService
+
+    return await SalesInvoiceService(session).has_live_for_delivery_note(tenant_id, delivery_note_id)
+
+
+def _register_sales_invoice_dependents() -> None:
+    register_sales_invoice_dependent("credit_note", _probe_credit_note_for_sales_invoice)
+
+
+async def _probe_credit_note_for_sales_invoice(
+    session: AsyncSession, tenant_id: UUID, sales_invoice_id: UUID
+) -> bool:
+    from app.erp.credit_notes.service import CreditNoteService
+
+    return await CreditNoteService(session).has_live_for_sales_invoice(tenant_id, sales_invoice_id)
+
+
+def _register_purchase_invoice_dependents() -> None:
+    register_purchase_invoice_dependent("debit_note", _probe_debit_note_for_purchase_invoice)
+
+
+async def _probe_debit_note_for_purchase_invoice(
+    session: AsyncSession, tenant_id: UUID, purchase_invoice_id: UUID
+) -> bool:
+    from app.erp.debit_notes.service import DebitNoteService
+
+    return await DebitNoteService(session).has_live_for_purchase_invoice(
+        tenant_id, purchase_invoice_id
+    )

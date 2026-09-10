@@ -64,6 +64,7 @@ class DeliveryNoteLineResponse(BaseModel):
     quantity: Decimal
     unit_id: UUID | None
     rate: Decimal
+    qty_invoiced: Decimal = Decimal("0")
 
 
 class DeliveryNoteCreate(BaseModel):

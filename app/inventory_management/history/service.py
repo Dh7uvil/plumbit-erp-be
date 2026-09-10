@@ -57,6 +57,8 @@ class HistoryService:
                 last_rate=row[6] or _ZERO,
                 last_posted_by=row[7],
                 salesperson_id=row[8],
+                invoiced_quantity=row[9] or _ZERO,
+                revenue=row[10] or _ZERO,
             )
             for row in rows
             if row[4] is not None
@@ -125,6 +127,8 @@ class HistoryService:
                 last_rate=row[7] or _ZERO,
                 last_posted_by=row[8],
                 salesperson_id=row[9],
+                invoiced_quantity=row[10] or _ZERO,
+                revenue=row[11] or _ZERO,
             )
             for row in rows
             if row[5] is not None
@@ -206,12 +210,17 @@ class HistoryService:
             margin=margin,
             posted_by=row[12],
             salesperson_id=row[13],
+            invoiced_quantity=self._as_decimal(row[14]),
+            revenue=quantize_money(self._as_decimal(row[15])),
         )
 
     def _purchase_line(self, row: Any) -> TradingHistoryLine:
         quantity = self._as_decimal(row[9])
         rate = self._as_decimal(row[10])
         unit_cost = rate if self._can_read_cost else None
+        billed_cost = None
+        if self._can_read_cost:
+            billed_cost = quantize_money(self._as_decimal(row[12]))
         return TradingHistoryLine(
             document_id=row[0],
             document_number=str(row[1]),
@@ -228,4 +237,5 @@ class HistoryService:
             margin=None,
             posted_by=row[11],
             salesperson_id=None,
+            billed_cost=billed_cost,
         )

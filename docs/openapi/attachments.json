@@ -646,8 +646,12 @@
           "SHIPMENT",
           "SALES_INVOICE",
           "PURCHASE_INVOICE",
+          "CREDIT_NOTE",
+          "DEBIT_NOTE",
           "DELIVERY_NOTE",
-          "SALES_RETURN"
+          "SALES_RETURN",
+          "JOURNAL_ENTRY",
+          "ACCOUNT"
         ],
         "title": "AttachmentEntityType"
       },
