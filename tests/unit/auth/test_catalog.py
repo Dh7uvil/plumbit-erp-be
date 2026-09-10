@@ -54,6 +54,12 @@ def test_catalog_includes_quote_ready_permissions() -> None:
     assert "erp.proforma_invoice.confirm" in CATALOG_PERMISSIONS
     assert "erp.period.lock" in CATALOG_PERMISSIONS
     assert "erp.period.override" in CATALOG_PERMISSIONS
+    assert "erp.account.create" in CATALOG_PERMISSIONS
+    assert "erp.account.read" in CATALOG_PERMISSIONS
+    assert "erp.journal_entry.post" in CATALOG_PERMISSIONS
+    assert "erp.journal_entry.reverse" in CATALOG_PERMISSIONS
+    assert "erp.opening_balance.manage" in CATALOG_PERMISSIONS
+    assert "erp.report.ledger" in CATALOG_PERMISSIONS
     assert "erp.document_sequence.create" in CATALOG_PERMISSIONS
     assert "inventory.stock.read" in CATALOG_PERMISSIONS
     assert "inventory.stock.update" in CATALOG_PERMISSIONS

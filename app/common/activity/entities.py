@@ -5,12 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.auth.catalog import (
+    ACCOUNT_READ,
     CONTACT_READ,
     CRM_MODULE,
     CUSTOMER_READ,
     ERP_MODULE,
     GOODS_RECEIPT_READ,
     INVENTORY_MODULE,
+    JOURNAL_ENTRY_READ,
     PRODUCT_READ,
     PROFORMA_INVOICE_READ,
     PURCHASE_ORDER_READ,
@@ -252,6 +254,30 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         entity_type="contact",
         read_permission=CONTACT_READ,
         changed_fields=frozenset({"name", "email", "phone", "is_primary"}),
+    ),
+    "account": ActivityEntitySpec(
+        module=ERP_MODULE,
+        entity_type="account",
+        read_permission=ACCOUNT_READ,
+        changed_fields=frozenset(
+            {
+                "code",
+                "name",
+                "account_type",
+                "account_subtype",
+                "is_group",
+                "is_system",
+                "system_role",
+                "is_active",
+            }
+        ),
+    ),
+    "journal_entry": ActivityEntitySpec(
+        module=ERP_MODULE,
+        entity_type="journal_entry",
+        read_permission=JOURNAL_ENTRY_READ,
+        changed_fields=_STOCK_FIELDS
+        | frozenset({"entry_date", "narration", "journal_type", "total_debit_base", "total_credit_base"}),
     ),
 }
 

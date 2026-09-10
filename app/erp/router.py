@@ -2,6 +2,10 @@
 
 from fastapi import APIRouter
 
+from app.erp.accounting.accounts.router import router as accounts_router
+from app.erp.accounting.ledger.router import router as journals_router
+from app.erp.accounting.opening_balances.router import router as opening_balances_router
+from app.erp.accounting.reports.router import router as reports_router
 from app.erp.accounting.router import router as accounting_router
 from app.erp.exchange_rates.router import router as exchange_rates_router
 from app.erp.period_lock.router import router as period_lock_router
@@ -22,3 +26,7 @@ router.include_router(quotation_router)
 router.include_router(proforma_invoices_router)
 router.include_router(sales_orders_router)
 router.include_router(purchase_orders_router)
+router.include_router(accounts_router)
+router.include_router(journals_router)
+router.include_router(opening_balances_router)
+router.include_router(reports_router)

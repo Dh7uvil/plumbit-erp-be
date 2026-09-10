@@ -35,6 +35,14 @@ class ErrorCode(StrEnum):
     DELIVERY_NOTE_CANNOT_CANCEL = "DELIVERY_NOTE_CANNOT_CANCEL"
     QUALITY_QTY_MISMATCH = "QUALITY_QTY_MISMATCH"
     COST_LAYER_IMBALANCE = "COST_LAYER_IMBALANCE"
+    UNSUPPORTED_COSTING_METHOD = "UNSUPPORTED_COSTING_METHOD"
+    ACCOUNT_ROLE_UNMAPPED = "ACCOUNT_ROLE_UNMAPPED"
+    ACCOUNT_NOT_POSTABLE = "ACCOUNT_NOT_POSTABLE"
+    JOURNAL_LINE_INVALID = "JOURNAL_LINE_INVALID"
+    JOURNAL_UNBALANCED = "JOURNAL_UNBALANCED"
+    PARTY_REQUIRED_FOR_CONTROL_ACCOUNT = "PARTY_REQUIRED_FOR_CONTROL_ACCOUNT"
+    FISCAL_YEAR_LOCKED = "FISCAL_YEAR_LOCKED"
+    OPENING_STOCK_VALUE_MISMATCH = "OPENING_STOCK_VALUE_MISMATCH"
     QUOTATION_HAS_LIVE_PROFORMA = "QUOTATION_HAS_LIVE_PROFORMA"
     MILESTONE_MODE_MIXED = "MILESTONE_MODE_MIXED"
     MILESTONE_TOTAL_MISMATCH = "MILESTONE_TOTAL_MISMATCH"
@@ -232,6 +240,54 @@ class CostLayerImbalanceError(AppError):
     default_code = ErrorCode.COST_LAYER_IMBALANCE
     default_status = HTTPStatus.INTERNAL_SERVER_ERROR
     default_message = "Cost layer remaining quantity does not match on-hand stock"
+
+
+class UnsupportedCostingMethodError(AppError):
+    default_code = ErrorCode.UNSUPPORTED_COSTING_METHOD
+    default_status = HTTPStatus.CONFLICT
+    default_message = "Only FIFO costing is supported"
+
+
+class AccountRoleUnmappedError(AppError):
+    default_code = ErrorCode.ACCOUNT_ROLE_UNMAPPED
+    default_status = HTTPStatus.CONFLICT
+    default_message = "This system account role is not mapped"
+
+
+class AccountNotPostableError(AppError):
+    default_code = ErrorCode.ACCOUNT_NOT_POSTABLE
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "This account cannot be posted to"
+
+
+class JournalLineInvalidError(AppError):
+    default_code = ErrorCode.JOURNAL_LINE_INVALID
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "Each journal line must have exactly one of debit or credit"
+
+
+class JournalUnbalancedError(AppError):
+    default_code = ErrorCode.JOURNAL_UNBALANCED
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "Journal debit and credit totals must match"
+
+
+class PartyRequiredForControlAccountError(AppError):
+    default_code = ErrorCode.PARTY_REQUIRED_FOR_CONTROL_ACCOUNT
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "A party is required when posting to an AR or AP control account"
+
+
+class FiscalYearLockedError(AppError):
+    default_code = ErrorCode.FISCAL_YEAR_LOCKED
+    default_status = HTTPStatus.CONFLICT
+    default_message = "The fiscal year start cannot change after document numbers have been issued"
+
+
+class OpeningStockValueMismatchError(AppError):
+    default_code = ErrorCode.OPENING_STOCK_VALUE_MISMATCH
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "Opening inventory GL debit must equal the sum of opening cost layers"
 
 
 class QuotationHasLiveProformaError(AppError):

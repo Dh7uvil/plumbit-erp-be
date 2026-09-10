@@ -60,6 +60,7 @@ from app.core.exceptions import (
 from app.core.permissions import has_permission
 from app.crm.contacts.service import ContactService
 from app.db.session import transaction
+from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import (
     DocumentSequenceService,
     PaymentTermService,
@@ -218,7 +219,7 @@ class PurchaseOrderService:
                 tenant_id,
                 document_type=DocumentType.PURCHASE_ORDER,
                 series=_ORDER_SERIES,
-                fiscal_year=order_date.year,
+                fiscal_year=await year_for(self.session, tenant_id, order_date),
                 prefix=_ORDER_SERIES,
             )
             row = await self.repo.create(
@@ -466,7 +467,7 @@ class PurchaseOrderService:
                 tenant_id,
                 document_type=DocumentType.PURCHASE_ORDER,
                 series=_ORDER_SERIES,
-                fiscal_year=order_date.year,
+                fiscal_year=await year_for(self.session, tenant_id, order_date),
                 prefix=_ORDER_SERIES,
             )
             row = await self.repo.create(
@@ -689,7 +690,7 @@ class PurchaseOrderService:
                     tenant_id,
                     document_type=DocumentType.PURCHASE_ORDER,
                     series=_ORDER_SERIES,
-                    fiscal_year=order_date.year,
+                    fiscal_year=await year_for(self.session, tenant_id, order_date),
                     prefix=_ORDER_SERIES,
                 )
                 row = await self.repo.create(

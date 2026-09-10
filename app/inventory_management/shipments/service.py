@@ -36,6 +36,7 @@ from app.core.exceptions import (
 from app.core.permissions import has_permission
 from app.crm.customers.service import CustomerService
 from app.db.session import transaction
+from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import DocumentSequenceService
 from app.inventory_management.delivery_notes.service import DeliveryNoteService
 from app.inventory_management.shipments.models import Shipment
@@ -123,7 +124,9 @@ class ShipmentService:
     ) -> ShipmentResponse:
         async with transaction(self.session):
             values = await self._header_values(tenant_id, payload)
-            fiscal_year = today_in_timezone(await self.org.get_timezone(tenant_id)).year
+            fiscal_year = await year_for(
+                self.session, tenant_id, today_in_timezone(await self.org.get_timezone(tenant_id))
+            )
             number = await self.sequences.allocate(
                 tenant_id,
                 document_type=DocumentType.SHIPMENT,

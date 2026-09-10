@@ -32,6 +32,7 @@ _CANONICAL_SEQUENCE_PREFIXES = {
     "PACKAGE": "PKG",
     "SHIPMENT": "SHP",
     "SALES_RETURN": "SR",
+    "JOURNAL_ENTRY": "JV",
 }
 
 

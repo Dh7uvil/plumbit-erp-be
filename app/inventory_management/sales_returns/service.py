@@ -43,6 +43,7 @@ from app.core.exceptions import (
 )
 from app.core.permissions import has_permission
 from app.db.session import transaction
+from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.sales_orders.service import SalesOrderService
 from app.inventory_management.delivery_notes.service import DeliveryNoteService
@@ -162,7 +163,9 @@ class SalesReturnService:
                 tenant_id,
                 document_type=DocumentType.SALES_RETURN,
                 series=_SERIES,
-                fiscal_year=cast(date, header["document_date"]).year,
+                fiscal_year=await year_for(
+                    self.session, tenant_id, cast(date, header["document_date"])
+                ),
                 prefix=_SERIES,
             )
             row = await self.repo.create(
@@ -389,7 +392,8 @@ class SalesReturnService:
         async with transaction(self.session):
             row = await self._require(tenant_id, return_id, for_update=True)
             self._assert_version(row, expected_version)
-            target = next_status(StockDocumentStatus(row.status), "cancel")
+            current = StockDocumentStatus(row.status)
+            target = next_status(current, "cancel")
             row.status = target.value
             row.cancelled_at = utcnow()
             row.cancelled_by = actor_user_id
@@ -407,6 +411,15 @@ class SalesReturnService:
                 entity_type="sales_return",
                 entity_id=return_id,
             )
+            if current == StockDocumentStatus.POSTED:
+                await self.outbox.enqueue(
+                    tenant_id,
+                    event_type="inventory.sales_return.cancelled",
+                    aggregate_type="sales_return",
+                    aggregate_id=return_id,
+                    payload={"sales_return_id": str(return_id)},
+                    dedupe_key=f"sales-return-cancelled:{return_id}",
+                )
             return self._to_response(row)
 
     async def _build_draft(

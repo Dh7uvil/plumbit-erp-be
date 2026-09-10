@@ -43,6 +43,8 @@ import app.common.outbox.models as _outbox  # noqa: E402, F401
 import app.crm.contacts.models as _contacts  # noqa: E402, F401
 import app.crm.customers.models as _customers  # noqa: E402, F401
 import app.erp.accounting.models as _accounting  # noqa: E402, F401
+import app.erp.accounting.accounts.models as _accounts  # noqa: E402, F401
+import app.erp.accounting.ledger.models as _journal_entries  # noqa: E402, F401
 import app.erp.exchange_rates.models as _exchange_rates  # noqa: E402, F401
 import app.erp.proforma_invoices.models as _proforma_invoices  # noqa: E402, F401
 import app.erp.purchase_orders.models as _purchase_orders  # noqa: E402, F401

@@ -129,6 +129,11 @@ class CustomerService:
                 payment_terms_id=payload.payment_terms_id,
                 salesperson_id=payload.salesperson_id,
             )
+            await self._validate_account_overrides(
+                tenant_id,
+                receivable_account_id=payload.receivable_account_id,
+                payable_account_id=payload.payable_account_id,
+            )
             billing_id = await self.org.upsert_address(
                 tenant_id,
                 None,
@@ -155,6 +160,8 @@ class CustomerService:
                         "payment_terms_id": payload.payment_terms_id,
                         "credit_limit": payload.credit_limit,
                         "salesperson_id": payload.salesperson_id,
+                        "receivable_account_id": payload.receivable_account_id,
+                        "payable_account_id": payload.payable_account_id,
                         "billing_address_id": billing_id,
                         "shipping_address_id": shipping_id,
                         "notes": payload.notes,
@@ -204,6 +211,13 @@ class CustomerService:
                 price_list_id=values.get("default_price_list_id", row.default_price_list_id),
                 payment_terms_id=values.get("payment_terms_id", row.payment_terms_id),
                 salesperson_id=values.get("salesperson_id", row.salesperson_id),
+            )
+            await self._validate_account_overrides(
+                tenant_id,
+                receivable_account_id=values.get(
+                    "receivable_account_id", row.receivable_account_id
+                ),
+                payable_account_id=values.get("payable_account_id", row.payable_account_id),
             )
             if billing_payload is not None:
                 values["billing_address_id"] = await self.org.upsert_address(
@@ -413,6 +427,26 @@ class CustomerService:
         if salesperson_id is not None:
             await self.org.require_employee(tenant_id, salesperson_id)
 
+    async def _validate_account_overrides(
+        self,
+        tenant_id: UUID,
+        *,
+        receivable_account_id: UUID | None,
+        payable_account_id: UUID | None,
+    ) -> None:
+        from app.core.enums import AccountSubtype
+        from app.erp.accounting.accounts.service import AccountService
+
+        accounts = AccountService(self.session)
+        if receivable_account_id is not None:
+            await accounts.require_control_account(
+                tenant_id, receivable_account_id, subtype=AccountSubtype.ACCOUNTS_RECEIVABLE
+            )
+        if payable_account_id is not None:
+            await accounts.require_control_account(
+                tenant_id, payable_account_id, subtype=AccountSubtype.ACCOUNTS_PAYABLE
+            )
+
     async def _to_response(self, tenant_id: UUID, row: Customer) -> CustomerResponse:
         addresses = await self.org.get_addresses(
             tenant_id,
@@ -434,6 +468,8 @@ class CustomerService:
             payment_terms_id=row.payment_terms_id,
             credit_limit=row.credit_limit,
             salesperson_id=row.salesperson_id,
+            receivable_account_id=row.receivable_account_id,
+            payable_account_id=row.payable_account_id,
             billing_address=addresses.get(row.billing_address_id)
             if row.billing_address_id
             else None,

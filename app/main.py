@@ -191,6 +191,71 @@ OPENAPI_TAGS: list[dict[str, str]] = [
             "lock only; books close blocks every role until unlocked with a reason."
         ),
     },
+    {
+        "name": "Goods Receipts",
+        "description": (
+            "Inbound receipts against purchase orders. Save stays DRAFT; "
+            "POST /goods-receipts/{id}/post writes stock and cost layers."
+        ),
+    },
+    {
+        "name": "Quality Inspections",
+        "description": (
+            "QC documents against goods receipts. Approving releases or scraps "
+            "the remaining quality hold."
+        ),
+    },
+    {
+        "name": "Packages",
+        "description": "Outbound packing documents against a sales order or delivery note.",
+    },
+    {
+        "name": "Delivery Notes",
+        "description": (
+            "Outbound delivery notes that deduct stock on post. "
+            "Posted notes may be cancelled only when no dependent shipment or return exists."
+        ),
+    },
+    {
+        "name": "Shipments",
+        "description": (
+            "Consolidated outbound shipments. Dispatch and close are explicit actions."
+        ),
+    },
+    {
+        "name": "Sales Returns",
+        "description": (
+            "Customer returns against a posted delivery note. Posting restocks, "
+            "holds, or scraps quantity."
+        ),
+    },
+    {
+        "name": "Accounts",
+        "description": (
+            "Chart of accounts with group vs postable rows and system-role mapping. "
+            "Group accounts are never postable."
+        ),
+    },
+    {
+        "name": "Journals",
+        "description": (
+            "Manual and system journal entries. LedgerPostingService is the sole GL writer. "
+            "Posted entries are reversed by a linked mirror document."
+        ),
+    },
+    {
+        "name": "Opening Balances",
+        "description": (
+            "Go-live wizard: preview and commit opening GL, AR/AP open items, and stock layers."
+        ),
+    },
+    {
+        "name": "Reports",
+        "description": (
+            "Trial balance, general ledger, and party account statement. "
+            "Totals and running balances are computed on the server."
+        ),
+    },
 ]
 APP_DESCRIPTION = "Multi-tenant ERP backend API."
 
@@ -221,6 +286,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level)
     wire_platform()
+    from app.common.outbox import dispatcher as _outbox_dispatcher  # noqa: F401
 
     application = FastAPI(
         title=settings.app_name,

@@ -129,12 +129,13 @@ async def update_current_tenant(
     payload: TenantCurrentUpdate,
     tenant: TenantContextDependency,
     service: OrganizationServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(ORGANIZATION_UPDATE))],
+    current_user: Annotated[CurrentUser, Depends(require_permission(ORGANIZATION_UPDATE))],
 ) -> ApiResponse[TenantCurrentResponse]:
     data = await service.update_current_tenant(
         tenant.tenant_id,
         payload,
         actor_user_id=tenant.user_id,
+        actor_permissions=current_user.permissions,
     )
     return ApiResponse(data=data, message="Organization updated successfully")
 

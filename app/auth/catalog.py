@@ -71,6 +71,10 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "proforma_invoice": ("create", "read", "update", "delete", "send", "confirm"),
         "purchase_order": ("create", "read", "update", "delete", "approve", "issue", "close"),
         "period": ("lock", "override"),
+        "account": ("create", "read", "update", "delete"),
+        "journal_entry": ("create", "read", "update", "delete", "post", "reverse"),
+        "opening_balance": ("manage",),
+        "report": ("ledger",),
     },
 }
 
@@ -260,6 +264,18 @@ PURCHASE_ORDER_ISSUE = build_permission(ERP_MODULE, "purchase_order", "issue")
 PURCHASE_ORDER_CLOSE = build_permission(ERP_MODULE, "purchase_order", "close")
 PERIOD_LOCK = build_permission(ERP_MODULE, "period", "lock")
 PERIOD_OVERRIDE = build_permission(ERP_MODULE, "period", "override")
+ACCOUNT_CREATE = build_permission(ERP_MODULE, "account", "create")
+ACCOUNT_READ = build_permission(ERP_MODULE, "account", "read")
+ACCOUNT_UPDATE = build_permission(ERP_MODULE, "account", "update")
+ACCOUNT_DELETE = build_permission(ERP_MODULE, "account", "delete")
+JOURNAL_ENTRY_CREATE = build_permission(ERP_MODULE, "journal_entry", "create")
+JOURNAL_ENTRY_READ = build_permission(ERP_MODULE, "journal_entry", "read")
+JOURNAL_ENTRY_UPDATE = build_permission(ERP_MODULE, "journal_entry", "update")
+JOURNAL_ENTRY_DELETE = build_permission(ERP_MODULE, "journal_entry", "delete")
+JOURNAL_ENTRY_POST = build_permission(ERP_MODULE, "journal_entry", "post")
+JOURNAL_ENTRY_REVERSE = build_permission(ERP_MODULE, "journal_entry", "reverse")
+OPENING_BALANCE_MANAGE = build_permission(ERP_MODULE, "opening_balance", "manage")
+REPORT_LEDGER = build_permission(ERP_MODULE, "report", "ledger")
 
 SYSTEM_ADMIN_ROLE_NAME = "Superadmin"
 

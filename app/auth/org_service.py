@@ -106,6 +106,7 @@ class OrganizationService:
         payload: TenantCurrentUpdate,
         *,
         actor_user_id: UUID,
+        actor_permissions: frozenset[str] = frozenset(),
     ) -> TenantCurrentResponse:
         values = payload.model_dump(exclude_unset=True)
         async with transaction(self.session):
@@ -130,6 +131,26 @@ class OrganizationService:
                 tenant.over_receipt_tolerance_pct = values["over_receipt_tolerance_pct"]
             if "qc_required_default" in values and values["qc_required_default"] is not None:
                 tenant.qc_required_default = values["qc_required_default"]
+            new_month = values.get("fiscal_year_start_month", tenant.fiscal_year_start_month)
+            new_day = values.get("fiscal_year_start_day", tenant.fiscal_year_start_day)
+            if "fiscal_year_start_month" in values or "fiscal_year_start_day" in values:
+                from app.erp.accounting.fiscal import assert_start_change_allowed
+
+                await assert_start_change_allowed(
+                    self.session,
+                    tenant_id,
+                    current_month=tenant.fiscal_year_start_month,
+                    current_day=tenant.fiscal_year_start_day,
+                    new_month=int(new_month),
+                    new_day=int(new_day),
+                    actor_permissions=actor_permissions,
+                    acknowledged=bool(values.get("acknowledge_fiscal_year_change")),
+                )
+                tenant.fiscal_year_start_month = int(new_month)
+                tenant.fiscal_year_start_day = int(new_day)
+                self.session.sync_session.info.pop("fiscal_year_config", None)
+            if "books_start_date" in values:
+                tenant.books_start_date = values["books_start_date"]
             settings = TenantSettings.model_validate(tenant.settings or {})
             settings_update = {key: values[key] for key in _SETTINGS_FIELDS if key in values}
             if settings_update:
@@ -535,6 +556,9 @@ class OrganizationService:
             phone=settings.phone,
             founded=settings.founded,
             fiscal_year_start=settings.fiscal_year_start,
+            fiscal_year_start_month=tenant.fiscal_year_start_month,
+            fiscal_year_start_day=tenant.fiscal_year_start_day,
+            books_start_date=tenant.books_start_date,
             default_currency=settings.default_currency,
             default_currency_id=tenant.default_currency_id,
             quotation_requires_approval=settings.quotation_requires_approval,
@@ -566,6 +590,9 @@ class OrganizationService:
             "allow_over_receipt": tenant.allow_over_receipt,
             "over_receipt_tolerance_pct": tenant.over_receipt_tolerance_pct,
             "qc_required_default": tenant.qc_required_default,
+            "fiscal_year_start_month": tenant.fiscal_year_start_month,
+            "fiscal_year_start_day": tenant.fiscal_year_start_day,
+            "books_start_date": tenant.books_start_date,
             "lock_date": tenant.lock_date,
             "hard_lock_date": tenant.hard_lock_date,
             "has_logo": tenant.logo_storage_key is not None,
