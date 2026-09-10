@@ -16,10 +16,14 @@ from app.auth.catalog import (
     CONTACT_UPDATE,
     CUSTOMER_READ,
     CUSTOMER_UPDATE,
+    DELIVERY_NOTE_READ,
+    DELIVERY_NOTE_UPDATE,
     EMPLOYEE_READ,
     EMPLOYEE_UPDATE,
     GOODS_RECEIPT_READ,
     GOODS_RECEIPT_UPDATE,
+    PACKAGE_READ,
+    PACKAGE_UPDATE,
     PRODUCT_READ,
     PRODUCT_UPDATE,
     PROFORMA_INVOICE_READ,
@@ -32,6 +36,10 @@ from app.auth.catalog import (
     QUOTATION_UPDATE,
     SALES_ORDER_READ,
     SALES_ORDER_UPDATE,
+    SALES_RETURN_READ,
+    SALES_RETURN_UPDATE,
+    SHIPMENT_READ,
+    SHIPMENT_UPDATE,
     STOCK_ADJUSTMENT_READ,
     STOCK_ADJUSTMENT_UPDATE,
     STOCK_TRANSFER_READ,
@@ -41,11 +49,19 @@ from app.auth.catalog import (
 )
 from app.common.attachments.entities import AttachmentEntitySpec, EntityRef, Probe, register
 from app.common.outbox.models import OutboxEvent
+from app.common.registries.delivery_note_dependents import (
+    register as register_delivery_note_dependent,
+)
 from app.common.registries.quotation_dependents import register as register_quotation_dependent
 from app.common.registries.unposted_documents import UnpostedDocument
 from app.common.registries.unposted_documents import register as register_unposted
 from app.common.schemas.pagination import PageParams
-from app.core.enums import AttachmentEntityType, CompanyType, StockDocumentStatus
+from app.core.enums import (
+    AttachmentEntityType,
+    CompanyType,
+    QualityInspectionStatus,
+    StockDocumentStatus,
+)
 from app.core.exceptions import ResourceNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -63,6 +79,7 @@ def wire_platform() -> None:
     _register_attachment_entities()
     _register_outbox_handlers()
     _register_quotation_dependents()
+    _register_delivery_note_dependents()
     _WIRED = True
 
 
@@ -70,6 +87,9 @@ def _register_unposted_probes() -> None:
     register_unposted("stock_adjustment", _probe_unposted_adjustments)
     register_unposted("stock_transfer", _probe_unposted_transfers)
     register_unposted("goods_receipt", _probe_unposted_goods_receipts)
+    register_unposted("quality_inspection", _probe_unposted_quality_inspections)
+    register_unposted("delivery_note", _probe_unposted_delivery_notes)
+    register_unposted("sales_return", _probe_unposted_sales_returns)
 
 
 async def _probe_unposted_adjustments(
@@ -144,6 +164,87 @@ async def _probe_unposted_goods_receipts(
         UnpostedDocument(
             id=row.id,
             document_type="goods_receipt",
+            document_number=row.document_number,
+            document_date=row.document_date,
+            status=str(row.status),
+        )
+        for row in rows
+    ]
+    return documents, total
+
+
+async def _probe_unposted_quality_inspections(
+    session: AsyncSession,
+    tenant_id: UUID,
+    as_of: date,
+    page: PageParams,
+) -> tuple[list[UnpostedDocument], int]:
+    from app.inventory_management.quality_inspections.service import QualityInspectionService
+
+    rows, total = await QualityInspectionService(session).list(
+        tenant_id,
+        page=page,
+        status=QualityInspectionStatus.DRAFT.value,
+        inspection_date_to=as_of,
+    )
+    documents = [
+        UnpostedDocument(
+            id=row.id,
+            document_type="quality_inspection",
+            document_number=row.document_number,
+            document_date=row.inspection_date,
+            status=str(row.status),
+        )
+        for row in rows
+    ]
+    return documents, total
+
+
+async def _probe_unposted_delivery_notes(
+    session: AsyncSession,
+    tenant_id: UUID,
+    as_of: date,
+    page: PageParams,
+) -> tuple[list[UnpostedDocument], int]:
+    from app.inventory_management.delivery_notes.service import DeliveryNoteService
+
+    rows, total = await DeliveryNoteService(session).list(
+        tenant_id,
+        page=page,
+        status=StockDocumentStatus.DRAFT.value,
+        document_date_to=as_of,
+    )
+    documents = [
+        UnpostedDocument(
+            id=row.id,
+            document_type="delivery_note",
+            document_number=row.document_number,
+            document_date=row.document_date,
+            status=str(row.status),
+        )
+        for row in rows
+    ]
+    return documents, total
+
+
+async def _probe_unposted_sales_returns(
+    session: AsyncSession,
+    tenant_id: UUID,
+    as_of: date,
+    page: PageParams,
+) -> tuple[list[UnpostedDocument], int]:
+    from app.inventory_management.sales_returns.service import SalesReturnService
+
+    rows, total = await SalesReturnService(session).list(
+        tenant_id,
+        page=page,
+        status=StockDocumentStatus.DRAFT.value,
+        document_date_to=as_of,
+    )
+    documents = [
+        UnpostedDocument(
+            id=row.id,
+            document_type="sales_return",
             document_number=row.document_number,
             document_date=row.document_date,
             status=str(row.status),
@@ -266,6 +367,38 @@ def _register_attachment_entities() -> None:
             _probe_via_get(_quality_inspection_get),
         )
     )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.DELIVERY_NOTE,
+            DELIVERY_NOTE_READ,
+            DELIVERY_NOTE_UPDATE,
+            _probe_via_get(_delivery_note_get),
+        )
+    )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.PACKAGE,
+            PACKAGE_READ,
+            PACKAGE_UPDATE,
+            _probe_via_get(_package_get),
+        )
+    )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.SHIPMENT,
+            SHIPMENT_READ,
+            SHIPMENT_UPDATE,
+            _probe_via_get(_shipment_get),
+        )
+    )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.SALES_RETURN,
+            SALES_RETURN_READ,
+            SALES_RETURN_UPDATE,
+            _probe_via_get(_sales_return_get),
+        )
+    )
 
 
 def _probe_via_get(
@@ -382,6 +515,30 @@ async def _quality_inspection_get(
     return await QualityInspectionService(session).get(tenant_id, entity_id)
 
 
+async def _delivery_note_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.inventory_management.delivery_notes.service import DeliveryNoteService
+
+    return await DeliveryNoteService(session).get(tenant_id, entity_id)
+
+
+async def _package_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.inventory_management.packages.service import PackageService
+
+    return await PackageService(session).get(tenant_id, entity_id)
+
+
+async def _shipment_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.inventory_management.shipments.service import ShipmentService
+
+    return await ShipmentService(session).get(tenant_id, entity_id)
+
+
+async def _sales_return_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.inventory_management.sales_returns.service import SalesReturnService
+
+    return await SalesReturnService(session).get(tenant_id, entity_id)
+
+
 def _register_outbox_handlers() -> None:
     # Phases 34 and 35 replace these logging no-ops with real handlers.
     from app.common.outbox.handlers import register as register_outbox
@@ -394,6 +551,12 @@ def _register_outbox_handlers() -> None:
         "inventory.goods_receipt.posted",
         "inventory.goods_receipt.cancelled",
         "inventory.quality_inspection.approved",
+        "inventory.stock_transfer.posted",
+        "inventory.stock_transfer.cancelled",
+        "inventory.delivery_note.posted",
+        "inventory.delivery_note.cancelled",
+        "inventory.sales_return.posted",
+        "inventory.sales_return.cancelled",
     ):
         register_outbox(event_type, _log_outbox_event)
 
@@ -419,3 +582,24 @@ async def _probe_live_proforma_for_quotation(
     from app.erp.proforma_invoices.service import ProformaInvoiceService
 
     return await ProformaInvoiceService(session).has_live_for_quotation(tenant_id, quotation_id)
+
+
+def _register_delivery_note_dependents() -> None:
+    register_delivery_note_dependent("shipment", _probe_shipment_for_delivery_note)
+    register_delivery_note_dependent("sales_return", _probe_sales_return_for_delivery_note)
+
+
+async def _probe_shipment_for_delivery_note(
+    session: AsyncSession, tenant_id: UUID, delivery_note_id: UUID
+) -> bool:
+    from app.inventory_management.shipments.service import ShipmentService
+
+    return await ShipmentService(session).delivery_note_is_shipped(tenant_id, delivery_note_id)
+
+
+async def _probe_sales_return_for_delivery_note(
+    session: AsyncSession, tenant_id: UUID, delivery_note_id: UUID
+) -> bool:
+    from app.inventory_management.sales_returns.service import SalesReturnService
+
+    return await SalesReturnService(session).has_live_for_delivery_note(tenant_id, delivery_note_id)

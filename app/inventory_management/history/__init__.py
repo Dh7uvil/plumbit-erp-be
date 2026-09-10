@@ -1,0 +1,1 @@
+"""Trading history query layer."""

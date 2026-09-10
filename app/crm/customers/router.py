@@ -5,7 +5,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from app.auth.catalog import CUSTOMER_CREATE, CUSTOMER_DELETE, CUSTOMER_READ, CUSTOMER_UPDATE
+from app.auth.catalog import (
+    CUSTOMER_CREATE,
+    CUSTOMER_DELETE,
+    CUSTOMER_HISTORY,
+    CUSTOMER_READ,
+    CUSTOMER_UPDATE,
+)
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
@@ -20,6 +26,12 @@ from app.crm.customers.schemas import (
     CustomerFilter,
     CustomerResponse,
     CustomerUpdate,
+)
+from app.inventory_management.history.dependencies import HistoryServiceDependency
+from app.inventory_management.history.schemas import (
+    TradingHistoryFilter,
+    TradingHistoryLine,
+    TradingProductAggregate,
 )
 
 router = APIRouter(prefix="/customers", tags=["Customers"])
@@ -122,3 +134,38 @@ async def delete_customer_address(
         tenant.tenant_id, customer_id, extra_id, actor_user_id=tenant.user_id
     )
     return ApiResponse(data=row, message="Customer address deleted successfully")
+
+
+@router.get("/{customer_id}/products", response_model=ApiResponse[list[TradingProductAggregate]])
+async def list_customer_products(
+    customer_id: UUID,
+    tenant: TenantContextDependency,
+    history: HistoryServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_HISTORY))],
+) -> ApiResponse[list[TradingProductAggregate]]:
+    rows = await history.customer_products(tenant.tenant_id, customer_id)
+    return ApiResponse(data=rows)
+
+
+@router.get(
+    "/{customer_id}/sales-history",
+    response_model=ApiResponse[list[TradingHistoryLine]],
+)
+async def list_customer_sales_history(
+    customer_id: UUID,
+    tenant: TenantContextDependency,
+    page: PaginationDependency,
+    history: HistoryServiceDependency,
+    filters: Annotated[TradingHistoryFilter, Depends()],
+    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_HISTORY))],
+) -> ApiResponse[list[TradingHistoryLine]]:
+    rows, total = await history.customer_sales_history(
+        tenant.tenant_id,
+        customer_id,
+        page=page,
+        product_id=filters.product_id,
+        warehouse_id=filters.warehouse_id,
+        document_date_from=filters.document_date_from,
+        document_date_to=filters.document_date_to,
+    )
+    return paginated_response(rows, params=page, total=total)

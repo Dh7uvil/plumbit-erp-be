@@ -246,3 +246,26 @@ class StockMovementRepository:
         )
         result = await self.session.execute(statement)
         return result.scalar_one_or_none() is not None
+
+    async def list_for_source(
+        self,
+        tenant_id: UUID,
+        *,
+        source_type: str,
+        source_id: UUID,
+        source_line_id: UUID | None = None,
+    ) -> Sequence[StockMovement]:
+        criteria = [
+            StockMovement.tenant_id == tenant_id,
+            StockMovement.source_type == source_type,
+            StockMovement.source_id == source_id,
+        ]
+        if source_line_id is not None:
+            criteria.append(StockMovement.source_line_id == source_line_id)
+        statement = (
+            select(StockMovement)
+            .where(*criteria)
+            .order_by(StockMovement.occurred_at.asc(), StockMovement.created_at.asc())
+        )
+        result = await self.session.execute(statement)
+        return result.scalars().all()

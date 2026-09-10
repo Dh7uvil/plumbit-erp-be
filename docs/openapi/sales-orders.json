@@ -1351,6 +1351,150 @@
         }
       }
     },
+    "/api/v1/sales-orders/{sales_order_id}/deliverable-lines": {
+      "get": {
+        "tags": [
+          "Sales Orders"
+        ],
+        "summary": "Get Deliverable Lines",
+        "operationId": "get_deliverable_lines_api_v1_sales_orders__sales_order_id__deliverable_lines_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sales_order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Sales Order Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_DeliverableLineResponse__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sales-orders/{sales_order_id}/packable-lines": {
+      "get": {
+        "tags": [
+          "Sales Orders"
+        ],
+        "summary": "Get Packable Lines",
+        "operationId": "get_packable_lines_api_v1_sales_orders__sales_order_id__packable_lines_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sales_order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Sales Order Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_PackableLineResponse__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sales-orders/{sales_order_id}/tracker": {
+      "get": {
+        "tags": [
+          "Sales Orders"
+        ],
+        "summary": "Get Sales Order Tracker",
+        "operationId": "get_sales_order_tracker_api_v1_sales_orders__sales_order_id__tracker_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sales_order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Sales Order Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OrderTrackerResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/sales-orders/{sales_order_id}/purchase-orders": {
       "post": {
         "tags": [
@@ -1428,6 +1572,40 @@
   },
   "components": {
     "schemas": {
+      "ApiResponse_OrderTrackerResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/OrderTrackerResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[OrderTrackerResponse]"
+      },
       "ApiResponse_PurchaseOrderPlanResponse_": {
         "properties": {
           "success": {
@@ -1602,6 +1780,82 @@
         ],
         "title": "ApiResponse[list[CustomerPoDuplicate]]"
       },
+      "ApiResponse_list_DeliverableLineResponse__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/DeliverableLineResponse"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[list[DeliverableLineResponse]]"
+      },
+      "ApiResponse_list_PackableLineResponse__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PackableLineResponse"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[list[PackableLineResponse]]"
+      },
       "ApiResponse_list_PurchaseOrderResponse__": {
         "properties": {
           "success": {
@@ -1770,6 +2024,87 @@
         ],
         "title": "CustomerPoDuplicate"
       },
+      "DeliverableLineResponse": {
+        "properties": {
+          "sales_order_line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sales Order Line Id"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "unit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Id"
+          },
+          "rate": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Rate"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Quantity"
+          },
+          "qty_delivered": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Delivered"
+          },
+          "qty_returned": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Returned"
+          },
+          "qty_reserved": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Reserved"
+          },
+          "outstanding": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Outstanding"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sales_order_line_id",
+          "product_id",
+          "description",
+          "unit_id",
+          "rate",
+          "quantity",
+          "qty_delivered",
+          "qty_returned",
+          "qty_reserved",
+          "outstanding"
+        ],
+        "title": "DeliverableLineResponse"
+      },
       "DiscountType": {
         "type": "string",
         "enum": [
@@ -1799,6 +2134,159 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "OrderTrackerResponse": {
+        "properties": {
+          "sales_order_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sales Order Id"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/OrderTrackerRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sales_order_id"
+        ],
+        "title": "OrderTrackerResponse"
+      },
+      "OrderTrackerRow": {
+        "properties": {
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "document_type": {
+            "type": "string",
+            "title": "Document Type"
+          },
+          "document_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Number"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "document_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Date"
+          },
+          "quantity_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stage",
+          "document_type",
+          "status"
+        ],
+        "title": "OrderTrackerRow"
+      },
+      "PackableLineResponse": {
+        "properties": {
+          "sales_order_line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sales Order Line Id"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "unit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Id"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Quantity"
+          },
+          "qty_packed": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Packed"
+          },
+          "outstanding": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Outstanding"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sales_order_line_id",
+          "product_id",
+          "description",
+          "unit_id",
+          "quantity",
+          "qty_packed",
+          "outstanding"
+        ],
+        "title": "PackableLineResponse"
       },
       "PlaceOfSupply": {
         "type": "string",
@@ -2708,6 +3196,44 @@
         ],
         "title": "ReceiptStatus"
       },
+      "ReservationShortfall": {
+        "properties": {
+          "sales_order_line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sales Order Line Id"
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Product Id"
+          },
+          "requested": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Requested"
+          },
+          "reserved": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Reserved"
+          },
+          "shortfall": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Shortfall"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sales_order_line_id",
+          "product_id",
+          "requested",
+          "reserved",
+          "shortfall"
+        ],
+        "title": "ReservationShortfall"
+      },
       "SalesOrderCancelRequest": {
         "properties": {
           "reason": {
@@ -2926,6 +3452,24 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Qty Received"
+          },
+          "qty_reserved": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Reserved",
+            "default": "0"
+          },
+          "qty_delivered": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Delivered",
+            "default": "0"
+          },
+          "qty_returned": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Returned",
+            "default": "0"
           },
           "purchase_orders": {
             "items": {
@@ -3448,6 +3992,18 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Qty Delivered"
+          },
+          "qty_returned": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Returned",
+            "default": "0"
+          },
+          "qty_reserved": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Reserved",
+            "default": "0"
           },
           "qty_invoiced": {
             "type": "string",
@@ -3979,6 +4535,13 @@
             },
             "type": "array",
             "title": "Lines"
+          },
+          "reservation_shortfalls": {
+            "items": {
+              "$ref": "#/components/schemas/ReservationShortfall"
+            },
+            "type": "array",
+            "title": "Reservation Shortfalls"
           },
           "created_at": {
             "type": "string",

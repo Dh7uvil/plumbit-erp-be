@@ -71,3 +71,20 @@ def test_catalog_includes_quote_ready_permissions() -> None:
     assert "inventory.quality_inspection.read" in CATALOG_PERMISSIONS
     assert "inventory.quality_inspection.update" in CATALOG_PERMISSIONS
     assert "inventory.quality_inspection.approve" in CATALOG_PERMISSIONS
+    assert "inventory.delivery_note.create" in CATALOG_PERMISSIONS
+    assert "inventory.delivery_note.read" in CATALOG_PERMISSIONS
+    assert "inventory.delivery_note.update" in CATALOG_PERMISSIONS
+    assert "inventory.delivery_note.delete" in CATALOG_PERMISSIONS
+    assert "inventory.delivery_note.post" in CATALOG_PERMISSIONS
+    assert "inventory.package.create" in CATALOG_PERMISSIONS
+    assert "inventory.package.read" in CATALOG_PERMISSIONS
+    assert "inventory.package.update" in CATALOG_PERMISSIONS
+    assert "inventory.package.delete" in CATALOG_PERMISSIONS
+    assert "inventory.shipment.create" in CATALOG_PERMISSIONS
+    assert "inventory.shipment.dispatch" in CATALOG_PERMISSIONS
+    assert "inventory.shipment.close" in CATALOG_PERMISSIONS
+    assert "inventory.sales_return.create" in CATALOG_PERMISSIONS
+    assert "inventory.sales_return.post" in CATALOG_PERMISSIONS
+    assert "inventory.product.history" in CATALOG_PERMISSIONS
+    assert "crm.customer.history" in CATALOG_PERMISSIONS
+    assert "erp.supplier.history" in CATALOG_PERMISSIONS

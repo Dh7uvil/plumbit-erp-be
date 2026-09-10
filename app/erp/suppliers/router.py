@@ -5,7 +5,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from app.auth.catalog import SUPPLIER_CREATE, SUPPLIER_DELETE, SUPPLIER_READ, SUPPLIER_UPDATE
+from app.auth.catalog import (
+    SUPPLIER_CREATE,
+    SUPPLIER_DELETE,
+    SUPPLIER_HISTORY,
+    SUPPLIER_READ,
+    SUPPLIER_UPDATE,
+)
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
@@ -21,6 +27,8 @@ from app.erp.suppliers.schemas import (
     SupplierResponse,
     SupplierUpdate,
 )
+from app.inventory_management.history.dependencies import HistoryServiceDependency
+from app.inventory_management.history.schemas import TradingHistoryFilter, TradingHistoryLine
 
 router = APIRouter(prefix="/suppliers", tags=["Suppliers"])
 
@@ -121,3 +129,27 @@ async def delete_supplier_address(
         tenant.tenant_id, supplier_id, extra_id, actor_user_id=tenant.user_id
     )
     return ApiResponse(data=row, message="Supplier address deleted successfully")
+
+
+@router.get(
+    "/{supplier_id}/purchase-history",
+    response_model=ApiResponse[list[TradingHistoryLine]],
+)
+async def list_supplier_purchase_history(
+    supplier_id: UUID,
+    tenant: TenantContextDependency,
+    page: PaginationDependency,
+    history: HistoryServiceDependency,
+    filters: Annotated[TradingHistoryFilter, Depends()],
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_HISTORY))],
+) -> ApiResponse[list[TradingHistoryLine]]:
+    rows, total = await history.supplier_purchase_history(
+        tenant.tenant_id,
+        supplier_id,
+        page=page,
+        product_id=filters.product_id,
+        warehouse_id=filters.warehouse_id,
+        document_date_from=filters.document_date_from,
+        document_date_to=filters.document_date_to,
+    )
+    return paginated_response(rows, params=page, total=total)

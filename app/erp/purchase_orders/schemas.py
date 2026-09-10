@@ -259,6 +259,9 @@ class SalesOrderCoverageLine(BaseModel):
     qty_covered: Decimal
     qty_uncovered: Decimal
     qty_received: Decimal
+    qty_reserved: Decimal = Decimal("0")
+    qty_delivered: Decimal = Decimal("0")
+    qty_returned: Decimal = Decimal("0")
     purchase_orders: list[CoveragePurchaseOrderRef] = Field(default_factory=list)
 
 

@@ -56,6 +56,7 @@ _DOCUMENT_SEQUENCES: tuple[tuple[DocumentType, str], ...] = (
     (DocumentType.QUALITY_INSPECTION, "QCR"),
     (DocumentType.PACKAGE, "PKG"),
     (DocumentType.SHIPMENT, "SHP"),
+    (DocumentType.SALES_RETURN, "SR"),
 )
 
 _SEQUENCE_PADDING = 6

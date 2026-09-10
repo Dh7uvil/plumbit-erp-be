@@ -34,6 +34,7 @@ from app.erp.purchase_orders.schemas import (
 from app.erp.sales_orders.dependencies import SalesOrderServiceDependency
 from app.erp.sales_orders.schemas import (
     CustomerPoDuplicate,
+    OrderTrackerResponse,
     SalesOrderCancelRequest,
     SalesOrderComposeDefaults,
     SalesOrderCreate,
@@ -42,6 +43,10 @@ from app.erp.sales_orders.schemas import (
     SalesOrderResponse,
     SalesOrderUpdate,
 )
+from app.inventory_management.delivery_notes.dependencies import DeliveryNoteServiceDependency
+from app.inventory_management.delivery_notes.schemas import DeliverableLineResponse
+from app.inventory_management.packages.dependencies import PackageServiceDependency
+from app.inventory_management.packages.schemas import PackableLineResponse
 
 router = APIRouter(prefix="/sales-orders", tags=["Sales Orders"])
 
@@ -339,6 +344,45 @@ async def get_sales_order_coverage(
     _: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_READ))],
 ) -> ApiResponse[SalesOrderCoverageResponse]:
     data = await purchase_orders.coverage_for_sales_order(tenant.tenant_id, sales_order_id)
+    return ApiResponse(data=data)
+
+
+@router.get(
+    "/{sales_order_id}/deliverable-lines",
+    response_model=ApiResponse[list[DeliverableLineResponse]],
+)
+async def get_deliverable_lines(
+    sales_order_id: UUID,
+    tenant: TenantContextDependency,
+    delivery_notes: DeliveryNoteServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_READ))],
+) -> ApiResponse[list[DeliverableLineResponse]]:
+    rows = await delivery_notes.deliverable_lines(tenant.tenant_id, sales_order_id)
+    return ApiResponse(data=rows)
+
+
+@router.get(
+    "/{sales_order_id}/packable-lines",
+    response_model=ApiResponse[list[PackableLineResponse]],
+)
+async def get_packable_lines(
+    sales_order_id: UUID,
+    tenant: TenantContextDependency,
+    packages: PackageServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_READ))],
+) -> ApiResponse[list[PackableLineResponse]]:
+    rows = await packages.packable_lines(tenant.tenant_id, sales_order_id)
+    return ApiResponse(data=rows)
+
+
+@router.get("/{sales_order_id}/tracker", response_model=ApiResponse[OrderTrackerResponse])
+async def get_sales_order_tracker(
+    sales_order_id: UUID,
+    tenant: TenantContextDependency,
+    service: SalesOrderServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_READ))],
+) -> ApiResponse[OrderTrackerResponse]:
+    data = await service.tracker(tenant.tenant_id, sales_order_id)
     return ApiResponse(data=data)
 
 

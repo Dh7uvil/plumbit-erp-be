@@ -28,13 +28,13 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "outbox_event": ("read", "retry"),
     },
     CRM_MODULE: {
-        "customer": ("create", "read", "update", "delete"),
+        "customer": ("create", "read", "update", "delete", "history"),
         "contact": ("create", "read", "update", "delete"),
     },
     INVENTORY_MODULE: {
         "unit": ("create", "read", "update", "delete"),
         "category": ("create", "read", "update", "delete"),
-        "product": ("create", "read", "update", "delete"),
+        "product": ("create", "read", "update", "delete", "history"),
         "price_list": ("create", "read", "update", "delete"),
         "warehouse": ("create", "read", "update", "delete"),
         "stock": ("read", "update"),
@@ -43,9 +43,13 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "stock_adjustment": ("create", "read", "update", "delete", "post"),
         "goods_receipt": ("create", "read", "update", "delete", "post"),
         "quality_inspection": ("create", "read", "update", "approve"),
+        "delivery_note": ("create", "read", "update", "delete", "post"),
+        "package": ("create", "read", "update", "delete"),
+        "shipment": ("create", "read", "update", "delete", "dispatch", "close"),
+        "sales_return": ("create", "read", "update", "delete", "post"),
     },
     ERP_MODULE: {
-        "supplier": ("create", "read", "update", "delete"),
+        "supplier": ("create", "read", "update", "delete", "history"),
         "supplier_product": ("create", "read", "update", "delete", "link"),
         "currency": ("create", "read", "update", "delete"),
         "exchange_rate": ("create", "read", "update", "delete"),
@@ -122,6 +126,7 @@ CUSTOMER_CREATE = build_permission(CRM_MODULE, "customer", "create")
 CUSTOMER_READ = build_permission(CRM_MODULE, "customer", "read")
 CUSTOMER_UPDATE = build_permission(CRM_MODULE, "customer", "update")
 CUSTOMER_DELETE = build_permission(CRM_MODULE, "customer", "delete")
+CUSTOMER_HISTORY = build_permission(CRM_MODULE, "customer", "history")
 CONTACT_CREATE = build_permission(CRM_MODULE, "contact", "create")
 CONTACT_READ = build_permission(CRM_MODULE, "contact", "read")
 CONTACT_UPDATE = build_permission(CRM_MODULE, "contact", "update")
@@ -139,6 +144,7 @@ PRODUCT_CREATE = build_permission(INVENTORY_MODULE, "product", "create")
 PRODUCT_READ = build_permission(INVENTORY_MODULE, "product", "read")
 PRODUCT_UPDATE = build_permission(INVENTORY_MODULE, "product", "update")
 PRODUCT_DELETE = build_permission(INVENTORY_MODULE, "product", "delete")
+PRODUCT_HISTORY = build_permission(INVENTORY_MODULE, "product", "history")
 PRICE_LIST_CREATE = build_permission(INVENTORY_MODULE, "price_list", "create")
 PRICE_LIST_READ = build_permission(INVENTORY_MODULE, "price_list", "read")
 PRICE_LIST_UPDATE = build_permission(INVENTORY_MODULE, "price_list", "update")
@@ -169,11 +175,32 @@ QUALITY_INSPECTION_CREATE = build_permission(INVENTORY_MODULE, "quality_inspecti
 QUALITY_INSPECTION_READ = build_permission(INVENTORY_MODULE, "quality_inspection", "read")
 QUALITY_INSPECTION_UPDATE = build_permission(INVENTORY_MODULE, "quality_inspection", "update")
 QUALITY_INSPECTION_APPROVE = build_permission(INVENTORY_MODULE, "quality_inspection", "approve")
+DELIVERY_NOTE_CREATE = build_permission(INVENTORY_MODULE, "delivery_note", "create")
+DELIVERY_NOTE_READ = build_permission(INVENTORY_MODULE, "delivery_note", "read")
+DELIVERY_NOTE_UPDATE = build_permission(INVENTORY_MODULE, "delivery_note", "update")
+DELIVERY_NOTE_DELETE = build_permission(INVENTORY_MODULE, "delivery_note", "delete")
+DELIVERY_NOTE_POST = build_permission(INVENTORY_MODULE, "delivery_note", "post")
+PACKAGE_CREATE = build_permission(INVENTORY_MODULE, "package", "create")
+PACKAGE_READ = build_permission(INVENTORY_MODULE, "package", "read")
+PACKAGE_UPDATE = build_permission(INVENTORY_MODULE, "package", "update")
+PACKAGE_DELETE = build_permission(INVENTORY_MODULE, "package", "delete")
+SHIPMENT_CREATE = build_permission(INVENTORY_MODULE, "shipment", "create")
+SHIPMENT_READ = build_permission(INVENTORY_MODULE, "shipment", "read")
+SHIPMENT_UPDATE = build_permission(INVENTORY_MODULE, "shipment", "update")
+SHIPMENT_DELETE = build_permission(INVENTORY_MODULE, "shipment", "delete")
+SHIPMENT_DISPATCH = build_permission(INVENTORY_MODULE, "shipment", "dispatch")
+SHIPMENT_CLOSE = build_permission(INVENTORY_MODULE, "shipment", "close")
+SALES_RETURN_CREATE = build_permission(INVENTORY_MODULE, "sales_return", "create")
+SALES_RETURN_READ = build_permission(INVENTORY_MODULE, "sales_return", "read")
+SALES_RETURN_UPDATE = build_permission(INVENTORY_MODULE, "sales_return", "update")
+SALES_RETURN_DELETE = build_permission(INVENTORY_MODULE, "sales_return", "delete")
+SALES_RETURN_POST = build_permission(INVENTORY_MODULE, "sales_return", "post")
 
 SUPPLIER_CREATE = build_permission(ERP_MODULE, "supplier", "create")
 SUPPLIER_READ = build_permission(ERP_MODULE, "supplier", "read")
 SUPPLIER_UPDATE = build_permission(ERP_MODULE, "supplier", "update")
 SUPPLIER_DELETE = build_permission(ERP_MODULE, "supplier", "delete")
+SUPPLIER_HISTORY = build_permission(ERP_MODULE, "supplier", "history")
 SUPPLIER_PRODUCT_CREATE = build_permission(ERP_MODULE, "supplier_product", "create")
 SUPPLIER_PRODUCT_READ = build_permission(ERP_MODULE, "supplier_product", "read")
 SUPPLIER_PRODUCT_UPDATE = build_permission(ERP_MODULE, "supplier_product", "update")

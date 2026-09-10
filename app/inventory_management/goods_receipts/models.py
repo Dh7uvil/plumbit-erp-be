@@ -44,6 +44,12 @@ class GoodsReceipt(AuditUserMixin, SoftDeleteTenantModel):
         Index("ix_goods_receipts_tenant_id_status", "tenant_id", "status"),
         Index("ix_goods_receipts_tenant_id_document_date", "tenant_id", "document_date"),
         Index("ix_goods_receipts_tenant_id_supplier_id", "tenant_id", "supplier_id"),
+        Index(
+            "ix_goods_receipts_tenant_id_supplier_id_document_date",
+            "tenant_id",
+            "supplier_id",
+            "document_date",
+        ),
         Index("ix_goods_receipts_purchase_order_id", "purchase_order_id"),
     )
 
@@ -131,6 +137,7 @@ class GoodsReceiptLine(TenantModel):
         ),
         Index("ix_goods_receipt_lines_goods_receipt_id", "goods_receipt_id"),
         Index("ix_goods_receipt_lines_purchase_order_line_id", "purchase_order_line_id"),
+        Index("ix_goods_receipt_lines_tenant_id_product_id", "tenant_id", "product_id"),
     )
 
     goods_receipt_id: Mapped[UUID] = mapped_column(

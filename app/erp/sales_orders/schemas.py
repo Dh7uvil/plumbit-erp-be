@@ -84,6 +84,8 @@ class SalesOrderLineResponse(BaseModel):
     tax_amount: Decimal
     amount: Decimal
     qty_delivered: Decimal
+    qty_returned: Decimal = Decimal("0")
+    qty_reserved: Decimal = Decimal("0")
     qty_invoiced: Decimal
     source_quotation_line_id: UUID | None
     source_proforma_invoice_line_id: UUID | None = None
@@ -237,8 +239,17 @@ class SalesOrderResponse(BaseModel):
     acknowledged_by: UUID | None = None
     available_actions: list[str] = Field(default_factory=list)
     lines: list[SalesOrderLineResponse] = Field(default_factory=list)
+    reservation_shortfalls: list["ReservationShortfall"] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+
+class ReservationShortfall(BaseModel):
+    sales_order_line_id: UUID
+    product_id: UUID
+    requested: Decimal
+    reserved: Decimal
+    shortfall: Decimal
 
 
 class SalesOrderComposeDefaults(BaseModel):
@@ -264,3 +275,18 @@ class CustomerPoDuplicate(BaseModel):
     customer_po_number: str | None
     customer_po_date: date | None
     status: SalesOrderStatus
+
+
+class OrderTrackerRow(BaseModel):
+    stage: str
+    document_type: str
+    document_number: str | None = None
+    document_id: UUID | None = None
+    status: str
+    document_date: date | None = None
+    quantity_summary: str | None = None
+
+
+class OrderTrackerResponse(BaseModel):
+    sales_order_id: UUID
+    rows: list[OrderTrackerRow] = Field(default_factory=list)

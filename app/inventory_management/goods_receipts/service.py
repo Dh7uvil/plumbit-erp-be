@@ -244,9 +244,12 @@ class GoodsReceiptService:
                 )
             if not lines:
                 raise ValidationError("This purchase order has no remaining quantity to receive")
+            warehouse_id = payload.warehouse_id or order.warehouse_id
+            if warehouse_id is None:
+                raise ValidationError("A warehouse is required to create a goods receipt")
             create_payload = GoodsReceiptCreate(
                 supplier_id=order.supplier_id,
-                warehouse_id=payload.warehouse_id or order.warehouse_id,
+                warehouse_id=warehouse_id,
                 document_date=payload.document_date,
                 purchase_order_id=order.id,
                 branch_id=order.branch_id,
@@ -254,8 +257,6 @@ class GoodsReceiptService:
                 notes=payload.notes,
                 lines=lines,
             )
-            if create_payload.warehouse_id is None:
-                raise ValidationError("A warehouse is required to create a goods receipt")
             response = await self._create_unlocked(
                 tenant_id, create_payload, actor_user_id=actor_user_id
             )
@@ -421,6 +422,8 @@ class GoodsReceiptService:
                         locked, qty=-min(locked.row.qty_incoming, line.quantity)
                     )
             if po_receipts:
+                if row.purchase_order_id is None:
+                    raise ValidationError("Purchase order is required to apply receipts")
                 await self.purchase_orders.apply_line_receipts(
                     tenant_id, row.purchase_order_id, po_receipts
                 )
@@ -532,17 +535,20 @@ class GoodsReceiptService:
         self,
         tenant_id: UUID,
         receipt_id: UUID,
-        deltas: Sequence[tuple[UUID, Decimal, Decimal]],
+        deltas: Sequence[tuple[UUID, Decimal, Decimal, Decimal]],
     ) -> GoodsReceipt:
-        """Caller owns the transaction. Each tuple is (grn_line_id, accepted, rejected)."""
+        """Caller owns the transaction.
+
+        Tuple is (grn_line_id, accepted, rejected, rework_released).
+        """
 
         row = await self._require(tenant_id, receipt_id, for_update=True)
         by_id = {line.id: line for line in row.lines}
-        for line_id, accepted, rejected in deltas:
+        for line_id, accepted, rejected, rework_released in deltas:
             line = by_id.get(line_id)
             if line is None:
                 raise ValidationError("Goods receipt line not found on this receipt")
-            released = quantize_quantity(accepted + rejected)
+            released = quantize_quantity(accepted + rejected + rework_released)
             if released > line.qty_on_hold:
                 raise ValidationError("Inspection quantities exceed remaining hold")
             line.qty_accepted = quantize_quantity(line.qty_accepted + accepted)

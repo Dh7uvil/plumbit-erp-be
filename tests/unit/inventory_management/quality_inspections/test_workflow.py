@@ -63,3 +63,26 @@ def test_valid_partial_line_with_scrap() -> None:
         remaining_hold=Decimal("10"),
         disposition=QcDisposition.SCRAP,
     )
+
+
+def test_rework_release_allows_rework_without_rejected_disposition() -> None:
+    assert_line_quantities(
+        qty_inspected=Decimal("4"),
+        qty_accepted=Decimal("1"),
+        qty_rejected=Decimal("0"),
+        qty_rework=Decimal("3"),
+        remaining_hold=Decimal("4"),
+        disposition=QcDisposition.REWORK_RELEASE,
+    )
+
+
+def test_rework_release_requires_rework_quantity() -> None:
+    with pytest.raises(ValidationError):
+        assert_line_quantities(
+            qty_inspected=Decimal("2"),
+            qty_accepted=Decimal("2"),
+            qty_rejected=Decimal("0"),
+            qty_rework=Decimal("0"),
+            remaining_hold=Decimal("2"),
+            disposition=QcDisposition.REWORK_RELEASE,
+        )
