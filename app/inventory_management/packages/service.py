@@ -25,6 +25,7 @@ from app.core.exceptions import (
 )
 from app.core.permissions import has_permission
 from app.db.session import transaction
+from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.sales_orders.service import SalesOrderService
 from app.inventory_management.delivery_notes.service import DeliveryNoteService
@@ -366,7 +367,9 @@ class PackageService:
                     "unit_id": unit_id,
                 }
             )
-        fiscal_year = today_in_timezone(await self.org.get_timezone(tenant_id)).year
+        fiscal_year = await year_for(
+            self.session, tenant_id, today_in_timezone(await self.org.get_timezone(tenant_id))
+        )
         header: dict[str, Any] = {
             "sales_order_id": payload.sales_order_id,
             "delivery_note_id": payload.delivery_note_id,

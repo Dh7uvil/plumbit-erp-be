@@ -16,6 +16,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import DocumentType, TaxCategory
+from app.erp.accounting.accounts.chart import UAE_CHART
+from app.erp.accounting.accounts.models import Account
+from app.erp.accounting.fiscal import FiscalYearConfig
 from app.erp.accounting.models import DocumentSequence, PaymentTerm, Tax, TermsTemplate
 from app.inventory_management.units.models import Unit
 from app.inventory_management.warehouses.models import Warehouse
@@ -57,6 +60,7 @@ _DOCUMENT_SEQUENCES: tuple[tuple[DocumentType, str], ...] = (
     (DocumentType.PACKAGE, "PKG"),
     (DocumentType.SHIPMENT, "SHP"),
     (DocumentType.SALES_RETURN, "SR"),
+    (DocumentType.JOURNAL_ENTRY, "JV"),
 )
 
 _SEQUENCE_PADDING = 6
@@ -192,13 +196,15 @@ async def seed_required_masters(session: AsyncSession, tenant_id: UUID) -> None:
         )
 
     await _upsert_document_sequences(session, tenant_id)
+    await seed_chart_of_accounts(session, tenant_id)
     await session.flush()
 
 
 async def _upsert_document_sequences(session: AsyncSession, tenant_id: UUID) -> None:
     """Insert missing canonical sequences; restore prefix/padding without resetting counters."""
 
-    fiscal_year = datetime.now(UTC).year
+    config = await FiscalYearConfig.load(session, tenant_id)
+    fiscal_year = config.year_for(datetime.now(UTC).date())
     existing_rows = (
         (
             await session.execute(
@@ -233,3 +239,37 @@ async def _upsert_document_sequences(session: AsyncSession, tenant_id: UUID) -> 
             existing.prefix = series
         if existing.padding != _SEQUENCE_PADDING:
             existing.padding = _SEQUENCE_PADDING
+
+
+async def seed_chart_of_accounts(session: AsyncSession, tenant_id: UUID) -> None:
+    """Insert the UAE default chart when the tenant has no accounts yet."""
+
+    existing = (
+        await session.execute(
+            select(Account.id)
+            .where(Account.tenant_id == tenant_id, Account.deleted_at.is_(None))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return
+    by_code: dict[str, Account] = {}
+    for row in UAE_CHART:
+        parent = by_code.get(row.parent_code) if row.parent_code else None
+        depth = 0 if parent is None else parent.depth + 1
+        account = Account(
+            tenant_id=tenant_id,
+            code=row.code,
+            name=row.name,
+            account_type=row.account_type.value,
+            account_subtype=row.account_subtype.value,
+            parent_id=None if parent is None else parent.id,
+            depth=depth,
+            is_group=row.is_group,
+            is_system=True,
+            system_role=None if row.system_role is None else row.system_role.value,
+        )
+        session.add(account)
+        await session.flush()
+        by_code[row.code] = account
+

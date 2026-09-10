@@ -20,10 +20,11 @@ from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import utcnow
-from app.core.enums import AuditAction, StockMovementType
+from app.core.enums import AuditAction, CostingMethod, StockMovementType
 from app.core.exceptions import (
     InsufficientStockError,
     ResourceNotFoundError,
+    UnsupportedCostingMethodError,
     ValidationError,
 )
 from app.core.permissions import has_permission
@@ -254,6 +255,11 @@ class StockService:
         product = await self.products.require_stockable(tenant_id, product_id)
         warehouse = await self.warehouses.get(tenant_id, warehouse_id)
         allow_negative, policy = await self.org.get_inventory_controls(tenant_id)
+        inbound = await self.org.get_inbound_settings(tenant_id)
+        if inbound.costing_method != CostingMethod.FIFO:
+            raise UnsupportedCostingMethodError(
+                details={"costing_method": inbound.costing_method.value}
+            )
         if assert_period:
             policy.assert_open(document_date, can_override=can_override_soft_lock)
         row = await self._lock_or_create(tenant_id, warehouse_id, product_id)

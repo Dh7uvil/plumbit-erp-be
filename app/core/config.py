@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     # Feature flags
     feature_email_enabled: bool = False
     feature_whatsapp_enabled: bool = False
+    # In-process outbox poller. Leave False for API-only local/dev and pytest.
+    # Set True in production (and local when you want after-commit dispatch
+    # instead of waiting out the poll interval). The poller remains the source
+    # of truth; SessionEvents.after_commit only nudges it.
     feature_background_workers_enabled: bool = False
     feature_ai_forecasting_enabled: bool = False
 

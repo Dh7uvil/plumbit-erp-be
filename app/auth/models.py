@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -85,6 +86,19 @@ class Tenant(TimestampedModel):
     hard_lock_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     lock_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     hard_lock_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    fiscal_year_start_month: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
+    )
+    fiscal_year_start_day: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
+    )
+    books_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class User(TenantModel):

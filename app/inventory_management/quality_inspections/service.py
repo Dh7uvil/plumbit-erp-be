@@ -40,6 +40,7 @@ from app.core.exceptions import (
 )
 from app.core.permissions import has_permission
 from app.db.session import transaction
+from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import DocumentSequenceService
 from app.inventory_management.goods_receipts.service import GoodsReceiptService
 from app.inventory_management.quality_inspections.models import QualityInspection
@@ -431,7 +432,7 @@ class QualityInspectionService:
             tenant_id,
             document_type=DocumentType.QUALITY_INSPECTION,
             series=_SERIES,
-            fiscal_year=header["inspection_date"].year,
+            fiscal_year=await year_for(self.session, tenant_id, header["inspection_date"]),
             prefix=_SERIES,
         )
         row = await self.repo.create(

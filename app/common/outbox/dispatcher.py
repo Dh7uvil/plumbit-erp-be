@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from uuid import UUID
+
+from sqlalchemy import event
+from sqlalchemy.orm import Session
 
 from app.common.outbox.handlers import get_handler
 from app.common.outbox.service import OutboxService
@@ -12,6 +16,26 @@ from app.core.enums import OutboxStatus
 from app.db.session import async_session_factory, transaction
 
 logger = logging.getLogger(__name__)
+
+_wake = asyncio.Event()
+OUTBOX_ENQUEUED_INFO_KEY = "outbox_enqueued"
+
+
+def wake_poller() -> None:
+    """Nudge the in-process poller. Safe to call from after_commit."""
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        _wake.set()
+        return
+    loop.call_soon_threadsafe(_wake.set)
+
+
+@event.listens_for(Session, "after_commit")
+def _wake_poller_after_commit(session: Session) -> None:
+    if session.info.pop(OUTBOX_ENQUEUED_INFO_KEY, False):
+        wake_poller()
 
 
 async def process_batch(*, batch: int, worker_id: str) -> int:
@@ -26,7 +50,12 @@ async def process_batch(*, batch: int, worker_id: str) -> int:
 
 
 async def run_forever(*, batch: int, interval: float, worker_id: str) -> None:
-    """Claim and dispatch forever. Restart-safe via SKIP LOCKED and stale locks."""
+    """Claim and dispatch forever. Restart-safe via SKIP LOCKED and stale locks.
+
+    After-commit sets ``_wake`` so a pending event is claimed without waiting
+    out ``interval``. The poller is still the source of truth: if the nudge is
+    missed, the next interval tick picks the row up.
+    """
 
     while True:
         try:
@@ -35,7 +64,9 @@ async def run_forever(*, batch: int, interval: float, worker_id: str) -> None:
             raise
         except Exception:
             logger.exception("outbox_batch_failed")
-        await asyncio.sleep(interval)
+        _wake.clear()
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(_wake.wait(), timeout=interval)
 
 
 async def dispatch_one(event_id: UUID) -> None:

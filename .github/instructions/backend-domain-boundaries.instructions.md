@@ -128,10 +128,10 @@ auth (Identity)         implemented: auth, users, roles, permissions, tenants/or
 erp                     implemented: currencies, exchange_rates, taxes, payment_terms,
                         terms_templates, document_sequences, suppliers, supplier_products,
                         quotations, proforma_invoices, period_lock, sales_orders,
-                        purchase_orders
+                        purchase_orders, chart of accounts, journals, opening balances,
+                        ledger reports (trial balance, general ledger, account statement)
                         planned: sales_invoices, credit_notes, customer_payments,
                         purchase_invoices, debit_notes, supplier_payments,
-                        accounting (chart of accounts, journals, AR, AP),
                         einvoicing status APIs (on sales invoices and credit notes;
                         inbound e-bills as draft purchase invoices)
 
@@ -409,7 +409,7 @@ SDN-2026-000001
 
 Prefixes: `QUO`, `SO`, `DN` (delivery notes), `INV`, `CN` (credit notes), `PO`, `GRN`, `BILL`
 (purchase invoices), `SDN` (debit notes), `STR`, `STA`, `PFI`, `QCR`, `PKG`, `SHP`, `SR`
-(sales returns). URL resources are unique even if a prefix is shared
+(sales returns), `JV` (journal entries). URL resources are unique even if a prefix is shared
 (`/credit-notes`, `/debit-notes`, `/delivery-notes`, `/customer-payments`, `/supplier-payments`).
 
 Do not generate these with application-level counters alone. Use a database-safe mechanism
@@ -587,10 +587,10 @@ that slot; confirming the PFI promotes a `SENT` quotation to `ACCEPTED`, and cre
 order from the PFI marks both documents `CONVERTED`. Direct quotation-to-sales-order stays
 available until a live PFI exists.
 
-Quotations, proforma invoices, sales orders and purchase orders already ship. Later slices follow
-this order so stock and tax have somewhere to post. Accounting (chart of accounts, journals, AR,
-AP) comes after the documents that hit it. E-invoicing ASP adapters come after posted sales
-invoices and credit notes exist.
+Quotations, proforma invoices, sales orders, purchase orders, the chart of accounts, journals,
+opening balances and ledger reports already ship. Sales/purchase invoices and payments still
+follow so they can post through `LedgerPostingService`. E-invoicing ASP adapters come after posted
+sales invoices and credit notes exist.
 
 ## 20. Posting atomicity, branch, and outbox
 

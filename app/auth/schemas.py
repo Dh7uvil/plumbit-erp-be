@@ -547,6 +547,9 @@ class TenantCurrentResponse(BaseModel):
     phone: str | None = None
     founded: str | None = None
     fiscal_year_start: str | None = None
+    fiscal_year_start_month: int = 1
+    fiscal_year_start_day: int = 1
+    books_start_date: date | None = None
     default_currency: str | None = None
     default_currency_id: UUID | None = None
     quotation_requires_approval: bool = True
@@ -576,6 +579,10 @@ class TenantCurrentUpdate(BaseModel):
     phone: str | None = Field(default=None, max_length=50)
     founded: str | None = Field(default=None, max_length=20)
     fiscal_year_start: str | None = Field(default=None, max_length=50)
+    fiscal_year_start_month: int | None = Field(default=None, ge=1, le=12)
+    fiscal_year_start_day: int | None = Field(default=None, ge=1, le=31)
+    books_start_date: date | None = None
+    acknowledge_fiscal_year_change: bool = False
     default_currency: str | None = Field(default=None, max_length=3)
     default_currency_id: UUID | None = None
     quotation_requires_approval: bool | None = None

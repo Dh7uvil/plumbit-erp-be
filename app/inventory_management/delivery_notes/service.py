@@ -47,6 +47,7 @@ from app.core.exceptions import (
 )
 from app.core.permissions import has_permission
 from app.db.session import transaction
+from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 from app.erp.sales_orders.service import SalesOrderService
@@ -165,7 +166,9 @@ class DeliveryNoteService:
                 tenant_id,
                 document_type=DocumentType.DELIVERY_NOTE,
                 series=_SERIES,
-                fiscal_year=cast(date, header["document_date"]).year,
+                fiscal_year=await year_for(
+                    self.session, tenant_id, cast(date, header["document_date"])
+                ),
                 prefix=_SERIES,
             )
             row = await self.repo.create(
@@ -253,7 +256,9 @@ class DeliveryNoteService:
                 tenant_id,
                 document_type=DocumentType.DELIVERY_NOTE,
                 series=_SERIES,
-                fiscal_year=cast(date, header["document_date"]).year,
+                fiscal_year=await year_for(
+                    self.session, tenant_id, cast(date, header["document_date"])
+                ),
                 prefix=_SERIES,
             )
             row = await self.repo.create(

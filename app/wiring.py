@@ -10,6 +10,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
+    ACCOUNT_READ,
+    ACCOUNT_UPDATE,
     BRANCH_READ,
     BRANCH_UPDATE,
     CONTACT_READ,
@@ -22,6 +24,8 @@ from app.auth.catalog import (
     EMPLOYEE_UPDATE,
     GOODS_RECEIPT_READ,
     GOODS_RECEIPT_UPDATE,
+    JOURNAL_ENTRY_READ,
+    JOURNAL_ENTRY_UPDATE,
     PACKAGE_READ,
     PACKAGE_UPDATE,
     PRODUCT_READ,
@@ -59,6 +63,7 @@ from app.common.schemas.pagination import PageParams
 from app.core.enums import (
     AttachmentEntityType,
     CompanyType,
+    JournalEntryStatus,
     QualityInspectionStatus,
     StockDocumentStatus,
 )
@@ -90,6 +95,7 @@ def _register_unposted_probes() -> None:
     register_unposted("quality_inspection", _probe_unposted_quality_inspections)
     register_unposted("delivery_note", _probe_unposted_delivery_notes)
     register_unposted("sales_return", _probe_unposted_sales_returns)
+    register_unposted("journal_entry", _probe_unposted_journals)
 
 
 async def _probe_unposted_adjustments(
@@ -254,6 +260,33 @@ async def _probe_unposted_sales_returns(
     return documents, total
 
 
+async def _probe_unposted_journals(
+    session: AsyncSession,
+    tenant_id: UUID,
+    as_of: date,
+    page: PageParams,
+) -> tuple[list[UnpostedDocument], int]:
+    from app.erp.accounting.ledger.service import JournalEntryService
+
+    rows, total = await JournalEntryService(session).list(
+        tenant_id,
+        page=page,
+        status=JournalEntryStatus.DRAFT.value,
+        entry_date_to=as_of,
+    )
+    documents = [
+        UnpostedDocument(
+            id=row.id,
+            document_type="journal_entry",
+            document_number=row.document_number,
+            document_date=row.entry_date,
+            status=str(row.status),
+        )
+        for row in rows
+    ]
+    return documents, total
+
+
 def _register_attachment_entities() -> None:
     register(
         AttachmentEntitySpec(
@@ -399,6 +432,22 @@ def _register_attachment_entities() -> None:
             _probe_via_get(_sales_return_get),
         )
     )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.JOURNAL_ENTRY,
+            JOURNAL_ENTRY_READ,
+            JOURNAL_ENTRY_UPDATE,
+            _probe_via_get(_journal_entry_get),
+        )
+    )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.ACCOUNT,
+            ACCOUNT_READ,
+            ACCOUNT_UPDATE,
+            _probe_via_get(_account_get),
+        )
+    )
 
 
 def _probe_via_get(
@@ -539,6 +588,18 @@ async def _sales_return_get(session: AsyncSession, tenant_id: UUID, entity_id: U
     return await SalesReturnService(session).get(tenant_id, entity_id)
 
 
+async def _journal_entry_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.erp.accounting.ledger.service import JournalEntryService
+
+    return await JournalEntryService(session).get(tenant_id, entity_id)
+
+
+async def _account_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.erp.accounting.accounts.service import AccountService
+
+    return await AccountService(session).get(tenant_id, entity_id)
+
+
 def _register_outbox_handlers() -> None:
     # Phases 34 and 35 replace these logging no-ops with real handlers.
     from app.common.outbox.handlers import register as register_outbox
@@ -555,8 +616,10 @@ def _register_outbox_handlers() -> None:
         "inventory.stock_transfer.cancelled",
         "inventory.delivery_note.posted",
         "inventory.delivery_note.cancelled",
-        "inventory.sales_return.posted",
-        "inventory.sales_return.cancelled",
+            "inventory.sales_return.posted",
+            "inventory.sales_return.cancelled",
+            "erp.journal_entry.posted",
+            "erp.journal_entry.reversed",
     ):
         register_outbox(event_type, _log_outbox_event)
 

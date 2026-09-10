@@ -60,6 +60,7 @@ from app.core.permissions import has_permission
 from app.crm.contacts.service import ContactService
 from app.crm.customers.service import CustomerService
 from app.db.session import transaction
+from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import (
     DocumentSequenceService,
     PaymentTermService,
@@ -221,7 +222,7 @@ class SalesOrderService:
                 tenant_id,
                 document_type=DocumentType.SALES_ORDER,
                 series=_ORDER_SERIES,
-                fiscal_year=order_date.year,
+                fiscal_year=await year_for(self.session, tenant_id, order_date),
                 prefix=_ORDER_SERIES,
             )
             row = await self.repo.create(
@@ -321,7 +322,7 @@ class SalesOrderService:
                 tenant_id,
                 document_type=DocumentType.SALES_ORDER,
                 series=_ORDER_SERIES,
-                fiscal_year=order_date_value.year,
+                fiscal_year=await year_for(self.session, tenant_id, order_date_value),
                 prefix=_ORDER_SERIES,
             )
             row = await self.repo.create(
@@ -434,7 +435,7 @@ class SalesOrderService:
                 tenant_id,
                 document_type=DocumentType.SALES_ORDER,
                 series=_ORDER_SERIES,
-                fiscal_year=order_date_value.year,
+                fiscal_year=await year_for(self.session, tenant_id, order_date_value),
                 prefix=_ORDER_SERIES,
             )
             row = await self.repo.create(
@@ -685,7 +686,7 @@ class SalesOrderService:
                 tenant_id,
                 document_type=DocumentType.SALES_ORDER,
                 series=_ORDER_SERIES,
-                fiscal_year=order_date.year,
+                fiscal_year=await year_for(self.session, tenant_id, order_date),
                 prefix=_ORDER_SERIES,
             )
             row = await self.repo.create(

@@ -41,6 +41,7 @@ from app.core.exceptions import (
 )
 from app.core.permissions import has_permission
 from app.db.session import transaction
+from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import DocumentSequenceService
 from app.inventory_management.products.service import ProductService
 from app.inventory_management.stock.service import SOURCE_STOCK_ADJUSTMENT, StockService
@@ -152,7 +153,7 @@ class StockAdjustmentService:
                 tenant_id,
                 document_type=DocumentType.STOCK_ADJUSTMENT,
                 series=_SERIES,
-                fiscal_year=document_date.year,
+                fiscal_year=await year_for(self.session, tenant_id, document_date),
                 prefix=_SERIES,
             )
             row = await self.repo.create(

@@ -34,6 +34,8 @@ class CustomerCreate(BaseModel):
     payment_terms_id: UUID | None = None
     credit_limit: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     salesperson_id: UUID | None = None
+    receivable_account_id: UUID | None = None
+    payable_account_id: UUID | None = None
     billing_address: AddressPayload | None = None
     shipping_address: AddressPayload | None = None
     notes: str | None = Field(default=None, max_length=2000)
@@ -73,6 +75,8 @@ class CustomerUpdate(BaseModel):
     payment_terms_id: UUID | None = None
     credit_limit: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     salesperson_id: UUID | None = None
+    receivable_account_id: UUID | None = None
+    payable_account_id: UUID | None = None
     billing_address: AddressPayload | None = None
     shipping_address: AddressPayload | None = None
     notes: str | None = Field(default=None, max_length=2000)
@@ -124,6 +128,8 @@ class CustomerResponse(BaseModel):
     payment_terms_id: UUID | None
     credit_limit: Decimal | None
     salesperson_id: UUID | None
+    receivable_account_id: UUID | None = None
+    payable_account_id: UUID | None = None
     billing_address: AddressResponse | None = None
     shipping_address: AddressResponse | None = None
     extra_addresses: list[CustomerExtraAddressResponse] = Field(default_factory=list)

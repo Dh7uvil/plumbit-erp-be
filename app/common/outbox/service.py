@@ -75,6 +75,7 @@ class OutboxService:
             request_id=request_id[:64] if request_id else None,
         )
         self.session.add(row)
+        self.session.sync_session.info["outbox_enqueued"] = True
         if dedupe_key is None:
             await self.session.flush()
             return row

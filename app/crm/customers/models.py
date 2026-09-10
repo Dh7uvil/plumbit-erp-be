@@ -76,6 +76,18 @@ class Customer(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
         index=True,
     )
     notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    receivable_account_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    payable_account_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
 
 
 class CustomerAddress(SoftDeleteTenantModel):
