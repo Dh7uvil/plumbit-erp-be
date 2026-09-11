@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.related_documents import QuantityProgress, RelatedDocumentRef
 from app.core.enums import (
     BillingStatus,
     DiscountType,
@@ -88,7 +89,17 @@ class PurchaseOrderLineResponse(BaseModel):
     amount: Decimal
     qty_received: Decimal
     qty_billed: Decimal
+    qty_remaining_to_receive: Decimal = Decimal("0")
+    qty_remaining_to_bill: Decimal = Decimal("0")
     source_sales_order_line_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def compute_remaining(self) -> "PurchaseOrderLineResponse":
+        leftover_receive = self.quantity - self.qty_received
+        leftover_bill = self.quantity - self.qty_billed
+        self.qty_remaining_to_receive = leftover_receive if leftover_receive > 0 else Decimal("0")
+        self.qty_remaining_to_bill = leftover_bill if leftover_bill > 0 else Decimal("0")
+        return self
 
 
 class PurchaseOrderCreate(BaseModel):
@@ -223,6 +234,8 @@ class PurchaseOrderResponse(BaseModel):
     cancel_reason: str | None
     source_sales_order_id: UUID | None = None
     available_actions: list[str] = Field(default_factory=list)
+    quantity_progress: QuantityProgress | None = None
+    related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
     lines: list[PurchaseOrderLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

@@ -39,11 +39,15 @@ def test_only_draft_is_editable() -> None:
         assert_editable(ProformaInvoiceStatus.SENT)
 
 
-def test_only_confirmed_is_convertible() -> None:
+def test_only_confirmed_or_partially_converted_is_convertible() -> None:
     assert_convertible(ProformaInvoiceStatus.CONFIRMED)
+    assert_convertible(ProformaInvoiceStatus.PARTIALLY_CONVERTED)
     with pytest.raises(InvalidStatusTransitionError):
         assert_convertible(ProformaInvoiceStatus.SENT)
     assert next_status(ProformaInvoiceStatus.CONFIRMED, "convert") == (
+        ProformaInvoiceStatus.CONVERTED
+    )
+    assert next_status(ProformaInvoiceStatus.PARTIALLY_CONVERTED, "convert") == (
         ProformaInvoiceStatus.CONVERTED
     )
 

@@ -25,7 +25,9 @@ from app.common.period_lock import PeriodLockPolicy
 from app.common.registries.delivery_note_dependents import registered_probes
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
+from app.common.utils.conversion import quantity_summary
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.core.enums import (
@@ -155,7 +157,9 @@ class DeliveryNoteService:
     async def get(self, tenant_id: UUID, note_id: UUID) -> DeliveryNoteResponse:
         row = await self._require(tenant_id, note_id)
         await self._ensure_policy(tenant_id)
-        return self._to_response(row)
+        response = self._to_response(row)
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
 
     async def create(
         self, tenant_id: UUID, payload: DeliveryNoteCreate, *, actor_user_id: UUID
@@ -834,6 +838,41 @@ class DeliveryNoteService:
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: DeliveryNote
+    ) -> builtins.list[RelatedDocumentRef]:
+        from app.erp.sales_invoices.repository import SalesInvoiceRepository
+        from app.erp.sales_orders.repository import SalesOrderRepository
+
+        related: builtins.list[RelatedDocumentRef] = []
+        order = await SalesOrderRepository(self.session).get(tenant_id, row.sales_order_id)
+        if order is not None:
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.SALES_ORDER.value,
+                    document_id=order.id,
+                    document_number=order.document_number,
+                    status=order.status,
+                    relationship="source",
+                    document_date=order.order_date,
+                )
+            )
+        for item in await SalesInvoiceRepository(self.session).list_for_delivery_note(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.SALES_INVOICE.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.invoice_date,
+                    quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+        return related
 
     async def _ensure_policy(self, tenant_id: UUID) -> PeriodLockPolicy:
         if self._period_policy is None:

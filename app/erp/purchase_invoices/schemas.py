@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.core.enums import (
     BillType,
     DiscountType,
@@ -256,7 +257,11 @@ class PurchaseInvoiceResponse(BaseModel):
     cancelled_at: datetime | None
     cancelled_by: UUID | None
     cancel_reason: str | None
+    is_overdue: bool = False
+    is_partially_debited: bool = False
+    is_fully_debited: bool = False
     available_actions: list[str] = Field(default_factory=list)
+    related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
     lines: list[PurchaseInvoiceLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

@@ -7,7 +7,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.core.enums import (
     CogsStatus,
     DiscountType,
@@ -34,6 +36,8 @@ class SalesInvoiceFilter(BaseFilter):
     status: InvoiceDocumentStatus | None = None
     customer_id: UUID | None = None
     sales_order_id: UUID | None = None
+    source_quotation_id: UUID | None = None
+    source_proforma_invoice_id: UUID | None = None
     branch_id: UUID | None = None
     currency_id: UUID | None = None
     payment_status: PaymentStatus | None = None
@@ -58,6 +62,8 @@ class SalesInvoiceLineInput(BaseModel):
     unit_id: UUID | None = None
     rate: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     sales_order_line_id: UUID | None = None
+    source_quotation_line_id: UUID | None = None
+    source_proforma_invoice_line_id: UUID | None = None
     delivery_note_id: UUID | None = None
     delivery_note_line_id: UUID | None = None
     discount_type: DiscountType | None = None
@@ -96,6 +102,8 @@ class SalesInvoiceLineResponse(BaseModel):
     unit_id: UUID | None
     rate: Decimal
     sales_order_line_id: UUID | None
+    source_quotation_line_id: UUID | None = None
+    source_proforma_invoice_line_id: UUID | None = None
     delivery_note_id: UUID | None
     delivery_note_line_id: UUID | None
     discount_type: DiscountType | None
@@ -118,6 +126,8 @@ class SalesInvoiceCreate(BaseModel):
     invoice_date: date | None = None
     salesperson_id: UUID | None = None
     sales_order_id: UUID | None = None
+    source_quotation_id: UUID | None = None
+    source_proforma_invoice_id: UUID | None = None
     payment_terms_id: UUID | None = None
     currency_id: UUID | None = None
     notes: str | None = None
@@ -185,6 +195,7 @@ class SalesInvoiceCreateFromSalesOrder(BaseModel):
     sales_order_id: UUID
     invoice_date: date | None = None
     notes: str | None = None
+    lines: list[ConversionLineInput] | None = None
 
 
 class SalesInvoiceCreateFromDeliveryNotes(BaseModel):
@@ -211,6 +222,8 @@ class SalesInvoiceResponse(BaseModel):
     branch_id: UUID | None
     salesperson_id: UUID | None
     sales_order_id: UUID | None
+    source_quotation_id: UUID | None = None
+    source_proforma_invoice_id: UUID | None = None
     payment_terms_id: UUID | None
     due_date: date | None
     tax_treatment: TaxTreatment
@@ -249,7 +262,11 @@ class SalesInvoiceResponse(BaseModel):
     cancelled_at: datetime | None
     cancelled_by: UUID | None
     cancel_reason: str | None
+    is_overdue: bool = False
+    is_partially_credited: bool = False
+    is_fully_credited: bool = False
     available_actions: list[str] = Field(default_factory=list)
+    related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
     lines: list[SalesInvoiceLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

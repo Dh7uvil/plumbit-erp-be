@@ -124,3 +124,37 @@ async def test_second_pfi_is_blocked_while_first_is_live(client: AsyncClient) ->
     )
     assert second.status_code == 409, second.text
     assert second.json()["error"]["code"] == "QUOTATION_HAS_LIVE_PROFORMA"
+
+
+@pytest.mark.asyncio
+async def test_convert_confirmed_pfi_to_sales_invoice(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded_ids(client, headers)
+    customer_id = await _create_customer(client, headers)
+    product_id = await _create_product(client, headers, ids)
+    created = await _create_quote(client, headers, customer_id=customer_id, product_id=product_id)
+    quote = await _send_quote(client, headers, created["body"]["data"])
+    pfi = await _raise_pfi(client, headers, quote)
+    confirmed = await _send_and_confirm_pfi(client, headers, pfi)
+    converted = await client.post(
+        f"/api/v1/proforma-invoices/{confirmed['id']}/convert-to-sales-invoice",
+        headers=_idempotent(headers, confirmed["version"]),
+    )
+    assert converted.status_code == 200, converted.text
+    invoice = converted.json()["data"]
+    assert invoice["source_proforma_invoice_id"] == confirmed["id"]
+    assert invoice["source_quotation_id"] == quote["id"]
+    assert invoice["journal_entry_id"] is None
+    assert "create_sales_invoice" in confirmed["available_actions"]
+
+    pfi_after = await client.get(f"/api/v1/proforma-invoices/{confirmed['id']}", headers=headers)
+    quote_after = await client.get(f"/api/v1/quotations/{quote['id']}", headers=headers)
+    assert pfi_after.json()["data"]["status"] == "CONVERTED"
+    assert pfi_after.json()["data"]["converted_document_type"] == "SALES_INVOICE"
+    assert quote_after.json()["data"]["status"] == "CONVERTED"
+    related_types = {
+        item["document_type"] for item in pfi_after.json()["data"]["related_documents"]
+    }
+    assert "QUOTATION" in related_types
+    assert "SALES_INVOICE" in related_types

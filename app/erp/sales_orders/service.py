@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
     ERP_MODULE,
+    PROFORMA_INVOICE_CREATE,
     SALES_ORDER_ACKNOWLEDGE,
     SALES_ORDER_APPROVE,
     SALES_ORDER_CLOSE,
@@ -24,9 +25,16 @@ from app.auth.catalog import (
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
 from app.common.outbox.service import OutboxService
+from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import QuantityProgress, RelatedDocumentRef
 from app.common.services.audit import AuditWriter
+from app.common.utils.conversion import (
+    allocate_conversion_qty,
+    copy_source_commercial_header,
+    remaining_qty,
+)
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
@@ -182,10 +190,10 @@ class SalesOrderService:
 
     async def get(self, tenant_id: UUID, sales_order_id: UUID) -> SalesOrderResponse:
         requires_approval = await self.org.sales_order_requires_approval(tenant_id)
-        return self._to_response(
-            await self._require(tenant_id, sales_order_id),
-            requires_approval=requires_approval,
-        )
+        row = await self._require(tenant_id, sales_order_id)
+        response = self._to_response(row, requires_approval=requires_approval)
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
 
     async def compose_defaults(
         self, tenant_id: UUID, customer_id: UUID
@@ -264,6 +272,7 @@ class SalesOrderService:
         customer_po_date: date | None = None,
         warehouse_id: UUID | None = None,
         branch_id: UUID | None = None,
+        conversion_lines: Sequence[ConversionLineInput] | None = None,
         idempotency_key: str,
         request_hash: str,
         endpoint: str,
@@ -278,6 +287,20 @@ class SalesOrderService:
             quotation = await quotes.require_convertible(
                 tenant_id, quotation_id, expected_version=expected_version
             )
+            requested = (
+                [(item.source_line_id, item.quantity) for item in conversion_lines]
+                if conversion_lines is not None
+                else None
+            )
+            allocations = allocate_conversion_qty(
+                lines=[
+                    (line.id, line.quantity, line.qty_converted) for line in quotation.lines
+                ],
+                requested=requested,
+                empty_message="This quotation has no remaining quantity to convert",
+            )
+            by_id = {line.id: line for line in quotation.lines}
+            selected = [(by_id[line_id], qty) for line_id, qty in allocations]
             payload = SalesOrderCreate(
                 customer_id=quotation.customer_id,
                 contact_id=quotation.contact_id,
@@ -301,21 +324,28 @@ class SalesOrderService:
                 place_of_supply=quotation.place_of_supply,
                 lines=[
                     SalesOrderLineInput(
-                        product_id=line.product_id,
-                        description=line.description,
-                        quantity=line.quantity,
-                        unit_id=line.unit_id,
-                        rate=line.rate,
-                        discount_type=line.discount_type,
-                        discount_value=line.discount_value,
-                        tax_id=line.tax_id,
+                        product_id=source.product_id,
+                        description=source.description,
+                        quantity=qty,
+                        unit_id=source.unit_id,
+                        rate=source.rate,
+                        discount_type=source.discount_type,
+                        discount_value=source.discount_value,
+                        tax_id=source.tax_id,
                     )
-                    for line in quotation.lines
+                    for source, qty in selected
                 ],
             )
             header, line_rows = await self._build_draft(tenant_id, payload)
             header["source_quotation_id"] = quotation.id
-            for built, source in zip(line_rows, quotation.lines, strict=True):
+            copy_source_commercial_header(
+                header,
+                exchange_rate=quotation.exchange_rate,
+                base_currency_id=quotation.base_currency_id,
+                bill_to_snapshot=quotation.bill_to_snapshot,
+                ship_to_snapshot=quotation.ship_to_snapshot,
+            )
+            for built, (source, _) in zip(line_rows, selected, strict=True):
                 built["source_quotation_line_id"] = source.id
             order_date_value = cast(date, header["order_date"])
             number = await self.sequences.allocate(
@@ -353,6 +383,7 @@ class SalesOrderService:
                 document_id=row.id,
                 actor_user_id=actor_user_id,
                 expected_version=quotation.version,
+                allocations=allocations,
             )
             loaded = await self._require(tenant_id, row.id)
             requires_approval = await self.org.sales_order_requires_approval(tenant_id)
@@ -375,6 +406,7 @@ class SalesOrderService:
         customer_po_date: date | None = None,
         warehouse_id: UUID | None = None,
         branch_id: UUID | None = None,
+        conversion_lines: Sequence[ConversionLineInput] | None = None,
         idempotency_key: str,
         request_hash: str,
         endpoint: str,
@@ -391,6 +423,18 @@ class SalesOrderService:
             pfi = await pfis.require_convertible(
                 tenant_id, proforma_invoice_id, expected_version=expected_version
             )
+            requested = (
+                [(item.source_line_id, item.quantity) for item in conversion_lines]
+                if conversion_lines is not None
+                else None
+            )
+            allocations = allocate_conversion_qty(
+                lines=[(line.id, line.quantity, line.qty_converted) for line in pfi.lines],
+                requested=requested,
+                empty_message="This proforma invoice has no remaining quantity to convert",
+            )
+            by_id = {line.id: line for line in pfi.lines}
+            selected = [(by_id[line_id], qty) for line_id, qty in allocations]
             payload = SalesOrderCreate(
                 customer_id=pfi.customer_id,
                 contact_id=pfi.contact_id,
@@ -413,22 +457,29 @@ class SalesOrderService:
                 place_of_supply=pfi.place_of_supply,
                 lines=[
                     SalesOrderLineInput(
-                        product_id=line.product_id,
-                        description=line.description,
-                        quantity=line.quantity,
-                        unit_id=line.unit_id,
-                        rate=line.rate,
-                        discount_type=line.discount_type,
-                        discount_value=line.discount_value,
-                        tax_id=line.tax_id,
+                        product_id=source.product_id,
+                        description=source.description,
+                        quantity=qty,
+                        unit_id=source.unit_id,
+                        rate=source.rate,
+                        discount_type=source.discount_type,
+                        discount_value=source.discount_value,
+                        tax_id=source.tax_id,
                     )
-                    for line in pfi.lines
+                    for source, qty in selected
                 ],
             )
             header, line_rows = await self._build_draft(tenant_id, payload)
             header["source_proforma_invoice_id"] = pfi.id
             header["source_quotation_id"] = pfi.source_quotation_id
-            for built, source in zip(line_rows, pfi.lines, strict=True):
+            copy_source_commercial_header(
+                header,
+                exchange_rate=pfi.exchange_rate,
+                base_currency_id=pfi.base_currency_id,
+                bill_to_snapshot=pfi.bill_to_snapshot,
+                ship_to_snapshot=pfi.ship_to_snapshot,
+            )
+            for built, (source, _) in zip(line_rows, selected, strict=True):
                 built["source_proforma_invoice_line_id"] = source.id
             order_date_value = cast(date, header["order_date"])
             number = await self.sequences.allocate(
@@ -466,10 +517,16 @@ class SalesOrderService:
                 document_id=row.id,
                 actor_user_id=actor_user_id,
                 expected_version=pfi.version,
+                allocations=allocations,
             )
             if pfi.source_quotation_id is not None:
                 quotes = QuotationService(self.session, actor_permissions=self.actor_permissions)
                 quotation = await quotes.get(tenant_id, pfi.source_quotation_id)
+                quote_allocations = [
+                    (source.source_quotation_line_id, qty)
+                    for source, qty in selected
+                    if source.source_quotation_line_id is not None
+                ]
                 await quotes._apply_converted(
                     tenant_id,
                     pfi.source_quotation_id,
@@ -477,6 +534,7 @@ class SalesOrderService:
                     document_id=row.id,
                     actor_user_id=actor_user_id,
                     expected_version=quotation.version,
+                    allocations=quote_allocations or None,
                 )
             loaded = await self._require(tenant_id, row.id)
             requires_approval = await self.org.sales_order_requires_approval(tenant_id)
@@ -1078,6 +1136,23 @@ class SalesOrderService:
 
         row = await self._require(tenant_id, sales_order_id)
         rows: builtins.list[OrderTrackerRow] = []
+        if row.source_quotation_id is not None:
+            from app.erp.quotation.service import QuotationService as QuoteLookup
+
+            quote = await QuoteLookup(
+                self.session, actor_permissions=self.actor_permissions
+            ).get(tenant_id, row.source_quotation_id)
+            rows.append(
+                self._tracker_row(
+                    stage="quotation",
+                    document_type=DocumentType.QUOTATION.value,
+                    document_id=quote.id,
+                    document_number=quote.document_number,
+                    status=quote.status.value,
+                    document_date=quote.document_date,
+                    quantity_summary=self._qty_summary([line.quantity for line in quote.lines]),
+                )
+            )
         if row.source_proforma_invoice_id is not None:
             pfi = await ProformaInvoiceService(
                 self.session, actor_permissions=self.actor_permissions
@@ -1283,6 +1358,78 @@ class SalesOrderService:
             rows.append(
                 self._tracker_pending("sales_invoice", DocumentType.SALES_INVOICE.value)
             )
+
+        from app.erp.credit_notes.repository import CreditNoteRepository
+
+        credit_notes: builtins.list[OrderTrackerRow] = []
+        cn_repo = CreditNoteRepository(self.session)
+        for invoice in invoices:
+            for note in await cn_repo.list_for_sales_invoice(tenant_id, invoice.id):
+                credit_notes.append(
+                    self._tracker_row(
+                        stage="credit_note",
+                        document_type=DocumentType.CREDIT_NOTE.value,
+                        document_id=note.id,
+                        document_number=note.document_number,
+                        status=note.status,
+                        document_date=note.credit_note_date,
+                        quantity_summary=self._qty_summary(
+                            [line.quantity for line in note.lines]
+                        ),
+                    )
+                )
+        if credit_notes:
+            rows.extend(credit_notes)
+        else:
+            rows.append(self._tracker_pending("credit_note", DocumentType.CREDIT_NOTE.value))
+
+        from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
+        from app.erp.debit_notes.repository import DebitNoteRepository
+
+        bill_rows: builtins.list[OrderTrackerRow] = []
+        pi_repo = PurchaseInvoiceRepository(self.session)
+        dn_repo = DebitNoteRepository(self.session)
+        debit_rows: builtins.list[OrderTrackerRow] = []
+        for po_id in po_seen:
+            for bill in await pi_repo.list_for_purchase_order(tenant_id, po_id):
+                bill_rows.append(
+                    self._tracker_row(
+                        stage="purchase_invoice",
+                        document_type=DocumentType.PURCHASE_INVOICE.value,
+                        document_id=bill.id,
+                        document_number=bill.document_number,
+                        status=bill.status,
+                        document_date=bill.invoice_date,
+                        quantity_summary=self._qty_summary(
+                            [line.quantity for line in bill.lines]
+                        ),
+                    )
+                )
+                for debit in await dn_repo.list_for_purchase_invoice(tenant_id, bill.id):
+                    debit_rows.append(
+                        self._tracker_row(
+                            stage="debit_note",
+                            document_type=DocumentType.DEBIT_NOTE.value,
+                            document_id=debit.id,
+                            document_number=debit.document_number,
+                            status=debit.status,
+                            document_date=debit.debit_note_date,
+                            quantity_summary=self._qty_summary(
+                                [line.quantity for line in debit.lines]
+                            ),
+                        )
+                    )
+        if bill_rows:
+            rows.extend(bill_rows)
+        else:
+            rows.append(
+                self._tracker_pending("purchase_invoice", DocumentType.PURCHASE_INVOICE.value)
+            )
+        if debit_rows:
+            rows.extend(debit_rows)
+        else:
+            rows.append(self._tracker_pending("debit_note", DocumentType.DEBIT_NOTE.value))
+
         rows.append(self._tracker_pending("customer_payment", "CUSTOMER_PAYMENT"))
         return OrderTrackerResponse(sales_order_id=row.id, rows=rows)
 
@@ -1553,6 +1700,7 @@ class SalesOrderService:
                     "qty_returned": _ZERO,
                     "qty_reserved": _ZERO,
                     "qty_invoiced": _ZERO,
+                    "qty_converted": _ZERO,
                 }
             )
             nets.append(net)
@@ -1632,6 +1780,10 @@ class SalesOrderService:
             self.actor_permissions, SALES_ORDER_DELETE
         ):
             actions.append("delete")
+        if status == SalesOrderStatus.CONFIRMED and has_permission(
+            self.actor_permissions, PROFORMA_INVOICE_CREATE
+        ):
+            actions.append("create_proforma")
         return actions
 
     def _to_response(
@@ -1696,11 +1848,123 @@ class SalesOrderService:
             acknowledged_at=row.acknowledged_at,
             acknowledged_by=row.acknowledged_by,
             available_actions=self._available_actions(row, requires_approval=requires_approval),
+            quantity_progress=self._quantity_progress(row),
+            related_documents=[],
             lines=[SalesOrderLineResponse.model_validate(line) for line in row.lines],
             reservation_shortfalls=reservation_shortfalls or [],
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
+
+    def _quantity_progress(self, row: SalesOrder) -> QuantityProgress:
+        ordered = sum((line.quantity for line in row.lines), _ZERO)
+        delivered = sum((line.qty_delivered for line in row.lines), _ZERO)
+        invoiced = sum((line.qty_invoiced for line in row.lines), _ZERO)
+        return QuantityProgress(
+            ordered=ordered,
+            fulfilled=delivered,
+            invoiced=invoiced,
+            remaining_to_fulfill=remaining_qty(ordered, delivered),
+            remaining_to_invoice=remaining_qty(ordered, invoiced),
+        )
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: SalesOrder
+    ) -> builtins.list[RelatedDocumentRef]:
+        from app.erp.credit_notes.repository import CreditNoteRepository
+        from app.erp.proforma_invoices.repository import ProformaInvoiceRepository
+        from app.erp.quotation.repository import QuotationRepository
+        from app.erp.sales_invoices.repository import SalesInvoiceRepository
+        from app.inventory_management.delivery_notes.repository import DeliveryNoteRepository
+
+        related: builtins.list[RelatedDocumentRef] = []
+        if row.source_quotation_id is not None:
+            quote = await QuotationRepository(self.session).get(tenant_id, row.source_quotation_id)
+            if quote is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.QUOTATION.value,
+                        document_id=quote.id,
+                        document_number=quote.quote_number,
+                        status=quote.status,
+                        relationship="source",
+                        document_date=quote.quote_date,
+                    )
+                )
+        if row.source_proforma_invoice_id is not None:
+            pfi = await ProformaInvoiceRepository(self.session).get(
+                tenant_id, row.source_proforma_invoice_id
+            )
+            if pfi is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.PROFORMA_INVOICE.value,
+                        document_id=pfi.id,
+                        document_number=pfi.document_number,
+                        status=pfi.status,
+                        relationship="source",
+                        document_date=pfi.proforma_date,
+                    )
+                )
+        for item in await ProformaInvoiceRepository(self.session).list_for_sales_order(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.PROFORMA_INVOICE.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.proforma_date,
+                    quantity_summary=self._qty_summary([line.quantity for line in item.lines]),
+                )
+            )
+        for item in await DeliveryNoteRepository(self.session).list_for_sales_order(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.DELIVERY_NOTE.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.document_date,
+                    quantity_summary=self._qty_summary([line.quantity for line in item.lines]),
+                )
+            )
+        invoices = await SalesInvoiceRepository(self.session).list_for_sales_order(
+            tenant_id, row.id
+        )
+        cn_repo = CreditNoteRepository(self.session)
+        for item in invoices:
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.SALES_INVOICE.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.invoice_date,
+                    quantity_summary=self._qty_summary([line.quantity for line in item.lines]),
+                )
+            )
+            for note in await cn_repo.list_for_sales_invoice(tenant_id, item.id):
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.CREDIT_NOTE.value,
+                        document_id=note.id,
+                        document_number=note.document_number,
+                        status=note.status,
+                        relationship="child",
+                        document_date=note.credit_note_date,
+                        quantity_summary=self._qty_summary(
+                            [line.quantity for line in note.lines]
+                        ),
+                    )
+                )
+        return related
 
     async def _today(self, tenant_id: UUID) -> date:
         return today_in_timezone(await self.org.get_timezone(tenant_id))

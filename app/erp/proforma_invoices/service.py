@@ -18,14 +18,24 @@ from app.auth.catalog import (
     PROFORMA_INVOICE_DELETE,
     PROFORMA_INVOICE_SEND,
     PROFORMA_INVOICE_UPDATE,
+    SALES_INVOICE_CREATE,
     SALES_ORDER_CREATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.outbox.service import OutboxService
+from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
-from app.common.utils.currency import quantize_money
+from app.common.utils.conversion import (
+    allocate_conversion_qty,
+    copy_source_commercial_header,
+    quantity_summary,
+    remaining_after_allocations,
+    remaining_qty,
+)
+from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
     compute_header_totals,
@@ -42,6 +52,7 @@ from app.core.enums import (
     PaymentMilestoneTrigger,
     PlaceOfSupply,
     ProformaInvoiceStatus,
+    SalesOrderStatus,
     TaxCategory,
     TaxTreatment,
 )
@@ -226,6 +237,7 @@ class ProformaInvoiceService:
         branch_id: UUID | None = None,
         currency_id: UUID | None = None,
         source_quotation_id: UUID | None = None,
+        source_sales_order_id: UUID | None = None,
     ) -> tuple[list[ProformaInvoiceResponse], int]:
         today = await self._today(tenant_id)
         filters: dict[str, object] = {}
@@ -237,6 +249,8 @@ class ProformaInvoiceService:
             filters["currency_id"] = currency_id
         if source_quotation_id is not None:
             filters["source_quotation_id"] = source_quotation_id
+        if source_sales_order_id is not None:
+            filters["source_sales_order_id"] = source_sales_order_id
         rows, total = await self.repo.list(
             tenant_id,
             page=page,
@@ -249,7 +263,10 @@ class ProformaInvoiceService:
 
     async def get(self, tenant_id: UUID, proforma_invoice_id: UUID) -> ProformaInvoiceResponse:
         today = await self._today(tenant_id)
-        return self._to_response(await self._require(tenant_id, proforma_invoice_id), today)
+        row = await self._require(tenant_id, proforma_invoice_id)
+        response = self._to_response(row, today)
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
 
     async def compose_defaults(
         self, tenant_id: UUID, customer_id: UUID
@@ -367,8 +384,135 @@ class ProformaInvoiceService:
             )
             header, line_rows, milestone_rows = await self._build_draft(tenant_id, payload)
             header["source_quotation_id"] = quotation.id
+            copy_source_commercial_header(
+                header,
+                exchange_rate=quotation.exchange_rate,
+                base_currency_id=quotation.base_currency_id,
+                bill_to_snapshot=quotation.bill_to_snapshot,
+                ship_to_snapshot=quotation.ship_to_snapshot,
+            )
             for built, source in zip(line_rows, quotation.lines, strict=True):
                 built["source_quotation_line_id"] = source.id
+            proforma_date_value = cast(date, header["proforma_date"])
+            number = await self.sequences.allocate(
+                tenant_id,
+                document_type=DocumentType.PROFORMA_INVOICE,
+                series=_PFI_SERIES,
+                fiscal_year=await year_for(self.session, tenant_id, proforma_date_value),
+                prefix=_PFI_SERIES,
+            )
+            row = await self.repo.create(
+                tenant_id,
+                {
+                    **header,
+                    "document_number": number,
+                    "status": ProformaInvoiceStatus.DRAFT.value,
+                    "version": 1,
+                    "created_by": actor_user_id,
+                    "updated_by": actor_user_id,
+                },
+            )
+            await self.repo.replace_lines(tenant_id, row.id, line_rows)
+            await self.repo.replace_milestones(tenant_id, row.id, milestone_rows)
+            loaded = await self._require(tenant_id, row.id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.CREATE,
+                module=ERP_MODULE,
+                entity_type="proforma_invoice",
+                entity_id=row.id,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            return self._to_response(loaded, await self._today(tenant_id))
+
+    async def create_from_sales_order(
+        self,
+        tenant_id: UUID,
+        sales_order_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        proforma_date: date | None = None,
+        valid_until: date | None = None,
+        conversion_lines: Sequence[ConversionLineInput] | None = None,
+    ) -> ProformaInvoiceResponse:
+        from app.erp.sales_orders.service import SalesOrderService
+
+        async with transaction(self.session):
+            sales_orders = SalesOrderService(self.session, actor_permissions=self.actor_permissions)
+            order = await sales_orders._require(tenant_id, sales_order_id, for_update=True)
+            sales_orders._assert_version(order, expected_version)
+            if order.status != SalesOrderStatus.CONFIRMED.value:
+                raise ValidationError(
+                    "Proforma invoices can only be created from a confirmed sales order"
+                )
+            requested = (
+                [(item.source_line_id, item.quantity) for item in conversion_lines]
+                if conversion_lines is not None
+                else None
+            )
+            allocations = allocate_conversion_qty(
+                lines=[(line.id, line.quantity, line.qty_converted) for line in order.lines],
+                requested=requested,
+                empty_message="This sales order has no remaining quantity to convert",
+            )
+            by_id = {line.id: line for line in order.lines}
+            selected = [(by_id[line_id], qty) for line_id, qty in allocations]
+            payload = ProformaInvoiceCreate(
+                customer_id=order.customer_id,
+                contact_id=order.contact_id,
+                branch_id=order.branch_id,
+                proforma_date=proforma_date,
+                valid_until=valid_until,
+                currency_id=order.currency_id,
+                price_list_id=order.price_list_id,
+                payment_terms_id=order.payment_terms_id,
+                salesperson_id=order.salesperson_id,
+                notes=order.notes,
+                terms_and_conditions=order.terms_and_conditions,
+                discount_type=DiscountType(order.discount_type) if order.discount_type else None,
+                discount_value=order.discount_value,
+                shipping_amount=order.shipping_amount,
+                adjustment_amount=order.adjustment_amount,
+                place_of_supply=PlaceOfSupply(order.place_of_supply),
+                source_quotation_id=order.source_quotation_id,
+                source_sales_order_id=order.id,
+                lines=[
+                    ProformaInvoiceLineInput(
+                        product_id=source.product_id,
+                        description=source.description,
+                        quantity=qty,
+                        unit_id=source.unit_id,
+                        rate=source.rate,
+                        discount_type=DiscountType(source.discount_type)
+                        if source.discount_type
+                        else None,
+                        discount_value=source.discount_value,
+                        tax_id=source.tax_id,
+                        source_quotation_line_id=source.source_quotation_line_id,
+                        source_sales_order_line_id=source.id,
+                    )
+                    for source, qty in selected
+                ],
+                milestones=default_milestones(),
+            )
+            header, line_rows, milestone_rows = await self._build_draft(tenant_id, payload)
+            header["source_quotation_id"] = order.source_quotation_id
+            header["source_sales_order_id"] = order.id
+            copy_source_commercial_header(
+                header,
+                exchange_rate=order.exchange_rate,
+                base_currency_id=order.base_currency_id,
+                bill_to_snapshot=order.bill_to_snapshot,
+                ship_to_snapshot=order.ship_to_snapshot,
+            )
+            for built, (source, _) in zip(line_rows, selected, strict=True):
+                built["source_sales_order_line_id"] = source.id
+                built["source_quotation_line_id"] = source.source_quotation_line_id
+            for line_id, qty in allocations:
+                source = by_id[line_id]
+                source.qty_converted = quantize_quantity(source.qty_converted + qty)
             proforma_date_value = cast(date, header["proforma_date"])
             number = await self.sequences.allocate(
                 tenant_id,
@@ -422,9 +566,11 @@ class ProformaInvoiceService:
             header["updated_by"] = actor_user_id
             header["version"] = existing.version + 1
             header["source_quotation_id"] = existing.source_quotation_id
+            header["source_sales_order_id"] = existing.source_sales_order_id
             if payload.lines is None:
                 for built, existing_line in zip(line_rows, existing.lines, strict=True):
                     built["source_quotation_line_id"] = existing_line.source_quotation_line_id
+                    built["source_sales_order_line_id"] = existing_line.source_sales_order_line_id
             await self.repo.update(tenant_id, proforma_invoice_id, header)
             await self.repo.replace_lines(tenant_id, proforma_invoice_id, line_rows)
             await self.repo.replace_milestones(tenant_id, proforma_invoice_id, milestone_rows)
@@ -692,7 +838,7 @@ class ProformaInvoiceService:
         current = self._effective_status(row, today)
         self._assert_version(row, expected_version)
         assert_convertible(current)
-        if row.converted_document_id is not None:
+        if not any(remaining_qty(line.quantity, line.qty_converted) > _ZERO for line in row.lines):
             raise InvalidStatusTransitionError("Proforma invoice has already been converted")
         return self._to_response(row, today)
 
@@ -725,6 +871,7 @@ class ProformaInvoiceService:
         document_id: UUID,
         actor_user_id: UUID,
         expected_version: int,
+        allocations: Sequence[tuple[UUID, Decimal]] | None = None,
     ) -> ProformaInvoiceResponse:
         row = await self._require(tenant_id, proforma_invoice_id, for_update=True)
         old_values = await self._snapshot(tenant_id, row)
@@ -732,9 +879,22 @@ class ProformaInvoiceService:
         current = self._effective_status(row, today)
         self._assert_version(row, expected_version)
         assert_convertible(current)
-        if row.converted_document_id is not None:
-            raise InvalidStatusTransitionError("Proforma invoice has already been converted")
-        target = next_status(current, "convert")
+        line_specs = [(line.id, line.quantity, line.qty_converted) for line in row.lines]
+        applied = allocate_conversion_qty(
+            lines=line_specs,
+            requested=allocations,
+            empty_message="This proforma invoice has no remaining quantity to convert",
+        )
+        by_id = {line.id: line for line in row.lines}
+        for line_id, qty in applied:
+            source = by_id[line_id]
+            source.qty_converted = quantize_quantity(source.qty_converted + qty)
+        leftover = remaining_after_allocations(line_specs, applied)
+        target = (
+            ProformaInvoiceStatus.CONVERTED
+            if leftover <= _ZERO
+            else ProformaInvoiceStatus.PARTIALLY_CONVERTED
+        )
         row.status = target.value
         row.converted_at = utcnow()
         row.converted_document_type = document_type.value
@@ -895,6 +1055,7 @@ class ProformaInvoiceService:
             "foreign_amount": grand,
             "base_amount": quantize_money(grand * resolved.rate),
             "source_quotation_id": payload.source_quotation_id,
+            "source_sales_order_id": payload.source_sales_order_id,
             "incoterm": payload.incoterm.value if payload.incoterm else None,
             "incoterm_place": payload.incoterm_place,
             "port_of_loading": payload.port_of_loading,
@@ -987,6 +1148,8 @@ class ProformaInvoiceService:
                     "amount": net,
                     "hs_code": hs_code,
                     "source_quotation_line_id": line.source_quotation_line_id,
+                    "source_sales_order_line_id": line.source_sales_order_line_id,
+                    "qty_converted": _ZERO,
                 }
             )
             nets.append(net)
@@ -1056,6 +1219,7 @@ class ProformaInvoiceService:
             adjustment_amount=values.get("adjustment_amount", existing.adjustment_amount),
             place_of_supply=values.get("place_of_supply", PlaceOfSupply(existing.place_of_supply)),
             source_quotation_id=existing.source_quotation_id,
+            source_sales_order_id=existing.source_sales_order_id,
             incoterm=values.get(
                 "incoterm", Incoterm(existing.incoterm) if existing.incoterm else None
             ),
@@ -1102,6 +1266,11 @@ class ProformaInvoiceService:
             self.actor_permissions, PROFORMA_INVOICE_DELETE
         ):
             actions.append("delete")
+        if status in {
+            ProformaInvoiceStatus.CONFIRMED,
+            ProformaInvoiceStatus.PARTIALLY_CONVERTED,
+        } and has_permission(self.actor_permissions, SALES_INVOICE_CREATE):
+            actions.append("create_sales_invoice")
         return actions
 
     def _to_response(self, row: ProformaInvoice, today: date) -> ProformaInvoiceResponse:
@@ -1152,6 +1321,7 @@ class ProformaInvoiceService:
             foreign_amount=row.foreign_amount,
             base_amount=row.base_amount,
             source_quotation_id=row.source_quotation_id,
+            source_sales_order_id=row.source_sales_order_id,
             incoterm=Incoterm(row.incoterm) if row.incoterm else None,
             incoterm_place=row.incoterm_place,
             port_of_loading=row.port_of_loading,
@@ -1177,6 +1347,7 @@ class ProformaInvoiceService:
             converted_document_id=row.converted_document_id,
             advance_required_amount=quantize_money(advance),
             available_actions=self._available_actions(status),
+            related_documents=[],
             lines=[ProformaInvoiceLineResponse.model_validate(line) for line in row.lines],
             milestones=[
                 ProformaInvoiceMilestoneResponse.model_validate(item) for item in row.milestones
@@ -1196,6 +1367,72 @@ class ProformaInvoiceService:
                     "provided_version": expected_version,
                 }
             )
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: ProformaInvoice
+    ) -> builtins.list[RelatedDocumentRef]:
+        from app.erp.quotation.repository import QuotationRepository
+        from app.erp.sales_invoices.repository import SalesInvoiceRepository
+        from app.erp.sales_orders.repository import SalesOrderRepository
+
+        related: builtins.list[RelatedDocumentRef] = []
+        if row.source_quotation_id is not None:
+            quote = await QuotationRepository(self.session).get(tenant_id, row.source_quotation_id)
+            if quote is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.QUOTATION.value,
+                        document_id=quote.id,
+                        document_number=quote.quote_number,
+                        status=quote.status,
+                        relationship="source",
+                        document_date=quote.quote_date,
+                    )
+                )
+        if row.source_sales_order_id is not None:
+            order = await SalesOrderRepository(self.session).get(
+                tenant_id, row.source_sales_order_id
+            )
+            if order is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.SALES_ORDER.value,
+                        document_id=order.id,
+                        document_number=order.document_number,
+                        status=order.status,
+                        relationship="source",
+                        document_date=order.order_date,
+                    )
+                )
+        for item in await SalesOrderRepository(self.session).list_for_proforma_invoice(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.SALES_ORDER.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.order_date,
+                    quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+        for item in await SalesInvoiceRepository(self.session).list_for_proforma_invoice(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.SALES_INVOICE.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.invoice_date,
+                    quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+        return related
 
     async def _snapshot(self, tenant_id: UUID, row: ProformaInvoice) -> dict[str, object]:
         branch_name: str | None = None

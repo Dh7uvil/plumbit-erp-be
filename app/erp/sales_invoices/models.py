@@ -45,6 +45,16 @@ class SalesInvoice(AuditUserMixin, SoftDeleteTenantModel):
         Index("ix_sales_invoices_tenant_id_invoice_date", "tenant_id", "invoice_date"),
         Index("ix_sales_invoices_tenant_id_customer_id", "tenant_id", "customer_id"),
         Index("ix_sales_invoices_tenant_id_sales_order_id", "tenant_id", "sales_order_id"),
+        Index(
+            "ix_sales_invoices_tenant_id_source_quotation_id",
+            "tenant_id",
+            "source_quotation_id",
+        ),
+        Index(
+            "ix_sales_invoices_tenant_id_source_proforma_invoice_id",
+            "tenant_id",
+            "source_proforma_invoice_id",
+        ),
         Index("ix_sales_invoices_tenant_id_payment_status", "tenant_id", "payment_status"),
     )
 
@@ -80,6 +90,16 @@ class SalesInvoice(AuditUserMixin, SoftDeleteTenantModel):
     sales_order_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("sales_orders.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_quotation_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("quotations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_proforma_invoice_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("proforma_invoices.id", ondelete="SET NULL"),
         nullable=True,
     )
     payment_terms_id: Mapped[UUID | None] = mapped_column(
@@ -184,6 +204,11 @@ class SalesInvoiceLine(TenantModel):
         Index("ix_sales_invoice_lines_sales_invoice_id", "sales_invoice_id"),
         Index("ix_sales_invoice_lines_sales_order_line_id", "sales_order_line_id"),
         Index("ix_sales_invoice_lines_delivery_note_line_id", "delivery_note_line_id"),
+        Index("ix_sales_invoice_lines_source_quotation_line_id", "source_quotation_line_id"),
+        Index(
+            "ix_sales_invoice_lines_source_proforma_invoice_line_id",
+            "source_proforma_invoice_line_id",
+        ),
     )
 
     sales_invoice_id: Mapped[UUID] = mapped_column(
@@ -209,6 +234,16 @@ class SalesInvoiceLine(TenantModel):
     sales_order_line_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("sales_order_lines.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    source_quotation_line_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("quotation_lines.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_proforma_invoice_line_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("proforma_invoice_lines.id", ondelete="SET NULL"),
         nullable=True,
     )
     delivery_note_id: Mapped[UUID | None] = mapped_column(

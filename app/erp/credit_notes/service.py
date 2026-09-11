@@ -26,6 +26,7 @@ from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
@@ -166,7 +167,9 @@ class CreditNoteService:
     async def get(self, tenant_id: UUID, credit_note_id: UUID) -> CreditNoteResponse:
         row = await self._require(tenant_id, credit_note_id)
         await self._ensure_policy(tenant_id)
-        return self._to_response(row)
+        response = self._to_response(row)
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
 
     async def create(
         self, tenant_id: UUID, payload: CreditNoteCreate, *, actor_user_id: UUID
@@ -1159,6 +1162,43 @@ class CreditNoteService:
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: CreditNote
+    ) -> builtins.list[RelatedDocumentRef]:
+        from app.erp.sales_invoices.repository import SalesInvoiceRepository
+        from app.inventory_management.sales_returns.repository import SalesReturnRepository
+
+        related: builtins.list[RelatedDocumentRef] = []
+        if row.sales_invoice_id is not None:
+            invoice = await SalesInvoiceRepository(self.session).get(
+                tenant_id, row.sales_invoice_id
+            )
+            if invoice is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.SALES_INVOICE.value,
+                        document_id=invoice.id,
+                        document_number=invoice.document_number,
+                        status=invoice.status,
+                        relationship="source",
+                        document_date=invoice.invoice_date,
+                    )
+                )
+        if row.sales_return_id is not None:
+            ret = await SalesReturnRepository(self.session).get(tenant_id, row.sales_return_id)
+            if ret is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.SALES_RETURN.value,
+                        document_id=ret.id,
+                        document_number=ret.document_number,
+                        status=ret.status,
+                        relationship="source",
+                        document_date=ret.document_date,
+                    )
+                )
+        return related
 
     async def _require(
         self, tenant_id: UUID, credit_note_id: UUID, *, for_update: bool = False

@@ -16,10 +16,13 @@ _TRANSITIONS: dict[tuple[ProformaInvoiceStatus, str], ProformaInvoiceStatus] = {
     (ProformaInvoiceStatus.DECLINED, "cancel"): ProformaInvoiceStatus.CANCELLED,
     (ProformaInvoiceStatus.CONFIRMED, "convert"): ProformaInvoiceStatus.CONVERTED,
     (ProformaInvoiceStatus.CONFIRMED, "cancel"): ProformaInvoiceStatus.CANCELLED,
+    (ProformaInvoiceStatus.PARTIALLY_CONVERTED, "convert"): ProformaInvoiceStatus.CONVERTED,
 }
 
 _EDITABLE = frozenset({ProformaInvoiceStatus.DRAFT})
-_CONVERTIBLE = frozenset({ProformaInvoiceStatus.CONFIRMED})
+_CONVERTIBLE = frozenset(
+    {ProformaInvoiceStatus.CONFIRMED, ProformaInvoiceStatus.PARTIALLY_CONVERTED}
+)
 
 
 def next_status(current: ProformaInvoiceStatus, action: str) -> ProformaInvoiceStatus:
@@ -45,5 +48,5 @@ def assert_editable(status: ProformaInvoiceStatus) -> None:
 def assert_convertible(status: ProformaInvoiceStatus) -> None:
     if status not in _CONVERTIBLE:
         raise InvalidStatusTransitionError(
-            "Only a confirmed proforma invoice can be converted to a sales order"
+            "Only a confirmed or partially converted proforma invoice can be converted"
         )

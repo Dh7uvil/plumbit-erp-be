@@ -48,6 +48,11 @@ class ProformaInvoice(AuditUserMixin, SoftDeleteTenantModel):
             "tenant_id",
             "source_quotation_id",
         ),
+        Index(
+            "ix_proforma_invoices_tenant_id_source_sales_order_id",
+            "tenant_id",
+            "source_sales_order_id",
+        ),
     )
 
     document_number: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -135,6 +140,11 @@ class ProformaInvoice(AuditUserMixin, SoftDeleteTenantModel):
     source_quotation_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("quotations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_sales_order_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("sales_orders.id", ondelete="SET NULL"),
         nullable=True,
     )
     incoterm: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -251,6 +261,12 @@ class ProformaInvoiceLine(TenantModel):
         ForeignKey("quotation_lines.id", ondelete="SET NULL"),
         nullable=True,
     )
+    source_sales_order_line_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("sales_order_lines.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    qty_converted: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     hs_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     proforma_invoice: Mapped[ProformaInvoice] = relationship(back_populates="lines")

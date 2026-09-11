@@ -20,6 +20,7 @@ from app.auth.catalog import (
     QUOTATION_REVISE,
     QUOTATION_SEND,
     QUOTATION_UPDATE,
+    SALES_INVOICE_CREATE,
     SALES_ORDER_CREATE,
 )
 from app.auth.org_service import OrganizationService
@@ -27,8 +28,15 @@ from app.common.outbox.service import OutboxService
 from app.common.registries.quotation_dependents import registered_probes
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
-from app.common.utils.currency import quantize_money
+from app.common.utils.conversion import (
+    allocate_conversion_qty,
+    quantity_summary,
+    remaining_after_allocations,
+    remaining_qty,
+)
+from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
     compute_header_totals,
@@ -163,11 +171,10 @@ class QuotationService:
 
     async def get(self, tenant_id: UUID, quotation_id: UUID) -> QuotationResponse:
         today, requires_approval = await self._response_context(tenant_id)
-        return self._to_response(
-            await self._require(tenant_id, quotation_id),
-            today,
-            requires_approval=requires_approval,
-        )
+        row = await self._require(tenant_id, quotation_id)
+        response = self._to_response(row, today, requires_approval=requires_approval)
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
 
     async def compose_defaults(
         self, tenant_id: UUID, customer_id: UUID
@@ -558,7 +565,7 @@ class QuotationService:
         current = self._effective_status(row, today)
         self._assert_version(row, expected_version)
         assert_convertible(current)
-        if row.converted_document_id is not None:
+        if not self._has_remaining_conversion(row):
             raise InvalidStatusTransitionError("Quotation has already been converted")
         await self._assert_no_live_dependents(tenant_id, quotation_id)
         return self._to_response(row, today, requires_approval=requires_approval)
@@ -634,6 +641,7 @@ class QuotationService:
         document_id: UUID,
         actor_user_id: UUID,
         expected_version: int,
+        allocations: Sequence[tuple[UUID, Decimal]] | None = None,
     ) -> QuotationResponse:
         row = await self._require(tenant_id, quotation_id, for_update=True)
         old_values = await self._quotation_snapshot(tenant_id, row)
@@ -641,9 +649,22 @@ class QuotationService:
         current = self._effective_status(row, today)
         self._assert_version(row, expected_version)
         assert_convertible(current)
-        if row.converted_document_id is not None:
-            raise InvalidStatusTransitionError("Quotation has already been converted")
-        target = next_status(current, "convert")
+        line_specs = [(line.id, line.quantity, line.qty_converted) for line in row.lines]
+        applied = allocate_conversion_qty(
+            lines=line_specs,
+            requested=allocations,
+            empty_message="This quotation has no remaining quantity to convert",
+        )
+        by_id = {line.id: line for line in row.lines}
+        for line_id, qty in applied:
+            source = by_id[line_id]
+            source.qty_converted = quantize_quantity(source.qty_converted + qty)
+        leftover = remaining_after_allocations(line_specs, applied)
+        target = (
+            QuotationStatus.CONVERTED
+            if leftover <= _ZERO
+            else QuotationStatus.PARTIALLY_CONVERTED
+        )
         row.status = target.value
         row.converted_at = utcnow()
         row.converted_document_type = document_type.value
@@ -871,6 +892,7 @@ class QuotationService:
                     "tax_rate": chosen_tax.rate,
                     "tax_amount": tax_amount,
                     "amount": net,
+                    "qty_converted": _ZERO,
                 }
             )
             nets.append(net)
@@ -952,6 +974,11 @@ class QuotationService:
             self.actor_permissions, PROFORMA_INVOICE_CREATE
         ):
             actions.append("create_proforma")
+        if status in {
+            QuotationStatus.ACCEPTED,
+            QuotationStatus.PARTIALLY_CONVERTED,
+        } and has_permission(self.actor_permissions, SALES_INVOICE_CREATE):
+            actions.append("create_sales_invoice")
         return actions
 
     def _to_response(
@@ -1002,6 +1029,7 @@ class QuotationService:
             revision_count=row.revision_number,
             display_number=_display_number(row.quote_number, row.revision_number),
             available_actions=self._available_actions(status, requires_approval=requires_approval),
+            related_documents=[],
             lines=[QuotationLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,
@@ -1023,6 +1051,59 @@ class QuotationService:
                     "provided_version": expected_version,
                 }
             )
+
+    def _has_remaining_conversion(self, row: Quotation) -> bool:
+        return any(remaining_qty(line.quantity, line.qty_converted) > _ZERO for line in row.lines)
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: Quotation
+    ) -> builtins.list[RelatedDocumentRef]:
+        from app.erp.proforma_invoices.repository import ProformaInvoiceRepository
+        from app.erp.sales_invoices.repository import SalesInvoiceRepository
+        from app.erp.sales_orders.repository import SalesOrderRepository
+
+        related: builtins.list[RelatedDocumentRef] = []
+        for item in await ProformaInvoiceRepository(self.session).list_for_quotation(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.PROFORMA_INVOICE.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.proforma_date,
+                    quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+        for item in await SalesOrderRepository(self.session).list_for_quotation(tenant_id, row.id):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.SALES_ORDER.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.order_date,
+                    quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+        for item in await SalesInvoiceRepository(self.session).list_for_quotation(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.SALES_INVOICE.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.invoice_date,
+                    quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+        return related
 
     async def _quotation_snapshot(self, tenant_id: UUID, row: Quotation) -> dict[str, object]:
         branch_name: str | None = None

@@ -26,6 +26,7 @@ _LIVE_STATUSES = frozenset(
         ProformaInvoiceStatus.DRAFT.value,
         ProformaInvoiceStatus.SENT.value,
         ProformaInvoiceStatus.CONFIRMED.value,
+        ProformaInvoiceStatus.PARTIALLY_CONVERTED.value,
         ProformaInvoiceStatus.CONVERTED.value,
         ProformaInvoiceStatus.EXPIRED.value,
     }
@@ -55,6 +56,7 @@ class ProformaInvoiceRepository:
                     "branch_id",
                     "currency_id",
                     "source_quotation_id",
+                    "source_sales_order_id",
                 }
             ),
             search_fields=frozenset({"document_number", "notes"}),
@@ -215,3 +217,31 @@ class ProformaInvoiceRepository:
         )
         result = await self.session.execute(statement)
         return result.scalar_one_or_none() is not None
+
+    async def list_for_quotation(
+        self, tenant_id: UUID, quotation_id: UUID
+    ) -> builtins.list[ProformaInvoice]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(
+                ProformaInvoice.source_quotation_id == quotation_id,
+                ProformaInvoice.status != ProformaInvoiceStatus.CANCELLED.value,
+            )
+            .options(*self._with_children())
+            .order_by(ProformaInvoice.proforma_date, ProformaInvoice.created_at)
+        )
+        return list((await self.session.execute(statement)).scalars().all())
+
+    async def list_for_sales_order(
+        self, tenant_id: UUID, sales_order_id: UUID
+    ) -> builtins.list[ProformaInvoice]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(
+                ProformaInvoice.source_sales_order_id == sales_order_id,
+                ProformaInvoice.status != ProformaInvoiceStatus.CANCELLED.value,
+            )
+            .options(*self._with_children())
+            .order_by(ProformaInvoice.proforma_date, ProformaInvoice.created_at)
+        )
+        return list((await self.session.execute(statement)).scalars().all())

@@ -243,6 +243,11 @@ class QuotationLine(TenantModel):
         nullable=False,
         server_default=text("0"),
     )
+    qty_converted: Mapped[Decimal] = mapped_column(
+        Numeric(QUANTITY_PRECISION, QUANTITY_SCALE),
+        nullable=False,
+        server_default=text("0"),
+    )
 
     quotation: Mapped[Quotation] = relationship(back_populates="lines")
 

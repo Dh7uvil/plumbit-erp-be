@@ -23,9 +23,16 @@ from app.common.idempotency.service import IdempotencyService
 from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
 from app.common.registries.sales_invoice_dependents import registered_probes
+from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
+from app.common.utils.conversion import (
+    allocate_conversion_qty,
+    copy_source_commercial_header,
+    quantity_summary,
+)
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
@@ -49,6 +56,7 @@ from app.core.enums import (
     PartyType,
     PaymentStatus,
     PlaceOfSupply,
+    QuotationStatus,
     SalesOrderStatus,
     StockDocumentStatus,
     TaxCategory,
@@ -153,6 +161,8 @@ class SalesInvoiceService:
         status: str | None = None,
         customer_id: UUID | None = None,
         sales_order_id: UUID | None = None,
+        source_quotation_id: UUID | None = None,
+        source_proforma_invoice_id: UUID | None = None,
         branch_id: UUID | None = None,
         currency_id: UUID | None = None,
         payment_status: str | None = None,
@@ -166,6 +176,10 @@ class SalesInvoiceService:
             filters["customer_id"] = customer_id
         if sales_order_id is not None:
             filters["sales_order_id"] = sales_order_id
+        if source_quotation_id is not None:
+            filters["source_quotation_id"] = source_quotation_id
+        if source_proforma_invoice_id is not None:
+            filters["source_proforma_invoice_id"] = source_proforma_invoice_id
         if branch_id is not None:
             filters["branch_id"] = branch_id
         if currency_id is not None:
@@ -185,12 +199,15 @@ class SalesInvoiceService:
             extra_criteria=extra or None,
         )
         await self._ensure_policy(tenant_id)
-        return [self._to_response(row) for row in rows], total
+        today = await self._today(tenant_id)
+        return [self._to_response(row, today=today) for row in rows], total
 
     async def get(self, tenant_id: UUID, invoice_id: UUID) -> SalesInvoiceResponse:
         row = await self._require(tenant_id, invoice_id)
         await self._ensure_policy(tenant_id)
-        return self._to_response(row)
+        response = self._to_response(row, today=await self._today(tenant_id))
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
 
     async def create(
         self, tenant_id: UUID, payload: SalesInvoiceCreate, *, actor_user_id: UUID
@@ -253,26 +270,32 @@ class SalesInvoiceService:
                 raise ValidationError(
                     "Sales invoices can only be created from a confirmed sales order"
                 )
-            lines: list[SalesInvoiceLineInput] = []
-            for line in order.lines:
-                outstanding = quantize_quantity(line.quantity - line.qty_invoiced)
-                if outstanding <= _ZERO:
-                    continue
-                lines.append(
-                    SalesInvoiceLineInput(
-                        product_id=line.product_id,
-                        description=line.description,
-                        quantity=outstanding,
-                        unit_id=line.unit_id,
-                        rate=line.rate,
-                        sales_order_line_id=line.id,
-                        discount_type=line.discount_type,
-                        discount_value=line.discount_value,
-                        tax_id=line.tax_id,
-                    )
+            requested = (
+                [(item.source_line_id, item.quantity) for item in payload.lines]
+                if payload.lines is not None
+                else None
+            )
+            allocations = allocate_conversion_qty(
+                lines=[(line.id, line.quantity, line.qty_invoiced) for line in order.lines],
+                requested=requested,
+                empty_message="This sales order has no remaining quantity to invoice",
+            )
+            by_id = {line.id: line for line in order.lines}
+            lines = [
+                SalesInvoiceLineInput(
+                    product_id=source.product_id,
+                    description=source.description,
+                    quantity=qty,
+                    unit_id=source.unit_id,
+                    rate=source.rate,
+                    sales_order_line_id=source.id,
+                    discount_type=source.discount_type,
+                    discount_value=source.discount_value,
+                    tax_id=source.tax_id,
                 )
-            if not lines:
-                raise ValidationError("This sales order has no remaining quantity to invoice")
+                for line_id, qty in allocations
+                for source in (by_id[line_id],)
+            ]
             create_payload = SalesInvoiceCreate(
                 customer_id=order.customer_id,
                 contact_id=order.contact_id,
@@ -280,6 +303,8 @@ class SalesInvoiceService:
                 invoice_date=payload.invoice_date,
                 salesperson_id=order.salesperson_id,
                 sales_order_id=order.id,
+                source_quotation_id=order.source_quotation_id,
+                source_proforma_invoice_id=order.source_proforma_invoice_id,
                 payment_terms_id=order.payment_terms_id,
                 currency_id=order.currency_id,
                 notes=payload.notes or order.notes,
@@ -292,6 +317,13 @@ class SalesInvoiceService:
                 lines=lines,
             )
             header, line_rows = await self._build_draft(tenant_id, create_payload)
+            copy_source_commercial_header(
+                header,
+                exchange_rate=order.exchange_rate,
+                base_currency_id=order.base_currency_id,
+                bill_to_snapshot=order.bill_to_snapshot,
+                ship_to_snapshot=order.ship_to_snapshot,
+            )
             invoice_date = cast(date, header["invoice_date"])
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(invoice_date, can_override=self._can_override)
@@ -425,6 +457,290 @@ class SalesInvoiceService:
                 },
             )
             await self.repo.replace_lines(tenant_id, row.id, line_rows)
+            loaded = await self._require(tenant_id, row.id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.CREATE,
+                module=ERP_MODULE,
+                entity_type="sales_invoice",
+                entity_id=row.id,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            response = self._to_response(loaded)
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
+            return response
+
+    async def create_from_quotation(
+        self,
+        tenant_id: UUID,
+        quotation_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        invoice_date: date | None = None,
+        notes: str | None = None,
+        conversion_lines: Sequence[ConversionLineInput] | None = None,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> SalesInvoiceResponse:
+        from app.erp.quotation.service import QuotationService
+
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return SalesInvoiceResponse.model_validate(replay)
+            quotes = QuotationService(self.session, actor_permissions=self.actor_permissions)
+            quotation = await quotes.require_convertible(
+                tenant_id, quotation_id, expected_version=expected_version
+            )
+            requested = (
+                [(item.source_line_id, item.quantity) for item in conversion_lines]
+                if conversion_lines is not None
+                else None
+            )
+            allocations = allocate_conversion_qty(
+                lines=[
+                    (line.id, line.quantity, line.qty_converted) for line in quotation.lines
+                ],
+                requested=requested,
+                empty_message="This quotation has no remaining quantity to convert",
+            )
+            by_id = {line.id: line for line in quotation.lines}
+            selected = [(by_id[line_id], qty) for line_id, qty in allocations]
+            create_payload = SalesInvoiceCreate(
+                customer_id=quotation.customer_id,
+                contact_id=quotation.contact_id,
+                branch_id=quotation.branch_id,
+                invoice_date=invoice_date,
+                salesperson_id=quotation.salesperson_id,
+                source_quotation_id=quotation.id,
+                payment_terms_id=quotation.payment_terms_id,
+                currency_id=quotation.currency_id,
+                notes=notes or quotation.notes,
+                terms_and_conditions=quotation.terms_and_conditions,
+                discount_type=quotation.discount_type,
+                discount_value=quotation.discount_value,
+                shipping_amount=quotation.shipping_amount,
+                adjustment_amount=quotation.adjustment_amount,
+                place_of_supply=quotation.place_of_supply,
+                lines=[
+                    SalesInvoiceLineInput(
+                        product_id=source.product_id,
+                        description=source.description,
+                        quantity=qty,
+                        unit_id=source.unit_id,
+                        rate=source.rate,
+                        source_quotation_line_id=source.id,
+                        discount_type=source.discount_type,
+                        discount_value=source.discount_value,
+                        tax_id=source.tax_id,
+                    )
+                    for source, qty in selected
+                ],
+            )
+            header, line_rows = await self._build_draft(tenant_id, create_payload)
+            header["source_quotation_id"] = quotation.id
+            copy_source_commercial_header(
+                header,
+                exchange_rate=quotation.exchange_rate,
+                base_currency_id=quotation.base_currency_id,
+                bill_to_snapshot=quotation.bill_to_snapshot,
+                ship_to_snapshot=quotation.ship_to_snapshot,
+            )
+            for built, (source, _) in zip(line_rows, selected, strict=True):
+                built["source_quotation_line_id"] = source.id
+            invoice_date_value = cast(date, header["invoice_date"])
+            policy = await self._ensure_policy(tenant_id)
+            policy.assert_open(invoice_date_value, can_override=self._can_override)
+            number = await self.sequences.allocate(
+                tenant_id,
+                document_type=DocumentType.SALES_INVOICE,
+                series=_SERIES,
+                fiscal_year=await year_for(self.session, tenant_id, invoice_date_value),
+                prefix=_SERIES,
+            )
+            row = await self.repo.create(
+                tenant_id,
+                {
+                    **header,
+                    "document_number": number,
+                    "status": InvoiceDocumentStatus.DRAFT.value,
+                    "version": 1,
+                    "is_posted": False,
+                    "created_by": actor_user_id,
+                    "updated_by": actor_user_id,
+                },
+            )
+            await self.repo.replace_lines(tenant_id, row.id, line_rows)
+            await quotes._apply_converted(
+                tenant_id,
+                quotation_id,
+                document_type=DocumentType.SALES_INVOICE,
+                document_id=row.id,
+                actor_user_id=actor_user_id,
+                expected_version=quotation.version,
+                allocations=allocations,
+            )
+            loaded = await self._require(tenant_id, row.id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.CREATE,
+                module=ERP_MODULE,
+                entity_type="sales_invoice",
+                entity_id=row.id,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            response = self._to_response(loaded)
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
+            return response
+
+    async def create_from_proforma_invoice(
+        self,
+        tenant_id: UUID,
+        proforma_invoice_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        invoice_date: date | None = None,
+        notes: str | None = None,
+        conversion_lines: Sequence[ConversionLineInput] | None = None,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> SalesInvoiceResponse:
+        from app.erp.proforma_invoices.service import ProformaInvoiceService
+        from app.erp.quotation.service import QuotationService
+
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return SalesInvoiceResponse.model_validate(replay)
+            pfis = ProformaInvoiceService(self.session, actor_permissions=self.actor_permissions)
+            pfi = await pfis.require_convertible(
+                tenant_id, proforma_invoice_id, expected_version=expected_version
+            )
+            requested = (
+                [(item.source_line_id, item.quantity) for item in conversion_lines]
+                if conversion_lines is not None
+                else None
+            )
+            allocations = allocate_conversion_qty(
+                lines=[(line.id, line.quantity, line.qty_converted) for line in pfi.lines],
+                requested=requested,
+                empty_message="This proforma invoice has no remaining quantity to convert",
+            )
+            by_id = {line.id: line for line in pfi.lines}
+            selected = [(by_id[line_id], qty) for line_id, qty in allocations]
+            create_payload = SalesInvoiceCreate(
+                customer_id=pfi.customer_id,
+                contact_id=pfi.contact_id,
+                branch_id=pfi.branch_id,
+                invoice_date=invoice_date,
+                salesperson_id=pfi.salesperson_id,
+                source_quotation_id=pfi.source_quotation_id,
+                source_proforma_invoice_id=pfi.id,
+                payment_terms_id=pfi.payment_terms_id,
+                currency_id=pfi.currency_id,
+                notes=notes or pfi.notes,
+                terms_and_conditions=pfi.terms_and_conditions,
+                discount_type=pfi.discount_type,
+                discount_value=pfi.discount_value,
+                shipping_amount=pfi.shipping_amount,
+                adjustment_amount=pfi.adjustment_amount,
+                place_of_supply=pfi.place_of_supply,
+                lines=[
+                    SalesInvoiceLineInput(
+                        product_id=source.product_id,
+                        description=source.description,
+                        quantity=qty,
+                        unit_id=source.unit_id,
+                        rate=source.rate,
+                        source_quotation_line_id=source.source_quotation_line_id,
+                        source_proforma_invoice_line_id=source.id,
+                        discount_type=source.discount_type,
+                        discount_value=source.discount_value,
+                        tax_id=source.tax_id,
+                    )
+                    for source, qty in selected
+                ],
+            )
+            header, line_rows = await self._build_draft(tenant_id, create_payload)
+            header["source_quotation_id"] = pfi.source_quotation_id
+            header["source_proforma_invoice_id"] = pfi.id
+            copy_source_commercial_header(
+                header,
+                exchange_rate=pfi.exchange_rate,
+                base_currency_id=pfi.base_currency_id,
+                bill_to_snapshot=pfi.bill_to_snapshot,
+                ship_to_snapshot=pfi.ship_to_snapshot,
+            )
+            for built, (source, _) in zip(line_rows, selected, strict=True):
+                built["source_proforma_invoice_line_id"] = source.id
+                built["source_quotation_line_id"] = source.source_quotation_line_id
+            invoice_date_value = cast(date, header["invoice_date"])
+            policy = await self._ensure_policy(tenant_id)
+            policy.assert_open(invoice_date_value, can_override=self._can_override)
+            number = await self.sequences.allocate(
+                tenant_id,
+                document_type=DocumentType.SALES_INVOICE,
+                series=_SERIES,
+                fiscal_year=await year_for(self.session, tenant_id, invoice_date_value),
+                prefix=_SERIES,
+            )
+            row = await self.repo.create(
+                tenant_id,
+                {
+                    **header,
+                    "document_number": number,
+                    "status": InvoiceDocumentStatus.DRAFT.value,
+                    "version": 1,
+                    "is_posted": False,
+                    "created_by": actor_user_id,
+                    "updated_by": actor_user_id,
+                },
+            )
+            await self.repo.replace_lines(tenant_id, row.id, line_rows)
+            await pfis._apply_converted(
+                tenant_id,
+                proforma_invoice_id,
+                document_type=DocumentType.SALES_INVOICE,
+                document_id=row.id,
+                actor_user_id=actor_user_id,
+                expected_version=pfi.version,
+                allocations=allocations,
+            )
+            quote_allocations = [
+                (source.source_quotation_line_id, qty)
+                for source, qty in selected
+                if source.source_quotation_line_id is not None
+            ]
+            if pfi.source_quotation_id is not None and quote_allocations:
+                quotes = QuotationService(self.session, actor_permissions=self.actor_permissions)
+                quotation = await quotes.get(tenant_id, pfi.source_quotation_id)
+                if quotation.status in {
+                    QuotationStatus.ACCEPTED,
+                    QuotationStatus.PARTIALLY_CONVERTED,
+                }:
+                    await quotes._apply_converted(
+                        tenant_id,
+                        pfi.source_quotation_id,
+                        document_type=DocumentType.SALES_INVOICE,
+                        document_id=row.id,
+                        actor_user_id=actor_user_id,
+                        expected_version=quotation.version,
+                        allocations=quote_allocations,
+                    )
             loaded = await self._require(tenant_id, row.id)
             await self.audit.write(
                 tenant_id=tenant_id,
@@ -1013,6 +1329,8 @@ class SalesInvoiceService:
             "branch_id": payload.branch_id,
             "salesperson_id": payload.salesperson_id or customer.salesperson_id,
             "sales_order_id": payload.sales_order_id,
+            "source_quotation_id": payload.source_quotation_id,
+            "source_proforma_invoice_id": payload.source_proforma_invoice_id,
             "payment_terms_id": payment_terms_id,
             "due_date": due_date,
             "tax_treatment": tax_treatment.value,
@@ -1114,6 +1432,8 @@ class SalesInvoiceService:
                     "unit_id": unit_id,
                     "rate": rate,
                     "sales_order_line_id": line.sales_order_line_id,
+                    "source_quotation_line_id": line.source_quotation_line_id,
+                    "source_proforma_invoice_line_id": line.source_proforma_invoice_line_id,
                     "delivery_note_id": line.delivery_note_id,
                     "delivery_note_line_id": line.delivery_note_line_id,
                     "discount_type": line.discount_type.value if line.discount_type else None,
@@ -1147,6 +1467,8 @@ class SalesInvoiceService:
                     unit_id=line.unit_id,
                     rate=line.rate,
                     sales_order_line_id=line.sales_order_line_id,
+                    source_quotation_line_id=line.source_quotation_line_id,
+                    source_proforma_invoice_line_id=line.source_proforma_invoice_line_id,
                     delivery_note_id=line.delivery_note_id,
                     delivery_note_line_id=line.delivery_note_line_id,
                     discount_type=DiscountType(line.discount_type) if line.discount_type else None,
@@ -1162,6 +1484,8 @@ class SalesInvoiceService:
             invoice_date=values.get("invoice_date", existing.invoice_date),
             salesperson_id=values.get("salesperson_id", existing.salesperson_id),
             sales_order_id=values.get("sales_order_id", existing.sales_order_id),
+            source_quotation_id=existing.source_quotation_id,
+            source_proforma_invoice_id=existing.source_proforma_invoice_id,
             payment_terms_id=values.get("payment_terms_id", existing.payment_terms_id),
             currency_id=values.get("currency_id", existing.currency_id),
             notes=values.get("notes", existing.notes),
@@ -1191,6 +1515,8 @@ class SalesInvoiceService:
             invoice_date=row.invoice_date,
             salesperson_id=row.salesperson_id,
             sales_order_id=row.sales_order_id,
+            source_quotation_id=row.source_quotation_id,
+            source_proforma_invoice_id=row.source_proforma_invoice_id,
             payment_terms_id=row.payment_terms_id,
             currency_id=row.currency_id,
             notes=row.notes,
@@ -1209,6 +1535,8 @@ class SalesInvoiceService:
                     unit_id=line.unit_id,
                     rate=line.rate,
                     sales_order_line_id=line.sales_order_line_id,
+                    source_quotation_line_id=line.source_quotation_line_id,
+                    source_proforma_invoice_line_id=line.source_proforma_invoice_line_id,
                     delivery_note_id=line.delivery_note_id,
                     delivery_note_line_id=line.delivery_note_line_id,
                     discount_type=DiscountType(line.discount_type) if line.discount_type else None,
@@ -1253,9 +1581,21 @@ class SalesInvoiceService:
             actions.append("delete")
         return actions
 
-    def _to_response(self, row: SalesInvoice) -> SalesInvoiceResponse:
+    def _to_response(
+        self, row: SalesInvoice, *, today: date | None = None
+    ) -> SalesInvoiceResponse:
         status = InvoiceDocumentStatus(row.status)
         period_locked = self._date_in_locked_period(row.invoice_date)
+        credited = row.amount_credited
+        is_fully_credited = credited > _ZERO and credited >= row.grand_total
+        is_partially_credited = credited > _ZERO and not is_fully_credited
+        is_overdue = (
+            today is not None
+            and row.due_date is not None
+            and row.due_date < today
+            and status == InvoiceDocumentStatus.POSTED
+            and row.balance_due > _ZERO
+        )
         return SalesInvoiceResponse(
             id=row.id,
             tenant_id=row.tenant_id,
@@ -1272,6 +1612,8 @@ class SalesInvoiceService:
             branch_id=row.branch_id,
             salesperson_id=row.salesperson_id,
             sales_order_id=row.sales_order_id,
+            source_quotation_id=row.source_quotation_id,
+            source_proforma_invoice_id=row.source_proforma_invoice_id,
             payment_terms_id=row.payment_terms_id,
             due_date=row.due_date,
             tax_treatment=TaxTreatment(row.tax_treatment),
@@ -1310,7 +1652,11 @@ class SalesInvoiceService:
             cancelled_at=row.cancelled_at,
             cancelled_by=row.cancelled_by,
             cancel_reason=row.cancel_reason,
+            is_overdue=is_overdue,
+            is_partially_credited=is_partially_credited,
+            is_fully_credited=is_fully_credited,
             available_actions=self._available_actions(row, status, period_locked=period_locked),
+            related_documents=[],
             lines=[
                 SalesInvoiceLineResponse(
                     id=line.id,
@@ -1321,6 +1667,8 @@ class SalesInvoiceService:
                     unit_id=line.unit_id,
                     rate=line.rate,
                     sales_order_line_id=line.sales_order_line_id,
+                    source_quotation_line_id=line.source_quotation_line_id,
+                    source_proforma_invoice_line_id=line.source_proforma_invoice_line_id,
                     delivery_note_id=line.delivery_note_id,
                     delivery_note_line_id=line.delivery_note_line_id,
                     discount_type=DiscountType(line.discount_type) if line.discount_type else None,
@@ -1340,6 +1688,91 @@ class SalesInvoiceService:
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: SalesInvoice
+    ) -> builtins.list[RelatedDocumentRef]:
+        from app.erp.credit_notes.repository import CreditNoteRepository
+        from app.erp.proforma_invoices.repository import ProformaInvoiceRepository
+        from app.erp.quotation.repository import QuotationRepository
+        from app.erp.sales_orders.repository import SalesOrderRepository
+        from app.inventory_management.delivery_notes.repository import DeliveryNoteRepository
+
+        related: builtins.list[RelatedDocumentRef] = []
+        if row.source_quotation_id is not None:
+            quote = await QuotationRepository(self.session).get(tenant_id, row.source_quotation_id)
+            if quote is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.QUOTATION.value,
+                        document_id=quote.id,
+                        document_number=quote.quote_number,
+                        status=quote.status,
+                        relationship="source",
+                        document_date=quote.quote_date,
+                    )
+                )
+        if row.source_proforma_invoice_id is not None:
+            pfi = await ProformaInvoiceRepository(self.session).get(
+                tenant_id, row.source_proforma_invoice_id
+            )
+            if pfi is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.PROFORMA_INVOICE.value,
+                        document_id=pfi.id,
+                        document_number=pfi.document_number,
+                        status=pfi.status,
+                        relationship="source",
+                        document_date=pfi.proforma_date,
+                    )
+                )
+        if row.sales_order_id is not None:
+            order = await SalesOrderRepository(self.session).get(tenant_id, row.sales_order_id)
+            if order is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.SALES_ORDER.value,
+                        document_id=order.id,
+                        document_number=order.document_number,
+                        status=order.status,
+                        relationship="source",
+                        document_date=order.order_date,
+                    )
+                )
+        note_ids = {
+            line.delivery_note_id for line in row.lines if line.delivery_note_id is not None
+        }
+        dn_repo = DeliveryNoteRepository(self.session)
+        for note_id in note_ids:
+            note = await dn_repo.get(tenant_id, note_id)
+            if note is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.DELIVERY_NOTE.value,
+                        document_id=note.id,
+                        document_number=note.document_number,
+                        status=note.status,
+                        relationship="source",
+                        document_date=note.document_date,
+                        quantity_summary=quantity_summary([line.quantity for line in note.lines]),
+                    )
+                )
+        for item in await CreditNoteRepository(self.session).list_for_sales_invoice(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.CREDIT_NOTE.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.credit_note_date,
+                    quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+        return related
 
     async def _require(
         self, tenant_id: UUID, invoice_id: UUID, *, for_update: bool = False
