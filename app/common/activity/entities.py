@@ -10,6 +10,7 @@ from app.auth.catalog import (
     CREDIT_NOTE_READ,
     CRM_MODULE,
     CUSTOMER_READ,
+    CUSTOMER_PAYMENT_READ,
     DEBIT_NOTE_READ,
     DELIVERY_NOTE_READ,
     ERP_MODULE,
@@ -30,6 +31,7 @@ from app.auth.catalog import (
     STOCK_ADJUSTMENT_READ,
     STOCK_TRANSFER_READ,
     SUPPLIER_PRODUCT_READ,
+    SUPPLIER_PAYMENT_READ,
     SUPPLIER_READ,
 )
 
@@ -402,6 +404,48 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         read_permission=JOURNAL_ENTRY_READ,
         changed_fields=_STOCK_FIELDS
         | frozenset({"entry_date", "narration", "journal_type", "total_debit_base", "total_credit_base"}),
+    ),
+    "customer_payment": ActivityEntitySpec(
+        module=ERP_MODULE,
+        entity_type="customer_payment",
+        read_permission=CUSTOMER_PAYMENT_READ,
+        changed_fields=frozenset(
+            {
+                "document_number",
+                "payment_date",
+                "customer",
+                "amount_received",
+                "bank_charges",
+                "amount_unapplied",
+                "payment_method",
+                "reference",
+                "status",
+                "version",
+                "currency",
+                "exchange_rate",
+            }
+        ),
+    ),
+    "supplier_payment": ActivityEntitySpec(
+        module=ERP_MODULE,
+        entity_type="supplier_payment",
+        read_permission=SUPPLIER_PAYMENT_READ,
+        changed_fields=frozenset(
+            {
+                "document_number",
+                "payment_date",
+                "supplier",
+                "amount_paid",
+                "bank_charges",
+                "amount_unapplied",
+                "payment_method",
+                "reference",
+                "status",
+                "version",
+                "currency",
+                "exchange_rate",
+            }
+        ),
     ),
 }
 

@@ -42,10 +42,12 @@ import app.common.models.audit_log as _audit_log  # noqa: E402, F401
 import app.common.outbox.models as _outbox  # noqa: E402, F401
 import app.crm.contacts.models as _contacts  # noqa: E402, F401
 import app.crm.customers.models as _customers  # noqa: E402, F401
-import app.erp.accounting.models as _accounting  # noqa: E402, F401
 import app.erp.accounting.accounts.models as _accounts  # noqa: E402, F401
 import app.erp.accounting.ledger.models as _journal_entries  # noqa: E402, F401
+import app.erp.accounting.models as _accounting  # noqa: E402, F401
+import app.erp.accounting.open_items.models as _payment_allocations  # noqa: E402, F401
 import app.erp.credit_notes.models as _credit_notes  # noqa: E402, F401
+import app.erp.customer_payments.models as _customer_payments  # noqa: E402, F401
 import app.erp.debit_notes.models as _debit_notes  # noqa: E402, F401
 import app.erp.exchange_rates.models as _exchange_rates  # noqa: E402, F401
 import app.erp.proforma_invoices.models as _proforma_invoices  # noqa: E402, F401
@@ -54,6 +56,7 @@ import app.erp.purchase_orders.models as _purchase_orders  # noqa: E402, F401
 import app.erp.quotation.models as _quotation  # noqa: E402, F401
 import app.erp.sales_invoices.models as _sales_invoices  # noqa: E402, F401
 import app.erp.sales_orders.models as _sales_orders  # noqa: E402, F401
+import app.erp.supplier_payments.models as _supplier_payments  # noqa: E402, F401
 import app.erp.supplier_products.models as _supplier_products  # noqa: E402, F401
 import app.inventory_management.categories.models as _categories  # noqa: E402, F401
 import app.inventory_management.costing.models as _costing  # noqa: E402, F401

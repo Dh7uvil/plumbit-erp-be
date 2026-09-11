@@ -119,3 +119,57 @@ class InvoicedNotDispatchedLine(BaseModel):
 
 class InvoicedNotDispatchedResponse(BaseModel):
     lines: list[InvoicedNotDispatchedLine] = Field(default_factory=list)
+
+
+class AgingBucketTotals(BaseModel):
+    current: Decimal = Decimal("0")
+    days_1_30: Decimal = Decimal("0")
+    days_31_60: Decimal = Decimal("0")
+    days_61_90: Decimal = Decimal("0")
+    days_91_plus: Decimal = Decimal("0")
+    unapplied_credits: Decimal = Decimal("0")
+    total: Decimal = Decimal("0")
+
+
+class AgingPartyRow(AgingBucketTotals):
+    party_id: UUID
+    party_name: str
+    currency_id: UUID | None = None
+
+
+class AgingResponse(BaseModel):
+    as_of: date
+    rows: list[AgingPartyRow] = Field(default_factory=list)
+    totals: AgingBucketTotals
+
+
+class PartyStatementLine(BaseModel):
+    document_type: str
+    document_id: UUID
+    document_number: str
+    document_date: date
+    due_date: date | None = None
+    debit: Decimal
+    credit: Decimal
+    running_balance: Decimal
+    description: str | None = None
+
+
+class PartyStatementResponse(BaseModel):
+    party_type: str
+    party_id: UUID
+    party_name: str
+    from_date: date
+    to_date: date
+    opening_balance: Decimal
+    closing_balance: Decimal
+    lines: list[PartyStatementLine] = Field(default_factory=list)
+
+
+class OutstandingSummary(BaseModel):
+    party_id: UUID
+    balance_due: Decimal
+    overdue: Decimal
+    unapplied_credits: Decimal
+    credit_limit: Decimal | None = None
+    available_credit: Decimal | None = None

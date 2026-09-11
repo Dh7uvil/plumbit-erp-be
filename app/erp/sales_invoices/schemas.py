@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.related_documents import RelatedDocumentRef
+from app.common.schemas.warnings import DocumentWarning
 from app.core.enums import (
     CogsStatus,
     DiscountType,
@@ -267,6 +268,7 @@ class SalesInvoiceResponse(BaseModel):
     is_fully_credited: bool = False
     available_actions: list[str] = Field(default_factory=list)
     related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
+    warnings: list[DocumentWarning] = Field(default_factory=list)
     lines: list[SalesInvoiceLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

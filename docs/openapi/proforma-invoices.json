@@ -1572,6 +1572,29 @@
         ],
         "title": "DiscountType"
       },
+      "DocumentWarning": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "DocumentWarning"
+      },
       "FulfillmentStatus": {
         "type": "string",
         "enum": [
@@ -3213,6 +3236,12 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Advance Required Amount"
           },
+          "advance_outstanding": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Advance Outstanding",
+            "default": "0"
+          },
           "available_actions": {
             "items": {
               "type": "string"
@@ -3763,6 +3792,17 @@
               }
             ],
             "title": "Quantity Summary"
+          },
+          "amount_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Summary"
           }
         },
         "type": "object",
@@ -4470,6 +4510,13 @@
             },
             "type": "array",
             "title": "Related Documents"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
           },
           "lines": {
             "items": {
@@ -5197,6 +5244,13 @@
             },
             "type": "array",
             "title": "Related Documents"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
           },
           "lines": {
             "items": {

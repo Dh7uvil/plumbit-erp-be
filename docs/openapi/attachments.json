@@ -499,6 +499,7 @@
           "RETURN_PHOTO",
           "PACKING_LIST",
           "DISPATCH_PHOTO",
+          "PAYMENT_PROOF",
           "OTHER"
         ],
         "title": "AttachmentCategory"
@@ -651,7 +652,9 @@
           "DELIVERY_NOTE",
           "SALES_RETURN",
           "JOURNAL_ENTRY",
-          "ACCOUNT"
+          "ACCOUNT",
+          "CUSTOMER_PAYMENT",
+          "SUPPLIER_PAYMENT"
         ],
         "title": "AttachmentEntityType"
       },

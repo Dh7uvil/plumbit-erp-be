@@ -756,6 +756,7 @@
           "OPENING_BALANCE_EQUITY",
           "CASH_ON_HAND",
           "BANK",
+          "BANK_CHARGES",
           "SUSPENSE"
         ],
         "title": "AccountSystemRole"

@@ -54,11 +54,11 @@ app/
 │                                 terms_templates, document_sequences, suppliers, supplier_products,
 │                                 quotations, proforma_invoices, period_lock, sales_orders,
 │                                 sales_invoices, credit_notes, purchase_orders,
-│                                 purchase_invoices, debit_notes, accounting/accounts,
+│                                 purchase_invoices, debit_notes, customer_payments,
+│                                 supplier_payments, accounting/accounts,
 │                                 accounting/ledger, accounting/opening_balances,
 │                                 accounting/reports
-│                                 planned: customer_payments, supplier_payments,
-│                                 einvoicing (status APIs on sales invoices and credit notes;
+│                                 planned: einvoicing (status APIs on sales invoices and credit notes;
 │                                 inbound e-bills as draft purchase invoices)
 ├── integrations/                 implemented: storage/
 │                                 planned: email, whatsapp, video, ai, forecast,
@@ -76,7 +76,7 @@ concept only — they never appear in the URL, which is a flat set of hyphenated
 
 Document-number prefixes: `QUO`, `SO`, `DN` (delivery notes), `INV`, `CN` (credit notes), `PO`,
 `GRN`, `BILL` (purchase invoices), `SDN` (debit notes), `STR`, `STA`, `PFI`, `QCR`, `PKG`, `SHP`,
-`SR` (sales returns), `JV` (journal entries).
+`SR` (sales returns), `JV` (journal entries), `RCP` (customer receipts), `PAY` (supplier payments).
 Prefer a unique prefix per type; URLs must be unique even if a prefix is shared.
 
 ## Detailed instruction files

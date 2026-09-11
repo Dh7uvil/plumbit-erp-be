@@ -364,6 +364,15 @@
         ],
         "title": "CostingMethod"
       },
+      "CreditLimitPolicy": {
+        "type": "string",
+        "enum": [
+          "OFF",
+          "WARN",
+          "BLOCK"
+        ],
+        "title": "CreditLimitPolicy"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -567,6 +576,25 @@
             "type": "boolean",
             "title": "Qc Required Default",
             "default": false
+          },
+          "vat_on_advances": {
+            "type": "boolean",
+            "title": "Vat On Advances",
+            "default": true
+          },
+          "auto_apply_advances_on_invoice": {
+            "type": "boolean",
+            "title": "Auto Apply Advances On Invoice",
+            "default": true
+          },
+          "credit_limit_policy": {
+            "$ref": "#/components/schemas/CreditLimitPolicy",
+            "default": "WARN"
+          },
+          "credit_limit_include_open_orders": {
+            "type": "boolean",
+            "title": "Credit Limit Include Open Orders",
+            "default": true
           },
           "lock_date": {
             "anyOf": [
@@ -899,6 +927,49 @@
               }
             ],
             "title": "Qc Required Default"
+          },
+          "vat_on_advances": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat On Advances"
+          },
+          "auto_apply_advances_on_invoice": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Apply Advances On Invoice"
+          },
+          "credit_limit_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreditLimitPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "credit_limit_include_open_orders": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credit Limit Include Open Orders"
           },
           "headquarters": {
             "anyOf": [

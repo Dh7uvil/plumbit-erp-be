@@ -55,6 +55,7 @@ from app.inventory_management.packages.schemas import PackableLineResponse
 router = APIRouter(prefix="/sales-orders", tags=["Sales Orders"])
 
 IfMatch = Annotated[str | None, Header()]
+CreditOverrideHeader = Annotated[str | None, Header(alias="X-Credit-Override")]
 IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
 
 
@@ -250,12 +251,14 @@ async def confirm_sales_order(
     service: SalesOrderServiceDependency,
     _: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_CONFIRM))],
     if_match: IfMatch = None,
+    credit_override: CreditOverrideHeader = None,
 ) -> ApiResponse[SalesOrderResponse]:
     row = await service.confirm(
         tenant.tenant_id,
         sales_order_id,
         actor_user_id=tenant.user_id,
         expected_version=require_document_version(if_match=if_match),
+        override_reason=credit_override,
     )
     return ApiResponse(data=row, message="Sales order confirmed")
 

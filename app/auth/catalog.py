@@ -74,11 +74,14 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "account": ("create", "read", "update", "delete"),
         "journal_entry": ("create", "read", "update", "delete", "post", "reverse"),
         "opening_balance": ("manage",),
-        "report": ("ledger", "tax"),
+        "report": ("ledger", "tax", "ar_ap"),
         "sales_invoice": ("create", "read", "update", "delete", "post", "cancel"),
         "purchase_invoice": ("create", "read", "update", "delete", "post", "cancel"),
         "credit_note": ("create", "read", "update", "delete", "post", "cancel"),
         "debit_note": ("create", "read", "update", "delete", "post", "cancel"),
+        "customer_payment": ("create", "read", "update", "delete", "post", "cancel"),
+        "supplier_payment": ("create", "read", "update", "delete", "post", "cancel"),
+        "credit_control": ("override",),
     },
 }
 
@@ -281,6 +284,7 @@ JOURNAL_ENTRY_REVERSE = build_permission(ERP_MODULE, "journal_entry", "reverse")
 OPENING_BALANCE_MANAGE = build_permission(ERP_MODULE, "opening_balance", "manage")
 REPORT_LEDGER = build_permission(ERP_MODULE, "report", "ledger")
 REPORT_TAX = build_permission(ERP_MODULE, "report", "tax")
+REPORT_AR_AP = build_permission(ERP_MODULE, "report", "ar_ap")
 SALES_INVOICE_CREATE = build_permission(ERP_MODULE, "sales_invoice", "create")
 SALES_INVOICE_READ = build_permission(ERP_MODULE, "sales_invoice", "read")
 SALES_INVOICE_UPDATE = build_permission(ERP_MODULE, "sales_invoice", "update")
@@ -305,6 +309,19 @@ DEBIT_NOTE_UPDATE = build_permission(ERP_MODULE, "debit_note", "update")
 DEBIT_NOTE_DELETE = build_permission(ERP_MODULE, "debit_note", "delete")
 DEBIT_NOTE_POST = build_permission(ERP_MODULE, "debit_note", "post")
 DEBIT_NOTE_CANCEL = build_permission(ERP_MODULE, "debit_note", "cancel")
+CUSTOMER_PAYMENT_CREATE = build_permission(ERP_MODULE, "customer_payment", "create")
+CUSTOMER_PAYMENT_READ = build_permission(ERP_MODULE, "customer_payment", "read")
+CUSTOMER_PAYMENT_UPDATE = build_permission(ERP_MODULE, "customer_payment", "update")
+CUSTOMER_PAYMENT_DELETE = build_permission(ERP_MODULE, "customer_payment", "delete")
+CUSTOMER_PAYMENT_POST = build_permission(ERP_MODULE, "customer_payment", "post")
+CUSTOMER_PAYMENT_CANCEL = build_permission(ERP_MODULE, "customer_payment", "cancel")
+SUPPLIER_PAYMENT_CREATE = build_permission(ERP_MODULE, "supplier_payment", "create")
+SUPPLIER_PAYMENT_READ = build_permission(ERP_MODULE, "supplier_payment", "read")
+SUPPLIER_PAYMENT_UPDATE = build_permission(ERP_MODULE, "supplier_payment", "update")
+SUPPLIER_PAYMENT_DELETE = build_permission(ERP_MODULE, "supplier_payment", "delete")
+SUPPLIER_PAYMENT_POST = build_permission(ERP_MODULE, "supplier_payment", "post")
+SUPPLIER_PAYMENT_CANCEL = build_permission(ERP_MODULE, "supplier_payment", "cancel")
+CREDIT_CONTROL_OVERRIDE = build_permission(ERP_MODULE, "credit_control", "override")
 
 SYSTEM_ADMIN_ROLE_NAME = "Superadmin"
 

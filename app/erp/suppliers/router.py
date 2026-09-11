@@ -1,9 +1,10 @@
 """Supplier routes."""
 
+from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.auth.catalog import (
     SUPPLIER_CREATE,
@@ -18,6 +19,10 @@ from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
+from app.erp.accounting.open_items.dependencies import OpenItemsServiceDependency
+from app.erp.accounting.open_items.schemas import OpenItemRow
+from app.erp.accounting.reports.dependencies import ReportServiceDependency
+from app.erp.accounting.reports.schemas import OutstandingSummary
 from app.erp.suppliers.dependencies import SupplierServiceDependency
 from app.erp.suppliers.schemas import (
     SupplierCreate,
@@ -153,3 +158,29 @@ async def list_supplier_purchase_history(
         document_date_to=filters.document_date_to,
     )
     return paginated_response(rows, params=page, total=total)
+
+
+@router.get("/{supplier_id}/open-items", response_model=ApiResponse[list[OpenItemRow]])
+async def list_supplier_open_items(
+    supplier_id: UUID,
+    tenant: TenantContextDependency,
+    service: SupplierServiceDependency,
+    open_items: OpenItemsServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_READ))],
+) -> ApiResponse[list[OpenItemRow]]:
+    await service.get(tenant.tenant_id, supplier_id)
+    rows = await open_items.list_ap_open_items(tenant.tenant_id, supplier_id)
+    return ApiResponse(data=rows)
+
+
+@router.get("/{supplier_id}/outstanding-summary", response_model=ApiResponse[OutstandingSummary])
+async def get_supplier_outstanding_summary(
+    supplier_id: UUID,
+    tenant: TenantContextDependency,
+    reports: ReportServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_READ))],
+    as_of: Annotated[date | None, Query()] = None,
+) -> ApiResponse[OutstandingSummary]:
+    return ApiResponse(
+        data=await reports.supplier_outstanding(tenant.tenant_id, supplier_id, as_of=as_of)
+    )

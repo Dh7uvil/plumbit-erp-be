@@ -123,17 +123,19 @@ auth (Identity)         implemented: auth, users, roles, permissions, tenants/or
                         (attachments live in app/common/attachments/ with identity.attachment.*)
                         tenant operational settings: allow_negative_stock, costing_method,
                         allow_over_receipt, over_receipt_tolerance_pct, qc_required_default,
-                        lock_date, hard_lock_date, lock_reason, hard_lock_reason
+                        lock_date, hard_lock_date, lock_reason, hard_lock_reason,
+                        vat_on_advances, auto_apply_advances_on_invoice,
+                        credit_limit_policy, credit_limit_include_open_orders
 
 erp                     implemented: currencies, exchange_rates, taxes, payment_terms,
                         terms_templates, document_sequences, suppliers, supplier_products,
                         quotations, proforma_invoices, period_lock, sales_orders,
                         sales_invoices, credit_notes, purchase_orders, purchase_invoices,
-                        debit_notes, chart of accounts, journals, opening balances,
-                        ledger reports (trial balance, general ledger, account statement,
-                        export-evidence exceptions, invoiced-not-dispatched)
-                        planned: customer_payments, supplier_payments,
-                        einvoicing status APIs (on sales invoices and credit notes;
+                        debit_notes, customer_payments, supplier_payments, chart of accounts,
+                        journals, opening balances, ledger reports (trial balance, general
+                        ledger, account statement, export-evidence exceptions,
+                        invoiced-not-dispatched), AR/AP aging and party statements
+                        planned: einvoicing status APIs (on sales invoices and credit notes;
                         inbound e-bills as draft purchase invoices)
 
 inventory_management    implemented: units, categories, products, price_lists, warehouses,
@@ -380,7 +382,12 @@ unset, and skipped for documents dated before it.
 
 Sales invoice post writes AR / revenue / VAT / shipping / other charges / round-off. It does
 not post COGS. `cogs_amount` on the invoice is a reporting snapshot. Purchase invoice post
-clears GRNI (or purchases) and writes AP / VAT_INPUT.
+clears GRNI (or purchases) and writes AP / VAT_INPUT. Customer receipts and supplier payments
+never touch stock or COGS. Payment accounts are postable `CASH` / `BANK` chart rows — there is
+no banks module. Unapplied receipts sit in `ADVANCE_FROM_CUSTOMER` (VAT on standard-rated
+domestic advances when `vat_on_advances` is on); unapplied supplier TTs sit in
+`ADVANCE_TO_SUPPLIER`. Credit limit `NULL` is unlimited; tenant `credit_limit_policy` is
+`OFF` / `WARN` / `BLOCK`.
 
 `Sent` / `Approved` in the product UI maps to `POSTED` on the API for invoices. Never post as
 a side effect of "save". A draft that has not been posted must not be treated as a ledger

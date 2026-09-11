@@ -722,6 +722,22 @@
               ],
               "title": "Idempotency-Key"
             }
+          },
+          {
+            "name": "X-Credit-Override",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Credit-Override"
+            }
           }
         ],
         "responses": {
@@ -817,6 +833,80 @@
                   }
                 ],
                 "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SalesInvoiceResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sales-invoices/{invoice_id}/apply-credits": {
+      "post": {
+        "tags": [
+          "Sales Invoices"
+        ],
+        "summary": "Apply Credits To Sales Invoice",
+        "operationId": "apply_credits_to_sales_invoice_api_v1_sales_invoices__invoice_id__apply_credits_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "invoice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invoice Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyCreditsRequest"
               }
             }
           }
@@ -1084,6 +1174,38 @@
         ],
         "title": "ApiResponse[list[SalesInvoiceResponse]]"
       },
+      "ApplyCreditsRequest": {
+        "properties": {
+          "allocations": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PaymentAllocationInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allocations"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "title": "ApplyCreditsRequest"
+      },
       "CogsStatus": {
         "type": "string",
         "enum": [
@@ -1129,6 +1251,29 @@
           "AMOUNT"
         ],
         "title": "DiscountType"
+      },
+      "DocumentWarning": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "DocumentWarning"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1537,6 +1682,20 @@
         ],
         "title": "JournalType"
       },
+      "OpenItemType": {
+        "type": "string",
+        "enum": [
+          "SALES_INVOICE",
+          "PURCHASE_INVOICE",
+          "CREDIT_NOTE",
+          "DEBIT_NOTE",
+          "OPENING_AR",
+          "OPENING_AP",
+          "CUSTOMER_PAYMENT",
+          "SUPPLIER_PAYMENT"
+        ],
+        "title": "OpenItemType"
+      },
       "PartyType": {
         "type": "string",
         "enum": [
@@ -1544,6 +1703,38 @@
           "SUPPLIER"
         ],
         "title": "PartyType"
+      },
+      "PaymentAllocationInput": {
+        "properties": {
+          "item_type": {
+            "$ref": "#/components/schemas/OpenItemType"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Item Id"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              }
+            ],
+            "title": "Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "item_type",
+          "item_id",
+          "amount"
+        ],
+        "title": "PaymentAllocationInput"
       },
       "PaymentStatus": {
         "type": "string",
@@ -1613,6 +1804,17 @@
               }
             ],
             "title": "Quantity Summary"
+          },
+          "amount_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Summary"
           }
         },
         "type": "object",
@@ -2913,6 +3115,13 @@
             },
             "type": "array",
             "title": "Related Documents"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
           },
           "lines": {
             "items": {

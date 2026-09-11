@@ -1,9 +1,10 @@
 """Customer routes."""
 
+from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.auth.catalog import (
     CUSTOMER_CREATE,
@@ -27,6 +28,12 @@ from app.crm.customers.schemas import (
     CustomerResponse,
     CustomerUpdate,
 )
+from app.erp.accounting.open_items.dependencies import OpenItemsServiceDependency
+from app.erp.accounting.open_items.schemas import OpenItemRow
+from app.erp.accounting.reports.dependencies import ReportServiceDependency
+from app.erp.accounting.reports.schemas import OutstandingSummary
+from app.erp.credit_control.dependencies import CreditControlServiceDependency
+from app.erp.credit_control.schemas import CreditExposure
 from app.inventory_management.history.dependencies import HistoryServiceDependency
 from app.inventory_management.history.schemas import (
     TradingHistoryFilter,
@@ -169,3 +176,39 @@ async def list_customer_sales_history(
         document_date_to=filters.document_date_to,
     )
     return paginated_response(rows, params=page, total=total)
+
+
+@router.get("/{customer_id}/open-items", response_model=ApiResponse[list[OpenItemRow]])
+async def list_customer_open_items(
+    customer_id: UUID,
+    tenant: TenantContextDependency,
+    service: CustomerServiceDependency,
+    open_items: OpenItemsServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_READ))],
+) -> ApiResponse[list[OpenItemRow]]:
+    await service.get(tenant.tenant_id, customer_id)
+    rows = await open_items.list_ar_open_items(tenant.tenant_id, customer_id)
+    return ApiResponse(data=rows)
+
+
+@router.get("/{customer_id}/credit-exposure", response_model=ApiResponse[CreditExposure])
+async def get_customer_credit_exposure(
+    customer_id: UUID,
+    tenant: TenantContextDependency,
+    credit: CreditControlServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_READ))],
+) -> ApiResponse[CreditExposure]:
+    return ApiResponse(data=await credit.evaluate(tenant.tenant_id, customer_id))
+
+
+@router.get("/{customer_id}/outstanding-summary", response_model=ApiResponse[OutstandingSummary])
+async def get_customer_outstanding_summary(
+    customer_id: UUID,
+    tenant: TenantContextDependency,
+    reports: ReportServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_READ))],
+    as_of: Annotated[date | None, Query()] = None,
+) -> ApiResponse[OutstandingSummary]:
+    return ApiResponse(
+        data=await reports.customer_outstanding(tenant.tenant_id, customer_id, as_of=as_of)
+    )

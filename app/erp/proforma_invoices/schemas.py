@@ -352,6 +352,7 @@ class ProformaInvoiceResponse(BaseModel):
     converted_document_type: str | None
     converted_document_id: UUID | None
     advance_required_amount: Decimal
+    advance_outstanding: Decimal = Decimal("0")
     available_actions: list[str] = Field(default_factory=list)
     related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
     lines: list[ProformaInvoiceLineResponse] = Field(default_factory=list)

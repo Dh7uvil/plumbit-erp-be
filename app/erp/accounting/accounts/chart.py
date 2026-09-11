@@ -310,6 +310,15 @@ UAE_CHART: tuple[ChartSeedRow, ...] = (
         "6100", "Other Expense", AccountType.EXPENSE, AccountSubtype.OTHER_EXPENSE, "6000", False
     ),
     ChartSeedRow(
+        "6200",
+        "Bank Charges",
+        AccountType.EXPENSE,
+        AccountSubtype.OTHER_EXPENSE,
+        "6000",
+        False,
+        AccountSystemRole.BANK_CHARGES,
+    ),
+    ChartSeedRow(
         "9990",
         "Suspense",
         AccountType.ASSET,

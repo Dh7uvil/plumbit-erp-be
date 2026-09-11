@@ -17,7 +17,14 @@ def test_quotation_allowlist_drops_unlisted_fields() -> None:
 
 
 def test_unregistered_entity_type_has_no_spec() -> None:
-    assert get_activity_spec("customer_payment") is None
+    assert get_activity_spec("lead") is None
+
+
+def test_customer_and_supplier_payments_are_registered() -> None:
+    for entity_type in ("customer_payment", "supplier_payment"):
+        spec = get_activity_spec(entity_type)
+        assert spec is not None
+        assert "status" in spec.changed_fields
 
 
 def test_sales_invoice_is_registered() -> None:

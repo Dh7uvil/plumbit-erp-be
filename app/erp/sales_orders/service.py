@@ -626,7 +626,13 @@ class SalesOrderService:
         )
 
     async def confirm(
-        self, tenant_id: UUID, sales_order_id: UUID, *, actor_user_id: UUID, expected_version: int
+        self,
+        tenant_id: UUID,
+        sales_order_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        override_reason: str | None = None,
     ) -> SalesOrderResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, sales_order_id, for_update=True)
@@ -638,6 +644,19 @@ class SalesOrderService:
                 raise ValidationError(
                     "This organization requires approval before a sales order can be confirmed"
                 )
+            from app.erp.credit_control.service import CreditControlService
+
+            settings = await self.org.get_money_movement_settings(tenant_id)
+            additional = row.grand_total if settings.credit_limit_include_open_orders else _ZERO
+            warnings = await CreditControlService(
+                self.session, actor_permissions=self.actor_permissions
+            ).enforce(
+                tenant_id,
+                row.customer_id,
+                additional,
+                actor_user_id=actor_user_id,
+                override_reason=override_reason,
+            )
             target = next_status(current, "confirm")
             row.status = target.value
             row.confirmed_at = utcnow()
@@ -658,7 +677,10 @@ class SalesOrderService:
                 new_values=await self._snapshot(tenant_id, row),
             )
             return self._to_response(
-                row, requires_approval=requires_approval, reservation_shortfalls=shortfalls
+                row,
+                requires_approval=requires_approval,
+                reservation_shortfalls=shortfalls,
+                warnings=warnings,
             )
 
     async def close(
@@ -1383,8 +1405,8 @@ class SalesOrderService:
         else:
             rows.append(self._tracker_pending("credit_note", DocumentType.CREDIT_NOTE.value))
 
-        from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
         from app.erp.debit_notes.repository import DebitNoteRepository
+        from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
 
         bill_rows: builtins.list[OrderTrackerRow] = []
         pi_repo = PurchaseInvoiceRepository(self.session)
@@ -1430,7 +1452,59 @@ class SalesOrderService:
         else:
             rows.append(self._tracker_pending("debit_note", DocumentType.DEBIT_NOTE.value))
 
-        rows.append(self._tracker_pending("customer_payment", "CUSTOMER_PAYMENT"))
+        from app.erp.customer_payments.service import CustomerPaymentService
+        from app.erp.supplier_payments.service import SupplierPaymentService
+
+        payments = await CustomerPaymentService(
+            self.session, actor_permissions=self.actor_permissions
+        ).list_for_sales_order(tenant_id, row.id)
+        if payments:
+            for payment in payments:
+                rows.append(
+                    self._tracker_row(
+                        stage="customer_payment",
+                        document_type=DocumentType.CUSTOMER_PAYMENT.value,
+                        document_id=payment.id,
+                        document_number=payment.document_number,
+                        status=payment.status,
+                        document_date=payment.payment_date,
+                        quantity_summary=None,
+                        amount_summary=str(payment.amount_received),
+                    )
+                )
+        else:
+            rows.append(
+                self._tracker_pending("customer_payment", DocumentType.CUSTOMER_PAYMENT.value)
+            )
+
+        supplier_payments = SupplierPaymentService(
+            self.session, actor_permissions=self.actor_permissions
+        )
+        pay_rows: builtins.list[OrderTrackerRow] = []
+        seen_pay: set[UUID] = set()
+        for po_id in po_seen:
+            for payment in await supplier_payments.list_for_purchase_order(tenant_id, po_id):
+                if payment.id in seen_pay:
+                    continue
+                seen_pay.add(payment.id)
+                pay_rows.append(
+                    self._tracker_row(
+                        stage="supplier_payment",
+                        document_type=DocumentType.SUPPLIER_PAYMENT.value,
+                        document_id=payment.id,
+                        document_number=payment.document_number,
+                        status=payment.status,
+                        document_date=payment.payment_date,
+                        quantity_summary=None,
+                        amount_summary=str(payment.amount_paid),
+                    )
+                )
+        if pay_rows:
+            rows.extend(pay_rows)
+        elif po_seen:
+            rows.append(
+                self._tracker_pending("supplier_payment", DocumentType.SUPPLIER_PAYMENT.value)
+            )
         return OrderTrackerResponse(sales_order_id=row.id, rows=rows)
 
     def _tracker_row(
@@ -1443,6 +1517,7 @@ class SalesOrderService:
         status: str,
         document_date: date | None,
         quantity_summary: str | None,
+        amount_summary: str | None = None,
     ) -> OrderTrackerRow:
         return OrderTrackerRow(
             stage=stage,
@@ -1452,6 +1527,7 @@ class SalesOrderService:
             status=status,
             document_date=document_date,
             quantity_summary=quantity_summary,
+            amount_summary=amount_summary,
         )
 
     def _tracker_pending(self, stage: str, document_type: str) -> OrderTrackerRow:
@@ -1792,6 +1868,7 @@ class SalesOrderService:
         *,
         requires_approval: bool,
         reservation_shortfalls: builtins.list[ReservationShortfall] | None = None,
+        warnings: builtins.list | None = None,
     ) -> SalesOrderResponse:
         status = SalesOrderStatus(row.status)
         return SalesOrderResponse(
@@ -1850,6 +1927,7 @@ class SalesOrderService:
             available_actions=self._available_actions(row, requires_approval=requires_approval),
             quantity_progress=self._quantity_progress(row),
             related_documents=[],
+            warnings=warnings or [],
             lines=[SalesOrderLineResponse.model_validate(line) for line in row.lines],
             reservation_shortfalls=reservation_shortfalls or [],
             created_at=row.created_at,
@@ -1964,6 +2042,22 @@ class SalesOrderService:
                         ),
                     )
                 )
+        from app.erp.customer_payments.service import CustomerPaymentService
+
+        for payment in await CustomerPaymentService(
+            self.session, actor_permissions=self.actor_permissions
+        ).list_for_sales_order(tenant_id, row.id):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.CUSTOMER_PAYMENT.value,
+                    document_id=payment.id,
+                    document_number=payment.document_number,
+                    status=payment.status,
+                    relationship="child",
+                    document_date=payment.payment_date,
+                    amount_summary=str(payment.amount_received),
+                )
+            )
         return related
 
     async def _today(self, tenant_id: UUID) -> date:

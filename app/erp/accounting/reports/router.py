@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
-from app.auth.catalog import REPORT_LEDGER, REPORT_TAX
+from app.auth.catalog import REPORT_AR_AP, REPORT_LEDGER, REPORT_TAX
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
@@ -15,9 +15,11 @@ from app.core.enums import PartyType
 from app.erp.accounting.reports.dependencies import ReportServiceDependency
 from app.erp.accounting.reports.schemas import (
     AccountStatementResponse,
+    AgingResponse,
     ExportEvidenceExceptionResponse,
     GeneralLedgerResponse,
     InvoicedNotDispatchedResponse,
+    PartyStatementResponse,
     TrialBalanceResponse,
 )
 
@@ -114,3 +116,61 @@ async def get_invoiced_not_dispatched(
     _: Annotated[CurrentUser, Depends(require_permission(REPORT_TAX))],
 ) -> ApiResponse[InvoicedNotDispatchedResponse]:
     return ApiResponse(data=await service.invoiced_not_dispatched(tenant.tenant_id))
+
+
+@router.get("/ar-aging", response_model=ApiResponse[AgingResponse])
+async def get_ar_aging(
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(REPORT_AR_AP))],
+    as_of: date,
+) -> ApiResponse[AgingResponse]:
+    return ApiResponse(data=await service.ar_aging(tenant.tenant_id, as_of=as_of))
+
+
+@router.get("/ap-aging", response_model=ApiResponse[AgingResponse])
+async def get_ap_aging(
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(REPORT_AR_AP))],
+    as_of: date,
+) -> ApiResponse[AgingResponse]:
+    return ApiResponse(data=await service.ap_aging(tenant.tenant_id, as_of=as_of))
+
+
+@router.get("/customer-statement", response_model=ApiResponse[PartyStatementResponse])
+async def get_customer_statement(
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(REPORT_AR_AP))],
+    customer_id: UUID,
+    from_date: Annotated[date, Query(alias="from")],
+    to_date: Annotated[date, Query(alias="to")],
+) -> ApiResponse[PartyStatementResponse]:
+    return ApiResponse(
+        data=await service.customer_statement(
+            tenant.tenant_id,
+            customer_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+    )
+
+
+@router.get("/supplier-statement", response_model=ApiResponse[PartyStatementResponse])
+async def get_supplier_statement(
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(REPORT_AR_AP))],
+    supplier_id: UUID,
+    from_date: Annotated[date, Query(alias="from")],
+    to_date: Annotated[date, Query(alias="to")],
+) -> ApiResponse[PartyStatementResponse]:
+    return ApiResponse(
+        data=await service.supplier_statement(
+            tenant.tenant_id,
+            supplier_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+    )

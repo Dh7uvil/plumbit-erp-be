@@ -8,6 +8,7 @@ from app.erp.accounting.opening_balances.router import router as opening_balance
 from app.erp.accounting.reports.router import router as reports_router
 from app.erp.accounting.router import router as accounting_router
 from app.erp.credit_notes.router import router as credit_notes_router
+from app.erp.customer_payments.router import router as customer_payments_router
 from app.erp.debit_notes.router import router as debit_notes_router
 from app.erp.exchange_rates.router import router as exchange_rates_router
 from app.erp.period_lock.router import router as period_lock_router
@@ -17,6 +18,7 @@ from app.erp.purchase_orders.router import router as purchase_orders_router
 from app.erp.quotation.router import router as quotation_router
 from app.erp.sales_invoices.router import router as sales_invoices_router
 from app.erp.sales_orders.router import router as sales_orders_router
+from app.erp.supplier_payments.router import router as supplier_payments_router
 from app.erp.supplier_products.router import router as supplier_products_router
 from app.erp.suppliers.router import router as suppliers_router
 
@@ -31,9 +33,11 @@ router.include_router(proforma_invoices_router)
 router.include_router(sales_orders_router)
 router.include_router(sales_invoices_router)
 router.include_router(credit_notes_router)
+router.include_router(customer_payments_router)
 router.include_router(purchase_orders_router)
 router.include_router(purchase_invoices_router)
 router.include_router(debit_notes_router)
+router.include_router(supplier_payments_router)
 router.include_router(accounts_router)
 router.include_router(journals_router)
 router.include_router(opening_balances_router)

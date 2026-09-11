@@ -18,6 +18,8 @@ from app.auth.catalog import (
     CONTACT_UPDATE,
     CREDIT_NOTE_READ,
     CREDIT_NOTE_UPDATE,
+    CUSTOMER_PAYMENT_READ,
+    CUSTOMER_PAYMENT_UPDATE,
     CUSTOMER_READ,
     CUSTOMER_UPDATE,
     DEBIT_NOTE_READ,
@@ -44,10 +46,10 @@ from app.auth.catalog import (
     QUALITY_INSPECTION_UPDATE,
     QUOTATION_READ,
     QUOTATION_UPDATE,
-    SALES_ORDER_READ,
-    SALES_ORDER_UPDATE,
     SALES_INVOICE_READ,
     SALES_INVOICE_UPDATE,
+    SALES_ORDER_READ,
+    SALES_ORDER_UPDATE,
     SALES_RETURN_READ,
     SALES_RETURN_UPDATE,
     SHIPMENT_READ,
@@ -56,6 +58,8 @@ from app.auth.catalog import (
     STOCK_ADJUSTMENT_UPDATE,
     STOCK_TRANSFER_READ,
     STOCK_TRANSFER_UPDATE,
+    SUPPLIER_PAYMENT_READ,
+    SUPPLIER_PAYMENT_UPDATE,
     SUPPLIER_READ,
     SUPPLIER_UPDATE,
 )
@@ -117,6 +121,8 @@ def _register_unposted_probes() -> None:
     register_unposted("purchase_invoice", _probe_unposted_purchase_invoices)
     register_unposted("credit_note", _probe_unposted_credit_notes)
     register_unposted("debit_note", _probe_unposted_debit_notes)
+    register_unposted("customer_payment", _probe_unposted_customer_payments)
+    register_unposted("supplier_payment", _probe_unposted_supplier_payments)
 
 
 async def _probe_unposted_adjustments(
@@ -416,6 +422,60 @@ async def _probe_unposted_debit_notes(
     return documents, total
 
 
+async def _probe_unposted_customer_payments(
+    session: AsyncSession,
+    tenant_id: UUID,
+    as_of: date,
+    page: PageParams,
+) -> tuple[list[UnpostedDocument], int]:
+    from app.erp.customer_payments.service import CustomerPaymentService
+
+    rows, total = await CustomerPaymentService(session).list(
+        tenant_id,
+        page=page,
+        status=InvoiceDocumentStatus.DRAFT.value,
+        payment_date_to=as_of,
+    )
+    documents = [
+        UnpostedDocument(
+            id=row.id,
+            document_type="customer_payment",
+            document_number=row.document_number,
+            document_date=row.payment_date,
+            status=str(row.status),
+        )
+        for row in rows
+    ]
+    return documents, total
+
+
+async def _probe_unposted_supplier_payments(
+    session: AsyncSession,
+    tenant_id: UUID,
+    as_of: date,
+    page: PageParams,
+) -> tuple[list[UnpostedDocument], int]:
+    from app.erp.supplier_payments.service import SupplierPaymentService
+
+    rows, total = await SupplierPaymentService(session).list(
+        tenant_id,
+        page=page,
+        status=InvoiceDocumentStatus.DRAFT.value,
+        payment_date_to=as_of,
+    )
+    documents = [
+        UnpostedDocument(
+            id=row.id,
+            document_type="supplier_payment",
+            document_number=row.document_number,
+            document_date=row.payment_date,
+            status=str(row.status),
+        )
+        for row in rows
+    ]
+    return documents, total
+
+
 def _register_attachment_entities() -> None:
     register(
         AttachmentEntitySpec(
@@ -609,6 +669,22 @@ def _register_attachment_entities() -> None:
             _probe_via_get(_debit_note_get),
         )
     )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.CUSTOMER_PAYMENT,
+            CUSTOMER_PAYMENT_READ,
+            CUSTOMER_PAYMENT_UPDATE,
+            _probe_via_get(_customer_payment_get),
+        )
+    )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.SUPPLIER_PAYMENT,
+            SUPPLIER_PAYMENT_READ,
+            SUPPLIER_PAYMENT_UPDATE,
+            _probe_via_get(_supplier_payment_get),
+        )
+    )
 
 
 def _probe_via_get(
@@ -785,6 +861,18 @@ async def _debit_note_get(session: AsyncSession, tenant_id: UUID, entity_id: UUI
     return await DebitNoteService(session).get(tenant_id, entity_id)
 
 
+async def _customer_payment_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.erp.customer_payments.service import CustomerPaymentService
+
+    return await CustomerPaymentService(session).get(tenant_id, entity_id)
+
+
+async def _supplier_payment_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.erp.supplier_payments.service import SupplierPaymentService
+
+    return await SupplierPaymentService(session).get(tenant_id, entity_id)
+
+
 def _register_outbox_handlers() -> None:
     # Phases 34 and 35 replace these logging no-ops with real handlers.
     from app.common.outbox.handlers import register as register_outbox
@@ -814,6 +902,12 @@ def _register_outbox_handlers() -> None:
         "erp.credit_note.cancelled",
         "erp.debit_note.posted",
         "erp.debit_note.cancelled",
+        "erp.customer_payment.posted",
+        "erp.customer_payment.cancelled",
+        "erp.customer_payment.allocated",
+        "erp.supplier_payment.posted",
+        "erp.supplier_payment.cancelled",
+        "erp.supplier_payment.allocated",
     ):
         register_outbox(event_type, _log_outbox_event)
 
@@ -873,6 +967,7 @@ async def _probe_sales_invoice_for_delivery_note(
 
 def _register_sales_invoice_dependents() -> None:
     register_sales_invoice_dependent("credit_note", _probe_credit_note_for_sales_invoice)
+    register_sales_invoice_dependent("customer_payment", _probe_customer_payment_for_sales_invoice)
 
 
 async def _probe_credit_note_for_sales_invoice(
@@ -883,8 +978,21 @@ async def _probe_credit_note_for_sales_invoice(
     return await CreditNoteService(session).has_live_for_sales_invoice(tenant_id, sales_invoice_id)
 
 
+async def _probe_customer_payment_for_sales_invoice(
+    session: AsyncSession, tenant_id: UUID, sales_invoice_id: UUID
+) -> bool:
+    from app.erp.customer_payments.service import CustomerPaymentService
+
+    return await CustomerPaymentService(session).has_live_for_sales_invoice(
+        tenant_id, sales_invoice_id
+    )
+
+
 def _register_purchase_invoice_dependents() -> None:
     register_purchase_invoice_dependent("debit_note", _probe_debit_note_for_purchase_invoice)
+    register_purchase_invoice_dependent(
+        "supplier_payment", _probe_supplier_payment_for_purchase_invoice
+    )
 
 
 async def _probe_debit_note_for_purchase_invoice(
@@ -893,5 +1001,15 @@ async def _probe_debit_note_for_purchase_invoice(
     from app.erp.debit_notes.service import DebitNoteService
 
     return await DebitNoteService(session).has_live_for_purchase_invoice(
+        tenant_id, purchase_invoice_id
+    )
+
+
+async def _probe_supplier_payment_for_purchase_invoice(
+    session: AsyncSession, tenant_id: UUID, purchase_invoice_id: UUID
+) -> bool:
+    from app.erp.supplier_payments.service import SupplierPaymentService
+
+    return await SupplierPaymentService(session).has_live_for_purchase_invoice(
         tenant_id, purchase_invoice_id
     )

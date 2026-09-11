@@ -17,6 +17,7 @@ from app.auth.catalog import (
     PURCHASE_INVOICE_CANCEL,
     PURCHASE_INVOICE_DELETE,
     PURCHASE_INVOICE_POST,
+    SUPPLIER_PAYMENT_CREATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
@@ -59,6 +60,7 @@ from app.core.exceptions import (
     DocumentStaleError,
     InvoiceCannotVoidError,
     InvoiceQtyExceededError,
+    PaymentOverAllocatedError,
     ResourceNotFoundError,
     ValidationError,
 )
@@ -577,6 +579,19 @@ class PurchaseInvoiceService:
                 payload={"purchase_invoice_id": str(invoice_id)},
                 dedupe_key=f"purchase-invoice-posted:{invoice_id}",
             )
+            if loaded.purchase_order_id is not None:
+                from app.erp.supplier_payments.service import SupplierPaymentService
+
+                await SupplierPaymentService(
+                    self.session, actor_permissions=self.actor_permissions
+                ).auto_apply_po_advances(
+                    tenant_id,
+                    invoice_id=loaded.id,
+                    supplier_id=loaded.supplier_id,
+                    purchase_order_id=loaded.purchase_order_id,
+                    actor_user_id=actor_user_id,
+                )
+                loaded = await self._require(tenant_id, invoice_id)
             response = self._to_response(loaded)
             await self.idempotency.store(
                 tenant_id, idempotency_key, response.model_dump(mode="json")
@@ -662,6 +677,28 @@ class PurchaseInvoiceService:
         row.amount_debited = quantize_money(row.amount_debited + amount)
         if row.amount_debited < _ZERO:
             raise ValidationError("Debited amount cannot be negative")
+        self._refresh_payment_status(row)
+        await self.session.flush()
+        return row
+
+    async def apply_payment(
+        self, tenant_id: UUID, invoice_id: UUID, amount: Decimal
+    ) -> PurchaseInvoice:
+        """Caller owns the transaction. Amount may be negative to reverse a payment."""
+
+        row = await self._require(tenant_id, invoice_id, for_update=True)
+        row.amount_paid = quantize_money(row.amount_paid + amount)
+        if row.amount_paid < _ZERO:
+            raise ValidationError("Paid amount cannot be negative")
+        settled = quantize_money(row.amount_paid + row.amount_debited)
+        if settled > row.grand_total:
+            raise PaymentOverAllocatedError(
+                details={
+                    "grand_total": str(row.grand_total),
+                    "amount_paid": str(row.amount_paid),
+                    "amount_debited": str(row.amount_debited),
+                }
+            )
         self._refresh_payment_status(row)
         await self.session.flush()
         return row
@@ -1375,6 +1412,8 @@ class PurchaseInvoiceService:
 
     def _refresh_payment_status(self, row: PurchaseInvoice) -> None:
         row.balance_due = quantize_money(row.grand_total - row.amount_paid - row.amount_debited)
+        if row.balance_due < _ZERO:
+            row.balance_due = _ZERO
         applied = quantize_money(row.amount_paid + row.amount_debited)
         if applied <= _ZERO:
             row.payment_status = PaymentStatus.UNPAID.value
@@ -1403,6 +1442,13 @@ class PurchaseInvoiceService:
             self.actor_permissions, PURCHASE_INVOICE_DELETE
         ):
             actions.append("delete")
+        if (
+            status == InvoiceDocumentStatus.POSTED
+            and row.balance_due > _ZERO
+            and has_permission(self.actor_permissions, SUPPLIER_PAYMENT_CREATE)
+        ):
+            actions.append("pay_bill")
+            actions.append("apply_debits")
         return actions
 
     def _to_response(
@@ -1563,6 +1609,22 @@ class PurchaseInvoiceService:
                     relationship="child",
                     document_date=item.debit_note_date,
                     quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+        from app.erp.supplier_payments.service import SupplierPaymentService
+
+        for payment in await SupplierPaymentService(
+            self.session, actor_permissions=self.actor_permissions
+        ).list_for_purchase_invoice(tenant_id, row.id):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.SUPPLIER_PAYMENT.value,
+                    document_id=payment.id,
+                    document_number=payment.document_number,
+                    status=payment.status,
+                    relationship="child",
+                    document_date=payment.payment_date,
+                    amount_summary=str(payment.amount_paid),
                 )
             )
         return related

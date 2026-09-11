@@ -208,6 +208,8 @@ class DocumentType(StrEnum):
     SHIPMENT = "SHIPMENT"
     SALES_RETURN = "SALES_RETURN"
     JOURNAL_ENTRY = "JOURNAL_ENTRY"
+    CUSTOMER_PAYMENT = "CUSTOMER_PAYMENT"
+    SUPPLIER_PAYMENT = "SUPPLIER_PAYMENT"
 
 
 class StockDocumentStatus(StrEnum):
@@ -275,6 +277,7 @@ class AccountSystemRole(StrEnum):
     OPENING_BALANCE_EQUITY = "OPENING_BALANCE_EQUITY"
     CASH_ON_HAND = "CASH_ON_HAND"
     BANK = "BANK"
+    BANK_CHARGES = "BANK_CHARGES"
     SUSPENSE = "SUSPENSE"
 
 
@@ -381,7 +384,32 @@ class PaymentMethod(StrEnum):
     DEBIT_CARD = "DEBIT_CARD"
     CHEQUE = "CHEQUE"
     ONLINE = "ONLINE"
+    TT = "TT"
     OTHER = "OTHER"
+
+
+class CreditLimitPolicy(StrEnum):
+    OFF = "OFF"
+    WARN = "WARN"
+    BLOCK = "BLOCK"
+
+
+class OpenItemType(StrEnum):
+    SALES_INVOICE = "SALES_INVOICE"
+    PURCHASE_INVOICE = "PURCHASE_INVOICE"
+    CREDIT_NOTE = "CREDIT_NOTE"
+    DEBIT_NOTE = "DEBIT_NOTE"
+    OPENING_AR = "OPENING_AR"
+    OPENING_AP = "OPENING_AP"
+    CUSTOMER_PAYMENT = "CUSTOMER_PAYMENT"
+    SUPPLIER_PAYMENT = "SUPPLIER_PAYMENT"
+
+
+class PaymentAllocationSource(StrEnum):
+    CUSTOMER_PAYMENT = "CUSTOMER_PAYMENT"
+    SUPPLIER_PAYMENT = "SUPPLIER_PAYMENT"
+    CREDIT_NOTE = "CREDIT_NOTE"
+    DEBIT_NOTE = "DEBIT_NOTE"
 
 
 class StockMovementType(StrEnum):
@@ -463,6 +491,7 @@ class AuditAction(StrEnum):
     DISPATCH = "DISPATCH"
     ARRIVE = "ARRIVE"
     REVERSE = "REVERSE"
+    OVERRIDE = "OVERRIDE"
     LOGIN = "LOGIN"
     LOGOUT = "LOGOUT"
 
@@ -516,6 +545,8 @@ class AttachmentEntityType(StrEnum):
     SALES_RETURN = "SALES_RETURN"
     JOURNAL_ENTRY = "JOURNAL_ENTRY"
     ACCOUNT = "ACCOUNT"
+    CUSTOMER_PAYMENT = "CUSTOMER_PAYMENT"
+    SUPPLIER_PAYMENT = "SUPPLIER_PAYMENT"
 
 
 class AttachmentCategory(StrEnum):
@@ -532,6 +563,7 @@ class AttachmentCategory(StrEnum):
     RETURN_PHOTO = "RETURN_PHOTO"
     PACKING_LIST = "PACKING_LIST"
     DISPATCH_PHOTO = "DISPATCH_PHOTO"
+    PAYMENT_PROOF = "PAYMENT_PROOF"
     OTHER = "OTHER"
 
 
