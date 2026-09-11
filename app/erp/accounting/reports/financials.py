@@ -117,6 +117,35 @@ class FinancialReports:
         *,
         as_of: date,
         branch_id: UUID | None = None,
+        include_comparative: bool = True,
+    ) -> BalanceSheetResponse:
+        current = await self._balance_sheet_at(tenant_id, as_of=as_of, branch_id=branch_id)
+        comparative_as_of: date | None = None
+        prior: BalanceSheetResponse | None = None
+        if include_comparative:
+            try:
+                comparative_as_of = as_of.replace(year=as_of.year - 1)
+            except ValueError:
+                comparative_as_of = as_of.replace(year=as_of.year - 1, day=28)
+            prior = await self._balance_sheet_at(
+                tenant_id, as_of=comparative_as_of, branch_id=branch_id
+            )
+            prior_by_id = {line.account_id: line.amount for line in prior.lines}
+            for line in current.lines:
+                line.comparative_amount = prior_by_id.get(line.account_id, _ZERO)
+        current.comparative_as_of = comparative_as_of
+        if prior is not None:
+            current.comparative_total_assets = prior.total_assets
+            current.comparative_total_liabilities = prior.total_liabilities
+            current.comparative_total_equity = prior.total_equity
+        return current
+
+    async def _balance_sheet_at(
+        self,
+        tenant_id: UUID,
+        *,
+        as_of: date,
+        branch_id: UUID | None = None,
     ) -> BalanceSheetResponse:
         accounts = await self.accounts.repo.list_all(tenant_id)
         closing = await self._sum_by_account(tenant_id, end=as_of, branch_id=branch_id)
@@ -197,6 +226,7 @@ class FinancialReports:
         from_date: date,
         to_date: date,
         branch_id: UUID | None = None,
+        include_comparative: bool = True,
     ) -> CashFlowResponse:
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
@@ -317,12 +347,33 @@ class FinancialReports:
                 account_id=cash_account_id,
             ),
         ]
+        comparative_from = None
+        comparative_to = None
+        comparative_net_change = None
+        if include_comparative:
+            span = (to_date - from_date).days + 1
+            comparative_to = from_date - timedelta(days=1)
+            comparative_from = comparative_to - timedelta(days=span - 1)
+            prior = await self.cash_flow(
+                tenant_id,
+                from_date=comparative_from,
+                to_date=comparative_to,
+                branch_id=branch_id,
+                include_comparative=False,
+            )
+            prior_by_key = {line.key: line.amount for line in prior.lines}
+            for line in lines:
+                line.comparative_amount = prior_by_key.get(line.key, _ZERO)
+            comparative_net_change = prior.net_change
         return CashFlowResponse(
             from_date=from_date,
             to_date=to_date,
+            comparative_from=comparative_from,
+            comparative_to=comparative_to,
             net_profit=pnl.net_profit,
             cash_opening=cash_opening,
             cash_closing=cash_closing,
             net_change=net_change,
+            comparative_net_change=comparative_net_change,
             lines=lines,
         )

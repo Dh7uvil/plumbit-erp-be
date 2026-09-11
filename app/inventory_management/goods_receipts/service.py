@@ -15,15 +15,18 @@ from app.auth.catalog import (
     GOODS_RECEIPT_DELETE,
     GOODS_RECEIPT_POST,
     GOODS_RECEIPT_UPDATE,
-    INVENTORY_MODULE,
-    PERIOD_OVERRIDE,
-    QUALITY_INSPECTION_CREATE,
     LANDED_COST_CREATE,
+    PERIOD_OVERRIDE,
+    PURCHASE_MODULE,
+    PURCHASE_RETURN_CREATE,
+    QUALITY_INSPECTION_CREATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
 from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
+from app.common.print.schemas import PrintDocumentResponse
+from app.common.print.service import PrintService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
@@ -31,7 +34,7 @@ from app.common.services.audit import AuditWriter
 from app.common.utils.conversion import quantity_summary
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
-from app.common.utils.document_totals import place_of_supply_from_address
+from app.common.utils.document_totals import format_address_snapshot, place_of_supply_from_address
 from app.core.enums import (
     AuditAction,
     DocumentType,
@@ -166,6 +169,39 @@ class GoodsReceiptService:
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
 
+    async def print_document(
+        self,
+        tenant_id: UUID,
+        receipt_id: UUID,
+        *,
+        template_family: str = "uae",
+    ) -> PrintDocumentResponse:
+        row = await self.get(tenant_id, receipt_id)
+        supplier = await self.suppliers.get(tenant_id, row.supplier_id)
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        printer = PrintService(self.session)
+        family = template_family if template_family in {"uae", "china"} else "uae"
+        return await printer.assemble(
+            tenant_id,
+            document_type=DocumentType.GOODS_RECEIPT.value,
+            document_id=row.id,
+            document_number=row.document_number,
+            document_date=row.document_date,
+            template_family=family,
+            customer_code=supplier.code,
+            customer_name=supplier.name,
+            customer_address=format_address_snapshot(supplier.billing_address),
+            customer_trn=supplier.trn,
+            bl_number=row.bl_number,
+            container_number=row.container_number,
+            currency_code=currency.code,
+            notes=row.notes,
+            lines=[
+                printer.commercial_line(line, index=index)
+                for index, line in enumerate(row.lines, start=1)
+            ],
+        )
+
     async def create(
         self, tenant_id: UUID, payload: GoodsReceiptCreate, *, actor_user_id: UUID
     ) -> GoodsReceiptResponse:
@@ -205,7 +241,7 @@ class GoodsReceiptService:
             tenant_id=tenant_id,
             user_id=actor_user_id,
             action=AuditAction.CREATE,
-            module=INVENTORY_MODULE,
+            module=PURCHASE_MODULE,
             entity_type="goods_receipt",
             entity_id=row.id,
             new_values=await self._snapshot(tenant_id, loaded),
@@ -300,7 +336,7 @@ class GoodsReceiptService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=INVENTORY_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="goods_receipt",
                 entity_id=receipt_id,
                 old_values=old_values,
@@ -329,7 +365,7 @@ class GoodsReceiptService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=INVENTORY_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="goods_receipt",
                 entity_id=receipt_id,
                 old_values=old_values,
@@ -470,7 +506,7 @@ class GoodsReceiptService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.POST,
-                module=INVENTORY_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="goods_receipt",
                 entity_id=receipt_id,
                 old_values=old_values,
@@ -478,7 +514,7 @@ class GoodsReceiptService:
             )
             await self.outbox.enqueue(
                 tenant_id,
-                event_type="inventory.goods_receipt.posted",
+                event_type="purchase.goods_receipt.posted",
                 aggregate_type="goods_receipt",
                 aggregate_id=receipt_id,
                 payload={"goods_receipt_id": str(receipt_id)},
@@ -529,7 +565,7 @@ class GoodsReceiptService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CANCEL,
-                module=INVENTORY_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="goods_receipt",
                 entity_id=receipt_id,
                 old_values=old_values,
@@ -538,7 +574,7 @@ class GoodsReceiptService:
             if current == StockDocumentStatus.POSTED:
                 await self.outbox.enqueue(
                     tenant_id,
-                    event_type="inventory.goods_receipt.cancelled",
+                    event_type="purchase.goods_receipt.cancelled",
                     aggregate_type="goods_receipt",
                     aggregate_id=receipt_id,
                     payload={"goods_receipt_id": str(receipt_id)},
@@ -597,6 +633,25 @@ class GoodsReceiptService:
                 raise ValidationError("Billed quantity cannot be negative")
         await self.session.flush()
 
+    async def apply_line_returns(
+        self,
+        tenant_id: UUID,
+        receipt_id: UUID,
+        returns: Mapping[UUID, Decimal],
+    ) -> None:
+        """Caller owns the transaction. qty may be negative to reverse a return."""
+
+        row = await self._require(tenant_id, receipt_id, for_update=True)
+        by_id = {line.id: line for line in row.lines}
+        for line_id, qty in returns.items():
+            line = by_id.get(line_id)
+            if line is None:
+                raise ValidationError("Goods receipt line not found on this receipt")
+            line.qty_returned = quantize_quantity(line.qty_returned + qty)
+            if line.qty_returned < _ZERO:
+                raise ValidationError("Returned quantity cannot be negative")
+        await self.session.flush()
+
     async def _cancel_posted(
         self, tenant_id: UUID, row: GoodsReceipt, *, actor_user_id: UUID
     ) -> None:
@@ -610,6 +665,12 @@ class GoodsReceiptService:
         )
         if await inspections.has_approved(tenant_id, row.id):
             raise GrnCannotCancelError("An approved quality inspection exists for this receipt")
+        from app.inventory_management.purchase_returns.service import PurchaseReturnService
+
+        if await PurchaseReturnService(
+            self.session, actor_permissions=self.actor_permissions
+        ).has_live_for_goods_receipt(tenant_id, row.id):
+            raise GrnCannotCancelError("A purchase return exists for this receipt")
         if any(line.qty_accepted > _ZERO or line.qty_rejected > _ZERO for line in row.lines):
             raise GrnCannotCancelError("Quantity has already been QC-released or scrapped")
         if not await self.stock.costing.layers_fully_remaining(
@@ -912,6 +973,10 @@ class GoodsReceiptService:
             self.actor_permissions, LANDED_COST_CREATE
         ):
             actions.append("create_landed_cost")
+        if status == StockDocumentStatus.POSTED and has_permission(
+            self.actor_permissions, PURCHASE_RETURN_CREATE
+        ):
+            actions.append("create_purchase_return")
         return actions
 
     def _to_response(self, row: GoodsReceipt) -> GoodsReceiptResponse:

@@ -149,3 +149,17 @@ class CreditNoteRepository:
             .order_by(CreditNote.credit_note_date, CreditNote.created_at)
         )
         return list((await self.session.execute(statement)).scalars().all())
+
+    async def list_for_sales_return(
+        self, tenant_id: UUID, sales_return_id: UUID
+    ) -> builtins.list[CreditNote]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(
+                CreditNote.sales_return_id == sales_return_id,
+                CreditNote.status != InvoiceDocumentStatus.CANCELLED.value,
+            )
+            .options(*self._with_children())
+            .order_by(CreditNote.credit_note_date, CreditNote.created_at)
+        )
+        return list((await self.session.execute(statement)).scalars().all())

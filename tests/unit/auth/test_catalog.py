@@ -26,54 +26,54 @@ def test_catalog_includes_organization_and_audit_permissions() -> None:
 
 def test_catalog_includes_quote_ready_permissions() -> None:
     assert "crm.customer.create" in CATALOG_PERMISSIONS
-    assert "erp.supplier.create" in CATALOG_PERMISSIONS
-    assert "erp.supplier.read" in CATALOG_PERMISSIONS
-    assert "erp.supplier.update" in CATALOG_PERMISSIONS
-    assert "erp.supplier.delete" in CATALOG_PERMISSIONS
-    assert "erp.supplier_product.create" in CATALOG_PERMISSIONS
-    assert "erp.supplier_product.read" in CATALOG_PERMISSIONS
-    assert "erp.supplier_product.update" in CATALOG_PERMISSIONS
-    assert "erp.supplier_product.delete" in CATALOG_PERMISSIONS
-    assert "erp.supplier_product.link" in CATALOG_PERMISSIONS
+    assert "purchase.supplier.create" in CATALOG_PERMISSIONS
+    assert "purchase.supplier.read" in CATALOG_PERMISSIONS
+    assert "purchase.supplier.update" in CATALOG_PERMISSIONS
+    assert "purchase.supplier.delete" in CATALOG_PERMISSIONS
+    assert "purchase.supplier_product.create" in CATALOG_PERMISSIONS
+    assert "purchase.supplier_product.read" in CATALOG_PERMISSIONS
+    assert "purchase.supplier_product.update" in CATALOG_PERMISSIONS
+    assert "purchase.supplier_product.delete" in CATALOG_PERMISSIONS
+    assert "purchase.supplier_product.link" in CATALOG_PERMISSIONS
     assert "crm.contact.read" in CATALOG_PERMISSIONS
     assert "inventory.product.create" in CATALOG_PERMISSIONS
     assert "inventory.price_list.update" in CATALOG_PERMISSIONS
     assert "inventory.warehouse.create" in CATALOG_PERMISSIONS
-    assert "erp.currency.read" in CATALOG_PERMISSIONS
-    assert "erp.exchange_rate.create" in CATALOG_PERMISSIONS
-    assert "erp.tax.read" in CATALOG_PERMISSIONS
-    assert "erp.quotation.approve" in CATALOG_PERMISSIONS
-    assert "erp.quotation.send" in CATALOG_PERMISSIONS
-    assert "erp.quotation.revise" in CATALOG_PERMISSIONS
-    assert "erp.sales_order.acknowledge" in CATALOG_PERMISSIONS
-    assert "erp.proforma_invoice.create" in CATALOG_PERMISSIONS
-    assert "erp.proforma_invoice.read" in CATALOG_PERMISSIONS
-    assert "erp.proforma_invoice.update" in CATALOG_PERMISSIONS
-    assert "erp.proforma_invoice.delete" in CATALOG_PERMISSIONS
-    assert "erp.proforma_invoice.send" in CATALOG_PERMISSIONS
-    assert "erp.proforma_invoice.confirm" in CATALOG_PERMISSIONS
-    assert "erp.period.lock" in CATALOG_PERMISSIONS
-    assert "erp.period.override" in CATALOG_PERMISSIONS
-    assert "erp.account.create" in CATALOG_PERMISSIONS
-    assert "erp.account.read" in CATALOG_PERMISSIONS
-    assert "erp.journal_entry.post" in CATALOG_PERMISSIONS
-    assert "erp.journal_entry.reverse" in CATALOG_PERMISSIONS
-    assert "erp.opening_balance.manage" in CATALOG_PERMISSIONS
-    assert "erp.report.ledger" in CATALOG_PERMISSIONS
-    assert "erp.report.ar_ap" in CATALOG_PERMISSIONS
-    assert "erp.report.inventory" in CATALOG_PERMISSIONS
-    assert "erp.report.financial" in CATALOG_PERMISSIONS
-    assert "erp.landed_cost.create" in CATALOG_PERMISSIONS
-    assert "erp.landed_cost.read" in CATALOG_PERMISSIONS
-    assert "erp.landed_cost.update" in CATALOG_PERMISSIONS
-    assert "erp.landed_cost.post" in CATALOG_PERMISSIONS
-    assert "erp.landed_cost.cancel" in CATALOG_PERMISSIONS
-    assert "erp.customer_payment.create" in CATALOG_PERMISSIONS
-    assert "erp.customer_payment.post" in CATALOG_PERMISSIONS
-    assert "erp.supplier_payment.create" in CATALOG_PERMISSIONS
-    assert "erp.supplier_payment.post" in CATALOG_PERMISSIONS
-    assert "erp.credit_control.override" in CATALOG_PERMISSIONS
-    assert "erp.document_sequence.create" in CATALOG_PERMISSIONS
+    assert "masters.currency.read" in CATALOG_PERMISSIONS
+    assert "masters.exchange_rate.create" in CATALOG_PERMISSIONS
+    assert "masters.tax.read" in CATALOG_PERMISSIONS
+    assert "sales.quotation.approve" in CATALOG_PERMISSIONS
+    assert "sales.quotation.send" in CATALOG_PERMISSIONS
+    assert "sales.quotation.revise" in CATALOG_PERMISSIONS
+    assert "sales.sales_order.acknowledge" in CATALOG_PERMISSIONS
+    assert "sales.proforma_invoice.create" in CATALOG_PERMISSIONS
+    assert "sales.proforma_invoice.read" in CATALOG_PERMISSIONS
+    assert "sales.proforma_invoice.update" in CATALOG_PERMISSIONS
+    assert "sales.proforma_invoice.delete" in CATALOG_PERMISSIONS
+    assert "sales.proforma_invoice.send" in CATALOG_PERMISSIONS
+    assert "sales.proforma_invoice.confirm" in CATALOG_PERMISSIONS
+    assert "accounting.period.lock" in CATALOG_PERMISSIONS
+    assert "accounting.period.override" in CATALOG_PERMISSIONS
+    assert "accounting.account.create" in CATALOG_PERMISSIONS
+    assert "accounting.account.read" in CATALOG_PERMISSIONS
+    assert "accounting.journal_entry.post" in CATALOG_PERMISSIONS
+    assert "accounting.journal_entry.reverse" in CATALOG_PERMISSIONS
+    assert "accounting.opening_balance.manage" in CATALOG_PERMISSIONS
+    assert "reports.report.ledger" in CATALOG_PERMISSIONS
+    assert "reports.report.ar_ap" in CATALOG_PERMISSIONS
+    assert "reports.report.inventory" in CATALOG_PERMISSIONS
+    assert "reports.report.financial" in CATALOG_PERMISSIONS
+    assert "purchase.landed_cost.create" in CATALOG_PERMISSIONS
+    assert "purchase.landed_cost.read" in CATALOG_PERMISSIONS
+    assert "purchase.landed_cost.update" in CATALOG_PERMISSIONS
+    assert "purchase.landed_cost.post" in CATALOG_PERMISSIONS
+    assert "purchase.landed_cost.cancel" in CATALOG_PERMISSIONS
+    assert "sales.customer_payment.create" in CATALOG_PERMISSIONS
+    assert "sales.customer_payment.post" in CATALOG_PERMISSIONS
+    assert "purchase.supplier_payment.create" in CATALOG_PERMISSIONS
+    assert "purchase.supplier_payment.post" in CATALOG_PERMISSIONS
+    assert "accounting.credit_control.override" in CATALOG_PERMISSIONS
+    assert "masters.document_sequence.create" in CATALOG_PERMISSIONS
     assert "inventory.stock.read" in CATALOG_PERMISSIONS
     assert "inventory.stock.update" in CATALOG_PERMISSIONS
     assert "inventory.stock_transfer.create" in CATALOG_PERMISSIONS
@@ -81,29 +81,41 @@ def test_catalog_includes_quote_ready_permissions() -> None:
     assert "inventory.stock_adjustment.create" in CATALOG_PERMISSIONS
     assert "inventory.stock_adjustment.post" in CATALOG_PERMISSIONS
     assert "inventory.cost.read" in CATALOG_PERMISSIONS
-    assert "inventory.goods_receipt.create" in CATALOG_PERMISSIONS
-    assert "inventory.goods_receipt.read" in CATALOG_PERMISSIONS
-    assert "inventory.goods_receipt.update" in CATALOG_PERMISSIONS
-    assert "inventory.goods_receipt.delete" in CATALOG_PERMISSIONS
-    assert "inventory.goods_receipt.post" in CATALOG_PERMISSIONS
-    assert "inventory.quality_inspection.create" in CATALOG_PERMISSIONS
-    assert "inventory.quality_inspection.read" in CATALOG_PERMISSIONS
-    assert "inventory.quality_inspection.update" in CATALOG_PERMISSIONS
-    assert "inventory.quality_inspection.approve" in CATALOG_PERMISSIONS
-    assert "inventory.delivery_note.create" in CATALOG_PERMISSIONS
-    assert "inventory.delivery_note.read" in CATALOG_PERMISSIONS
-    assert "inventory.delivery_note.update" in CATALOG_PERMISSIONS
-    assert "inventory.delivery_note.delete" in CATALOG_PERMISSIONS
-    assert "inventory.delivery_note.post" in CATALOG_PERMISSIONS
-    assert "inventory.package.create" in CATALOG_PERMISSIONS
-    assert "inventory.package.read" in CATALOG_PERMISSIONS
-    assert "inventory.package.update" in CATALOG_PERMISSIONS
-    assert "inventory.package.delete" in CATALOG_PERMISSIONS
-    assert "inventory.shipment.create" in CATALOG_PERMISSIONS
-    assert "inventory.shipment.dispatch" in CATALOG_PERMISSIONS
-    assert "inventory.shipment.close" in CATALOG_PERMISSIONS
-    assert "inventory.sales_return.create" in CATALOG_PERMISSIONS
-    assert "inventory.sales_return.post" in CATALOG_PERMISSIONS
+    assert "purchase.goods_receipt.create" in CATALOG_PERMISSIONS
+    assert "purchase.goods_receipt.read" in CATALOG_PERMISSIONS
+    assert "purchase.goods_receipt.update" in CATALOG_PERMISSIONS
+    assert "purchase.goods_receipt.delete" in CATALOG_PERMISSIONS
+    assert "purchase.goods_receipt.post" in CATALOG_PERMISSIONS
+    assert "purchase.quality_inspection.create" in CATALOG_PERMISSIONS
+    assert "purchase.quality_inspection.read" in CATALOG_PERMISSIONS
+    assert "purchase.quality_inspection.update" in CATALOG_PERMISSIONS
+    assert "purchase.quality_inspection.approve" in CATALOG_PERMISSIONS
+    assert "sales.delivery_note.create" in CATALOG_PERMISSIONS
+    assert "sales.delivery_note.read" in CATALOG_PERMISSIONS
+    assert "sales.delivery_note.update" in CATALOG_PERMISSIONS
+    assert "sales.delivery_note.delete" in CATALOG_PERMISSIONS
+    assert "sales.delivery_note.post" in CATALOG_PERMISSIONS
+    assert "logistics.package.create" in CATALOG_PERMISSIONS
+    assert "logistics.package.read" in CATALOG_PERMISSIONS
+    assert "logistics.package.update" in CATALOG_PERMISSIONS
+    assert "logistics.package.delete" in CATALOG_PERMISSIONS
+    assert "logistics.shipment.create" in CATALOG_PERMISSIONS
+    assert "logistics.shipment.dispatch" in CATALOG_PERMISSIONS
+    assert "logistics.shipment.close" in CATALOG_PERMISSIONS
+    assert "sales.sales_return.create" in CATALOG_PERMISSIONS
+    assert "sales.sales_return.post" in CATALOG_PERMISSIONS
+    assert "purchase.purchase_return.create" in CATALOG_PERMISSIONS
+    assert "purchase.purchase_return.post" in CATALOG_PERMISSIONS
+    assert "logistics.shipment.dispatch" in CATALOG_PERMISSIONS
+    assert "reports.report.tax" in CATALOG_PERMISSIONS
+    assert "sales.quotation.import" in CATALOG_PERMISSIONS
+    assert "sales.quotation.export" in CATALOG_PERMISSIONS
+    assert "sales.proforma_invoice.import" in CATALOG_PERMISSIONS
+    assert "sales.sales_invoice.export" in CATALOG_PERMISSIONS
+    assert "logistics.package.import" in CATALOG_PERMISSIONS
+    assert "purchase.supplier.import" in CATALOG_PERMISSIONS
+    assert "crm.customer.import" in CATALOG_PERMISSIONS
+    assert "inventory.product.export" in CATALOG_PERMISSIONS
     assert "inventory.product.history" in CATALOG_PERMISSIONS
     assert "crm.customer.history" in CATALOG_PERMISSIONS
-    assert "erp.supplier.history" in CATALOG_PERMISSIONS
+    assert "purchase.supplier.history" in CATALOG_PERMISSIONS

@@ -121,6 +121,7 @@ class SupplierPaymentResponse(BaseModel):
     journal_entry_id: UUID | None
     reversal_journal_entry_id: UUID | None
     refund_journal_entry_id: UUID | None
+    realized_fx_amount: Decimal | None = None
     notes: str | None
     posted_at: datetime | None
     posted_by: UUID | None

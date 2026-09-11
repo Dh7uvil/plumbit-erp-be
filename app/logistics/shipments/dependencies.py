@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.dependencies.auth import CurrentUserDependency
 from app.db.session import get_db
-from app.inventory_management.shipments.service import ShipmentService
+from app.logistics.shipments.service import ShipmentService
 
 
 def get_shipment_service(

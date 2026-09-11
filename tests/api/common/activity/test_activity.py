@@ -28,7 +28,7 @@ async def test_quotation_activity_requires_quotation_read(client: AsyncClient) -
     assert created["status_code"] == 201, created["text"]
     quote_id = created["body"]["data"]["id"]
 
-    reader = await _user_headers(client, headers, tenant_id, codes=("erp.quotation.read",))
+    reader = await _user_headers(client, headers, tenant_id, codes=("sales.quotation.read",))
     listed = await client.get(
         "/api/v1/activity",
         headers=reader,

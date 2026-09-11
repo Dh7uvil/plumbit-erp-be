@@ -20,6 +20,7 @@ from app.erp.sales_orders.models import SalesOrder
 from app.inventory_management.delivery_notes.models import DeliveryNote, DeliveryNoteLine
 from app.inventory_management.goods_receipts.models import GoodsReceipt, GoodsReceiptLine
 from app.inventory_management.products.models import Product
+from app.inventory_management.purchase_returns.models import PurchaseReturn, PurchaseReturnLine
 from app.inventory_management.sales_returns.models import SalesReturn, SalesReturnLine
 from app.inventory_management.stock.models import StockMovement
 from app.inventory_management.stock.service import SOURCE_DELIVERY_NOTE
@@ -42,6 +43,21 @@ class HistoryRepository:
                 SalesReturn.status == StockDocumentStatus.POSTED.value,
             )
             .correlate(DeliveryNoteLine)
+            .scalar_subquery(),
+            _ZERO,
+        )
+
+    def _posted_purchase_return_qty(self, tenant_id: UUID) -> ColumnElement[Decimal]:
+        return func.coalesce(
+            select(func.coalesce(func.sum(PurchaseReturnLine.quantity), _ZERO))
+            .join(PurchaseReturn, PurchaseReturn.id == PurchaseReturnLine.purchase_return_id)
+            .where(
+                PurchaseReturnLine.goods_receipt_line_id == GoodsReceiptLine.id,
+                PurchaseReturn.tenant_id == tenant_id,
+                PurchaseReturn.deleted_at.is_(None),
+                PurchaseReturn.status == StockDocumentStatus.POSTED.value,
+            )
+            .correlate(GoodsReceiptLine)
             .scalar_subquery(),
             _ZERO,
         )
@@ -465,7 +481,7 @@ class HistoryRepository:
                 Customer.id,
                 Customer.name,
                 GoodsReceipt.warehouse_id,
-                GoodsReceiptLine.quantity,
+                GoodsReceiptLine.quantity - self._posted_purchase_return_qty(tenant_id),
                 GoodsReceiptLine.rate,
                 GoodsReceipt.posted_by,
                 self._posted_bill_amount_for_grn_line(tenant_id),

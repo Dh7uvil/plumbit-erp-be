@@ -356,6 +356,169 @@
         ]
       }
     },
+    "/api/v1/reports/received-not-billed": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Received Not Billed",
+        "operationId": "get_received_not_billed_api_v1_reports_received_not_billed_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ReceivedNotBilledResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/three-way-match": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Three Way Match",
+        "operationId": "get_three_way_match_api_v1_reports_three_way_match_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ThreeWayMatchResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/dashboard": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Dashboard",
+        "operationId": "get_dashboard_api_v1_reports_dashboard_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "as_of",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DashboardResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/reports/ar-aging": {
       "get": {
         "tags": [
@@ -2094,6 +2257,40 @@
         ],
         "title": "ApiResponse[CashFlowResponse]"
       },
+      "ApiResponse_DashboardResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/DashboardResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[DashboardResponse]"
+      },
       "ApiResponse_ExportEvidenceExceptionResponse_": {
         "properties": {
           "success": {
@@ -2298,6 +2495,40 @@
         ],
         "title": "ApiResponse[PurchaseSuggestionResponse]"
       },
+      "ApiResponse_ReceivedNotBilledResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReceivedNotBilledResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[ReceivedNotBilledResponse]"
+      },
       "ApiResponse_StockAgingResponse_": {
         "properties": {
           "success": {
@@ -2468,6 +2699,40 @@
         ],
         "title": "ApiResponse[TaxRegisterResponse]"
       },
+      "ApiResponse_ThreeWayMatchResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/ThreeWayMatchResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[ThreeWayMatchResponse]"
+      },
       "ApiResponse_TrialBalanceResponse_": {
         "properties": {
           "success": {
@@ -2570,6 +2835,18 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount"
+          },
+          "comparative_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparative Amount"
           }
         },
         "type": "object",
@@ -2588,6 +2865,18 @@
             "type": "string",
             "format": "date",
             "title": "As Of"
+          },
+          "comparative_as_of": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparative As Of"
           },
           "total_assets": {
             "type": "string",
@@ -2608,6 +2897,42 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Current Earnings"
+          },
+          "comparative_total_assets": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparative Total Assets"
+          },
+          "comparative_total_liabilities": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparative Total Liabilities"
+          },
+          "comparative_total_equity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparative Total Equity"
           },
           "is_balanced": {
             "type": "boolean",
@@ -2647,6 +2972,18 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount"
           },
+          "comparative_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparative Amount"
+          },
           "account_id": {
             "anyOf": [
               {
@@ -2680,6 +3017,30 @@
             "format": "date",
             "title": "To Date"
           },
+          "comparative_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparative From"
+          },
+          "comparative_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparative To"
+          },
           "net_profit": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -2700,6 +3061,18 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Net Change"
           },
+          "comparative_net_change": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparative Net Change"
+          },
           "lines": {
             "items": {
               "$ref": "#/components/schemas/CashFlowLine"
@@ -2718,6 +3091,121 @@
           "net_change"
         ],
         "title": "CashFlowResponse"
+      },
+      "DashboardCreditBreach": {
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Customer Id"
+          },
+          "customer_name": {
+            "type": "string",
+            "title": "Customer Name"
+          },
+          "credit_limit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Credit Limit"
+          },
+          "outstanding": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Outstanding"
+          }
+        },
+        "type": "object",
+        "required": [
+          "customer_id",
+          "customer_name",
+          "credit_limit",
+          "outstanding"
+        ],
+        "title": "DashboardCreditBreach"
+      },
+      "DashboardResponse": {
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "open_ar": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Open Ar"
+          },
+          "open_ap": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Open Ap"
+          },
+          "overdue_ar_count": {
+            "type": "integer",
+            "title": "Overdue Ar Count"
+          },
+          "overdue_ap_count": {
+            "type": "integer",
+            "title": "Overdue Ap Count"
+          },
+          "stock_valuation": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Stock Valuation"
+          },
+          "unposted": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardUnpostedCount"
+            },
+            "type": "array",
+            "title": "Unposted"
+          },
+          "deliveries_today": {
+            "type": "integer",
+            "title": "Deliveries Today"
+          },
+          "receipts_today": {
+            "type": "integer",
+            "title": "Receipts Today"
+          },
+          "credit_limit_breaches": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardCreditBreach"
+            },
+            "type": "array",
+            "title": "Credit Limit Breaches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "as_of",
+          "open_ar",
+          "open_ap",
+          "overdue_ar_count",
+          "overdue_ap_count",
+          "stock_valuation",
+          "deliveries_today",
+          "receipts_today"
+        ],
+        "title": "DashboardResponse"
+      },
+      "DashboardUnpostedCount": {
+        "properties": {
+          "document_type": {
+            "type": "string",
+            "title": "Document Type"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_type",
+          "count"
+        ],
+        "title": "DashboardUnpostedCount"
       },
       "ExportEvidenceExceptionLine": {
         "properties": {
@@ -3518,6 +4006,103 @@
         ],
         "title": "PurchaseSuggestionResponse"
       },
+      "ReceivedNotBilledLine": {
+        "properties": {
+          "goods_receipt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Goods Receipt Id"
+          },
+          "goods_receipt_line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Goods Receipt Line Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "document_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Document Date"
+          },
+          "supplier_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Supplier Id"
+          },
+          "supplier_name": {
+            "type": "string",
+            "title": "Supplier Name"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Quantity"
+          },
+          "qty_billed": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Billed"
+          },
+          "outstanding_qty": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Outstanding Qty"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "goods_receipt_id",
+          "goods_receipt_line_id",
+          "document_number",
+          "document_date",
+          "supplier_id",
+          "supplier_name",
+          "product_id",
+          "description",
+          "quantity",
+          "qty_billed",
+          "outstanding_qty",
+          "amount"
+        ],
+        "title": "ReceivedNotBilledLine"
+      },
+      "ReceivedNotBilledResponse": {
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/ReceivedNotBilledLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "title": "ReceivedNotBilledResponse"
+      },
       "StockAgingBucketTotals": {
         "properties": {
           "days_0_30": {
@@ -4101,6 +4686,120 @@
           "total_grand"
         ],
         "title": "TaxRegisterResponse"
+      },
+      "ThreeWayMatchLine": {
+        "properties": {
+          "purchase_order_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Purchase Order Id"
+          },
+          "purchase_order_line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Purchase Order Line Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "order_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Order Date"
+          },
+          "supplier_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Supplier Id"
+          },
+          "supplier_name": {
+            "type": "string",
+            "title": "Supplier Name"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "ordered_qty": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Ordered Qty"
+          },
+          "received_qty": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Received Qty"
+          },
+          "billed_qty": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Billed Qty"
+          },
+          "ordered_value": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Ordered Value"
+          },
+          "received_value": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Received Value"
+          },
+          "billed_value": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Billed Value"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "purchase_order_id",
+          "purchase_order_line_id",
+          "document_number",
+          "order_date",
+          "supplier_id",
+          "supplier_name",
+          "product_id",
+          "description",
+          "ordered_qty",
+          "received_qty",
+          "billed_qty",
+          "ordered_value",
+          "received_value",
+          "billed_value",
+          "status"
+        ],
+        "title": "ThreeWayMatchLine"
+      },
+      "ThreeWayMatchResponse": {
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/ThreeWayMatchLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "title": "ThreeWayMatchResponse"
       },
       "TrialBalanceLine": {
         "properties": {

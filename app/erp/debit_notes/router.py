@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, Request, status
+from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
 
 from app.auth.catalog import (
     DEBIT_NOTE_CANCEL,
@@ -18,6 +18,7 @@ from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
 from app.common.idempotency.service import hash_request, require_idempotency_key
+from app.common.print.schemas import PrintDocumentResponse
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
@@ -27,6 +28,7 @@ from app.erp.debit_notes.schemas import (
     DebitNoteCancelRequest,
     DebitNoteCreate,
     DebitNoteCreateFromPurchaseInvoice,
+    DebitNoteCreateFromPurchaseReturn,
     DebitNoteFilter,
     DebitNoteResponse,
     DebitNoteUpdate,
@@ -53,6 +55,7 @@ async def list_debit_notes(
         status=filters.status.value if filters.status else None,
         supplier_id=filters.supplier_id,
         purchase_invoice_id=filters.purchase_invoice_id,
+        purchase_return_id=filters.purchase_return_id,
         currency_id=filters.currency_id,
         debit_note_date_from=filters.debit_note_date_from,
         debit_note_date_to=filters.debit_note_date_to,
@@ -86,6 +89,31 @@ async def create_debit_note_from_purchase_invoice(
 
 
 @router.post(
+    "/from-purchase-return",
+    response_model=ApiResponse[DebitNoteResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_debit_note_from_purchase_return(
+    payload: DebitNoteCreateFromPurchaseReturn,
+    request: Request,
+    tenant: TenantContextDependency,
+    service: DebitNoteServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(DEBIT_NOTE_CREATE))],
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[DebitNoteResponse]:
+    body = await request.body()
+    row = await service.create_from_purchase_return(
+        tenant.tenant_id,
+        payload,
+        actor_user_id=tenant.user_id,
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(data=row, message="Debit note created from purchase return")
+
+
+@router.post(
     "",
     response_model=ApiResponse[DebitNoteResponse],
     status_code=status.HTTP_201_CREATED,
@@ -108,6 +136,21 @@ async def get_debit_note(
     _: Annotated[CurrentUser, Depends(require_permission(DEBIT_NOTE_READ))],
 ) -> ApiResponse[DebitNoteResponse]:
     return ApiResponse(data=await service.get(tenant.tenant_id, note_id))
+
+
+@router.get("/{note_id}/print", response_model=ApiResponse[PrintDocumentResponse])
+async def print_debit_note(
+    note_id: UUID,
+    tenant: TenantContextDependency,
+    service: DebitNoteServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(DEBIT_NOTE_READ))],
+    template_family: Annotated[str, Query()] = "uae",
+) -> ApiResponse[PrintDocumentResponse]:
+    return ApiResponse(
+        data=await service.print_document(
+            tenant.tenant_id, note_id, template_family=template_family
+        )
+    )
 
 
 @router.patch("/{note_id}", response_model=ApiResponse[DebitNoteResponse])

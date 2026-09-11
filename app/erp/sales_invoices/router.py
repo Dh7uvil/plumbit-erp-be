@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, Request, status
+from fastapi import APIRouter, Body, Depends, File, Form, Header, Query, Request, UploadFile, status
 
 from app.auth.catalog import (
     COST_READ,
@@ -11,6 +11,8 @@ from app.auth.catalog import (
     SALES_INVOICE_CANCEL,
     SALES_INVOICE_CREATE,
     SALES_INVOICE_DELETE,
+    SALES_INVOICE_EXPORT,
+    SALES_INVOICE_IMPORT,
     SALES_INVOICE_POST,
     SALES_INVOICE_READ,
     SALES_INVOICE_UPDATE,
@@ -20,12 +22,17 @@ from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
 from app.common.idempotency.service import hash_request, require_idempotency_key
+from app.common.imex.commercial import COMMERCIAL_EXPORT_HEADERS
+from app.common.imex.http import parse_mapping_json, read_upload
+from app.common.imex.schemas import ImportPreviewResponse, ImportResult
+from app.common.imex.service import export_response, preview_file, template_response
+from app.common.print.schemas import PrintDocumentResponse
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
+from app.erp.accounting.customer_payments.dependencies import CustomerPaymentServiceDependency
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
 from app.erp.accounting.open_items.schemas import ApplyCreditsRequest
-from app.erp.customer_payments.dependencies import CustomerPaymentServiceDependency
 from app.erp.sales_invoices.dependencies import SalesInvoiceServiceDependency
 from app.erp.sales_invoices.schemas import (
     SalesInvoiceCancelRequest,
@@ -69,6 +76,71 @@ async def list_sales_invoices(
         invoice_date_to=filters.invoice_date_to,
     )
     return paginated_response(rows, params=page, total=total)
+
+
+@router.get("/import/template")
+async def sales_invoice_import_template(
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_INVOICE_IMPORT))],
+):
+    return template_response("sales_invoice")
+
+
+@router.post("/import/preview", response_model=ApiResponse[ImportPreviewResponse])
+async def sales_invoice_import_preview(
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_INVOICE_IMPORT))],
+    file: Annotated[UploadFile, File()],
+) -> ApiResponse[ImportPreviewResponse]:
+    filename, content = await read_upload(file)
+    return ApiResponse(data=preview_file("sales_invoice", filename=filename, content=content))
+
+
+@router.post(
+    "/import",
+    response_model=ApiResponse[ImportResult],
+    status_code=status.HTTP_201_CREATED,
+)
+async def sales_invoice_import(
+    tenant: TenantContextDependency,
+    service: SalesInvoiceServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_INVOICE_IMPORT))],
+    file: Annotated[UploadFile, File()],
+    mapping: Annotated[str | None, Form()] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[ImportResult]:
+    require_idempotency_key(idempotency_key)
+    filename, content = await read_upload(file)
+    result = await service.import_drafts(
+        tenant.tenant_id,
+        filename=filename,
+        content=content,
+        mapping=parse_mapping_json(mapping),
+        actor_user_id=tenant.user_id,
+    )
+    return ApiResponse(data=result, message="Sales invoice drafts imported")
+
+
+@router.get("/export")
+async def sales_invoice_export(
+    tenant: TenantContextDependency,
+    service: SalesInvoiceServiceDependency,
+    filters: Annotated[SalesInvoiceFilter, Depends()],
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_INVOICE_EXPORT))],
+):
+    rows = await service.export_rows(
+        tenant.tenant_id,
+        common_filter=filters,
+        status=filters.status.value if filters.status else None,
+        customer_id=filters.customer_id,
+        sales_order_id=filters.sales_order_id,
+        source_quotation_id=filters.source_quotation_id,
+        source_proforma_invoice_id=filters.source_proforma_invoice_id,
+        branch_id=filters.branch_id,
+        currency_id=filters.currency_id,
+        payment_status=filters.payment_status.value if filters.payment_status else None,
+        invoice_date_from=filters.invoice_date_from,
+        invoice_date_to=filters.invoice_date_to,
+    )
+    return export_response("sales_invoice", COMMERCIAL_EXPORT_HEADERS, rows)
 
 
 @router.post(
@@ -144,6 +216,21 @@ async def get_sales_invoice(
     _: Annotated[CurrentUser, Depends(require_permission(SALES_INVOICE_READ))],
 ) -> ApiResponse[SalesInvoiceResponse]:
     return ApiResponse(data=await service.get(tenant.tenant_id, invoice_id))
+
+
+@router.get("/{invoice_id}/print", response_model=ApiResponse[PrintDocumentResponse])
+async def print_sales_invoice(
+    invoice_id: UUID,
+    tenant: TenantContextDependency,
+    service: SalesInvoiceServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_INVOICE_READ))],
+    template_family: Annotated[str, Query()] = "uae",
+) -> ApiResponse[PrintDocumentResponse]:
+    return ApiResponse(
+        data=await service.print_document(
+            tenant.tenant_id, invoice_id, template_family=template_family
+        )
+    )
 
 
 @router.patch("/{invoice_id}", response_model=ApiResponse[SalesInvoiceResponse])

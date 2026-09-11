@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.attachments.models import Attachment
 from app.core.enums import AttachmentCategory, AttachmentEntityType
 from app.inventory_management.delivery_notes.models import DeliveryNote
-from app.inventory_management.shipments.models import Shipment
+from app.logistics.shipments.models import Shipment
 
 _EVIDENCE_CATEGORIES = frozenset(
     {AttachmentCategory.BL_DOCUMENT.value, AttachmentCategory.CUSTOMS_DOC.value}

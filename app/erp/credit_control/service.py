@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.auth.catalog import CREDIT_CONTROL_OVERRIDE, ERP_MODULE
+from app.auth.catalog import CREDIT_CONTROL_OVERRIDE, ACCOUNTING_MODULE
 from app.auth.org_service import OrganizationService
 from app.common.schemas.warnings import DocumentWarning
 from app.common.services.audit import AuditWriter
@@ -153,7 +153,7 @@ class CreditControlService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.OVERRIDE,
-                module=ERP_MODULE,
+                module=ACCOUNTING_MODULE,
                 entity_type="credit_control",
                 entity_id=customer_id,
                 new_values={

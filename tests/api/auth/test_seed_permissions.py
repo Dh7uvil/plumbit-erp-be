@@ -82,9 +82,9 @@ async def test_seed_catalog_permissions_inserts_missing_row(client: AsyncClient)
                 )
             ).all()
         }
-    assert "inventory.goods_receipt.post" in codes
+    assert "purchase.goods_receipt.post" in codes
     assert set(CATALOG_PERMISSIONS).issubset(codes)
-    assert "inventory.goods_receipt.post" not in await _role_permission_codes(
+    assert "purchase.goods_receipt.post" not in await _role_permission_codes(
         client, headers, role_id
     )
 

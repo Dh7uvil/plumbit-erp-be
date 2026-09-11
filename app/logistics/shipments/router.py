@@ -20,8 +20,8 @@ from app.common.dependencies.tenant import TenantContextDependency
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
-from app.inventory_management.shipments.dependencies import ShipmentServiceDependency
-from app.inventory_management.shipments.schemas import (
+from app.logistics.shipments.dependencies import ShipmentServiceDependency
+from app.logistics.shipments.schemas import (
     ShipmentAttachNotesRequest,
     ShipmentCreate,
     ShipmentFilter,

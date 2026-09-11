@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
-    ERP_MODULE,
+    ACCOUNTING_MODULE,
     JOURNAL_ENTRY_DELETE,
     JOURNAL_ENTRY_POST,
     JOURNAL_ENTRY_REVERSE,
@@ -22,6 +22,7 @@ from app.common.idempotency.service import IdempotencyService
 from app.common.period_lock import PeriodLockPolicy
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
 from app.common.utils.datetime import today_in_timezone
 from app.core.enums import AuditAction, DocumentType, JournalEntryStatus, JournalType, PartyType
@@ -120,7 +121,10 @@ class JournalEntryService:
 
     async def get(self, tenant_id: UUID, journal_id: UUID) -> JournalEntryResponse:
         await self._ensure_policy(tenant_id)
-        return self._to_response(await self._require(tenant_id, journal_id))
+        row = await self._require(tenant_id, journal_id)
+        response = self._to_response(row)
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
 
     async def create(
         self, tenant_id: UUID, payload: JournalEntryCreate, *, actor_user_id: UUID
@@ -156,7 +160,7 @@ class JournalEntryService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=ACCOUNTING_MODULE,
                 entity_type="journal_entry",
                 entity_id=row.id,
                 new_values=_journal_snapshot(loaded),
@@ -222,7 +226,7 @@ class JournalEntryService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=ACCOUNTING_MODULE,
                 entity_type="journal_entry",
                 entity_id=journal_id,
                 old_values=old_values,
@@ -248,7 +252,7 @@ class JournalEntryService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=ACCOUNTING_MODULE,
                 entity_type="journal_entry",
                 entity_id=journal_id,
                 old_values=_journal_snapshot(row),
@@ -316,7 +320,7 @@ class JournalEntryService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CANCEL,
-                module=ERP_MODULE,
+                module=ACCOUNTING_MODULE,
                 entity_type="journal_entry",
                 entity_id=journal_id,
                 new_values={"status": loaded.status, "reason": reason},
@@ -437,6 +441,7 @@ class JournalEntryService:
             total_credit_base=row.total_credit_base,
             available_actions=self._available_actions(status, period_locked=post_blocked),
             period_locked=date_locked,
+            related_documents=[],
             lines=[JournalLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,
@@ -489,6 +494,49 @@ class JournalEntryService:
         if row is None:
             raise ResourceNotFoundError("Journal entry not found")
         return row
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: JournalEntry
+    ) -> builtins.list[RelatedDocumentRef]:
+        related: builtins.list[RelatedDocumentRef] = []
+        if row.source_type and row.source_id is not None:
+            related.append(
+                RelatedDocumentRef(
+                    document_type=row.source_type,
+                    document_id=row.source_id,
+                    document_number=row.reference or row.document_number,
+                    status=row.status,
+                    relationship="source",
+                    document_date=row.entry_date,
+                )
+            )
+        if row.reversal_of_id is not None:
+            original = await self.repo.get(tenant_id, row.reversal_of_id)
+            if original is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.JOURNAL_ENTRY.value,
+                        document_id=original.id,
+                        document_number=original.document_number,
+                        status=original.status,
+                        relationship="reversal_of",
+                        document_date=original.entry_date,
+                    )
+                )
+        if row.reversed_by_id is not None:
+            reversal = await self.repo.get(tenant_id, row.reversed_by_id)
+            if reversal is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.JOURNAL_ENTRY.value,
+                        document_id=reversal.id,
+                        document_number=reversal.document_number,
+                        status=reversal.status,
+                        relationship="reversed_by",
+                        document_date=reversal.entry_date,
+                    )
+                )
+        return related
 
 
 def _journal_snapshot(row: JournalEntry) -> dict[str, object]:

@@ -45,6 +45,7 @@ class DebitNote(AuditUserMixin, SoftDeleteTenantModel):
         Index("ix_debit_notes_tenant_id_debit_note_date", "tenant_id", "debit_note_date"),
         Index("ix_debit_notes_tenant_id_supplier_id", "tenant_id", "supplier_id"),
         Index("ix_debit_notes_tenant_id_purchase_invoice_id", "tenant_id", "purchase_invoice_id"),
+        Index("ix_debit_notes_tenant_id_purchase_return_id", "tenant_id", "purchase_return_id"),
     )
 
     document_number: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -52,10 +53,15 @@ class DebitNote(AuditUserMixin, SoftDeleteTenantModel):
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     is_posted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     debit_note_date: Mapped[date] = mapped_column(Date, nullable=False)
-    purchase_invoice_id: Mapped[UUID] = mapped_column(
+    purchase_invoice_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("purchase_invoices.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
+    )
+    purchase_return_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("purchase_returns.id", ondelete="RESTRICT"),
+        nullable=True,
     )
     supplier_id: Mapped[UUID] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
@@ -156,6 +162,7 @@ class DebitNoteLine(TenantModel):
         ),
         Index("ix_debit_note_lines_debit_note_id", "debit_note_id"),
         Index("ix_debit_note_lines_purchase_invoice_line_id", "purchase_invoice_line_id"),
+        Index("ix_debit_note_lines_purchase_return_line_id", "purchase_return_line_id"),
     )
 
     debit_note_id: Mapped[UUID] = mapped_column(
@@ -178,10 +185,15 @@ class DebitNoteLine(TenantModel):
         nullable=True,
     )
     rate: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
-    purchase_invoice_line_id: Mapped[UUID] = mapped_column(
+    purchase_invoice_line_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("purchase_invoice_lines.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
+    )
+    purchase_return_line_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("purchase_return_lines.id", ondelete="RESTRICT"),
+        nullable=True,
     )
     expense_account_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),

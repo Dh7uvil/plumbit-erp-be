@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.dependencies.auth import CurrentUserDependency
 from app.db.session import get_db
-from app.erp.customer_payments.service import CustomerPaymentService
+from app.erp.accounting.customer_payments.service import CustomerPaymentService
 
 
 def get_customer_payment_service(

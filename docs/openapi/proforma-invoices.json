@@ -339,6 +339,351 @@
         }
       }
     },
+    "/api/v1/proforma-invoices/import/template": {
+      "get": {
+        "tags": [
+          "Proforma Invoices"
+        ],
+        "summary": "Proforma Import Template",
+        "operationId": "proforma_import_template_api_v1_proforma_invoices_import_template_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/proforma-invoices/import/preview": {
+      "post": {
+        "tags": [
+          "Proforma Invoices"
+        ],
+        "summary": "Proforma Import Preview",
+        "operationId": "proforma_import_preview_api_v1_proforma_invoices_import_preview_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_proforma_import_preview_api_v1_proforma_invoices_import_preview_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ImportPreviewResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/proforma-invoices/import": {
+      "post": {
+        "tags": [
+          "Proforma Invoices"
+        ],
+        "summary": "Proforma Import",
+        "operationId": "proforma_import_api_v1_proforma_invoices_import_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_proforma_import_api_v1_proforma_invoices_import_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ImportResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/proforma-invoices/export": {
+      "get": {
+        "tags": [
+          "Proforma Invoices"
+        ],
+        "summary": "Proforma Export",
+        "operationId": "proforma_export_api_v1_proforma_invoices_export_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date From"
+            }
+          },
+          {
+            "name": "date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date To"
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "created_at",
+              "title": "Sort By"
+            }
+          },
+          {
+            "name": "sort_order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "type": "string",
+              "default": "desc",
+              "title": "Sort Order"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ProformaInvoiceStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "customer_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Customer Id"
+            }
+          },
+          {
+            "name": "branch_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Branch Id"
+            }
+          },
+          {
+            "name": "currency_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency Id"
+            }
+          },
+          {
+            "name": "source_quotation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Quotation Id"
+            }
+          },
+          {
+            "name": "source_sales_order_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Sales Order Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/proforma-invoices/{proforma_invoice_id}": {
       "get": {
         "tags": [
@@ -504,6 +849,64 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_ProformaInvoiceResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/proforma-invoices/{proforma_invoice_id}/print": {
+      "get": {
+        "tags": [
+          "Proforma Invoices"
+        ],
+        "summary": "Print Proforma Invoice",
+        "operationId": "print_proforma_invoice_api_v1_proforma_invoices__proforma_invoice_id__print_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "proforma_invoice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Proforma Invoice Id"
+            }
+          },
+          {
+            "name": "template_family",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "uae",
+              "title": "Template Family"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PrintDocumentResponse_"
                 }
               }
             }
@@ -1184,6 +1587,108 @@
   },
   "components": {
     "schemas": {
+      "ApiResponse_ImportPreviewResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/ImportPreviewResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[ImportPreviewResponse]"
+      },
+      "ApiResponse_ImportResult_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/ImportResult"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[ImportResult]"
+      },
+      "ApiResponse_PrintDocumentResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/PrintDocumentResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[PrintDocumentResponse]"
+      },
       "ApiResponse_ProformaInvoiceComposeDefaults_": {
         "properties": {
           "success": {
@@ -1366,6 +1871,45 @@
           "INVOICED"
         ],
         "title": "BillingStatus"
+      },
+      "Body_proforma_import_api_v1_proforma_invoices_import_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "mapping": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_proforma_import_api_v1_proforma_invoices_import_post"
+      },
+      "Body_proforma_import_preview_api_v1_proforma_invoices_import_preview_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_proforma_import_preview_api_v1_proforma_invoices_import_preview_post"
       },
       "CogsStatus": {
         "type": "string",
@@ -1617,6 +2161,124 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "ImexColumn": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "header": {
+            "type": "string",
+            "title": "Header"
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "header"
+        ],
+        "title": "ImexColumn"
+      },
+      "ImexMappingEntry": {
+        "properties": {
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "field": {
+            "type": "string",
+            "title": "Field"
+          }
+        },
+        "type": "object",
+        "required": [
+          "column",
+          "field"
+        ],
+        "title": "ImexMappingEntry"
+      },
+      "ImportPreviewResponse": {
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ImexColumn"
+            },
+            "type": "array",
+            "title": "Columns"
+          },
+          "suggested_mapping": {
+            "items": {
+              "$ref": "#/components/schemas/ImexMappingEntry"
+            },
+            "type": "array",
+            "title": "Suggested Mapping"
+          },
+          "sample_rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Sample Rows"
+          },
+          "row_count": {
+            "type": "integer",
+            "title": "Row Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "ImportPreviewResponse"
+      },
+      "ImportResult": {
+        "properties": {
+          "created_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Created Ids"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ImportRowError"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "created_count": {
+            "type": "integer",
+            "title": "Created Count",
+            "default": 0
+          },
+          "error_count": {
+            "type": "integer",
+            "title": "Error Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "ImportResult"
+      },
+      "ImportRowError": {
+        "properties": {
+          "row_number": {
+            "type": "integer",
+            "title": "Row Number"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "row_number",
+          "message"
+        ],
+        "title": "ImportRowError"
+      },
       "Incoterm": {
         "type": "string",
         "enum": [
@@ -1676,6 +2338,512 @@
           "OUTSIDE_UAE"
         ],
         "title": "PlaceOfSupply"
+      },
+      "PrintDocumentResponse": {
+        "properties": {
+          "document_type": {
+            "type": "string",
+            "title": "Document Type"
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "document_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Document Date"
+          },
+          "template_family": {
+            "type": "string",
+            "title": "Template Family",
+            "default": "uae"
+          },
+          "customer_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Code"
+          },
+          "customer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Name"
+          },
+          "customer_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Address"
+          },
+          "customer_trn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Trn"
+          },
+          "lpo_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lpo Number"
+          },
+          "delivery_note_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Note Number"
+          },
+          "invoice_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoice Number"
+          },
+          "bl_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bl Number"
+          },
+          "container_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Number"
+          },
+          "incoterm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incoterm"
+          },
+          "incoterm_place": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incoterm Place"
+          },
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code"
+          },
+          "subtotal": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtotal"
+          },
+          "tax_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Amount"
+          },
+          "grand_total": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grand Total"
+          },
+          "amount_in_words": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount In Words"
+          },
+          "payment_terms": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Terms"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "letterhead": {
+            "$ref": "#/components/schemas/PrintLetterhead"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/PrintLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_type",
+          "document_id",
+          "document_number",
+          "document_date",
+          "letterhead"
+        ],
+        "title": "PrintDocumentResponse"
+      },
+      "PrintLetterhead": {
+        "properties": {
+          "company_name": {
+            "type": "string",
+            "title": "Company Name"
+          },
+          "company_code": {
+            "type": "string",
+            "title": "Company Code"
+          },
+          "trn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trn"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "website": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "bank_details": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bank Details"
+          },
+          "default_currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Currency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "company_name",
+          "company_code"
+        ],
+        "title": "PrintLetterhead"
+      },
+      "PrintLine": {
+        "properties": {
+          "line_number": {
+            "type": "integer",
+            "title": "Line Number"
+          },
+          "item_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Code"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "packing_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packing Unit"
+          },
+          "carton_qty": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carton Qty"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Quantity"
+          },
+          "unit_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Price"
+          },
+          "taxable_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taxable Amount"
+          },
+          "tax_rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Rate"
+          },
+          "tax_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Amount"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "cbm": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cbm"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
+          },
+          "remarks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remarks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "line_number",
+          "description",
+          "quantity"
+        ],
+        "title": "PrintLine"
       },
       "ProformaInvoiceComposeDefaults": {
         "properties": {
@@ -2160,6 +3328,78 @@
       },
       "ProformaInvoiceLineInput": {
         "properties": {
+          "carton_qty": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carton Qty"
+          },
+          "packing_unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packing Unit"
+          },
+          "cbm": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cbm"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
+          },
+          "item_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Code"
+          },
           "product_id": {
             "anyOf": [
               {
@@ -2307,6 +3547,66 @@
       },
       "ProformaInvoiceLineResponse": {
         "properties": {
+          "carton_qty": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carton Qty"
+          },
+          "packing_unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packing Unit"
+          },
+          "cbm": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cbm"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
+          },
+          "item_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Code"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -3855,6 +5155,66 @@
       },
       "SalesInvoiceLineResponse": {
         "properties": {
+          "carton_qty": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carton Qty"
+          },
+          "packing_unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packing Unit"
+          },
+          "cbm": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cbm"
+          },
+          "weight": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
+          },
+          "item_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Code"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -4356,6 +5716,28 @@
               }
             ],
             "title": "Terms And Conditions"
+          },
+          "bl_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bl Number"
+          },
+          "container_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Number"
           },
           "amount_paid": {
             "type": "string",

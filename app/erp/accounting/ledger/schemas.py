@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.core.enums import JournalEntryStatus, JournalType, PartyType
 
 
@@ -152,6 +153,7 @@ class JournalEntryResponse(BaseModel):
     total_credit_base: Decimal
     available_actions: list[str] = Field(default_factory=list)
     period_locked: bool = False
+    related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
     lines: list[JournalLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

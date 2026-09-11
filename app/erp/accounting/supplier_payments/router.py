@@ -1,4 +1,4 @@
-"""Customer receipt routes."""
+"""Supplier payment routes."""
 
 from typing import Annotated
 from uuid import UUID
@@ -6,12 +6,12 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Header, Request, status
 
 from app.auth.catalog import (
-    CUSTOMER_PAYMENT_CANCEL,
-    CUSTOMER_PAYMENT_CREATE,
-    CUSTOMER_PAYMENT_DELETE,
-    CUSTOMER_PAYMENT_POST,
-    CUSTOMER_PAYMENT_READ,
-    CUSTOMER_PAYMENT_UPDATE,
+    SUPPLIER_PAYMENT_CANCEL,
+    SUPPLIER_PAYMENT_CREATE,
+    SUPPLIER_PAYMENT_DELETE,
+    SUPPLIER_PAYMENT_POST,
+    SUPPLIER_PAYMENT_READ,
+    SUPPLIER_PAYMENT_UPDATE,
 )
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
@@ -23,36 +23,35 @@ from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
 from app.erp.accounting.open_items.schemas import PaymentAllocateRequest, PaymentCancelRequest
-from app.erp.customer_payments.dependencies import CustomerPaymentServiceDependency
-from app.erp.customer_payments.schemas import (
-    CustomerPaymentCreate,
-    CustomerPaymentFilter,
-    CustomerPaymentResponse,
-    CustomerPaymentUpdate,
+from app.erp.accounting.supplier_payments.dependencies import SupplierPaymentServiceDependency
+from app.erp.accounting.supplier_payments.schemas import (
+    SupplierPaymentCreate,
+    SupplierPaymentFilter,
+    SupplierPaymentResponse,
+    SupplierPaymentUpdate,
 )
 
-router = APIRouter(prefix="/customer-payments", tags=["Customer Payments"])
+router = APIRouter(prefix="/supplier-payments", tags=["Supplier Payments"])
 
 IfMatch = Annotated[str | None, Header()]
 IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
 
 
-@router.get("", response_model=ApiResponse[list[CustomerPaymentResponse]])
-async def list_customer_payments(
+@router.get("", response_model=ApiResponse[list[SupplierPaymentResponse]])
+async def list_supplier_payments(
     tenant: TenantContextDependency,
     page: PaginationDependency,
-    service: CustomerPaymentServiceDependency,
-    filters: Annotated[CustomerPaymentFilter, Depends()],
-    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_READ))],
-) -> ApiResponse[list[CustomerPaymentResponse]]:
+    service: SupplierPaymentServiceDependency,
+    filters: Annotated[SupplierPaymentFilter, Depends()],
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_READ))],
+) -> ApiResponse[list[SupplierPaymentResponse]]:
     rows, total = await service.list(
         tenant.tenant_id,
         page=page,
         common_filter=filters,
         status=filters.status.value if filters.status else None,
-        customer_id=filters.customer_id,
-        proforma_invoice_id=filters.proforma_invoice_id,
-        sales_order_id=filters.sales_order_id,
+        supplier_id=filters.supplier_id,
+        purchase_order_id=filters.purchase_order_id,
         currency_id=filters.currency_id,
         payment_method=filters.payment_method.value if filters.payment_method else None,
         payment_date_from=filters.payment_date_from,
@@ -63,38 +62,38 @@ async def list_customer_payments(
 
 @router.post(
     "",
-    response_model=ApiResponse[CustomerPaymentResponse],
+    response_model=ApiResponse[SupplierPaymentResponse],
     status_code=status.HTTP_201_CREATED,
 )
-async def create_customer_payment(
-    payload: CustomerPaymentCreate,
+async def create_supplier_payment(
+    payload: SupplierPaymentCreate,
     tenant: TenantContextDependency,
-    service: CustomerPaymentServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_CREATE))],
-) -> ApiResponse[CustomerPaymentResponse]:
+    service: SupplierPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_CREATE))],
+) -> ApiResponse[SupplierPaymentResponse]:
     row = await service.create(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
-    return ApiResponse(data=row, message="Customer payment created successfully")
+    return ApiResponse(data=row, message="Supplier payment created successfully")
 
 
-@router.get("/{payment_id}", response_model=ApiResponse[CustomerPaymentResponse])
-async def get_customer_payment(
+@router.get("/{payment_id}", response_model=ApiResponse[SupplierPaymentResponse])
+async def get_supplier_payment(
     payment_id: UUID,
     tenant: TenantContextDependency,
-    service: CustomerPaymentServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_READ))],
-) -> ApiResponse[CustomerPaymentResponse]:
+    service: SupplierPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_READ))],
+) -> ApiResponse[SupplierPaymentResponse]:
     return ApiResponse(data=await service.get(tenant.tenant_id, payment_id))
 
 
-@router.patch("/{payment_id}", response_model=ApiResponse[CustomerPaymentResponse])
-async def update_customer_payment(
+@router.patch("/{payment_id}", response_model=ApiResponse[SupplierPaymentResponse])
+async def update_supplier_payment(
     payment_id: UUID,
-    payload: CustomerPaymentUpdate,
+    payload: SupplierPaymentUpdate,
     tenant: TenantContextDependency,
-    service: CustomerPaymentServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_UPDATE))],
+    service: SupplierPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_UPDATE))],
     if_match: IfMatch = None,
-) -> ApiResponse[CustomerPaymentResponse]:
+) -> ApiResponse[SupplierPaymentResponse]:
     row = await service.update(
         tenant.tenant_id,
         payment_id,
@@ -102,36 +101,36 @@ async def update_customer_payment(
         actor_user_id=tenant.user_id,
         expected_version=require_document_version(if_match=if_match, body_version=payload.version),
     )
-    return ApiResponse(data=row, message="Customer payment updated successfully")
+    return ApiResponse(data=row, message="Supplier payment updated successfully")
 
 
-@router.delete("/{payment_id}", response_model=ApiResponse[CustomerPaymentResponse])
-async def delete_customer_payment(
+@router.delete("/{payment_id}", response_model=ApiResponse[SupplierPaymentResponse])
+async def delete_supplier_payment(
     payment_id: UUID,
     tenant: TenantContextDependency,
-    service: CustomerPaymentServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_DELETE))],
+    service: SupplierPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_DELETE))],
     if_match: IfMatch = None,
-) -> ApiResponse[CustomerPaymentResponse]:
+) -> ApiResponse[SupplierPaymentResponse]:
     row = await service.delete(
         tenant.tenant_id,
         payment_id,
         actor_user_id=tenant.user_id,
         expected_version=require_document_version(if_match=if_match),
     )
-    return ApiResponse(data=row, message="Customer payment deleted successfully")
+    return ApiResponse(data=row, message="Supplier payment deleted successfully")
 
 
-@router.post("/{payment_id}/post", response_model=ApiResponse[CustomerPaymentResponse])
-async def post_customer_payment(
+@router.post("/{payment_id}/post", response_model=ApiResponse[SupplierPaymentResponse])
+async def post_supplier_payment(
     payment_id: UUID,
     request: Request,
     tenant: TenantContextDependency,
-    service: CustomerPaymentServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_POST))],
+    service: SupplierPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_POST))],
     if_match: IfMatch = None,
     idempotency_key: IdempotencyKeyHeader = None,
-) -> ApiResponse[CustomerPaymentResponse]:
+) -> ApiResponse[SupplierPaymentResponse]:
     body = await request.body()
     row = await service.post(
         tenant.tenant_id,
@@ -142,23 +141,23 @@ async def post_customer_payment(
         request_hash=hash_request(method=request.method, path=request.url.path, body=body),
         endpoint=request.url.path,
     )
-    message = "Customer payment posted successfully"
+    message = "Supplier payment posted successfully"
     if row.amount_unapplied > 0:
-        message = "Customer payment posted; unapplied amount is held as an advance"
+        message = "Supplier payment posted; unapplied amount is held as an advance"
     return ApiResponse(data=row, message=message)
 
 
-@router.post("/{payment_id}/cancel", response_model=ApiResponse[CustomerPaymentResponse])
-async def cancel_customer_payment(
+@router.post("/{payment_id}/cancel", response_model=ApiResponse[SupplierPaymentResponse])
+async def cancel_supplier_payment(
     payment_id: UUID,
     request: Request,
     tenant: TenantContextDependency,
-    service: CustomerPaymentServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_CANCEL))],
+    service: SupplierPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_CANCEL))],
     if_match: IfMatch = None,
     idempotency_key: IdempotencyKeyHeader = None,
     payload: Annotated[PaymentCancelRequest | None, Body()] = None,
-) -> ApiResponse[CustomerPaymentResponse]:
+) -> ApiResponse[SupplierPaymentResponse]:
     body_payload = payload or PaymentCancelRequest()
     body = await request.body()
     row = await service.cancel(
@@ -173,18 +172,18 @@ async def cancel_customer_payment(
         request_hash=hash_request(method=request.method, path=request.url.path, body=body),
         endpoint=request.url.path,
     )
-    return ApiResponse(data=row, message="Customer payment cancelled")
+    return ApiResponse(data=row, message="Supplier payment cancelled")
 
 
-@router.post("/{payment_id}/allocate", response_model=ApiResponse[CustomerPaymentResponse])
-async def allocate_customer_payment(
+@router.post("/{payment_id}/allocate", response_model=ApiResponse[SupplierPaymentResponse])
+async def allocate_supplier_payment(
     payment_id: UUID,
     payload: PaymentAllocateRequest,
     tenant: TenantContextDependency,
-    service: CustomerPaymentServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_POST))],
+    service: SupplierPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_POST))],
     if_match: IfMatch = None,
-) -> ApiResponse[CustomerPaymentResponse]:
+) -> ApiResponse[SupplierPaymentResponse]:
     row = await service.allocate(
         tenant.tenant_id,
         payment_id,
@@ -194,19 +193,19 @@ async def allocate_customer_payment(
             if_match=if_match, body_version=payload.version
         ),
     )
-    return ApiResponse(data=row, message="Customer payment allocated")
+    return ApiResponse(data=row, message="Supplier payment allocated")
 
 
-@router.post("/{payment_id}/refund", response_model=ApiResponse[CustomerPaymentResponse])
-async def refund_customer_payment(
+@router.post("/{payment_id}/refund", response_model=ApiResponse[SupplierPaymentResponse])
+async def refund_supplier_payment(
     payment_id: UUID,
     request: Request,
     tenant: TenantContextDependency,
-    service: CustomerPaymentServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_POST))],
+    service: SupplierPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_POST))],
     if_match: IfMatch = None,
     idempotency_key: IdempotencyKeyHeader = None,
-) -> ApiResponse[CustomerPaymentResponse]:
+) -> ApiResponse[SupplierPaymentResponse]:
     body = await request.body()
     row = await service.refund(
         tenant.tenant_id,
@@ -217,14 +216,14 @@ async def refund_customer_payment(
         request_hash=hash_request(method=request.method, path=request.url.path, body=body),
         endpoint=request.url.path,
     )
-    return ApiResponse(data=row, message="Unapplied receipt refunded")
+    return ApiResponse(data=row, message="Unused supplier advance refunded")
 
 
 @router.get("/{payment_id}/journal", response_model=ApiResponse[JournalEntryResponse])
-async def get_customer_payment_journal(
+async def get_supplier_payment_journal(
     payment_id: UUID,
     tenant: TenantContextDependency,
-    service: CustomerPaymentServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_READ))],
+    service: SupplierPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_READ))],
 ) -> ApiResponse[JournalEntryResponse]:
     return ApiResponse(data=await service.journal(tenant.tenant_id, payment_id))

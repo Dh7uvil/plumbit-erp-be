@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.core.enums import ReturnDisposition, SalesReturnReason, StockDocumentStatus
 
 
@@ -134,6 +135,7 @@ class SalesReturnResponse(BaseModel):
     cancel_reason: str | None
     available_actions: list[str] = Field(default_factory=list)
     period_locked: bool = False
+    related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
     lines: list[SalesReturnLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

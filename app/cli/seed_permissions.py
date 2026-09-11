@@ -1,6 +1,6 @@
 """CLI to insert missing permission catalog rows on existing tenants.
 
-New catalog entries (for example ``inventory.goods_receipt.post``) exist in code
+New catalog entries (for example ``purchase.goods_receipt.post``) exist in code
 before they exist in ``permissions``. This command inserts those rows only. It
 does not grant them to any role — use ``grant-superadmin-permissions`` when
 Superadmin should inherit the full catalog.

@@ -186,6 +186,24 @@ class EmployeeSummary(BaseModel):
     department: DepartmentSummary | None = None
 
 
+class EmployeePickerResponse(BaseModel):
+    id: UUID
+    employee_code: str
+    designation: str | None
+    status: EmployeeStatus
+    user_id: UUID | None = None
+    name: str
+
+
+class EmployeeFilter(BaseFilter):
+    allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
+        {"created_at", "updated_at", "employee_code", "status"}
+    )
+    status: EmployeeStatus | None = None
+    branch_id: UUID | None = None
+    department_id: UUID | None = None
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -370,7 +370,7 @@ async def test_permission_gating(client: AsyncClient) -> None:
     )
     assert created["status_code"] == 201, created["text"]
     row_id = created["body"]["data"]["id"]
-    reader = await _user_headers(client, headers, tenant_id, codes=("erp.supplier_product.read",))
+    reader = await _user_headers(client, headers, tenant_id, codes=("purchase.supplier_product.read",))
     listed = await client.get("/api/v1/supplier-products", headers=reader)
     assert listed.status_code == 200, listed.text
     denied_create = await client.post(

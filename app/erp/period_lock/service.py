@@ -7,7 +7,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.catalog import ERP_MODULE
+from app.auth.catalog import ACCOUNTING_MODULE
 from app.auth.org_service import OrganizationService
 from app.common.period_lock import PeriodLockPolicy
 from app.common.registries.unposted_documents import registered_probes
@@ -176,7 +176,7 @@ class PeriodLockService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=ACCOUNTING_MODULE,
                 entity_type="period_lock",
                 entity_id=tenant_id,
                 old_values={

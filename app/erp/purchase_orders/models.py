@@ -230,6 +230,7 @@ class PurchaseOrderLine(TenantModel):
     amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     qty_received: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     qty_billed: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
+    qty_returned: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     source_sales_order_line_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("sales_order_lines.id", ondelete="SET NULL"),

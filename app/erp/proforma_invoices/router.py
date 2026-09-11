@@ -3,12 +3,14 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
+from fastapi import APIRouter, Body, Depends, File, Form, Header, Query, Request, UploadFile, status
 
 from app.auth.catalog import (
     PROFORMA_INVOICE_CONFIRM,
     PROFORMA_INVOICE_CREATE,
     PROFORMA_INVOICE_DELETE,
+    PROFORMA_INVOICE_EXPORT,
+    PROFORMA_INVOICE_IMPORT,
     PROFORMA_INVOICE_READ,
     PROFORMA_INVOICE_SEND,
     PROFORMA_INVOICE_UPDATE,
@@ -20,6 +22,11 @@ from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
 from app.common.idempotency.service import hash_request, require_idempotency_key
+from app.common.imex.commercial import COMMERCIAL_EXPORT_HEADERS
+from app.common.imex.http import parse_mapping_json, read_upload
+from app.common.imex.schemas import ImportPreviewResponse, ImportResult
+from app.common.imex.service import export_response, preview_file, template_response
+from app.common.print.schemas import PrintDocumentResponse
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
@@ -78,6 +85,69 @@ async def list_proforma_invoices(
     return paginated_response(rows, params=page, total=total)
 
 
+@router.get("/import/template")
+async def proforma_import_template(
+    _: Annotated[CurrentUser, Depends(require_permission(PROFORMA_INVOICE_IMPORT))],
+):
+    return template_response("proforma_invoice")
+
+
+@router.post("/import/preview", response_model=ApiResponse[ImportPreviewResponse])
+async def proforma_import_preview(
+    _: Annotated[CurrentUser, Depends(require_permission(PROFORMA_INVOICE_IMPORT))],
+    file: Annotated[UploadFile, File()],
+) -> ApiResponse[ImportPreviewResponse]:
+    filename, content = await read_upload(file)
+    return ApiResponse(
+        data=preview_file("proforma_invoice", filename=filename, content=content)
+    )
+
+
+@router.post(
+    "/import",
+    response_model=ApiResponse[ImportResult],
+    status_code=status.HTTP_201_CREATED,
+)
+async def proforma_import(
+    tenant: TenantContextDependency,
+    service: ProformaInvoiceServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(PROFORMA_INVOICE_IMPORT))],
+    file: Annotated[UploadFile, File()],
+    mapping: Annotated[str | None, Form()] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[ImportResult]:
+    require_idempotency_key(idempotency_key)
+    filename, content = await read_upload(file)
+    result = await service.import_drafts(
+        tenant.tenant_id,
+        filename=filename,
+        content=content,
+        mapping=parse_mapping_json(mapping),
+        actor_user_id=tenant.user_id,
+    )
+    return ApiResponse(data=result, message="Proforma invoice drafts imported")
+
+
+@router.get("/export")
+async def proforma_export(
+    tenant: TenantContextDependency,
+    service: ProformaInvoiceServiceDependency,
+    filters: Annotated[ProformaInvoiceFilter, Depends()],
+    _: Annotated[CurrentUser, Depends(require_permission(PROFORMA_INVOICE_EXPORT))],
+):
+    rows = await service.export_rows(
+        tenant.tenant_id,
+        common_filter=filters,
+        status=filters.status.value if filters.status else None,
+        customer_id=filters.customer_id,
+        branch_id=filters.branch_id,
+        currency_id=filters.currency_id,
+        source_quotation_id=filters.source_quotation_id,
+        source_sales_order_id=filters.source_sales_order_id,
+    )
+    return export_response("proforma_invoice", COMMERCIAL_EXPORT_HEADERS, rows)
+
+
 @router.post(
     "",
     response_model=ApiResponse[ProformaInvoiceResponse],
@@ -101,6 +171,21 @@ async def get_proforma_invoice(
     _: Annotated[CurrentUser, Depends(require_permission(PROFORMA_INVOICE_READ))],
 ) -> ApiResponse[ProformaInvoiceResponse]:
     return ApiResponse(data=await service.get(tenant.tenant_id, proforma_invoice_id))
+
+
+@router.get("/{proforma_invoice_id}/print", response_model=ApiResponse[PrintDocumentResponse])
+async def print_proforma_invoice(
+    proforma_invoice_id: UUID,
+    tenant: TenantContextDependency,
+    service: ProformaInvoiceServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(PROFORMA_INVOICE_READ))],
+    template_family: Annotated[str, Query()] = "uae",
+) -> ApiResponse[PrintDocumentResponse]:
+    return ApiResponse(
+        data=await service.print_document(
+            tenant.tenant_id, proforma_invoice_id, template_family=template_family
+        )
+    )
 
 
 @router.patch("/{proforma_invoice_id}", response_model=ApiResponse[ProformaInvoiceResponse])

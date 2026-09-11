@@ -28,6 +28,11 @@ class ProductRepository:
     async def get(self, tenant_id: UUID, product_id: UUID) -> Product | None:
         return await self._repo.get(tenant_id, product_id)
 
+    async def get_by_sku(self, tenant_id: UUID, sku: str) -> Product | None:
+        statement = self._repo.base_query(tenant_id).where(Product.sku == sku.strip().upper())
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
     async def get_many(self, tenant_id: UUID, ids: Sequence[UUID]) -> Sequence[Product]:
         if not ids:
             return []

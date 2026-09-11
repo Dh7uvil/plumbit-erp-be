@@ -271,7 +271,7 @@ async def test_available_actions_respect_permissions(client: AsyncClient) -> Non
         headers=headers,
         json={
             "name": f"Order reader {suffix}",
-            "permission_ids": [codes["erp.sales_order.read"], codes["erp.sales_order.create"]],
+            "permission_ids": [codes["sales.sales_order.read"], codes["sales.sales_order.create"]],
         },
     )
     assert role.status_code == 201, role.text

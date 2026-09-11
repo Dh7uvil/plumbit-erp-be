@@ -34,6 +34,7 @@ class ErrorCode(StrEnum):
     GRN_CANNOT_CANCEL = "GRN_CANNOT_CANCEL"
     DELIVERY_NOTE_CANNOT_CANCEL = "DELIVERY_NOTE_CANNOT_CANCEL"
     SALES_RETURN_CANNOT_CANCEL = "SALES_RETURN_CANNOT_CANCEL"
+    PURCHASE_RETURN_CANNOT_CANCEL = "PURCHASE_RETURN_CANNOT_CANCEL"
     INVOICE_QTY_EXCEEDED = "INVOICE_QTY_EXCEEDED"
     INVOICE_CANNOT_VOID = "INVOICE_CANNOT_VOID"
     EXPORT_EVIDENCE_MISSING = "EXPORT_EVIDENCE_MISSING"
@@ -245,6 +246,12 @@ class SalesReturnCannotCancelError(AppError):
     default_code = ErrorCode.SALES_RETURN_CANNOT_CANCEL
     default_status = HTTPStatus.CONFLICT
     default_message = "This sales return cannot be cancelled"
+
+
+class PurchaseReturnCannotCancelError(AppError):
+    default_code = ErrorCode.PURCHASE_RETURN_CANNOT_CANCEL
+    default_status = HTTPStatus.CONFLICT
+    default_message = "This purchase return cannot be cancelled"
 
 
 class InvoiceQtyExceededError(AppError):

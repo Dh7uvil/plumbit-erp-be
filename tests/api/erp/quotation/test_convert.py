@@ -154,8 +154,8 @@ async def test_convert_requires_sales_order_create(client: AsyncClient) -> None:
         json={
             "name": f"Quote updater {suffix}",
             "permission_ids": [
-                codes["erp.quotation.read"],
-                codes["erp.quotation.update"],
+                codes["sales.quotation.read"],
+                codes["sales.quotation.update"],
             ],
         },
     )

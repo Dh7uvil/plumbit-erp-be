@@ -1,4 +1,4 @@
-"""Supplier payment queries."""
+"""Customer payment queries."""
 
 import builtins
 from collections.abc import Mapping, Sequence
@@ -11,15 +11,15 @@ from app.common.repositories.base import BaseRepository
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.core.enums import InvoiceDocumentStatus
-from app.erp.supplier_payments.models import SupplierPayment
+from app.erp.accounting.customer_payments.models import CustomerPayment
 
 
-class SupplierPaymentRepository:
+class CustomerPaymentRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self._repo = BaseRepository(
             session,
-            SupplierPayment,
+            CustomerPayment,
             allowed_sort_fields=frozenset(
                 {
                     "created_at",
@@ -27,14 +27,15 @@ class SupplierPaymentRepository:
                     "document_number",
                     "payment_date",
                     "status",
-                    "amount_paid",
+                    "amount_received",
                 }
             ),
             allowed_filter_fields=frozenset(
                 {
                     "status",
-                    "supplier_id",
-                    "purchase_order_id",
+                    "customer_id",
+                    "proforma_invoice_id",
+                    "sales_order_id",
                     "currency_id",
                     "payment_method",
                 }
@@ -44,8 +45,8 @@ class SupplierPaymentRepository:
 
     async def get(
         self, tenant_id: UUID, payment_id: UUID, *, for_update: bool = False
-    ) -> SupplierPayment | None:
-        statement = self._repo.base_query(tenant_id).where(SupplierPayment.id == payment_id)
+    ) -> CustomerPayment | None:
+        statement = self._repo.base_query(tenant_id).where(CustomerPayment.id == payment_id)
         if for_update:
             statement = statement.with_for_update()
         result = await self.session.execute(statement)
@@ -59,7 +60,7 @@ class SupplierPaymentRepository:
         common_filter: BaseFilter | None = None,
         filters: Mapping[str, object] | None = None,
         extra_criteria: Sequence[ColumnElement[bool]] | None = None,
-    ) -> tuple[Sequence[SupplierPayment], int]:
+    ) -> tuple[Sequence[CustomerPayment], int]:
         return await self._repo.list(
             tenant_id,
             page=page,
@@ -68,54 +69,67 @@ class SupplierPaymentRepository:
             extra_criteria=extra_criteria,
         )
 
-    async def create(self, tenant_id: UUID, values: Mapping[str, object]) -> SupplierPayment:
+    async def create(self, tenant_id: UUID, values: Mapping[str, object]) -> CustomerPayment:
         return await self._repo.create(tenant_id, values)
 
     async def update(
         self, tenant_id: UUID, payment_id: UUID, values: Mapping[str, object]
-    ) -> SupplierPayment | None:
+    ) -> CustomerPayment | None:
         return await self._repo.update(tenant_id, payment_id, values)
 
-    async def soft_delete(self, tenant_id: UUID, payment_id: UUID) -> SupplierPayment | None:
+    async def soft_delete(self, tenant_id: UUID, payment_id: UUID) -> CustomerPayment | None:
         return await self._repo.soft_delete(tenant_id, payment_id)
 
-    async def list_for_supplier(
-        self, tenant_id: UUID, supplier_id: UUID
-    ) -> builtins.list[SupplierPayment]:
+    async def list_for_customer(
+        self, tenant_id: UUID, customer_id: UUID
+    ) -> builtins.list[CustomerPayment]:
         statement = (
             self._repo.base_query(tenant_id)
             .where(
-                SupplierPayment.supplier_id == supplier_id,
-                SupplierPayment.status != InvoiceDocumentStatus.CANCELLED.value,
+                CustomerPayment.customer_id == customer_id,
+                CustomerPayment.status != InvoiceDocumentStatus.CANCELLED.value,
             )
-            .order_by(SupplierPayment.payment_date, SupplierPayment.created_at)
+            .order_by(CustomerPayment.payment_date, CustomerPayment.created_at)
         )
         return list((await self.session.execute(statement)).scalars().all())
 
-    async def list_for_purchase_order(
-        self, tenant_id: UUID, purchase_order_id: UUID
-    ) -> builtins.list[SupplierPayment]:
+    async def list_for_sales_order(
+        self, tenant_id: UUID, sales_order_id: UUID
+    ) -> builtins.list[CustomerPayment]:
         statement = (
             self._repo.base_query(tenant_id)
             .where(
-                SupplierPayment.purchase_order_id == purchase_order_id,
-                SupplierPayment.status != InvoiceDocumentStatus.CANCELLED.value,
+                CustomerPayment.sales_order_id == sales_order_id,
+                CustomerPayment.status != InvoiceDocumentStatus.CANCELLED.value,
             )
-            .order_by(SupplierPayment.payment_date, SupplierPayment.created_at)
+            .order_by(CustomerPayment.payment_date, CustomerPayment.created_at)
         )
         return list((await self.session.execute(statement)).scalars().all())
 
-    async def list_unapplied_for_purchase_order(
-        self, tenant_id: UUID, supplier_id: UUID, purchase_order_id: UUID
-    ) -> builtins.list[SupplierPayment]:
+    async def list_for_proforma_invoice(
+        self, tenant_id: UUID, proforma_invoice_id: UUID
+    ) -> builtins.list[CustomerPayment]:
         statement = (
             self._repo.base_query(tenant_id)
             .where(
-                SupplierPayment.supplier_id == supplier_id,
-                SupplierPayment.purchase_order_id == purchase_order_id,
-                SupplierPayment.status == InvoiceDocumentStatus.POSTED.value,
-                SupplierPayment.amount_unapplied > 0,
+                CustomerPayment.proforma_invoice_id == proforma_invoice_id,
+                CustomerPayment.status != InvoiceDocumentStatus.CANCELLED.value,
             )
-            .order_by(SupplierPayment.payment_date, SupplierPayment.created_at)
+            .order_by(CustomerPayment.payment_date, CustomerPayment.created_at)
+        )
+        return list((await self.session.execute(statement)).scalars().all())
+
+    async def list_unapplied_for_pfi(
+        self, tenant_id: UUID, customer_id: UUID, proforma_invoice_id: UUID
+    ) -> builtins.list[CustomerPayment]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(
+                CustomerPayment.customer_id == customer_id,
+                CustomerPayment.proforma_invoice_id == proforma_invoice_id,
+                CustomerPayment.status == InvoiceDocumentStatus.POSTED.value,
+                CustomerPayment.amount_unapplied > 0,
+            )
+            .order_by(CustomerPayment.payment_date, CustomerPayment.created_at)
         )
         return list((await self.session.execute(statement)).scalars().all())

@@ -542,6 +542,7 @@ class StockTransferService:
             cancel_reason=row.cancel_reason,
             available_actions=self._available_actions(status, period_locked=post_blocked),
             period_locked=date_locked,
+            related_documents=[],
             lines=[StockTransferLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,

@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.catalog import ERP_MODULE
+from app.auth.catalog import ACCOUNTING_MODULE
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
@@ -238,7 +238,7 @@ class AccountService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=ACCOUNTING_MODULE,
                 entity_type="account",
                 entity_id=row.id,
                 new_values=_account_snapshot(row),
@@ -296,7 +296,7 @@ class AccountService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=ACCOUNTING_MODULE,
                 entity_type="account",
                 entity_id=row.id,
                 old_values=old_values,
@@ -321,7 +321,7 @@ class AccountService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=ACCOUNTING_MODULE,
                 entity_type="account",
                 entity_id=account_id,
                 old_values=_account_snapshot(row),
@@ -365,7 +365,7 @@ class AccountService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=ACCOUNTING_MODULE,
                 entity_type="account",
                 entity_id=account.id,
                 new_values={"system_role": role.value},

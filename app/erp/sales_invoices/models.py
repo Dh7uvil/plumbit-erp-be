@@ -142,6 +142,8 @@ class SalesInvoice(AuditUserMixin, SoftDeleteTenantModel):
     ship_to_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     terms_and_conditions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bl_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    container_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
     amount_paid: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     amount_credited: Mapped[Decimal] = mapped_column(
         _MONEY, nullable=False, server_default=text("0")
@@ -277,5 +279,10 @@ class SalesInvoiceLine(TenantModel):
         String(30), nullable=False, server_default=text("'NOT_APPLICABLE'")
     )
     qty_credited: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
+    carton_qty: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    packing_unit: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    cbm: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    item_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
     sales_invoice: Mapped[SalesInvoice] = relationship(back_populates="lines")

@@ -15,13 +15,15 @@ from app.auth.catalog import (
     DELIVERY_NOTE_DELETE,
     DELIVERY_NOTE_POST,
     DELIVERY_NOTE_UPDATE,
-    INVENTORY_MODULE,
     PERIOD_OVERRIDE,
+    SALES_MODULE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
 from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
+from app.common.print.schemas import PrintDocumentResponse
+from app.common.print.service import PrintService
 from app.common.registries.delivery_note_dependents import registered_probes
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
@@ -30,6 +32,7 @@ from app.common.services.audit import AuditWriter
 from app.common.utils.conversion import quantity_summary
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
+from app.common.utils.document_totals import format_address_snapshot
 from app.core.enums import (
     AuditAction,
     DocumentType,
@@ -161,6 +164,41 @@ class DeliveryNoteService:
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
 
+    async def print_document(
+        self,
+        tenant_id: UUID,
+        note_id: UUID,
+        *,
+        template_family: str = "uae",
+    ) -> PrintDocumentResponse:
+        from app.crm.customers.service import CustomerService
+
+        row = await self.get(tenant_id, note_id)
+        order = await self.sales_orders.get(tenant_id, row.sales_order_id)
+        customer = await CustomerService(self.session).get(tenant_id, order.customer_id)
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        printer = PrintService(self.session)
+        family = template_family if template_family in {"uae", "china"} else "uae"
+        return await printer.assemble(
+            tenant_id,
+            document_type=DocumentType.DELIVERY_NOTE.value,
+            document_id=row.id,
+            document_number=row.document_number,
+            document_date=row.document_date,
+            template_family=family,
+            customer_code=customer.code,
+            customer_name=customer.name,
+            customer_address=format_address_snapshot(customer.billing_address),
+            customer_trn=customer.trn,
+            lpo_number=order.customer_po_number,
+            currency_code=currency.code,
+            notes=row.notes,
+            lines=[
+                printer.commercial_line(line, index=index)
+                for index, line in enumerate(row.lines, start=1)
+            ],
+        )
+
     async def create(
         self, tenant_id: UUID, payload: DeliveryNoteCreate, *, actor_user_id: UUID
     ) -> DeliveryNoteResponse:
@@ -195,7 +233,7 @@ class DeliveryNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=INVENTORY_MODULE,
+                module=SALES_MODULE,
                 entity_type="delivery_note",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
@@ -285,7 +323,7 @@ class DeliveryNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=INVENTORY_MODULE,
+                module=SALES_MODULE,
                 entity_type="delivery_note",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
@@ -323,7 +361,7 @@ class DeliveryNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=INVENTORY_MODULE,
+                module=SALES_MODULE,
                 entity_type="delivery_note",
                 entity_id=note_id,
                 old_values=old_values,
@@ -353,7 +391,7 @@ class DeliveryNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=INVENTORY_MODULE,
+                module=SALES_MODULE,
                 entity_type="delivery_note",
                 entity_id=note_id,
                 old_values=old_values,
@@ -461,7 +499,7 @@ class DeliveryNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.POST,
-                module=INVENTORY_MODULE,
+                module=SALES_MODULE,
                 entity_type="delivery_note",
                 entity_id=note_id,
                 old_values=old_values,
@@ -469,7 +507,7 @@ class DeliveryNoteService:
             )
             await self.outbox.enqueue(
                 tenant_id,
-                event_type="inventory.delivery_note.posted",
+                event_type="sales.delivery_note.posted",
                 aggregate_type="delivery_note",
                 aggregate_id=note_id,
                 payload={"delivery_note_id": str(note_id)},
@@ -520,7 +558,7 @@ class DeliveryNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CANCEL,
-                module=INVENTORY_MODULE,
+                module=SALES_MODULE,
                 entity_type="delivery_note",
                 entity_id=note_id,
                 old_values=old_values,
@@ -529,7 +567,7 @@ class DeliveryNoteService:
             if current == StockDocumentStatus.POSTED:
                 await self.outbox.enqueue(
                     tenant_id,
-                    event_type="inventory.delivery_note.cancelled",
+                    event_type="sales.delivery_note.cancelled",
                     aggregate_type="delivery_note",
                     aggregate_id=note_id,
                     payload={"delivery_note_id": str(note_id)},
@@ -845,7 +883,7 @@ class DeliveryNoteService:
         from app.erp.sales_invoices.repository import SalesInvoiceRepository
         from app.erp.sales_orders.repository import SalesOrderRepository
         from app.inventory_management.packages.repository import PackageRepository
-        from app.inventory_management.shipments.repository import ShipmentRepository
+        from app.logistics.shipments.repository import ShipmentRepository
 
         related: builtins.list[RelatedDocumentRef] = []
         order = await SalesOrderRepository(self.session).get(tenant_id, row.sales_order_id)

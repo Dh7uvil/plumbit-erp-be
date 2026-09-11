@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.catalog import CRM_MODULE, ERP_MODULE
+from app.auth.catalog import CRM_MODULE, PURCHASE_MODULE
 from app.auth.org_service import OrganizationService
 from app.auth.schemas import AddressPayload, AddressResponse, format_address_label
 from app.common.schemas.filters import BaseFilter
@@ -62,7 +62,7 @@ SUPPLIER_PARTY_ROLE = PartyRole(
     not_found_message="Supplier not found",
     duplicate_code_message="A supplier with this code already exists",
     extra_address_not_found_message="Supplier address not found",
-    audit_module=ERP_MODULE,
+    audit_module=PURCHASE_MODULE,
     audit_entity_type="supplier",
 )
 
@@ -112,6 +112,74 @@ class CustomerService:
     async def get(self, tenant_id: UUID, customer_id: UUID) -> CustomerResponse:
         row = await self._require(tenant_id, customer_id)
         return await self._to_response(tenant_id, row)
+
+    async def find_by_name_or_code(self, tenant_id: UUID, value: str) -> CustomerResponse | None:
+        token = value.strip()
+        if not token:
+            return None
+        row = await self.repo.get_by_code(tenant_id, token)
+        if row is None:
+            row = await self.repo.get_by_name(tenant_id, token)
+        if row is None or CompanyType(row.company_type) not in self.role.visible_types:
+            return None
+        return await self._to_response(tenant_id, row)
+
+    async def import_rows(
+        self,
+        tenant_id: UUID,
+        *,
+        filename: str | None,
+        content: bytes,
+        mapping: list[object],
+        actor_user_id: UUID,
+    ):
+        from uuid import uuid4
+
+        from app.common.imex.http import mapping_or_suggested
+        from app.common.imex.schemas import ImexMappingEntry, ImportResult, ImportRowError
+        from app.common.imex.service import mapped_rows
+
+        entries = [
+            item if isinstance(item, ImexMappingEntry) else ImexMappingEntry.model_validate(item)
+            for item in mapping
+        ]
+        resource = self.role.audit_entity_type
+        resolved = mapping_or_suggested(
+            resource, filename=filename, content=content, mapping=entries
+        )
+        rows = mapped_rows(filename=filename, content=content, mapping=resolved)
+        created_ids = []
+        errors: list[ImportRowError] = []
+        for index, row in enumerate(rows, start=2):
+            try:
+                name = (row.get("name") or "").strip()
+                if not name:
+                    raise ValidationError("Name is required")
+                trn = (row.get("trn") or "").strip() or None
+                code = (row.get("code") or "").strip() or f"IMP-{uuid4().hex[:8].upper()}"
+                created = await self.create(
+                    tenant_id,
+                    CustomerCreate(
+                        name=name,
+                        code=code,
+                        company_type=self.role.default_create_type,
+                        trn=trn,
+                        tax_treatment=(
+                            TaxTreatment.REGISTERED if trn else TaxTreatment.UNREGISTERED
+                        ),
+                        notes=(row.get("phone") or row.get("email") or "").strip() or None,
+                    ),
+                    actor_user_id=actor_user_id,
+                )
+                created_ids.append(created.id)
+            except (ValidationError, DuplicateResourceError, ValueError) as exc:
+                errors.append(ImportRowError(row_number=index, message=str(exc)))
+        return ImportResult(
+            created_ids=created_ids,
+            errors=errors,
+            created_count=len(created_ids),
+            error_count=len(errors),
+        )
 
     async def create(
         self, tenant_id: UUID, payload: CustomerCreate, *, actor_user_id: UUID

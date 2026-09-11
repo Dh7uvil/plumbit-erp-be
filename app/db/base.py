@@ -47,7 +47,7 @@ import app.erp.accounting.ledger.models as _journal_entries  # noqa: E402, F401
 import app.erp.accounting.models as _accounting  # noqa: E402, F401
 import app.erp.accounting.open_items.models as _payment_allocations  # noqa: E402, F401
 import app.erp.credit_notes.models as _credit_notes  # noqa: E402, F401
-import app.erp.customer_payments.models as _customer_payments  # noqa: E402, F401
+import app.erp.accounting.customer_payments.models as _customer_payments  # noqa: E402, F401
 import app.erp.debit_notes.models as _debit_notes  # noqa: E402, F401
 import app.erp.landed_costs.models as _landed_costs  # noqa: E402, F401
 import app.erp.exchange_rates.models as _exchange_rates  # noqa: E402, F401
@@ -57,7 +57,7 @@ import app.erp.purchase_orders.models as _purchase_orders  # noqa: E402, F401
 import app.erp.quotation.models as _quotation  # noqa: E402, F401
 import app.erp.sales_invoices.models as _sales_invoices  # noqa: E402, F401
 import app.erp.sales_orders.models as _sales_orders  # noqa: E402, F401
-import app.erp.supplier_payments.models as _supplier_payments  # noqa: E402, F401
+import app.erp.accounting.supplier_payments.models as _supplier_payments  # noqa: E402, F401
 import app.erp.supplier_products.models as _supplier_products  # noqa: E402, F401
 import app.inventory_management.categories.models as _categories  # noqa: E402, F401
 import app.inventory_management.costing.models as _costing  # noqa: E402, F401
@@ -67,8 +67,9 @@ import app.inventory_management.packages.models as _packages  # noqa: E402, F401
 import app.inventory_management.price_lists.models as _price_lists  # noqa: E402, F401
 import app.inventory_management.products.models as _products  # noqa: E402, F401
 import app.inventory_management.quality_inspections.models as _quality_inspections  # noqa: E402, F401
+import app.inventory_management.purchase_returns.models as _purchase_returns  # noqa: E402, F401
 import app.inventory_management.sales_returns.models as _sales_returns  # noqa: E402, F401
-import app.inventory_management.shipments.models as _shipments  # noqa: E402, F401
+import app.logistics.shipments.models as _shipments  # noqa: E402, F401
 import app.inventory_management.stock.models as _stock  # noqa: E402, F401
 import app.inventory_management.stock_adjustments.models as _stock_adjustments  # noqa: E402, F401
 import app.inventory_management.stock_transfers.models as _stock_transfers  # noqa: E402, F401

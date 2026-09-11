@@ -15,6 +15,7 @@ from app.auth.catalog import (
     DEPARTMENT_DELETE,
     DEPARTMENT_READ,
     DEPARTMENT_UPDATE,
+    EMPLOYEE_READ,
     ORGANIZATION_READ,
     ORGANIZATION_UPDATE,
     PERMISSION_READ,
@@ -48,6 +49,8 @@ from app.auth.schemas import (
     DepartmentFilter,
     DepartmentResponse,
     DepartmentUpdate,
+    EmployeeFilter,
+    EmployeePickerResponse,
     LoginRequest,
     LogoutRequest,
     MeResponse,
@@ -90,6 +93,7 @@ roles_router = APIRouter(prefix="/roles", tags=["Roles"])
 permissions_router = APIRouter(prefix="/permissions", tags=["Permissions"])
 branches_router = APIRouter(prefix="/branches", tags=["Branches"])
 departments_router = APIRouter(prefix="/departments", tags=["Departments"])
+employees_router = APIRouter(prefix="/employees", tags=["Employees"])
 audit_logs_router = APIRouter(prefix="/audit-logs", tags=["Audit Logs"])
 
 
@@ -815,6 +819,33 @@ async def delete_department(
     return ApiResponse(data=department, message="Department deleted successfully")
 
 
+@employees_router.get(
+    "",
+    response_model=ApiResponse[list[EmployeePickerResponse]],
+    summary="List employees",
+    description=(
+        "Requires `identity.employee.read`. Picker for salesperson_id and other employee FKs. "
+        "Does not change nested user HR profiles."
+    ),
+)
+async def list_employees(
+    tenant: TenantContextDependency,
+    page: PaginationDependency,
+    service: OrganizationServiceDependency,
+    filters: Annotated[EmployeeFilter, Depends()],
+    _: Annotated[CurrentUser, Depends(require_permission(EMPLOYEE_READ))],
+) -> ApiResponse[list[EmployeePickerResponse]]:
+    rows, total = await service.list_employees(
+        tenant.tenant_id,
+        page=page,
+        status=filters.status.value if filters.status is not None else None,
+        branch_id=filters.branch_id,
+        department_id=filters.department_id,
+        search=filters.search,
+    )
+    return paginated_response(rows, params=page, total=total)
+
+
 @audit_logs_router.get(
     "/summary",
     response_model=ApiResponse[AuditLogSummaryResponse],
@@ -902,4 +933,5 @@ router.include_router(roles_router)
 router.include_router(permissions_router)
 router.include_router(branches_router)
 router.include_router(departments_router)
+router.include_router(employees_router)
 router.include_router(audit_logs_router)

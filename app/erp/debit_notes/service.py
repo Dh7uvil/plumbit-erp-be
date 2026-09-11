@@ -9,19 +9,23 @@ from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.auth.catalog import (
     DEBIT_NOTE_CANCEL,
     DEBIT_NOTE_DELETE,
     DEBIT_NOTE_POST,
-    ERP_MODULE,
     PERIOD_OVERRIDE,
+    PURCHASE_MODULE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
 from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
+from app.common.print.schemas import PrintDocumentResponse
+from app.common.print.service import PrintService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
@@ -32,6 +36,8 @@ from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
     compute_header_totals,
     compute_line_amounts,
+    format_address_snapshot,
+    place_of_supply_from_address,
     resolve_line_tax_category,
 )
 from app.core.enums import (
@@ -44,6 +50,7 @@ from app.core.enums import (
     JournalType,
     PartyType,
     PlaceOfSupply,
+    StockDocumentStatus,
     TaxCategory,
     TaxTreatment,
 )
@@ -67,6 +74,7 @@ from app.erp.debit_notes.repository import DebitNoteRepository
 from app.erp.debit_notes.schemas import (
     DebitNoteCreate,
     DebitNoteCreateFromPurchaseInvoice,
+    DebitNoteCreateFromPurchaseReturn,
     DebitNoteLineInput,
     DebitNoteLineResponse,
     DebitNoteResponse,
@@ -129,6 +137,7 @@ class DebitNoteService:
         status: str | None = None,
         supplier_id: UUID | None = None,
         purchase_invoice_id: UUID | None = None,
+        purchase_return_id: UUID | None = None,
         currency_id: UUID | None = None,
         debit_note_date_from: date | None = None,
         debit_note_date_to: date | None = None,
@@ -140,6 +149,8 @@ class DebitNoteService:
             filters["supplier_id"] = supplier_id
         if purchase_invoice_id is not None:
             filters["purchase_invoice_id"] = purchase_invoice_id
+        if purchase_return_id is not None:
+            filters["purchase_return_id"] = purchase_return_id
         if currency_id is not None:
             filters["currency_id"] = currency_id
         extra: list[Any] = []
@@ -163,6 +174,40 @@ class DebitNoteService:
         response = self._to_response(row)
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
+
+    async def print_document(
+        self,
+        tenant_id: UUID,
+        debit_note_id: UUID,
+        *,
+        template_family: str = "uae",
+    ) -> PrintDocumentResponse:
+        row = await self.get(tenant_id, debit_note_id)
+        supplier = await self.suppliers.get(tenant_id, row.supplier_id)
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        printer = PrintService(self.session)
+        family = template_family if template_family in {"uae", "china"} else "uae"
+        return await printer.assemble(
+            tenant_id,
+            document_type=DocumentType.DEBIT_NOTE.value,
+            document_id=row.id,
+            document_number=row.document_number,
+            document_date=row.debit_note_date,
+            template_family=family,
+            customer_code=supplier.code,
+            customer_name=supplier.name,
+            customer_address=format_address_snapshot(supplier.billing_address),
+            customer_trn=supplier.trn,
+            currency_code=currency.code,
+            subtotal=row.subtotal,
+            tax_amount=row.tax_amount,
+            grand_total=row.grand_total,
+            notes=row.notes,
+            lines=[
+                printer.commercial_line(line, index=index)
+                for index, line in enumerate(row.lines, start=1)
+            ],
+        )
 
     async def create(
         self, tenant_id: UUID, payload: DebitNoteCreate, *, actor_user_id: UUID
@@ -243,6 +288,97 @@ class DebitNoteService:
             )
             return response
 
+    async def create_from_purchase_return(
+        self,
+        tenant_id: UUID,
+        payload: DebitNoteCreateFromPurchaseReturn,
+        *,
+        actor_user_id: UUID,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> DebitNoteResponse:
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return DebitNoteResponse.model_validate(replay)
+            from app.inventory_management.purchase_returns.service import PurchaseReturnService
+
+            purchase_returns = PurchaseReturnService(
+                self.session, actor_permissions=self.actor_permissions
+            )
+            purchase_return = await purchase_returns._require(
+                tenant_id, payload.purchase_return_id
+            )
+            if StockDocumentStatus(purchase_return.status) != StockDocumentStatus.POSTED:
+                raise ValidationError(
+                    "Debit notes can only be created from a posted purchase return"
+                )
+            invoice = await self._posted_invoice_for_goods_receipt(
+                tenant_id, purchase_return.goods_receipt_id
+            )
+            pi_by_grn_line: dict[UUID, PurchaseInvoiceLine] = {}
+            if invoice is not None:
+                for line in invoice.lines:
+                    if line.goods_receipt_line_id is not None:
+                        pi_by_grn_line[line.goods_receipt_line_id] = line
+            lines: list[DebitNoteLineInput] = []
+            for line in purchase_return.lines:
+                pi_line = pi_by_grn_line.get(line.goods_receipt_line_id)
+                rate = pi_line.rate if pi_line is not None else (line.rate or None)
+                if rate is not None and rate == _ZERO and pi_line is None:
+                    rate = None
+                lines.append(
+                    DebitNoteLineInput(
+                        product_id=line.product_id or (pi_line.product_id if pi_line else None),
+                        description=pi_line.description if pi_line is not None else None,
+                        quantity=line.quantity,
+                        unit_id=line.unit_id or (pi_line.unit_id if pi_line else None),
+                        rate=rate,
+                        purchase_invoice_line_id=pi_line.id if pi_line is not None else None,
+                        purchase_return_line_id=line.id,
+                        expense_account_id=(
+                            (pi_line.expense_account_id or pi_line.purchase_account_id)
+                            if pi_line is not None
+                            else None
+                        ),
+                        discount_type=(
+                            DiscountType(pi_line.discount_type)
+                            if pi_line is not None and pi_line.discount_type
+                            else None
+                        ),
+                        discount_value=pi_line.discount_value if pi_line is not None else None,
+                        tax_id=pi_line.tax_id if pi_line is not None else None,
+                    )
+                )
+            if not lines:
+                raise ValidationError("This purchase return has no lines to debit")
+            create_payload = DebitNoteCreate(
+                purchase_invoice_id=invoice.id if invoice is not None else None,
+                purchase_return_id=purchase_return.id,
+                supplier_id=(
+                    invoice.supplier_id if invoice is not None else purchase_return.supplier_id
+                ),
+                reason_code=payload.reason_code,
+                branch_id=invoice.branch_id if invoice is not None else None,
+                debit_note_date=payload.debit_note_date,
+                currency_id=invoice.currency_id if invoice is not None else None,
+                notes=payload.notes or purchase_return.notes,
+                place_of_supply=(
+                    PlaceOfSupply(invoice.place_of_supply) if invoice is not None else None
+                ),
+                lines=lines,
+            )
+            response = await self._persist_composed(
+                tenant_id, create_payload, actor_user_id=actor_user_id
+            )
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
+            return response
+
     async def update(
         self,
         tenant_id: UUID,
@@ -274,7 +410,7 @@ class DebitNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="debit_note",
                 entity_id=debit_note_id,
                 old_values=old_values,
@@ -303,7 +439,7 @@ class DebitNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="debit_note",
                 entity_id=debit_note_id,
                 old_values=old_values,
@@ -341,7 +477,9 @@ class DebitNoteService:
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(row.debit_note_date, can_override=self._can_override)
             old_values = await self._snapshot(tenant_id, row)
-            invoice = await self._assert_qty_headroom(tenant_id, row)
+            invoice = None
+            if row.purchase_invoice_id is not None:
+                invoice = await self._assert_qty_headroom(tenant_id, row)
             await self._recompute_posted_totals(tenant_id, row)
             journal = await self.posting.post_for_document(
                 tenant_id,
@@ -358,7 +496,8 @@ class DebitNoteService:
                 reference=row.document_number,
             )
             row.journal_entry_id = journal.id
-            await self._apply_invoice_debits(tenant_id, row, invoice=invoice, sign=Decimal("1"))
+            if invoice is not None:
+                await self._apply_invoice_debits(tenant_id, row, invoice=invoice, sign=Decimal("1"))
             if row.purchase_invoice_id is None:
                 row.amount_applied = quantize_money(_ZERO)
                 row.amount_unapplied = quantize_money(row.grand_total)
@@ -378,7 +517,7 @@ class DebitNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.POST,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="debit_note",
                 entity_id=debit_note_id,
                 old_values=old_values,
@@ -386,7 +525,7 @@ class DebitNoteService:
             )
             await self.outbox.enqueue(
                 tenant_id,
-                event_type="erp.debit_note.posted",
+                event_type="purchase.debit_note.posted",
                 aggregate_type="debit_note",
                 aggregate_id=debit_note_id,
                 payload={"debit_note_id": str(debit_note_id)},
@@ -437,7 +576,7 @@ class DebitNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CANCEL,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="debit_note",
                 entity_id=debit_note_id,
                 old_values=old_values,
@@ -446,7 +585,7 @@ class DebitNoteService:
             if current == InvoiceDocumentStatus.POSTED:
                 await self.outbox.enqueue(
                     tenant_id,
-                    event_type="erp.debit_note.cancelled",
+                    event_type="purchase.debit_note.cancelled",
                     aggregate_type="debit_note",
                     aggregate_id=debit_note_id,
                     payload={"debit_note_id": str(debit_note_id)},
@@ -469,6 +608,11 @@ class DebitNoteService:
         self, tenant_id: UUID, purchase_invoice_id: UUID
     ) -> bool:
         return await self.repo.has_live_for_purchase_invoice(tenant_id, purchase_invoice_id)
+
+    async def has_live_for_purchase_return(
+        self, tenant_id: UUID, purchase_return_id: UUID
+    ) -> bool:
+        return await self.repo.has_live_for_purchase_return(tenant_id, purchase_return_id)
 
     async def _persist_composed(
         self, tenant_id: UUID, payload: DebitNoteCreate, *, actor_user_id: UUID
@@ -502,7 +646,7 @@ class DebitNoteService:
             tenant_id=tenant_id,
             user_id=actor_user_id,
             action=AuditAction.CREATE,
-            module=ERP_MODULE,
+            module=PURCHASE_MODULE,
             entity_type="debit_note",
             entity_id=row.id,
             new_values=await self._snapshot(tenant_id, loaded),
@@ -524,10 +668,11 @@ class DebitNoteService:
                 actor_id=actor_user_id,
             )
             row.reversal_journal_entry_id = reversal.id
-        invoice = await self.purchase_invoices._require(
-            tenant_id, row.purchase_invoice_id, for_update=True
-        )
-        await self._apply_invoice_debits(tenant_id, row, invoice=invoice, sign=Decimal("-1"))
+        if row.purchase_invoice_id is not None:
+            invoice = await self.purchase_invoices._require(
+                tenant_id, row.purchase_invoice_id, for_update=True
+            )
+            await self._apply_invoice_debits(tenant_id, row, invoice=invoice, sign=Decimal("-1"))
         row.amount_applied = quantize_money(_ZERO)
         row.amount_unapplied = quantize_money(_ZERO)
         row.is_posted = False
@@ -540,6 +685,8 @@ class DebitNoteService:
             line.id: quantize_quantity(line.quantity - line.qty_debited) for line in invoice.lines
         }
         for line in row.lines:
+            if line.purchase_invoice_line_id is None:
+                continue
             left = remaining.get(line.purchase_invoice_line_id, _ZERO)
             if line.quantity > left:
                 raise InvoiceQtyExceededError(
@@ -562,6 +709,8 @@ class DebitNoteService:
     ) -> None:
         by_id = {line.id: line for line in invoice.lines}
         for line in row.lines:
+            if line.purchase_invoice_line_id is None:
+                continue
             pi_line = by_id.get(line.purchase_invoice_line_id)
             if pi_line is None:
                 raise ValidationError("Purchase invoice line not found on the linked invoice")
@@ -634,14 +783,14 @@ class DebitNoteService:
         await self.session.flush()
 
     async def _journal_lines(
-        self, tenant_id: UUID, row: DebitNote, *, invoice: PurchaseInvoice
+        self, tenant_id: UUID, row: DebitNote, *, invoice: PurchaseInvoice | None
     ) -> list[JournalLineInput]:
         ap = await self.accounts.party_resolver.resolve_payable(tenant_id, row.supplier_id)
         grni = await self.resolver.require(tenant_id, AccountSystemRole.GOODS_RECEIVED_NOT_INVOICED)
         vat = await self.resolver.require(tenant_id, AccountSystemRole.VAT_INPUT)
         round_off = await self.resolver.require(tenant_id, AccountSystemRole.ROUND_OFF)
         default_purchase = await self.resolver.require(tenant_id, AccountSystemRole.PURCHASES)
-        pi_lines = {line.id: line for line in invoice.lines}
+        pi_lines = {line.id: line for line in invoice.lines} if invoice is not None else {}
         lines: list[JournalLineInput] = []
         remaining_discount = row.discount_amount
         last_index = len(row.lines) - 1
@@ -724,23 +873,66 @@ class DebitNoteService:
             return quantize_money(_ZERO)
         return quantize_money(row.discount_amount * line.amount / row.subtotal)
 
+    async def _posted_invoice_for_goods_receipt(
+        self, tenant_id: UUID, goods_receipt_id: UUID
+    ) -> PurchaseInvoice | None:
+        statement = (
+            select(PurchaseInvoice)
+            .where(
+                PurchaseInvoice.tenant_id == tenant_id,
+                PurchaseInvoice.deleted_at.is_(None),
+                PurchaseInvoice.status == InvoiceDocumentStatus.POSTED.value,
+                PurchaseInvoice.id.in_(
+                    select(PurchaseInvoiceLine.purchase_invoice_id).where(
+                        PurchaseInvoiceLine.tenant_id == tenant_id,
+                        PurchaseInvoiceLine.goods_receipt_id == goods_receipt_id,
+                    )
+                ),
+            )
+            .options(selectinload(PurchaseInvoice.lines))
+            .limit(1)
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
     async def _build_draft(
         self, tenant_id: UUID, payload: DebitNoteCreate
     ) -> tuple[dict[str, object], builtins.list[dict[str, object]]]:
-        invoice = await self.purchase_invoices._require(tenant_id, payload.purchase_invoice_id)
-        if InvoiceDocumentStatus(invoice.status) != InvoiceDocumentStatus.POSTED:
-            raise ValidationError("Linked purchase invoice must be posted")
         supplier = await self.suppliers.get(tenant_id, payload.supplier_id)
-        if invoice.supplier_id != supplier.id:
-            raise ValidationError("Debit note supplier must match the purchase invoice")
         if payload.branch_id is not None:
             await self.org.require_branch(tenant_id, payload.branch_id)
-        pi_line_ids = {line.id for line in invoice.lines}
-        for line in payload.lines:
-            if line.purchase_invoice_line_id not in pi_line_ids:
-                raise ValidationError("Debit note lines must belong to the linked purchase invoice")
+        invoice: PurchaseInvoice | None = None
+        if payload.purchase_invoice_id is not None:
+            invoice = await self.purchase_invoices._require(tenant_id, payload.purchase_invoice_id)
+            if InvoiceDocumentStatus(invoice.status) != InvoiceDocumentStatus.POSTED:
+                raise ValidationError("Linked purchase invoice must be posted")
+            if invoice.supplier_id != supplier.id:
+                raise ValidationError("Debit note supplier must match the purchase invoice")
+            pi_line_ids = {line.id for line in invoice.lines}
+            for line in payload.lines:
+                if (
+                    line.purchase_invoice_line_id is not None
+                    and line.purchase_invoice_line_id not in pi_line_ids
+                ):
+                    raise ValidationError(
+                        "Debit note lines must belong to the linked purchase invoice"
+                    )
+        if payload.purchase_return_id is not None:
+            from app.inventory_management.purchase_returns.service import PurchaseReturnService
 
-        currency_id = payload.currency_id or invoice.currency_id
+            purchase_return = await PurchaseReturnService(
+                self.session, actor_permissions=self.actor_permissions
+            )._require(tenant_id, payload.purchase_return_id)
+            if StockDocumentStatus(purchase_return.status) != StockDocumentStatus.POSTED:
+                raise ValidationError("Linked purchase return must be posted")
+            if purchase_return.supplier_id != supplier.id:
+                raise ValidationError("Debit note supplier must match the purchase return")
+        if invoice is None and payload.purchase_return_id is None:
+            raise ValidationError("Debit notes require a purchase invoice or a purchase return")
+
+        currency_id = payload.currency_id or (
+            invoice.currency_id if invoice is not None else supplier.currency_id
+        )
         await self.currencies.require_id(tenant_id, currency_id)
         base = await self.currencies.get_base(tenant_id)
         note_date = payload.debit_note_date or await self._today(tenant_id)
@@ -750,8 +942,16 @@ class DebitNoteService:
             to_currency_id=base.id,
             on_date=note_date,
         )
-        place = payload.place_of_supply or PlaceOfSupply(invoice.place_of_supply)
-        tax_treatment = TaxTreatment(invoice.tax_treatment)
+        place = payload.place_of_supply or (
+            PlaceOfSupply(invoice.place_of_supply)
+            if invoice is not None
+            else place_of_supply_from_address(supplier.shipping_address)
+        )
+        tax_treatment = (
+            TaxTreatment(invoice.tax_treatment)
+            if invoice is not None
+            else supplier.tax_treatment
+        )
         line_rows, line_nets, line_taxes = await self._build_lines(
             tenant_id,
             payload.lines,
@@ -770,11 +970,12 @@ class DebitNoteService:
         grand = quantize_money(grand + round_off)
         header: dict[str, object] = {
             "debit_note_date": note_date,
-            "purchase_invoice_id": invoice.id,
+            "purchase_invoice_id": invoice.id if invoice is not None else None,
+            "purchase_return_id": payload.purchase_return_id,
             "supplier_id": supplier.id,
             "reason_code": payload.reason_code.value,
-            "branch_id": payload.branch_id or invoice.branch_id,
-            "due_date": invoice.due_date,
+            "branch_id": payload.branch_id or (invoice.branch_id if invoice is not None else None),
+            "due_date": invoice.due_date if invoice is not None else None,
             "tax_treatment": tax_treatment.value,
             "place_of_supply": place.value,
             "currency_id": currency_id,
@@ -860,6 +1061,7 @@ class DebitNoteService:
                     "unit_id": unit_id,
                     "rate": rate,
                     "purchase_invoice_line_id": line.purchase_invoice_line_id,
+                    "purchase_return_line_id": line.purchase_return_line_id,
                     "expense_account_id": line.expense_account_id,
                     "discount_type": line.discount_type.value if line.discount_type else None,
                     "discount_value": line.discount_value,
@@ -889,6 +1091,7 @@ class DebitNoteService:
                     unit_id=line.unit_id,
                     rate=line.rate,
                     purchase_invoice_line_id=line.purchase_invoice_line_id,
+                    purchase_return_line_id=line.purchase_return_line_id,
                     expense_account_id=line.expense_account_id,
                     discount_type=DiscountType(line.discount_type) if line.discount_type else None,
                     discount_value=line.discount_value,
@@ -898,6 +1101,7 @@ class DebitNoteService:
             ]
         return DebitNoteCreate(
             purchase_invoice_id=existing.purchase_invoice_id,
+            purchase_return_id=existing.purchase_return_id,
             supplier_id=existing.supplier_id,
             reason_code=(
                 values["reason_code"]
@@ -928,6 +1132,7 @@ class DebitNoteService:
     async def _row_to_create(self, row: DebitNote) -> DebitNoteCreate:
         return DebitNoteCreate(
             purchase_invoice_id=row.purchase_invoice_id,
+            purchase_return_id=row.purchase_return_id,
             supplier_id=row.supplier_id,
             reason_code=DebitNoteReason(row.reason_code),
             branch_id=row.branch_id,
@@ -948,6 +1153,7 @@ class DebitNoteService:
                     unit_id=line.unit_id,
                     rate=line.rate,
                     purchase_invoice_line_id=line.purchase_invoice_line_id,
+                    purchase_return_line_id=line.purchase_return_line_id,
                     expense_account_id=line.expense_account_id,
                     discount_type=DiscountType(line.discount_type) if line.discount_type else None,
                     discount_value=line.discount_value,
@@ -993,6 +1199,7 @@ class DebitNoteService:
             debit_note_date=row.debit_note_date,
             document_date=row.debit_note_date,
             purchase_invoice_id=row.purchase_invoice_id,
+            purchase_return_id=row.purchase_return_id,
             supplier_id=row.supplier_id,
             reason_code=DebitNoteReason(row.reason_code),
             branch_id=row.branch_id,
@@ -1034,6 +1241,7 @@ class DebitNoteService:
                     unit_id=line.unit_id,
                     rate=line.rate,
                     purchase_invoice_line_id=line.purchase_invoice_line_id,
+                    purchase_return_line_id=line.purchase_return_line_id,
                     expense_account_id=line.expense_account_id,
                     discount_type=DiscountType(line.discount_type) if line.discount_type else None,
                     discount_value=line.discount_value,
@@ -1055,21 +1263,44 @@ class DebitNoteService:
         from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
 
         related: builtins.list[RelatedDocumentRef] = []
-        invoice = await PurchaseInvoiceRepository(self.session).get(
-            tenant_id, row.purchase_invoice_id
-        )
-        if invoice is not None:
-            related.append(
-                RelatedDocumentRef(
-                    document_type=DocumentType.PURCHASE_INVOICE.value,
-                    document_id=invoice.id,
-                    document_number=invoice.document_number,
-                    status=invoice.status,
-                    relationship="source",
-                    document_date=invoice.invoice_date,
-                    quantity_summary=quantity_summary([line.quantity for line in invoice.lines]),
-                )
+        if row.purchase_invoice_id is not None:
+            invoice = await PurchaseInvoiceRepository(self.session).get(
+                tenant_id, row.purchase_invoice_id
             )
+            if invoice is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.PURCHASE_INVOICE.value,
+                        document_id=invoice.id,
+                        document_number=invoice.document_number,
+                        status=invoice.status,
+                        relationship="source",
+                        document_date=invoice.invoice_date,
+                        quantity_summary=quantity_summary(
+                            [line.quantity for line in invoice.lines]
+                        ),
+                    )
+                )
+        if row.purchase_return_id is not None:
+            from app.inventory_management.purchase_returns.repository import (
+                PurchaseReturnRepository,
+            )
+
+            ret = await PurchaseReturnRepository(self.session).get(
+                tenant_id, row.purchase_return_id
+            )
+            if ret is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.PURCHASE_RETURN.value,
+                        document_id=ret.id,
+                        document_number=ret.document_number,
+                        status=ret.status,
+                        relationship="source",
+                        document_date=ret.document_date,
+                        quantity_summary=quantity_summary([line.quantity for line in ret.lines]),
+                    )
+                )
         return related
 
     async def _require(

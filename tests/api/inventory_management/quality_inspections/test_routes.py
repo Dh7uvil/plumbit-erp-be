@@ -127,3 +127,48 @@ async def test_cannot_inspect_more_than_remaining_hold(client: AsyncClient) -> N
     )
     assert extra.status_code == 422, extra.text
     assert extra.json()["error"]["code"] == "QUALITY_QTY_MISMATCH"
+
+
+@pytest.mark.asyncio
+async def test_return_to_supplier_leaves_qty_on_hold(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ctx = await _issue_tracked_po(client, headers, quantity="4", requires_qc=True)
+    created = await _create_from_po(client, headers, ctx["order"]["id"])
+    posted = await _post_grn(
+        client, headers, created["body"]["data"]["id"], created["body"]["data"]["version"]
+    )
+    inspections = await client.get(
+        f"/api/v1/quality-inspections?goods_receipt_id={posted.json()['data']['id']}",
+        headers=headers,
+    )
+    qi = inspections.json()["data"][0]
+    updated = await client.patch(
+        f"/api/v1/quality-inspections/{qi['id']}",
+        headers=_idempotent(headers, qi["version"]),
+        json={
+            "version": qi["version"],
+            "lines": [
+                {
+                    "goods_receipt_line_id": qi["lines"][0]["goods_receipt_line_id"],
+                    "qty_inspected": "4",
+                    "qty_accepted": "1",
+                    "qty_rejected": "3",
+                    "qty_rework": "0",
+                    "disposition": "RETURN_TO_SUPPLIER",
+                }
+            ],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    approved = await client.post(
+        f"/api/v1/quality-inspections/{qi['id']}/approve",
+        headers=_idempotent(headers, updated.json()["data"]["version"]),
+    )
+    assert approved.status_code == 200, approved.text
+    assert "create_purchase_return" in approved.json()["data"]["available_actions"]
+    stock = await client.get(f"/api/v1/stock?product_id={ctx['product_id']}", headers=headers)
+    row = stock.json()["data"][0]
+    assert Decimal(row["qty_on_hand"]) == Decimal("4")
+    assert Decimal(row["qty_quality_hold"]) == Decimal("3")
+

@@ -3,7 +3,7 @@
 from collections.abc import Mapping, Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.repositories.base import BaseRepository
@@ -39,6 +39,18 @@ class CustomerRepository:
 
     async def get(self, tenant_id: UUID, customer_id: UUID) -> Customer | None:
         return await self._repo.get(tenant_id, customer_id)
+
+    async def get_by_code(self, tenant_id: UUID, code: str) -> Customer | None:
+        statement = self._repo.base_query(tenant_id).where(Customer.code == code.strip().upper())
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def get_by_name(self, tenant_id: UUID, name: str) -> Customer | None:
+        statement = self._repo.base_query(tenant_id).where(
+            func.lower(Customer.name) == name.strip().lower()
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
 
     async def list(
         self,

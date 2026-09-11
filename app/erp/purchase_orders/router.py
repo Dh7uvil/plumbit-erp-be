@@ -18,6 +18,7 @@ from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
+from app.common.print.schemas import PrintDocumentResponse
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
@@ -95,6 +96,24 @@ async def get_purchase_order(
     _: Annotated[CurrentUser, Depends(require_permission(PURCHASE_ORDER_READ))],
 ) -> ApiResponse[PurchaseOrderResponse]:
     return ApiResponse(data=await service.get(tenant.tenant_id, purchase_order_id))
+
+
+@router.get(
+    "/{purchase_order_id}/print",
+    response_model=ApiResponse[PrintDocumentResponse],
+)
+async def print_purchase_order(
+    purchase_order_id: UUID,
+    tenant: TenantContextDependency,
+    service: PurchaseOrderServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(PURCHASE_ORDER_READ))],
+    template_family: Annotated[str, Query()] = "uae",
+) -> ApiResponse[PrintDocumentResponse]:
+    return ApiResponse(
+        data=await service.print_document(
+            tenant.tenant_id, purchase_order_id, template_family=template_family
+        )
+    )
 
 
 @router.patch("/{purchase_order_id}", response_model=ApiResponse[PurchaseOrderResponse])
