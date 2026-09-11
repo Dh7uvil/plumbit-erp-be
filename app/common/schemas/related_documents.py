@@ -15,6 +15,7 @@ class RelatedDocumentRef(BaseModel):
     relationship: str
     document_date: date | None = None
     quantity_summary: str | None = None
+    amount_summary: str | None = None
 
 
 class QuantityProgress(BaseModel):

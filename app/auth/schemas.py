@@ -14,7 +14,13 @@ from app.common.utils.validators import (
     normalize_required_text,
     optional_uuid_input,
 )
-from app.core.enums import BranchStatus, CostingMethod, EmployeeStatus, UserStatus
+from app.core.enums import (
+    BranchStatus,
+    CostingMethod,
+    CreditLimitPolicy,
+    EmployeeStatus,
+    UserStatus,
+)
 
 MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 72
@@ -560,6 +566,10 @@ class TenantCurrentResponse(BaseModel):
     allow_over_receipt: bool = False
     over_receipt_tolerance_pct: Decimal | None = None
     qc_required_default: bool = False
+    vat_on_advances: bool = True
+    auto_apply_advances_on_invoice: bool = True
+    credit_limit_policy: CreditLimitPolicy = CreditLimitPolicy.WARN
+    credit_limit_include_open_orders: bool = True
     lock_date: date | None = None
     hard_lock_date: date | None = None
     headquarters: AddressPayload | None = None
@@ -595,6 +605,10 @@ class TenantCurrentUpdate(BaseModel):
         default=None, ge=0, le=100, max_digits=5, decimal_places=2
     )
     qc_required_default: bool | None = None
+    vat_on_advances: bool | None = None
+    auto_apply_advances_on_invoice: bool | None = None
+    credit_limit_policy: CreditLimitPolicy | None = None
+    credit_limit_include_open_orders: bool | None = None
     headquarters: AddressPayload | None = None
 
     @field_validator(

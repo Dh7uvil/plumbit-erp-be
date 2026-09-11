@@ -1,0 +1,1305 @@
+"""Supplier payments: bank, AP allocations, PO advances, refunds."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from datetime import date
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.catalog import (
+    ERP_MODULE,
+    PERIOD_OVERRIDE,
+    SUPPLIER_PAYMENT_CANCEL,
+    SUPPLIER_PAYMENT_DELETE,
+    SUPPLIER_PAYMENT_POST,
+)
+from app.auth.org_service import OrganizationService
+from app.common.idempotency.service import IdempotencyService
+from app.common.outbox.service import OutboxService
+from app.common.period_lock import PeriodLockPolicy
+from app.common.schemas.filters import BaseFilter
+from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import RelatedDocumentRef
+from app.common.services.audit import AuditWriter
+from app.common.utils.currency import quantize_money
+from app.common.utils.datetime import today_in_timezone, utcnow
+from app.core.enums import (
+    AccountSubtype,
+    AccountSystemRole,
+    AuditAction,
+    DocumentType,
+    InvoiceDocumentStatus,
+    JournalType,
+    OpenItemType,
+    PartyType,
+    PaymentAllocationSource,
+    PaymentMethod,
+)
+from app.core.exceptions import (
+    DocumentStaleError,
+    InvoiceCannotVoidError,
+    PaymentAccountInvalidError,
+    PaymentNothingToApplyError,
+    PaymentOverAllocatedError,
+    ResourceNotFoundError,
+    ValidationError,
+)
+from app.core.permissions import has_permission
+from app.crm.customers.service import SUPPLIER_PARTY_ROLE, CustomerService
+from app.db.session import transaction
+from app.erp.accounting.accounts.service import (
+    AccountResolver,
+    AccountService,
+    PartyAccountResolver,
+)
+from app.erp.accounting.fiscal import year_for
+from app.erp.accounting.ledger.posting import LedgerPostingService
+from app.erp.accounting.ledger.schemas import JournalEntryResponse, JournalLineInput
+from app.erp.accounting.ledger.service import JournalEntryService
+from app.erp.accounting.open_items.repository import PaymentAllocationRepository
+from app.erp.accounting.open_items.schemas import PaymentAllocationInput
+from app.erp.accounting.open_items.service import OpenItemsService
+from app.erp.accounting.service import DocumentSequenceService
+from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
+from app.erp.supplier_payments.models import SupplierPayment
+from app.erp.supplier_payments.repository import SupplierPaymentRepository
+from app.erp.supplier_payments.schemas import (
+    SupplierPaymentAllocationResponse,
+    SupplierPaymentCreate,
+    SupplierPaymentResponse,
+    SupplierPaymentUpdate,
+)
+from app.erp.supplier_payments.workflow import assert_editable, next_status, transition_actions
+
+_ZERO = Decimal("0")
+_SERIES = "PAY"
+_ACTION_PERMISSIONS: dict[str, str] = {
+    "post": SUPPLIER_PAYMENT_POST,
+    "cancel": SUPPLIER_PAYMENT_CANCEL,
+}
+SOURCE_SUPPLIER_PAYMENT = "supplier_payment"
+SOURCE_SUPPLIER_PAYMENT_ALLOCATION = "supplier_payment_allocation"
+SOURCE_SUPPLIER_PAYMENT_REFUND = "supplier_payment_refund"
+_ALLOCATABLE = frozenset({OpenItemType.PURCHASE_INVOICE, OpenItemType.OPENING_AP})
+
+
+class SupplierPaymentService:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        actor_permissions: frozenset[str] = frozenset(),
+    ) -> None:
+        self.session = session
+        self.actor_permissions = actor_permissions
+        self.repo = SupplierPaymentRepository(session)
+        self.allocations = PaymentAllocationRepository(session)
+        self.open_items = OpenItemsService(session)
+        self.org = OrganizationService(session)
+        self.suppliers = CustomerService(session, role=SUPPLIER_PARTY_ROLE)
+        self.currencies = CurrencyService(session)
+        self.fx = ExchangeRateService(session)
+        self.sequences = DocumentSequenceService(session)
+        self.accounts = AccountService(session)
+        self.resolver = AccountResolver(session)
+        self.party_accounts = PartyAccountResolver(session)
+        self.posting = LedgerPostingService(session, actor_permissions=actor_permissions)
+        self.journals = JournalEntryService(session, actor_permissions=actor_permissions)
+        self.idempotency = IdempotencyService(session)
+        self.outbox = OutboxService(session)
+        self.audit = AuditWriter(session)
+        self._can_override = has_permission(actor_permissions, PERIOD_OVERRIDE)
+        self._period_policy: PeriodLockPolicy | None = None
+
+    async def list(
+        self,
+        tenant_id: UUID,
+        *,
+        page: PageParams,
+        common_filter: BaseFilter | None = None,
+        status: str | None = None,
+        supplier_id: UUID | None = None,
+        purchase_order_id: UUID | None = None,
+        currency_id: UUID | None = None,
+        payment_method: str | None = None,
+        payment_date_from: date | None = None,
+        payment_date_to: date | None = None,
+    ) -> tuple[list[SupplierPaymentResponse], int]:
+        filters: dict[str, object] = {}
+        if status is not None:
+            filters["status"] = status
+        if supplier_id is not None:
+            filters["supplier_id"] = supplier_id
+        if purchase_order_id is not None:
+            filters["purchase_order_id"] = purchase_order_id
+        if currency_id is not None:
+            filters["currency_id"] = currency_id
+        if payment_method is not None:
+            filters["payment_method"] = payment_method
+        extra: list[Any] = []
+        if payment_date_from is not None:
+            extra.append(SupplierPayment.payment_date >= payment_date_from)
+        if payment_date_to is not None:
+            extra.append(SupplierPayment.payment_date <= payment_date_to)
+        rows, total = await self.repo.list(
+            tenant_id,
+            page=page,
+            common_filter=common_filter,
+            filters=filters or None,
+            extra_criteria=extra or None,
+        )
+        await self._ensure_policy(tenant_id)
+        return [await self._to_response(tenant_id, row) for row in rows], total
+
+    async def get(self, tenant_id: UUID, payment_id: UUID) -> SupplierPaymentResponse:
+        row = await self._require(tenant_id, payment_id)
+        await self._ensure_policy(tenant_id)
+        response = await self._to_response(tenant_id, row)
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
+
+    async def create(
+        self, tenant_id: UUID, payload: SupplierPaymentCreate, *, actor_user_id: UUID
+    ) -> SupplierPaymentResponse:
+        async with transaction(self.session):
+            values = await self._draft_values(tenant_id, payload)
+            policy = await self._ensure_policy(tenant_id)
+            policy.assert_open(values["payment_date"], can_override=self._can_override)
+            number = await self.sequences.allocate(
+                tenant_id,
+                document_type=DocumentType.SUPPLIER_PAYMENT,
+                series=_SERIES,
+                fiscal_year=await year_for(self.session, tenant_id, values["payment_date"]),
+                prefix=_SERIES,
+            )
+            row = await self.repo.create(
+                tenant_id,
+                {
+                    **values,
+                    "document_number": number,
+                    "status": InvoiceDocumentStatus.DRAFT.value,
+                    "version": 1,
+                    "is_posted": False,
+                    "created_by": actor_user_id,
+                    "updated_by": actor_user_id,
+                },
+            )
+            await self._replace_draft_allocations(tenant_id, row, payload.allocations)
+            loaded = await self._require(tenant_id, row.id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.CREATE,
+                module=ERP_MODULE,
+                entity_type="supplier_payment",
+                entity_id=row.id,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            return await self._to_response(tenant_id, loaded)
+
+    async def update(
+        self,
+        tenant_id: UUID,
+        payment_id: UUID,
+        payload: SupplierPaymentUpdate,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+    ) -> SupplierPaymentResponse:
+        async with transaction(self.session):
+            row = await self._require(tenant_id, payment_id, for_update=True)
+            self._assert_version(row, expected_version)
+            assert_editable(InvoiceDocumentStatus(row.status))
+            old_values = await self._snapshot(tenant_id, row)
+            merged = await self._merged_create(row, payload)
+            values = await self._draft_values(tenant_id, merged)
+            policy = await self._ensure_policy(tenant_id)
+            policy.assert_open(values["payment_date"], can_override=self._can_override)
+            for name, value in values.items():
+                setattr(row, name, value)
+            row.version += 1
+            row.updated_by = actor_user_id
+            if payload.allocations is not None:
+                await self._replace_draft_allocations(tenant_id, row, payload.allocations)
+            await self.session.flush()
+            loaded = await self._require(tenant_id, payment_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=ERP_MODULE,
+                entity_type="supplier_payment",
+                entity_id=payment_id,
+                old_values=old_values,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            return await self._to_response(tenant_id, loaded)
+
+    async def delete(
+        self,
+        tenant_id: UUID,
+        payment_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+    ) -> SupplierPaymentResponse:
+        async with transaction(self.session):
+            row = await self._require(tenant_id, payment_id, for_update=True)
+            self._assert_version(row, expected_version)
+            assert_editable(InvoiceDocumentStatus(row.status))
+            old_values = await self._snapshot(tenant_id, row)
+            response = await self._to_response(tenant_id, row)
+            await self.allocations.delete_live_for_payment(
+                tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, payment_id
+            )
+            deleted = await self.repo.soft_delete(tenant_id, payment_id)
+            if deleted is None:
+                raise ResourceNotFoundError("Supplier payment not found")
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.DELETE,
+                module=ERP_MODULE,
+                entity_type="supplier_payment",
+                entity_id=payment_id,
+                old_values=old_values,
+            )
+            return response
+
+    async def post(
+        self,
+        tenant_id: UUID,
+        payment_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> SupplierPaymentResponse:
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return SupplierPaymentResponse.model_validate(replay)
+            row = await self._require(tenant_id, payment_id, for_update=True)
+            if InvoiceDocumentStatus(row.status) == InvoiceDocumentStatus.POSTED:
+                response = await self._to_response(tenant_id, row)
+                await self.idempotency.store(
+                    tenant_id, idempotency_key, response.model_dump(mode="json")
+                )
+                return response
+            self._assert_version(row, expected_version)
+            target = next_status(InvoiceDocumentStatus(row.status), "post")
+            policy = await self._ensure_policy(tenant_id)
+            policy.assert_open(row.payment_date, can_override=self._can_override)
+            old_values = await self._snapshot(tenant_id, row)
+            await self._apply_rate(tenant_id, row)
+            lines = await self._post_journal_lines(tenant_id, row)
+            journal = await self.posting.post_for_document(
+                tenant_id,
+                source_type=SOURCE_SUPPLIER_PAYMENT,
+                source_id=row.id,
+                entry_date=row.payment_date,
+                lines=lines,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                narration=f"Supplier payment {row.document_number}",
+                branch_id=None,
+                actor_id=actor_user_id,
+                journal_type=JournalType.SYSTEM,
+                reference=row.document_number,
+            )
+            row.journal_entry_id = journal.id
+            await self._settle_allocations(tenant_id, row, sign=Decimal("1"))
+            row.status = target.value
+            row.is_posted = True
+            row.posted_at = utcnow()
+            row.posted_by = actor_user_id
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            loaded = await self._require(tenant_id, payment_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.POST,
+                module=ERP_MODULE,
+                entity_type="supplier_payment",
+                entity_id=payment_id,
+                old_values=old_values,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            await self.outbox.enqueue(
+                tenant_id,
+                event_type="erp.supplier_payment.posted",
+                aggregate_type="supplier_payment",
+                aggregate_id=payment_id,
+                payload={"supplier_payment_id": str(payment_id)},
+                dedupe_key=f"supplier-payment-posted:{payment_id}",
+            )
+            response = await self._to_response(tenant_id, loaded)
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
+            return response
+
+    async def cancel(
+        self,
+        tenant_id: UUID,
+        payment_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        reason: str | None,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> SupplierPaymentResponse:
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return SupplierPaymentResponse.model_validate(replay)
+            row = await self._require(tenant_id, payment_id, for_update=True)
+            if InvoiceDocumentStatus(row.status) == InvoiceDocumentStatus.CANCELLED:
+                response = await self._to_response(tenant_id, row)
+                await self.idempotency.store(
+                    tenant_id, idempotency_key, response.model_dump(mode="json")
+                )
+                return response
+            self._assert_version(row, expected_version)
+            target = next_status(InvoiceDocumentStatus(row.status), "cancel")
+            old_values = await self._snapshot(tenant_id, row)
+            row.cancel_reason = reason
+            if InvoiceDocumentStatus(row.status) == InvoiceDocumentStatus.POSTED:
+                await self._cancel_posted(tenant_id, row, actor_user_id=actor_user_id)
+            row.status = target.value
+            row.cancelled_at = utcnow()
+            row.cancelled_by = actor_user_id
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            loaded = await self._require(tenant_id, payment_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.CANCEL,
+                module=ERP_MODULE,
+                entity_type="supplier_payment",
+                entity_id=payment_id,
+                old_values=old_values,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            await self.outbox.enqueue(
+                tenant_id,
+                event_type="erp.supplier_payment.cancelled",
+                aggregate_type="supplier_payment",
+                aggregate_id=payment_id,
+                payload={"supplier_payment_id": str(payment_id)},
+                dedupe_key=f"supplier-payment-cancelled:{payment_id}",
+            )
+            response = await self._to_response(tenant_id, loaded)
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
+            return response
+
+    async def allocate(
+        self,
+        tenant_id: UUID,
+        payment_id: UUID,
+        allocations: Sequence[PaymentAllocationInput],
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+    ) -> SupplierPaymentResponse:
+        async with transaction(self.session):
+            row = await self._require(tenant_id, payment_id, for_update=True)
+            self._assert_version(row, expected_version)
+            if InvoiceDocumentStatus(row.status) != InvoiceDocumentStatus.POSTED:
+                raise ValidationError("Only posted supplier payments can be allocated")
+            if row.amount_unapplied <= _ZERO:
+                raise PaymentNothingToApplyError()
+            policy = await self._ensure_policy(tenant_id)
+            policy.assert_open(row.payment_date, can_override=self._can_override)
+            old_values = await self._snapshot(tenant_id, row)
+            total = quantize_money(sum((item.amount for item in allocations), _ZERO))
+            if total > row.amount_unapplied:
+                raise PaymentOverAllocatedError(
+                    details={
+                        "amount_unapplied": str(row.amount_unapplied),
+                        "allocated": str(total),
+                    }
+                )
+            for item in allocations:
+                await self._allocate_posted_slice(
+                    tenant_id,
+                    row,
+                    item,
+                    actor_user_id=actor_user_id,
+                )
+            row.amount_unapplied = quantize_money(row.amount_unapplied - total)
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            loaded = await self._require(tenant_id, payment_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=ERP_MODULE,
+                entity_type="supplier_payment",
+                entity_id=payment_id,
+                old_values=old_values,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            await self.outbox.enqueue(
+                tenant_id,
+                event_type="erp.supplier_payment.allocated",
+                aggregate_type="supplier_payment",
+                aggregate_id=payment_id,
+                payload={"supplier_payment_id": str(payment_id)},
+                dedupe_key=f"supplier-payment-allocated:{payment_id}:{row.version}",
+            )
+            return await self._to_response(tenant_id, loaded)
+
+    async def refund(
+        self,
+        tenant_id: UUID,
+        payment_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> SupplierPaymentResponse:
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return SupplierPaymentResponse.model_validate(replay)
+            row = await self._require(tenant_id, payment_id, for_update=True)
+            self._assert_version(row, expected_version)
+            if InvoiceDocumentStatus(row.status) != InvoiceDocumentStatus.POSTED:
+                raise ValidationError("Only posted supplier payments can be refunded")
+            if row.refund_journal_entry_id is not None:
+                response = await self._to_response(tenant_id, row)
+                await self.idempotency.store(
+                    tenant_id, idempotency_key, response.model_dump(mode="json")
+                )
+                return response
+            if row.amount_unapplied <= _ZERO:
+                raise PaymentNothingToApplyError()
+            policy = await self._ensure_policy(tenant_id)
+            policy.assert_open(row.payment_date, can_override=self._can_override)
+            old_values = await self._snapshot(tenant_id, row)
+            lines = await self._refund_journal_lines(tenant_id, row)
+            journal = await self.posting.post_for_document(
+                tenant_id,
+                source_type=SOURCE_SUPPLIER_PAYMENT_REFUND,
+                source_id=row.id,
+                entry_date=row.payment_date,
+                lines=lines,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                narration=f"Refund payment {row.document_number}",
+                branch_id=None,
+                actor_id=actor_user_id,
+                journal_type=JournalType.SYSTEM,
+                reference=row.document_number,
+            )
+            row.refund_journal_entry_id = journal.id
+            row.amount_refunded = quantize_money(row.amount_refunded + row.amount_unapplied)
+            row.amount_unapplied = _ZERO
+            row.refunded_at = utcnow()
+            row.refunded_by = actor_user_id
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            loaded = await self._require(tenant_id, payment_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.REVERSE,
+                module=ERP_MODULE,
+                entity_type="supplier_payment",
+                entity_id=payment_id,
+                old_values=old_values,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            response = await self._to_response(tenant_id, loaded)
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
+            return response
+
+    async def auto_apply_po_advances(
+        self,
+        tenant_id: UUID,
+        *,
+        invoice_id: UUID,
+        supplier_id: UUID,
+        purchase_order_id: UUID,
+        actor_user_id: UUID,
+    ) -> None:
+        settings = await self.org.get_money_movement_settings(tenant_id)
+        if not settings.auto_apply_advances_on_invoice:
+            return
+        from app.erp.purchase_invoices.service import PurchaseInvoiceService
+
+        invoices = PurchaseInvoiceService(self.session, actor_permissions=self.actor_permissions)
+        invoice = await invoices._require(tenant_id, invoice_id, for_update=True)
+        payments = await self.repo.list_unapplied_for_purchase_order(
+            tenant_id, supplier_id, purchase_order_id
+        )
+        for payment in payments:
+            if invoice.balance_due <= _ZERO:
+                break
+            locked = await self._require(tenant_id, payment.id, for_update=True)
+            apply_amount = quantize_money(min(locked.amount_unapplied, invoice.balance_due))
+            if apply_amount <= _ZERO:
+                continue
+            await self._allocate_posted_slice(
+                tenant_id,
+                locked,
+                PaymentAllocationInput(
+                    item_type=OpenItemType.PURCHASE_INVOICE,
+                    item_id=invoice.id,
+                    amount=apply_amount,
+                ),
+                actor_user_id=actor_user_id,
+            )
+            locked.amount_unapplied = quantize_money(locked.amount_unapplied - apply_amount)
+            await self.session.flush()
+            invoice = await invoices._require(tenant_id, invoice_id, for_update=True)
+
+    async def apply_debits_to_invoice(
+        self,
+        tenant_id: UUID,
+        invoice_id: UUID,
+        allocations: Sequence[PaymentAllocationInput] | None,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+    ) -> Any:
+        from app.erp.debit_notes.service import DebitNoteService
+        from app.erp.purchase_invoices.service import PurchaseInvoiceService
+
+        invoices = PurchaseInvoiceService(self.session, actor_permissions=self.actor_permissions)
+        notes = DebitNoteService(self.session, actor_permissions=self.actor_permissions)
+        async with transaction(self.session):
+            invoice = await invoices._require(tenant_id, invoice_id, for_update=True)
+            invoices._assert_version(invoice, expected_version)
+            if InvoiceDocumentStatus(invoice.status) != InvoiceDocumentStatus.POSTED:
+                raise ValidationError("Debits can only be applied to a posted invoice")
+            if invoice.balance_due <= _ZERO:
+                raise PaymentNothingToApplyError()
+            items = list(allocations or [])
+            if not items:
+                items = await self._fifo_debits(tenant_id, invoice)
+            if not items:
+                raise PaymentNothingToApplyError()
+            for item in items:
+                if invoice.balance_due <= _ZERO:
+                    break
+                amount = quantize_money(min(item.amount, invoice.balance_due))
+                if amount <= _ZERO:
+                    continue
+                if item.item_type == OpenItemType.DEBIT_NOTE:
+                    await notes.apply_to_invoice(
+                        tenant_id, item.item_id, invoice.id, amount, actor_user_id=actor_user_id
+                    )
+                elif item.item_type == OpenItemType.SUPPLIER_PAYMENT:
+                    payment = await self._require(tenant_id, item.item_id, for_update=True)
+                    if payment.amount_unapplied < amount:
+                        raise PaymentOverAllocatedError()
+                    await self._allocate_posted_slice(
+                        tenant_id,
+                        payment,
+                        PaymentAllocationInput(
+                            item_type=OpenItemType.PURCHASE_INVOICE,
+                            item_id=invoice.id,
+                            amount=amount,
+                        ),
+                        actor_user_id=actor_user_id,
+                    )
+                    payment.amount_unapplied = quantize_money(payment.amount_unapplied - amount)
+                else:
+                    raise ValidationError(
+                        "apply-debits only accepts debit notes or supplier payments"
+                    )
+                invoice = await invoices._require(tenant_id, invoice_id, for_update=True)
+            invoice.version += 1
+            await self.session.flush()
+            loaded = await invoices._require(tenant_id, invoice_id)
+            return invoices._to_response(loaded)
+
+    async def journal(self, tenant_id: UUID, payment_id: UUID) -> JournalEntryResponse:
+        row = await self._require(tenant_id, payment_id)
+        if row.journal_entry_id is None:
+            raise ResourceNotFoundError("Journal entry not found")
+        return await self.journals.get(tenant_id, row.journal_entry_id)
+
+    async def has_live_for_purchase_invoice(
+        self, tenant_id: UUID, purchase_invoice_id: UUID
+    ) -> bool:
+        return await self.allocations.has_live_for_item(
+            tenant_id, OpenItemType.PURCHASE_INVOICE.value, purchase_invoice_id
+        )
+
+    async def list_for_purchase_invoice(
+        self, tenant_id: UUID, purchase_invoice_id: UUID
+    ) -> list[SupplierPayment]:
+        matches = await self.allocations.list_live_for_item(
+            tenant_id, OpenItemType.PURCHASE_INVOICE.value, purchase_invoice_id
+        )
+        payments: list[SupplierPayment] = []
+        seen: set[UUID] = set()
+        for allocation in matches:
+            if allocation.payment_type != PaymentAllocationSource.SUPPLIER_PAYMENT.value:
+                continue
+            if allocation.payment_id in seen:
+                continue
+            seen.add(allocation.payment_id)
+            row = await self.repo.get(tenant_id, allocation.payment_id)
+            if (
+                row is not None
+                and InvoiceDocumentStatus(row.status) != InvoiceDocumentStatus.CANCELLED
+            ):
+                payments.append(row)
+        return payments
+
+    async def list_for_purchase_order(
+        self, tenant_id: UUID, purchase_order_id: UUID
+    ) -> list[SupplierPayment]:
+        return await self.repo.list_for_purchase_order(tenant_id, purchase_order_id)
+
+    async def _fifo_debits(self, tenant_id: UUID, invoice: Any) -> list[PaymentAllocationInput]:
+        items = await self.open_items.list_ap_open_items(tenant_id, invoice.supplier_id)
+        remaining = invoice.balance_due
+        chosen: list[PaymentAllocationInput] = []
+        for item in items:
+            if remaining <= _ZERO:
+                break
+            if item.item_type not in {OpenItemType.DEBIT_NOTE, OpenItemType.SUPPLIER_PAYMENT}:
+                continue
+            if item.item_type == OpenItemType.DEBIT_NOTE and item.balance <= _ZERO:
+                continue
+            amount = quantize_money(min(item.balance, remaining))
+            if amount <= _ZERO:
+                continue
+            chosen.append(
+                PaymentAllocationInput(
+                    item_type=item.item_type, item_id=item.document_id, amount=amount
+                )
+            )
+            remaining = quantize_money(remaining - amount)
+        return chosen
+
+    async def _cancel_posted(
+        self, tenant_id: UUID, row: SupplierPayment, *, actor_user_id: UUID
+    ) -> None:
+        policy = await self._ensure_policy(tenant_id)
+        if policy.is_locked(row.payment_date, can_override=self._can_override):
+            raise InvoiceCannotVoidError("The period is locked")
+        if row.amount_refunded > _ZERO:
+            raise InvoiceCannotVoidError("This payment has a refund and cannot be cancelled")
+        live = await self.allocations.list_live_for_payment(
+            tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, row.id
+        )
+        for allocation in live:
+            if allocation.journal_entry_id is not None:
+                await self.posting.reverse(
+                    tenant_id,
+                    allocation.journal_entry_id,
+                    reversal_date=row.payment_date,
+                    reason=row.cancel_reason,
+                    actor_id=actor_user_id,
+                )
+            allocation.reversed_at = utcnow()
+        await self._settle_allocations(tenant_id, row, sign=Decimal("-1"), allocations=live)
+        if row.journal_entry_id is not None:
+            reversal = await self.posting.reverse(
+                tenant_id,
+                row.journal_entry_id,
+                reversal_date=row.payment_date,
+                reason=row.cancel_reason,
+                actor_id=actor_user_id,
+            )
+            row.reversal_journal_entry_id = reversal.id
+        row.amount_unapplied = _ZERO
+        row.is_posted = False
+
+    async def _settle_allocations(
+        self,
+        tenant_id: UUID,
+        row: SupplierPayment,
+        *,
+        sign: Decimal,
+        allocations: Sequence[Any] | None = None,
+    ) -> None:
+        from app.erp.purchase_invoices.service import PurchaseInvoiceService
+
+        invoices = PurchaseInvoiceService(self.session, actor_permissions=self.actor_permissions)
+        live = list(
+            allocations
+            if allocations is not None
+            else await self.allocations.list_live_for_payment(
+                tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, row.id
+            )
+        )
+        for allocation in live:
+            item_type = OpenItemType(allocation.item_type)
+            amount = quantize_money(allocation.amount * sign)
+            if item_type == OpenItemType.PURCHASE_INVOICE:
+                await invoices.apply_payment(tenant_id, allocation.item_id, amount)
+            elif item_type == OpenItemType.DEBIT_NOTE:
+                from app.erp.debit_notes.service import DebitNoteService
+
+                await DebitNoteService(
+                    self.session, actor_permissions=self.actor_permissions
+                ).adjust_unapplied(tenant_id, allocation.item_id, -amount)
+
+    async def _allocate_posted_slice(
+        self,
+        tenant_id: UUID,
+        row: SupplierPayment,
+        item: PaymentAllocationInput,
+        *,
+        actor_user_id: UUID,
+    ) -> None:
+        if item.item_type not in {OpenItemType.PURCHASE_INVOICE, OpenItemType.OPENING_AP}:
+            raise ValidationError("Payments allocate to bills or opening AP only")
+        open_row = await self._require_open_item(tenant_id, row.supplier_id, item)
+        if item.amount > open_row.balance:
+            raise PaymentOverAllocatedError(
+                details={"item_id": str(item.item_id), "balance": str(open_row.balance)}
+            )
+        if open_row.currency_id != row.currency_id:
+            raise ValidationError("Payment currency must match the open item currency")
+        lines = await self._application_journal_lines(
+            tenant_id,
+            row,
+            item=item,
+            open_row=open_row,
+        )
+        allocation = await self.allocations.create(
+            tenant_id,
+            payment_type=PaymentAllocationSource.SUPPLIER_PAYMENT.value,
+            payment_id=row.id,
+            item_type=item.item_type.value,
+            item_id=item.item_id,
+            amount=item.amount,
+        )
+        journal = await self.posting.post_for_document(
+            tenant_id,
+            source_type=SOURCE_SUPPLIER_PAYMENT_ALLOCATION,
+            source_id=allocation.id,
+            entry_date=row.payment_date,
+            lines=lines,
+            currency_id=row.currency_id,
+            exchange_rate=row.exchange_rate,
+            narration=f"Apply payment {row.document_number}",
+            branch_id=None,
+            actor_id=actor_user_id,
+            journal_type=JournalType.SYSTEM,
+            reference=row.document_number,
+        )
+        allocation.journal_entry_id = journal.id
+        await self._settle_allocations(
+            tenant_id,
+            row,
+            sign=Decimal("1"),
+            allocations=[allocation],
+        )
+
+    async def _post_journal_lines(
+        self, tenant_id: UUID, row: SupplierPayment
+    ) -> list[JournalLineInput]:
+        allocations = await self.allocations.list_live_for_payment(
+            tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, row.id
+        )
+        allocated = quantize_money(sum((item.amount for item in allocations), _ZERO))
+        if allocated > row.amount_paid:
+            raise PaymentOverAllocatedError(
+                details={"amount_paid": str(row.amount_paid), "allocated": str(allocated)}
+            )
+        unapplied = quantize_money(row.amount_paid - allocated)
+        row.amount_unapplied = unapplied
+        ap = await self.party_accounts.resolve_payable(tenant_id, row.supplier_id)
+        advance = await self.resolver.require(tenant_id, AccountSystemRole.ADVANCE_TO_SUPPLIER)
+        fx_account = await self.resolver.require(tenant_id, AccountSystemRole.FX_GAIN_LOSS)
+        charges_account = await self.resolver.require(tenant_id, AccountSystemRole.BANK_CHARGES)
+        lines: list[JournalLineInput] = [
+            JournalLineInput(
+                account_id=row.payment_account_id,
+                credit=row.amount_paid,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                description=f"Payment {row.document_number}",
+            )
+        ]
+        if row.bank_charges > _ZERO:
+            lines.append(
+                JournalLineInput(
+                    account_id=charges_account.id,
+                    debit=row.bank_charges,
+                    currency_id=row.currency_id,
+                    exchange_rate=row.exchange_rate,
+                    description="Bank charges",
+                )
+            )
+            lines.append(
+                JournalLineInput(
+                    account_id=row.payment_account_id,
+                    credit=row.bank_charges,
+                    currency_id=row.currency_id,
+                    exchange_rate=row.exchange_rate,
+                    description="Bank charges",
+                )
+            )
+        fx_total = _ZERO
+        for allocation in allocations:
+            open_row = await self._require_open_item(
+                tenant_id,
+                row.supplier_id,
+                PaymentAllocationInput(
+                    item_type=OpenItemType(allocation.item_type),
+                    item_id=allocation.item_id,
+                    amount=allocation.amount,
+                ),
+            )
+            if open_row.currency_id != row.currency_id:
+                raise ValidationError("Payment currency must match the open item currency")
+            item_rate = open_row.exchange_rate or row.exchange_rate
+            lines.append(
+                JournalLineInput(
+                    account_id=ap.id,
+                    debit=allocation.amount,
+                    currency_id=row.currency_id,
+                    exchange_rate=item_rate,
+                    party_type=PartyType.SUPPLIER,
+                    party_id=row.supplier_id,
+                    description=open_row.document_number,
+                )
+            )
+            fx_total += quantize_money(
+                allocation.amount * item_rate - allocation.amount * row.exchange_rate
+            )
+        if unapplied > _ZERO:
+            lines.append(
+                JournalLineInput(
+                    account_id=advance.id,
+                    debit=unapplied,
+                    currency_id=row.currency_id,
+                    exchange_rate=row.exchange_rate,
+                    party_type=PartyType.SUPPLIER,
+                    party_id=row.supplier_id,
+                    description="Unapplied payment",
+                )
+            )
+        self._append_fx(lines, fx_account.id, fx_total, row)
+        return lines
+
+    async def _application_journal_lines(
+        self,
+        tenant_id: UUID,
+        row: SupplierPayment,
+        *,
+        item: PaymentAllocationInput,
+        open_row: Any,
+    ) -> list[JournalLineInput]:
+        ap = await self.party_accounts.resolve_payable(tenant_id, row.supplier_id)
+        advance = await self.resolver.require(tenant_id, AccountSystemRole.ADVANCE_TO_SUPPLIER)
+        fx_account = await self.resolver.require(tenant_id, AccountSystemRole.FX_GAIN_LOSS)
+        item_rate = open_row.exchange_rate or row.exchange_rate
+        lines = [
+            JournalLineInput(
+                account_id=ap.id,
+                debit=item.amount,
+                currency_id=row.currency_id,
+                exchange_rate=item_rate,
+                party_type=PartyType.SUPPLIER,
+                party_id=row.supplier_id,
+                description=open_row.document_number,
+            ),
+            JournalLineInput(
+                account_id=advance.id,
+                credit=item.amount,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                party_type=PartyType.SUPPLIER,
+                party_id=row.supplier_id,
+                description=f"Apply {row.document_number}",
+            ),
+        ]
+        fx_total = quantize_money(item.amount * item_rate - item.amount * row.exchange_rate)
+        self._append_fx(lines, fx_account.id, fx_total, row)
+        return lines
+
+    async def _refund_journal_lines(
+        self, tenant_id: UUID, row: SupplierPayment
+    ) -> list[JournalLineInput]:
+        advance = await self.resolver.require(tenant_id, AccountSystemRole.ADVANCE_TO_SUPPLIER)
+        return [
+            JournalLineInput(
+                account_id=row.payment_account_id,
+                debit=row.amount_unapplied,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                description=f"Refund {row.document_number}",
+            ),
+            JournalLineInput(
+                account_id=advance.id,
+                credit=row.amount_unapplied,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                party_type=PartyType.SUPPLIER,
+                party_id=row.supplier_id,
+                description=f"Refund {row.document_number}",
+            ),
+        ]
+
+    def _append_fx(
+        self,
+        lines: list[JournalLineInput],
+        fx_account_id: UUID,
+        fx_total: Decimal,
+        row: SupplierPayment,
+    ) -> None:
+        amount = quantize_money(fx_total)
+        if amount == _ZERO:
+            return
+        if amount > _ZERO:
+            lines.append(
+                JournalLineInput(
+                    account_id=fx_account_id,
+                    credit=amount,
+                    currency_id=row.base_currency_id,
+                    exchange_rate=Decimal("1"),
+                    description="Realized FX",
+                )
+            )
+            return
+        lines.append(
+            JournalLineInput(
+                account_id=fx_account_id,
+                debit=abs(amount),
+                currency_id=row.base_currency_id,
+                exchange_rate=Decimal("1"),
+                description="Realized FX",
+            )
+        )
+
+    async def _draft_values(
+        self, tenant_id: UUID, payload: SupplierPaymentCreate
+    ) -> dict[str, object]:
+        supplier = await self.suppliers.get(tenant_id, payload.supplier_id)
+        payment_date = payload.payment_date or await self._today(tenant_id)
+        currency_id = payload.currency_id or supplier.currency_id
+        base = await self.currencies.get_base(tenant_id)
+        rate = (
+            await self.fx.resolve(
+                tenant_id,
+                from_currency_id=currency_id,
+                to_currency_id=base.id,
+                on_date=payment_date,
+            )
+        ).rate
+        await self._require_payment_account(tenant_id, payload.payment_account_id)
+        if payload.purchase_order_id is not None:
+            from app.erp.purchase_orders.service import PurchaseOrderService
+
+            await PurchaseOrderService(self.session).get(tenant_id, payload.purchase_order_id)
+        allocated = quantize_money(sum((item.amount for item in payload.allocations), _ZERO))
+        if allocated > payload.amount_paid:
+            raise PaymentOverAllocatedError(
+                details={
+                    "amount_paid": str(payload.amount_paid),
+                    "allocated": str(allocated),
+                }
+            )
+        return {
+            "payment_date": payment_date,
+            "supplier_id": payload.supplier_id,
+            "currency_id": currency_id,
+            "base_currency_id": base.id,
+            "exchange_rate": rate,
+            "amount_paid": quantize_money(payload.amount_paid),
+            "bank_charges": quantize_money(payload.bank_charges),
+            "amount_unapplied": quantize_money(payload.amount_paid - allocated),
+            "payment_account_id": payload.payment_account_id,
+            "payment_method": payload.payment_method.value,
+            "reference": payload.reference,
+            "purchase_order_id": payload.purchase_order_id,
+            "notes": payload.notes,
+        }
+
+    async def _merged_create(
+        self, row: SupplierPayment, payload: SupplierPaymentUpdate
+    ) -> SupplierPaymentCreate:
+        allocations = payload.allocations
+        if allocations is None:
+            live = await self.allocations.list_live_for_payment(
+                row.tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, row.id
+            )
+            allocations = [
+                PaymentAllocationInput(
+                    item_type=OpenItemType(item.item_type),
+                    item_id=item.item_id,
+                    amount=item.amount,
+                )
+                for item in live
+            ]
+        return SupplierPaymentCreate(
+            supplier_id=row.supplier_id,
+            payment_date=payload.payment_date or row.payment_date,
+            currency_id=payload.currency_id or row.currency_id,
+            amount_paid=payload.amount_paid or row.amount_paid,
+            bank_charges=row.bank_charges if payload.bank_charges is None else payload.bank_charges,
+            payment_account_id=payload.payment_account_id or row.payment_account_id,
+            payment_method=payload.payment_method or PaymentMethod(row.payment_method),
+            reference=row.reference if payload.reference is None else payload.reference,
+            purchase_order_id=(
+                row.purchase_order_id
+                if "purchase_order_id" not in payload.model_fields_set
+                else payload.purchase_order_id
+            ),
+            notes=row.notes if payload.notes is None else payload.notes,
+            allocations=allocations,
+        )
+
+    async def _replace_draft_allocations(
+        self,
+        tenant_id: UUID,
+        row: SupplierPayment,
+        allocations: Sequence[PaymentAllocationInput],
+    ) -> None:
+        await self.allocations.delete_live_for_payment(
+            tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, row.id
+        )
+        seen: set[tuple[str, UUID]] = set()
+        for item in allocations:
+            if item.item_type not in _ALLOCATABLE:
+                raise ValidationError("Invalid allocation item type")
+            key = (item.item_type.value, item.item_id)
+            if key in seen:
+                raise ValidationError("Duplicate allocation row")
+            seen.add(key)
+            open_row = await self._require_open_item(tenant_id, row.supplier_id, item)
+            if item.amount > open_row.balance:
+                raise PaymentOverAllocatedError(
+                    details={"item_id": str(item.item_id), "balance": str(open_row.balance)}
+                )
+            await self.allocations.create(
+                tenant_id,
+                payment_type=PaymentAllocationSource.SUPPLIER_PAYMENT.value,
+                payment_id=row.id,
+                item_type=item.item_type.value,
+                item_id=item.item_id,
+                amount=item.amount,
+            )
+
+    async def _require_open_item(
+        self, tenant_id: UUID, supplier_id: UUID, item: PaymentAllocationInput
+    ) -> Any:
+        for row in await self.open_items.list_ap_open_items(tenant_id, supplier_id):
+            if row.item_type == item.item_type and row.document_id == item.item_id:
+                return row
+        raise PaymentOverAllocatedError(details={"item_id": str(item.item_id)})
+
+    async def _require_payment_account(self, tenant_id: UUID, account_id: UUID) -> None:
+        account = await self.accounts.require_postable(tenant_id, account_id)
+        if account.account_subtype not in {AccountSubtype.CASH.value, AccountSubtype.BANK.value}:
+            raise PaymentAccountInvalidError(
+                details={"account_id": str(account_id), "account_subtype": account.account_subtype}
+            )
+
+    async def _apply_rate(self, tenant_id: UUID, row: SupplierPayment) -> None:
+        base = await self.currencies.get_base(tenant_id)
+        row.base_currency_id = base.id
+        row.exchange_rate = (
+            await self.fx.resolve(
+                tenant_id,
+                from_currency_id=row.currency_id,
+                to_currency_id=base.id,
+                on_date=row.payment_date,
+            )
+        ).rate
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: SupplierPayment
+    ) -> list[RelatedDocumentRef]:
+        related: list[RelatedDocumentRef] = []
+        if row.purchase_order_id is not None:
+            from app.erp.purchase_orders.repository import PurchaseOrderRepository
+
+            order = await PurchaseOrderRepository(self.session).get(
+                tenant_id, row.purchase_order_id
+            )
+            if order is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.PURCHASE_ORDER.value,
+                        document_id=order.id,
+                        document_number=order.document_number,
+                        status=order.status,
+                        relationship="source",
+                        document_date=order.order_date,
+                    )
+                )
+        live = await self.allocations.list_live_for_payment(
+            tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, row.id
+        )
+        from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
+
+        pi_repo = PurchaseInvoiceRepository(self.session)
+        for allocation in live:
+            if allocation.item_type != OpenItemType.PURCHASE_INVOICE.value:
+                continue
+            invoice = await pi_repo.get(tenant_id, allocation.item_id)
+            if invoice is None:
+                continue
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.PURCHASE_INVOICE.value,
+                    document_id=invoice.id,
+                    document_number=invoice.document_number,
+                    status=invoice.status,
+                    relationship="child",
+                    document_date=invoice.invoice_date,
+                    amount_summary=str(allocation.amount),
+                )
+            )
+        return related
+
+    def _available_actions(
+        self, row: SupplierPayment, status: InvoiceDocumentStatus, *, period_locked: bool
+    ) -> list[str]:
+        actions: list[str] = []
+        for action in transition_actions(status):
+            if action in {"post", "cancel"} and period_locked:
+                continue
+            required = _ACTION_PERMISSIONS[action]
+            if has_permission(self.actor_permissions, required):
+                actions.append(action)
+        if status == InvoiceDocumentStatus.DRAFT and has_permission(
+            self.actor_permissions, SUPPLIER_PAYMENT_DELETE
+        ):
+            actions.append("delete")
+        if (
+            status == InvoiceDocumentStatus.POSTED
+            and row.amount_unapplied > _ZERO
+            and has_permission(self.actor_permissions, SUPPLIER_PAYMENT_POST)
+        ):
+            actions.append("allocate")
+            actions.append("refund")
+        return actions
+
+    async def _to_response(self, tenant_id: UUID, row: SupplierPayment) -> SupplierPaymentResponse:
+        status = InvoiceDocumentStatus(row.status)
+        period_locked = self._date_in_locked_period(row.payment_date)
+        live = await self.allocations.list_live_for_payment(
+            tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, row.id
+        )
+        return SupplierPaymentResponse(
+            id=row.id,
+            tenant_id=row.tenant_id,
+            document_number=row.document_number,
+            display_number=row.document_number,
+            status=status,
+            version=row.version,
+            is_posted=row.is_posted,
+            payment_date=row.payment_date,
+            document_date=row.payment_date,
+            supplier_id=row.supplier_id,
+            currency_id=row.currency_id,
+            base_currency_id=row.base_currency_id,
+            exchange_rate=row.exchange_rate,
+            amount_paid=row.amount_paid,
+            bank_charges=row.bank_charges,
+            amount_unapplied=row.amount_unapplied,
+            amount_refunded=row.amount_refunded,
+            payment_account_id=row.payment_account_id,
+            payment_method=PaymentMethod(row.payment_method),
+            reference=row.reference,
+            purchase_order_id=row.purchase_order_id,
+            journal_entry_id=row.journal_entry_id,
+            reversal_journal_entry_id=row.reversal_journal_entry_id,
+            refund_journal_entry_id=row.refund_journal_entry_id,
+            notes=row.notes,
+            posted_at=row.posted_at,
+            posted_by=row.posted_by,
+            cancelled_at=row.cancelled_at,
+            cancelled_by=row.cancelled_by,
+            cancel_reason=row.cancel_reason,
+            refunded_at=row.refunded_at,
+            refunded_by=row.refunded_by,
+            available_actions=self._available_actions(row, status, period_locked=period_locked),
+            related_documents=[],
+            allocations=[
+                SupplierPaymentAllocationResponse(
+                    item_type=item.item_type,
+                    item_id=item.item_id,
+                    amount=item.amount,
+                    journal_entry_id=item.journal_entry_id,
+                )
+                for item in live
+            ],
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+    async def _snapshot(self, tenant_id: UUID, row: SupplierPayment) -> dict[str, object]:
+        supplier = await self.suppliers.get(tenant_id, row.supplier_id)
+        return {
+            "document_number": row.document_number,
+            "payment_date": str(row.payment_date),
+            "supplier": supplier.name,
+            "amount_paid": str(row.amount_paid),
+            "bank_charges": str(row.bank_charges),
+            "amount_unapplied": str(row.amount_unapplied),
+            "payment_method": row.payment_method,
+            "reference": row.reference,
+            "status": row.status,
+            "version": row.version,
+        }
+
+    async def _require(
+        self, tenant_id: UUID, payment_id: UUID, *, for_update: bool = False
+    ) -> SupplierPayment:
+        row = await self.repo.get(tenant_id, payment_id, for_update=for_update)
+        if row is None:
+            raise ResourceNotFoundError("Supplier payment not found")
+        return row
+
+    async def _today(self, tenant_id: UUID) -> date:
+        return today_in_timezone(await self.org.get_timezone(tenant_id))
+
+    def _assert_version(self, row: SupplierPayment, expected_version: int) -> None:
+        if row.version != expected_version:
+            raise DocumentStaleError(
+                details={
+                    "current_version": row.version,
+                    "provided_version": expected_version,
+                }
+            )
+
+    async def _ensure_policy(self, tenant_id: UUID) -> PeriodLockPolicy:
+        if self._period_policy is None:
+            _, self._period_policy = await self.org.get_inventory_controls(tenant_id)
+        return self._period_policy
+
+    def _date_in_locked_period(self, value: date) -> bool:
+        if self._period_policy is None:
+            return False
+        return self._period_policy.is_locked(value, can_override=self._can_override)

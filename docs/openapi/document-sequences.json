@@ -665,7 +665,9 @@
           "PACKAGE",
           "SHIPMENT",
           "SALES_RETURN",
-          "JOURNAL_ENTRY"
+          "JOURNAL_ENTRY",
+          "CUSTOMER_PAYMENT",
+          "SUPPLIER_PAYMENT"
         ],
         "title": "DocumentType"
       },

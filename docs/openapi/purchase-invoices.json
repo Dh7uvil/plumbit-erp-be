@@ -810,6 +810,80 @@
         }
       }
     },
+    "/api/v1/purchase-invoices/{invoice_id}/apply-debits": {
+      "post": {
+        "tags": [
+          "Purchase Invoices"
+        ],
+        "summary": "Apply Debits To Purchase Invoice",
+        "operationId": "apply_debits_to_purchase_invoice_api_v1_purchase_invoices__invoice_id__apply_debits_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "invoice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invoice Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyCreditsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PurchaseInvoiceResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/purchase-invoices/{invoice_id}/journal": {
       "get": {
         "tags": [
@@ -966,6 +1040,38 @@
           "data"
         ],
         "title": "ApiResponse[list[PurchaseInvoiceResponse]]"
+      },
+      "ApplyCreditsRequest": {
+        "properties": {
+          "allocations": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PaymentAllocationInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allocations"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "title": "ApplyCreditsRequest"
       },
       "BillType": {
         "type": "string",
@@ -1403,6 +1509,20 @@
         ],
         "title": "JournalType"
       },
+      "OpenItemType": {
+        "type": "string",
+        "enum": [
+          "SALES_INVOICE",
+          "PURCHASE_INVOICE",
+          "CREDIT_NOTE",
+          "DEBIT_NOTE",
+          "OPENING_AR",
+          "OPENING_AP",
+          "CUSTOMER_PAYMENT",
+          "SUPPLIER_PAYMENT"
+        ],
+        "title": "OpenItemType"
+      },
       "PartyType": {
         "type": "string",
         "enum": [
@@ -1410,6 +1530,38 @@
           "SUPPLIER"
         ],
         "title": "PartyType"
+      },
+      "PaymentAllocationInput": {
+        "properties": {
+          "item_type": {
+            "$ref": "#/components/schemas/OpenItemType"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Item Id"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              }
+            ],
+            "title": "Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "item_type",
+          "item_id",
+          "amount"
+        ],
+        "title": "PaymentAllocationInput"
       },
       "PaymentStatus": {
         "type": "string",
@@ -2987,6 +3139,17 @@
               }
             ],
             "title": "Quantity Summary"
+          },
+          "amount_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Summary"
           }
         },
         "type": "object",

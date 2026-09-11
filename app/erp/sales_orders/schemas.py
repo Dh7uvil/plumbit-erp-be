@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.related_documents import QuantityProgress, RelatedDocumentRef
+from app.common.schemas.warnings import DocumentWarning
 from app.core.enums import (
     BillingStatus,
     DiscountType,
@@ -253,6 +254,7 @@ class SalesOrderResponse(BaseModel):
     available_actions: list[str] = Field(default_factory=list)
     quantity_progress: QuantityProgress | None = None
     related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
+    warnings: list[DocumentWarning] = Field(default_factory=list)
     lines: list[SalesOrderLineResponse] = Field(default_factory=list)
     reservation_shortfalls: list["ReservationShortfall"] = Field(default_factory=list)
     created_at: datetime
@@ -307,6 +309,7 @@ class OrderTrackerRow(BaseModel):
     status: str
     document_date: date | None = None
     quantity_summary: str | None = None
+    amount_summary: str | None = None
 
 
 class OrderTrackerResponse(BaseModel):

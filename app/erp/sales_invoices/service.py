@@ -12,6 +12,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
+    CUSTOMER_PAYMENT_CREATE,
     ERP_MODULE,
     PERIOD_OVERRIDE,
     SALES_INVOICE_CANCEL,
@@ -27,6 +28,7 @@ from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
+from app.common.schemas.warnings import DocumentWarning
 from app.common.services.audit import AuditWriter
 from app.common.utils.conversion import (
     allocate_conversion_qty,
@@ -66,6 +68,7 @@ from app.core.exceptions import (
     DocumentStaleError,
     InvoiceCannotVoidError,
     InvoiceQtyExceededError,
+    PaymentOverAllocatedError,
     ResourceNotFoundError,
     ValidationError,
 )
@@ -834,6 +837,7 @@ class SalesInvoiceService:
         idempotency_key: str,
         request_hash: str,
         endpoint: str,
+        override_reason: str | None = None,
     ) -> SalesInvoiceResponse:
         async with transaction(self.session):
             replay = await self.idempotency.begin(
@@ -857,6 +861,21 @@ class SalesInvoiceService:
             old_values = await self._snapshot(tenant_id, row)
             await self._assert_qty_headroom(tenant_id, row)
             await self._recompute_posted_totals(tenant_id, row)
+            from app.erp.credit_control.service import CreditControlService
+
+            settings = await self.org.get_money_movement_settings(tenant_id)
+            additional = _ZERO
+            if row.sales_order_id is None or not settings.credit_limit_include_open_orders:
+                additional = row.grand_total
+            warnings = await CreditControlService(
+                self.session, actor_permissions=self.actor_permissions
+            ).enforce(
+                tenant_id,
+                row.customer_id,
+                additional,
+                actor_user_id=actor_user_id,
+                override_reason=override_reason,
+            )
             await self._stamp_cogs(tenant_id, row)
             journal = await self.posting.post_for_document(
                 tenant_id,
@@ -919,7 +938,20 @@ class SalesInvoiceService:
                 payload={"sales_invoice_id": str(invoice_id)},
                 dedupe_key=f"einvoice-submit:{invoice_id}",
             )
-            response = self._to_response(loaded)
+            if loaded.source_proforma_invoice_id is not None:
+                from app.erp.customer_payments.service import CustomerPaymentService
+
+                await CustomerPaymentService(
+                    self.session, actor_permissions=self.actor_permissions
+                ).auto_apply_pfi_advances(
+                    tenant_id,
+                    invoice_id=loaded.id,
+                    customer_id=loaded.customer_id,
+                    proforma_invoice_id=loaded.source_proforma_invoice_id,
+                    actor_user_id=actor_user_id,
+                )
+                loaded = await self._require(tenant_id, invoice_id)
+            response = self._to_response(loaded, warnings=warnings)
             await self.idempotency.store(
                 tenant_id, idempotency_key, response.model_dump(mode="json")
             )
@@ -1035,6 +1067,28 @@ class SalesInvoiceService:
         row.amount_credited = quantize_money(row.amount_credited + amount)
         if row.amount_credited < _ZERO:
             raise ValidationError("Credited amount cannot be negative")
+        self._refresh_payment_status(row)
+        await self.session.flush()
+        return row
+
+    async def apply_payment(
+        self, tenant_id: UUID, invoice_id: UUID, amount: Decimal
+    ) -> SalesInvoice:
+        """Caller owns the transaction. Amount may be negative to reverse a receipt."""
+
+        row = await self._require(tenant_id, invoice_id, for_update=True)
+        row.amount_paid = quantize_money(row.amount_paid + amount)
+        if row.amount_paid < _ZERO:
+            raise ValidationError("Paid amount cannot be negative")
+        settled = quantize_money(row.amount_paid + row.amount_credited)
+        if settled > row.grand_total:
+            raise PaymentOverAllocatedError(
+                details={
+                    "grand_total": str(row.grand_total),
+                    "amount_paid": str(row.amount_paid),
+                    "amount_credited": str(row.amount_credited),
+                }
+            )
         self._refresh_payment_status(row)
         await self.session.flush()
         return row
@@ -1555,6 +1609,8 @@ class SalesInvoiceService:
 
     def _refresh_payment_status(self, row: SalesInvoice) -> None:
         row.balance_due = quantize_money(row.grand_total - row.amount_paid - row.amount_credited)
+        if row.balance_due < _ZERO:
+            row.balance_due = _ZERO
         applied = quantize_money(row.amount_paid + row.amount_credited)
         if applied <= _ZERO:
             row.payment_status = PaymentStatus.UNPAID.value
@@ -1579,10 +1635,21 @@ class SalesInvoiceService:
             self.actor_permissions, SALES_INVOICE_DELETE
         ):
             actions.append("delete")
+        if (
+            status == InvoiceDocumentStatus.POSTED
+            and row.balance_due > _ZERO
+            and has_permission(self.actor_permissions, CUSTOMER_PAYMENT_CREATE)
+        ):
+            actions.append("record_payment")
+            actions.append("apply_credits")
         return actions
 
     def _to_response(
-        self, row: SalesInvoice, *, today: date | None = None
+        self,
+        row: SalesInvoice,
+        *,
+        today: date | None = None,
+        warnings: builtins.list[DocumentWarning] | None = None,
     ) -> SalesInvoiceResponse:
         status = InvoiceDocumentStatus(row.status)
         period_locked = self._date_in_locked_period(row.invoice_date)
@@ -1657,6 +1724,7 @@ class SalesInvoiceService:
             is_fully_credited=is_fully_credited,
             available_actions=self._available_actions(row, status, period_locked=period_locked),
             related_documents=[],
+            warnings=warnings or [],
             lines=[
                 SalesInvoiceLineResponse(
                     id=line.id,
@@ -1770,6 +1838,22 @@ class SalesInvoiceService:
                     relationship="child",
                     document_date=item.credit_note_date,
                     quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+        from app.erp.customer_payments.service import CustomerPaymentService
+
+        for payment in await CustomerPaymentService(
+            self.session, actor_permissions=self.actor_permissions
+        ).list_for_sales_invoice(tenant_id, row.id):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.CUSTOMER_PAYMENT.value,
+                    document_id=payment.id,
+                    document_number=payment.document_number,
+                    status=payment.status,
+                    relationship="child",
+                    document_date=payment.payment_date,
+                    amount_summary=str(payment.amount_received),
                 )
             )
         return related

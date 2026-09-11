@@ -54,6 +54,10 @@ class ErrorCode(StrEnum):
     ALREADY_ACKNOWLEDGED = "ALREADY_ACKNOWLEDGED"
     SALES_ORDER_NOT_CONFIRMED = "SALES_ORDER_NOT_CONFIRMED"
     PO_COVERAGE_EXCEEDED = "PO_COVERAGE_EXCEEDED"
+    PAYMENT_OVER_ALLOCATED = "PAYMENT_OVER_ALLOCATED"
+    PAYMENT_ACCOUNT_INVALID = "PAYMENT_ACCOUNT_INVALID"
+    PAYMENT_NOTHING_TO_APPLY = "PAYMENT_NOTHING_TO_APPLY"
+    CREDIT_LIMIT_EXCEEDED = "CREDIT_LIMIT_EXCEEDED"
     INTEGRATION_ERROR = "INTEGRATION_ERROR"
     INTERNAL_ERROR = "INTERNAL_ERROR"
     RATE_LIMITED = "RATE_LIMITED"
@@ -370,6 +374,30 @@ class RateLimitExceededError(AppError):
     default_code = ErrorCode.RATE_LIMITED
     default_status = HTTPStatus.TOO_MANY_REQUESTS
     default_message = "Too many authentication attempts"
+
+
+class PaymentOverAllocatedError(AppError):
+    default_code = ErrorCode.PAYMENT_OVER_ALLOCATED
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "Allocated amount exceeds the payment or open item balance"
+
+
+class PaymentAccountInvalidError(AppError):
+    default_code = ErrorCode.PAYMENT_ACCOUNT_INVALID
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "Payment account must be a postable cash or bank account"
+
+
+class PaymentNothingToApplyError(AppError):
+    default_code = ErrorCode.PAYMENT_NOTHING_TO_APPLY
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "There is nothing left to apply"
+
+
+class CreditLimitExceededError(AppError):
+    default_code = ErrorCode.CREDIT_LIMIT_EXCEEDED
+    default_status = HTTPStatus.CONFLICT
+    default_message = "This document exceeds the customer credit limit"
 
 
 class InternalError(AppError):

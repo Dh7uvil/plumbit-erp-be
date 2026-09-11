@@ -266,6 +266,20 @@ class ProformaInvoiceService:
         row = await self._require(tenant_id, proforma_invoice_id)
         response = self._to_response(row, today)
         response.related_documents = await self._related_documents(tenant_id, row)
+        from app.erp.customer_payments.service import CustomerPaymentService
+
+        payments = await CustomerPaymentService(
+            self.session, actor_permissions=self.actor_permissions
+        ).list_for_proforma_invoice(tenant_id, row.id)
+        outstanding = sum(
+            (
+                payment.amount_unapplied
+                for payment in payments
+                if payment.status == "POSTED"
+            ),
+            Decimal("0"),
+        )
+        response.advance_outstanding = quantize_money(outstanding)
         return response
 
     async def compose_defaults(
@@ -1346,6 +1360,7 @@ class ProformaInvoiceService:
             converted_document_type=row.converted_document_type,
             converted_document_id=row.converted_document_id,
             advance_required_amount=quantize_money(advance),
+            advance_outstanding=quantize_money(_ZERO),
             available_actions=self._available_actions(status),
             related_documents=[],
             lines=[ProformaInvoiceLineResponse.model_validate(line) for line in row.lines],
@@ -1430,6 +1445,22 @@ class ProformaInvoiceService:
                     relationship="child",
                     document_date=item.invoice_date,
                     quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+        from app.erp.customer_payments.service import CustomerPaymentService
+
+        for payment in await CustomerPaymentService(
+            self.session, actor_permissions=self.actor_permissions
+        ).list_for_proforma_invoice(tenant_id, row.id):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.CUSTOMER_PAYMENT.value,
+                    document_id=payment.id,
+                    document_number=payment.document_number,
+                    status=payment.status,
+                    relationship="child",
+                    document_date=payment.payment_date,
+                    amount_summary=str(payment.amount_received),
                 )
             )
         return related

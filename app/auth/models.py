@@ -99,6 +99,30 @@ class Tenant(TimestampedModel):
         server_default=text("1"),
     )
     books_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    vat_on_advances: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    auto_apply_advances_on_invoice: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    credit_limit_policy: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="WARN",
+        server_default=text("'WARN'"),
+    )
+    credit_limit_include_open_orders: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
 
 
 class User(TenantModel):

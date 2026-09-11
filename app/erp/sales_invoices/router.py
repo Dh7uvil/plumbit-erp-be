@@ -7,6 +7,7 @@ from fastapi import APIRouter, Body, Depends, Header, Request, status
 
 from app.auth.catalog import (
     COST_READ,
+    CUSTOMER_PAYMENT_CREATE,
     SALES_INVOICE_CANCEL,
     SALES_INVOICE_CREATE,
     SALES_INVOICE_DELETE,
@@ -23,6 +24,8 @@ from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
+from app.erp.accounting.open_items.schemas import ApplyCreditsRequest
+from app.erp.customer_payments.dependencies import CustomerPaymentServiceDependency
 from app.erp.sales_invoices.dependencies import SalesInvoiceServiceDependency
 from app.erp.sales_invoices.schemas import (
     SalesInvoiceCancelRequest,
@@ -39,6 +42,7 @@ router = APIRouter(prefix="/sales-invoices", tags=["Sales Invoices"])
 
 IfMatch = Annotated[str | None, Header()]
 IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
+CreditOverrideHeader = Annotated[str | None, Header(alias="X-Credit-Override")]
 
 
 @router.get("", response_model=ApiResponse[list[SalesInvoiceResponse]])
@@ -187,6 +191,7 @@ async def post_sales_invoice(
     _: Annotated[CurrentUser, Depends(require_permission(SALES_INVOICE_POST))],
     if_match: IfMatch = None,
     idempotency_key: IdempotencyKeyHeader = None,
+    credit_override: CreditOverrideHeader = None,
 ) -> ApiResponse[SalesInvoiceResponse]:
     body = await request.body()
     row = await service.post(
@@ -197,6 +202,7 @@ async def post_sales_invoice(
         idempotency_key=require_idempotency_key(idempotency_key),
         request_hash=hash_request(method=request.method, path=request.url.path, body=body),
         endpoint=request.url.path,
+        override_reason=credit_override,
     )
     message = "Sales invoice posted successfully"
     meta: dict[str, object] = {}
@@ -232,6 +238,27 @@ async def cancel_sales_invoice(
         endpoint=request.url.path,
     )
     return ApiResponse(data=row, message="Sales invoice cancelled")
+
+
+@router.post("/{invoice_id}/apply-credits", response_model=ApiResponse[SalesInvoiceResponse])
+async def apply_credits_to_sales_invoice(
+    invoice_id: UUID,
+    payload: ApplyCreditsRequest,
+    tenant: TenantContextDependency,
+    payments: CustomerPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_CREATE))],
+    if_match: IfMatch = None,
+) -> ApiResponse[SalesInvoiceResponse]:
+    row = await payments.apply_credits_to_invoice(
+        tenant.tenant_id,
+        invoice_id,
+        payload.allocations,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(
+            if_match=if_match, body_version=payload.version
+        ),
+    )
+    return ApiResponse(data=row, message="Credits applied to sales invoice")
 
 
 @router.get("/{invoice_id}/journal", response_model=ApiResponse[JournalEntryResponse])

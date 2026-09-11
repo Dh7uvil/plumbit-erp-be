@@ -479,8 +479,12 @@ class CreditNoteService:
             )
             row.journal_entry_id = journal.id
             await self._apply_invoice_credits(tenant_id, row, sign=Decimal("1"))
-            row.amount_applied = quantize_money(row.grand_total)
-            row.amount_unapplied = quantize_money(_ZERO)
+            if row.sales_invoice_id is None:
+                row.amount_applied = quantize_money(_ZERO)
+                row.amount_unapplied = quantize_money(row.grand_total)
+            else:
+                row.amount_applied = quantize_money(row.grand_total)
+                row.amount_unapplied = quantize_money(_ZERO)
             row.status = target.value
             row.is_posted = True
             row.posted_at = utcnow()
@@ -639,6 +643,7 @@ class CreditNoteService:
             )
             row.reversal_journal_entry_id = reversal.id
         await self._apply_invoice_credits(tenant_id, row, sign=Decimal("-1"))
+        await self._reverse_standalone_applications(tenant_id, row, sign=Decimal("-1"))
         row.amount_applied = quantize_money(_ZERO)
         row.amount_unapplied = quantize_money(_ZERO)
         row.is_posted = False
@@ -687,6 +692,73 @@ class CreditNoteService:
         await self.sales_invoices.apply_credit(
             tenant_id, invoice.id, quantize_money(row.grand_total * sign)
         )
+
+    async def apply_to_invoice(
+        self,
+        tenant_id: UUID,
+        credit_note_id: UUID,
+        invoice_id: UUID,
+        amount: Decimal,
+        *,
+        actor_user_id: UUID,
+    ) -> None:
+        """Match a standalone credit note to an invoice. Subledger only — no second GL."""
+
+        from app.core.enums import OpenItemType, PaymentAllocationSource
+        from app.erp.accounting.open_items.repository import PaymentAllocationRepository
+
+        row = await self._require(tenant_id, credit_note_id, for_update=True)
+        if InvoiceDocumentStatus(row.status) != InvoiceDocumentStatus.POSTED:
+            raise ValidationError("Only posted credit notes can be applied")
+        if row.sales_invoice_id is not None:
+            raise ValidationError("This credit note is already linked to an invoice")
+        amount = quantize_money(amount)
+        if amount <= _ZERO:
+            raise ValidationError("Apply amount must be positive")
+        if amount > row.amount_unapplied:
+            raise ValidationError("Apply amount exceeds unapplied credit")
+        await self.sales_invoices.apply_credit(tenant_id, invoice_id, amount)
+        row.amount_applied = quantize_money(row.amount_applied + amount)
+        row.amount_unapplied = quantize_money(row.amount_unapplied - amount)
+        await PaymentAllocationRepository(self.session).create(
+            tenant_id,
+            payment_type=PaymentAllocationSource.CREDIT_NOTE.value,
+            payment_id=row.id,
+            item_type=OpenItemType.SALES_INVOICE.value,
+            item_id=invoice_id,
+            amount=amount,
+        )
+        await self.session.flush()
+
+    async def adjust_unapplied(
+        self, tenant_id: UUID, credit_note_id: UUID, amount: Decimal
+    ) -> None:
+        row = await self._require(tenant_id, credit_note_id, for_update=True)
+        row.amount_unapplied = quantize_money(row.amount_unapplied + amount)
+        row.amount_applied = quantize_money(row.grand_total - row.amount_unapplied)
+        if row.amount_unapplied < _ZERO or row.amount_applied < _ZERO:
+            raise ValidationError("Applied credit cannot be negative")
+        await self.session.flush()
+
+    async def _reverse_standalone_applications(
+        self, tenant_id: UUID, row: CreditNote, *, sign: Decimal
+    ) -> None:
+        from app.core.enums import OpenItemType, PaymentAllocationSource
+        from app.erp.accounting.open_items.repository import PaymentAllocationRepository
+
+        if row.sales_invoice_id is not None:
+            return
+        repo = PaymentAllocationRepository(self.session)
+        live = await repo.list_live_for_payment(
+            tenant_id, PaymentAllocationSource.CREDIT_NOTE.value, row.id
+        )
+        for allocation in live:
+            if allocation.item_type != OpenItemType.SALES_INVOICE.value:
+                continue
+            await self.sales_invoices.apply_credit(
+                tenant_id, allocation.item_id, quantize_money(allocation.amount * sign)
+            )
+            allocation.reversed_at = utcnow()
 
     async def _recompute_posted_totals(self, tenant_id: UUID, row: CreditNote) -> None:
         payload = await self._row_to_create(row)

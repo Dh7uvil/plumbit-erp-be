@@ -16,8 +16,10 @@ from app.common.utils.export_evidence import has_export_evidence
 from app.core.enums import (
     AccountType,
     CogsStatus,
+    CompanyType,
     InvoiceDocumentStatus,
     JournalEntryStatus,
+    OpenItemType,
     PartyType,
 )
 from app.core.exceptions import ValidationError
@@ -27,12 +29,18 @@ from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
 from app.erp.accounting.reports.schemas import (
     AccountStatementLine,
     AccountStatementResponse,
+    AgingBucketTotals,
+    AgingPartyRow,
+    AgingResponse,
     ExportEvidenceExceptionLine,
     ExportEvidenceExceptionResponse,
     GeneralLedgerLine,
     GeneralLedgerResponse,
     InvoicedNotDispatchedLine,
     InvoicedNotDispatchedResponse,
+    OutstandingSummary,
+    PartyStatementLine,
+    PartyStatementResponse,
     TrialBalanceLine,
     TrialBalanceResponse,
 )
@@ -462,3 +470,427 @@ class ReportService:
         if account_type in _DEBIT_NORMAL:
             return quantize_money(debit - credit)
         return quantize_money(credit - debit)
+
+    async def ar_aging(self, tenant_id: UUID, *, as_of: date) -> AgingResponse:
+        return await self._aging(tenant_id, as_of=as_of, party_type=PartyType.CUSTOMER)
+
+    async def ap_aging(self, tenant_id: UUID, *, as_of: date) -> AgingResponse:
+        return await self._aging(tenant_id, as_of=as_of, party_type=PartyType.SUPPLIER)
+
+    async def customer_statement(
+        self,
+        tenant_id: UUID,
+        customer_id: UUID,
+        *,
+        from_date: date,
+        to_date: date,
+    ) -> PartyStatementResponse:
+        return await self._party_document_statement(
+            tenant_id, PartyType.CUSTOMER, customer_id, from_date=from_date, to_date=to_date
+        )
+
+    async def supplier_statement(
+        self,
+        tenant_id: UUID,
+        supplier_id: UUID,
+        *,
+        from_date: date,
+        to_date: date,
+    ) -> PartyStatementResponse:
+        return await self._party_document_statement(
+            tenant_id, PartyType.SUPPLIER, supplier_id, from_date=from_date, to_date=to_date
+        )
+
+    async def customer_outstanding(
+        self, tenant_id: UUID, customer_id: UUID, *, as_of: date | None = None
+    ) -> OutstandingSummary:
+        from app.crm.customers.service import CustomerService
+        from app.erp.accounting.open_items.service import OpenItemsService
+
+        customer = await CustomerService(self.session).get(tenant_id, customer_id)
+        items = await OpenItemsService(self.session).list_ar_open_items(tenant_id, customer_id)
+        return self._outstanding_from_items(
+            customer_id,
+            items,
+            as_of=as_of or utcnow().date(),
+            credit_limit=customer.credit_limit,
+            party_type=PartyType.CUSTOMER,
+        )
+
+    async def supplier_outstanding(
+        self, tenant_id: UUID, supplier_id: UUID, *, as_of: date | None = None
+    ) -> OutstandingSummary:
+        from app.erp.accounting.open_items.service import OpenItemsService
+
+        items = await OpenItemsService(self.session).list_ap_open_items(tenant_id, supplier_id)
+        return self._outstanding_from_items(
+            supplier_id,
+            items,
+            as_of=as_of or utcnow().date(),
+            credit_limit=None,
+            party_type=PartyType.SUPPLIER,
+        )
+
+    async def _aging(
+        self, tenant_id: UUID, *, as_of: date, party_type: PartyType
+    ) -> AgingResponse:
+        from app.erp.accounting.open_items.service import OpenItemsService
+
+        if party_type == PartyType.CUSTOMER:
+            company_types = (CompanyType.CUSTOMER.value, CompanyType.BOTH.value)
+        else:
+            company_types = (CompanyType.SUPPLIER.value, CompanyType.BOTH.value)
+        parties = list(
+            (
+                await self.session.execute(
+                    select(Customer).where(
+                        Customer.tenant_id == tenant_id,
+                        Customer.deleted_at.is_(None),
+                        Customer.company_type.in_(company_types),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        open_items = OpenItemsService(self.session)
+        rows: list[AgingPartyRow] = []
+        totals = AgingBucketTotals()
+        for party in parties:
+            if party_type == PartyType.CUSTOMER:
+                items = await open_items.list_ar_open_items(tenant_id, party.id)
+            else:
+                items = await open_items.list_ap_open_items(tenant_id, party.id)
+            buckets = self._bucket_items(items, as_of=as_of, party_type=party_type)
+            if all(value == _ZERO for value in buckets.model_dump().values()):
+                continue
+            rows.append(
+                AgingPartyRow(
+                    party_id=party.id,
+                    party_name=party.name,
+                    currency_id=party.currency_id,
+                    **buckets.model_dump(),
+                )
+            )
+            for name, value in buckets.model_dump().items():
+                setattr(totals, name, quantize_money(getattr(totals, name) + value))
+        rows.sort(key=lambda row: row.party_name)
+        return AgingResponse(as_of=as_of, rows=rows, totals=totals)
+
+    def _bucket_items(
+        self, items, *, as_of: date, party_type: PartyType
+    ) -> AgingBucketTotals:
+        buckets = AgingBucketTotals()
+        outstanding_types = (
+            {OpenItemType.SALES_INVOICE, OpenItemType.OPENING_AR}
+            if party_type == PartyType.CUSTOMER
+            else {OpenItemType.PURCHASE_INVOICE, OpenItemType.OPENING_AP}
+        )
+        credit_types = (
+            {OpenItemType.CREDIT_NOTE}
+            if party_type == PartyType.CUSTOMER
+            else {OpenItemType.DEBIT_NOTE}
+        )
+        for item in items:
+            if item.document_date > as_of:
+                continue
+            if item.item_type in credit_types:
+                buckets.unapplied_credits = quantize_money(
+                    buckets.unapplied_credits + item.balance
+                )
+                continue
+            if item.item_type not in outstanding_types:
+                continue
+            due = item.due_date or item.document_date
+            days = (as_of - due).days
+            amount = item.balance
+            if days <= 0:
+                buckets.current = quantize_money(buckets.current + amount)
+            elif days <= 30:
+                buckets.days_1_30 = quantize_money(buckets.days_1_30 + amount)
+            elif days <= 60:
+                buckets.days_31_60 = quantize_money(buckets.days_31_60 + amount)
+            elif days <= 90:
+                buckets.days_61_90 = quantize_money(buckets.days_61_90 + amount)
+            else:
+                buckets.days_91_plus = quantize_money(buckets.days_91_plus + amount)
+        buckets.total = quantize_money(
+            buckets.current
+            + buckets.days_1_30
+            + buckets.days_31_60
+            + buckets.days_61_90
+            + buckets.days_91_plus
+            - buckets.unapplied_credits
+        )
+        return buckets
+
+    def _outstanding_from_items(
+        self,
+        party_id: UUID,
+        items,
+        *,
+        as_of: date,
+        credit_limit: Decimal | None,
+        party_type: PartyType,
+    ) -> OutstandingSummary:
+        outstanding_types = (
+            {OpenItemType.SALES_INVOICE, OpenItemType.OPENING_AR}
+            if party_type == PartyType.CUSTOMER
+            else {OpenItemType.PURCHASE_INVOICE, OpenItemType.OPENING_AP}
+        )
+        credit_types = (
+            {OpenItemType.CREDIT_NOTE, OpenItemType.CUSTOMER_PAYMENT}
+            if party_type == PartyType.CUSTOMER
+            else {OpenItemType.DEBIT_NOTE, OpenItemType.SUPPLIER_PAYMENT}
+        )
+        balance_due = overdue = unapplied = _ZERO
+        for item in items:
+            if item.item_type in credit_types:
+                unapplied = quantize_money(unapplied + item.balance)
+                continue
+            if item.item_type not in outstanding_types:
+                continue
+            balance_due = quantize_money(balance_due + item.balance)
+            due = item.due_date or item.document_date
+            if due < as_of:
+                overdue = quantize_money(overdue + item.balance)
+        available = None
+        if credit_limit is not None:
+            available = quantize_money(credit_limit - (balance_due - unapplied))
+        return OutstandingSummary(
+            party_id=party_id,
+            balance_due=balance_due,
+            overdue=overdue,
+            unapplied_credits=unapplied,
+            credit_limit=credit_limit,
+            available_credit=available,
+        )
+
+    async def _party_document_statement(
+        self,
+        tenant_id: UUID,
+        party_type: PartyType,
+        party_id: UUID,
+        *,
+        from_date: date,
+        to_date: date,
+    ) -> PartyStatementResponse:
+        from app.crm.customers.service import (
+            CUSTOMER_PARTY_ROLE,
+            SUPPLIER_PARTY_ROLE,
+            CustomerService,
+        )
+        from app.erp.credit_notes.models import CreditNote
+        from app.erp.customer_payments.models import CustomerPayment
+        from app.erp.debit_notes.models import DebitNote
+        from app.erp.purchase_invoices.models import PurchaseInvoice
+        from app.erp.supplier_payments.models import SupplierPayment
+
+        if from_date > to_date:
+            raise ValidationError("from_date must be on or before to_date")
+        role = CUSTOMER_PARTY_ROLE if party_type == PartyType.CUSTOMER else SUPPLIER_PARTY_ROLE
+        party = await CustomerService(self.session, role=role).get(tenant_id, party_id)
+        events: list[tuple[date, str, UUID, str, Decimal, Decimal, date | None, str | None]] = []
+        if party_type == PartyType.CUSTOMER:
+            invoices = (
+                (
+                    await self.session.execute(
+                        select(SalesInvoice).where(
+                            SalesInvoice.tenant_id == tenant_id,
+                            SalesInvoice.customer_id == party_id,
+                            SalesInvoice.deleted_at.is_(None),
+                            SalesInvoice.status == InvoiceDocumentStatus.POSTED.value,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in invoices:
+                events.append(
+                    (
+                        row.invoice_date,
+                        "SALES_INVOICE",
+                        row.id,
+                        row.document_number,
+                        row.grand_total,
+                        _ZERO,
+                        row.due_date,
+                        None,
+                    )
+                )
+            notes = (
+                (
+                    await self.session.execute(
+                        select(CreditNote).where(
+                            CreditNote.tenant_id == tenant_id,
+                            CreditNote.customer_id == party_id,
+                            CreditNote.deleted_at.is_(None),
+                            CreditNote.status == InvoiceDocumentStatus.POSTED.value,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in notes:
+                events.append(
+                    (
+                        row.credit_note_date,
+                        "CREDIT_NOTE",
+                        row.id,
+                        row.document_number,
+                        _ZERO,
+                        row.grand_total,
+                        row.due_date,
+                        None,
+                    )
+                )
+            payments = (
+                (
+                    await self.session.execute(
+                        select(CustomerPayment).where(
+                            CustomerPayment.tenant_id == tenant_id,
+                            CustomerPayment.customer_id == party_id,
+                            CustomerPayment.deleted_at.is_(None),
+                            CustomerPayment.status == InvoiceDocumentStatus.POSTED.value,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in payments:
+                events.append(
+                    (
+                        row.payment_date,
+                        "CUSTOMER_PAYMENT",
+                        row.id,
+                        row.document_number,
+                        _ZERO,
+                        row.amount_received,
+                        None,
+                        row.reference,
+                    )
+                )
+        else:
+            invoices = (
+                (
+                    await self.session.execute(
+                        select(PurchaseInvoice).where(
+                            PurchaseInvoice.tenant_id == tenant_id,
+                            PurchaseInvoice.supplier_id == party_id,
+                            PurchaseInvoice.deleted_at.is_(None),
+                            PurchaseInvoice.status == InvoiceDocumentStatus.POSTED.value,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in invoices:
+                events.append(
+                    (
+                        row.invoice_date,
+                        "PURCHASE_INVOICE",
+                        row.id,
+                        row.document_number,
+                        _ZERO,
+                        row.grand_total,
+                        row.due_date,
+                        None,
+                    )
+                )
+            notes = (
+                (
+                    await self.session.execute(
+                        select(DebitNote).where(
+                            DebitNote.tenant_id == tenant_id,
+                            DebitNote.supplier_id == party_id,
+                            DebitNote.deleted_at.is_(None),
+                            DebitNote.status == InvoiceDocumentStatus.POSTED.value,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in notes:
+                events.append(
+                    (
+                        row.debit_note_date,
+                        "DEBIT_NOTE",
+                        row.id,
+                        row.document_number,
+                        row.grand_total,
+                        _ZERO,
+                        row.due_date,
+                        None,
+                    )
+                )
+            payments = (
+                (
+                    await self.session.execute(
+                        select(SupplierPayment).where(
+                            SupplierPayment.tenant_id == tenant_id,
+                            SupplierPayment.supplier_id == party_id,
+                            SupplierPayment.deleted_at.is_(None),
+                            SupplierPayment.status == InvoiceDocumentStatus.POSTED.value,
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for row in payments:
+                events.append(
+                    (
+                        row.payment_date,
+                        "SUPPLIER_PAYMENT",
+                        row.id,
+                        row.document_number,
+                        row.amount_paid,
+                        _ZERO,
+                        None,
+                        row.reference,
+                    )
+                )
+        events.sort(key=lambda item: (item[0], item[3]))
+        opening = _ZERO
+        lines: list[PartyStatementLine] = []
+        running = _ZERO
+        for doc_date, doc_type, doc_id, number, debit, credit, due, description in events:
+            signed = quantize_money(debit - credit)
+            if doc_date < from_date:
+                opening = quantize_money(opening + signed)
+                continue
+            if doc_date > to_date:
+                continue
+            if not lines:
+                running = opening
+            running = quantize_money(running + signed)
+            lines.append(
+                PartyStatementLine(
+                    document_type=doc_type,
+                    document_id=doc_id,
+                    document_number=number,
+                    document_date=doc_date,
+                    due_date=due,
+                    debit=debit,
+                    credit=credit,
+                    running_balance=running,
+                    description=description,
+                )
+            )
+        if not lines:
+            running = opening
+        return PartyStatementResponse(
+            party_type=party_type.value,
+            party_id=party_id,
+            party_name=party.name,
+            from_date=from_date,
+            to_date=to_date,
+            opening_balance=opening,
+            closing_balance=running,
+            lines=lines,
+        )

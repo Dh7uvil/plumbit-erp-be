@@ -12,6 +12,7 @@ from app.auth.catalog import (
     PURCHASE_INVOICE_POST,
     PURCHASE_INVOICE_READ,
     PURCHASE_INVOICE_UPDATE,
+    SUPPLIER_PAYMENT_CREATE,
 )
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
@@ -22,6 +23,7 @@ from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
+from app.erp.accounting.open_items.schemas import ApplyCreditsRequest
 from app.erp.purchase_invoices.dependencies import PurchaseInvoiceServiceDependency
 from app.erp.purchase_invoices.schemas import (
     PurchaseInvoiceCancelRequest,
@@ -32,6 +34,7 @@ from app.erp.purchase_invoices.schemas import (
     PurchaseInvoiceResponse,
     PurchaseInvoiceUpdate,
 )
+from app.erp.supplier_payments.dependencies import SupplierPaymentServiceDependency
 
 router = APIRouter(prefix="/purchase-invoices", tags=["Purchase Invoices"])
 
@@ -223,6 +226,27 @@ async def cancel_purchase_invoice(
         endpoint=request.url.path,
     )
     return ApiResponse(data=row, message="Purchase invoice cancelled")
+
+
+@router.post("/{invoice_id}/apply-debits", response_model=ApiResponse[PurchaseInvoiceResponse])
+async def apply_debits_to_purchase_invoice(
+    invoice_id: UUID,
+    payload: ApplyCreditsRequest,
+    tenant: TenantContextDependency,
+    payments: SupplierPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_CREATE))],
+    if_match: IfMatch = None,
+) -> ApiResponse[PurchaseInvoiceResponse]:
+    row = await payments.apply_debits_to_invoice(
+        tenant.tenant_id,
+        invoice_id,
+        payload.allocations,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(
+            if_match=if_match, body_version=payload.version
+        ),
+    )
+    return ApiResponse(data=row, message="Debits applied to purchase invoice")
 
 
 @router.get("/{invoice_id}/journal", response_model=ApiResponse[JournalEntryResponse])

@@ -2086,6 +2086,17 @@
               }
             ],
             "title": "Quantity Summary"
+          },
+          "amount_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Summary"
           }
         },
         "type": "object",

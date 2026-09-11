@@ -36,7 +36,7 @@ from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
 from app.common.utils.files import MIME_JPEG, MIME_PNG, MIME_WEBP, validate_upload
-from app.core.enums import AddressType, AuditAction, BranchStatus, CostingMethod
+from app.core.enums import AddressType, AuditAction, BranchStatus, CostingMethod, CreditLimitPolicy
 from app.core.exceptions import (
     DuplicateResourceError,
     IntegrationError,
@@ -70,6 +70,14 @@ class InboundSettings:
     allow_over_receipt: bool
     over_receipt_tolerance_pct: Decimal | None
     qc_required_default: bool
+
+
+@dataclass(frozen=True, slots=True)
+class MoneyMovementSettings:
+    vat_on_advances: bool
+    auto_apply_advances_on_invoice: bool
+    credit_limit_policy: CreditLimitPolicy
+    credit_limit_include_open_orders: bool
 
 
 def _address_values(payload: AddressPayload) -> dict[str, object]:
@@ -131,6 +139,23 @@ class OrganizationService:
                 tenant.over_receipt_tolerance_pct = values["over_receipt_tolerance_pct"]
             if "qc_required_default" in values and values["qc_required_default"] is not None:
                 tenant.qc_required_default = values["qc_required_default"]
+            if "vat_on_advances" in values and values["vat_on_advances"] is not None:
+                tenant.vat_on_advances = values["vat_on_advances"]
+            if (
+                "auto_apply_advances_on_invoice" in values
+                and values["auto_apply_advances_on_invoice"] is not None
+            ):
+                tenant.auto_apply_advances_on_invoice = values["auto_apply_advances_on_invoice"]
+            if "credit_limit_policy" in values and values["credit_limit_policy"] is not None:
+                policy = values["credit_limit_policy"]
+                tenant.credit_limit_policy = (
+                    policy.value if isinstance(policy, CreditLimitPolicy) else str(policy)
+                )
+            if (
+                "credit_limit_include_open_orders" in values
+                and values["credit_limit_include_open_orders"] is not None
+            ):
+                tenant.credit_limit_include_open_orders = values["credit_limit_include_open_orders"]
             new_month = values.get("fiscal_year_start_month", tenant.fiscal_year_start_month)
             new_day = values.get("fiscal_year_start_day", tenant.fiscal_year_start_day)
             if "fiscal_year_start_month" in values or "fiscal_year_start_day" in values:
@@ -569,6 +594,10 @@ class OrganizationService:
             allow_over_receipt=tenant.allow_over_receipt,
             over_receipt_tolerance_pct=tenant.over_receipt_tolerance_pct,
             qc_required_default=tenant.qc_required_default,
+            vat_on_advances=tenant.vat_on_advances,
+            auto_apply_advances_on_invoice=tenant.auto_apply_advances_on_invoice,
+            credit_limit_policy=CreditLimitPolicy(tenant.credit_limit_policy),
+            credit_limit_include_open_orders=tenant.credit_limit_include_open_orders,
             lock_date=tenant.lock_date,
             hard_lock_date=tenant.hard_lock_date,
             headquarters=settings.headquarters,
@@ -590,6 +619,10 @@ class OrganizationService:
             "allow_over_receipt": tenant.allow_over_receipt,
             "over_receipt_tolerance_pct": tenant.over_receipt_tolerance_pct,
             "qc_required_default": tenant.qc_required_default,
+            "vat_on_advances": tenant.vat_on_advances,
+            "auto_apply_advances_on_invoice": tenant.auto_apply_advances_on_invoice,
+            "credit_limit_policy": tenant.credit_limit_policy,
+            "credit_limit_include_open_orders": tenant.credit_limit_include_open_orders,
             "fiscal_year_start_month": tenant.fiscal_year_start_month,
             "fiscal_year_start_day": tenant.fiscal_year_start_day,
             "books_start_date": tenant.books_start_date,
@@ -769,6 +802,15 @@ class OrganizationService:
             allow_over_receipt=tenant.allow_over_receipt,
             over_receipt_tolerance_pct=tenant.over_receipt_tolerance_pct,
             qc_required_default=tenant.qc_required_default,
+        )
+
+    async def get_money_movement_settings(self, tenant_id: UUID) -> MoneyMovementSettings:
+        tenant = await self._require_tenant(tenant_id)
+        return MoneyMovementSettings(
+            vat_on_advances=tenant.vat_on_advances,
+            auto_apply_advances_on_invoice=tenant.auto_apply_advances_on_invoice,
+            credit_limit_policy=CreditLimitPolicy(tenant.credit_limit_policy),
+            credit_limit_include_open_orders=tenant.credit_limit_include_open_orders,
         )
 
     async def set_period_lock(
