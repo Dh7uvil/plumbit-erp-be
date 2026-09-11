@@ -11,8 +11,8 @@ from app.inventory_management.products.router import router as products_router
 from app.inventory_management.quality_inspections.router import (
     router as quality_inspections_router,
 )
+from app.inventory_management.purchase_returns.router import router as purchase_returns_router
 from app.inventory_management.sales_returns.router import router as sales_returns_router
-from app.inventory_management.shipments.router import router as shipments_router
 from app.inventory_management.stock.router import router as stock_router
 from app.inventory_management.stock_adjustments.router import router as stock_adjustments_router
 from app.inventory_management.stock_transfers.router import router as stock_transfers_router
@@ -32,5 +32,5 @@ router.include_router(goods_receipts_router)
 router.include_router(quality_inspections_router)
 router.include_router(delivery_notes_router)
 router.include_router(packages_router)
-router.include_router(shipments_router)
 router.include_router(sales_returns_router)
+router.include_router(purchase_returns_router)

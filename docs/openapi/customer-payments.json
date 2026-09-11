@@ -1333,6 +1333,18 @@
             ],
             "title": "Refund Journal Entry Id"
           },
+          "realized_fx_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realized Fx Amount"
+          },
           "tax_id": {
             "anyOf": [
               {
@@ -1880,6 +1892,13 @@
             "type": "boolean",
             "title": "Period Locked",
             "default": false
+          },
+          "related_documents": {
+            "items": {
+              "$ref": "#/components/schemas/RelatedDocumentRef"
+            },
+            "type": "array",
+            "title": "Related Documents"
           },
           "lines": {
             "items": {

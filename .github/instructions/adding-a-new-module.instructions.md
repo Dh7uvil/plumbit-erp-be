@@ -15,7 +15,8 @@ following the same layout and the same request flow. Do not invent a new shape f
    existing module. Identity is `app/auth/`, not `users_management`.
 3. Identify existing services, repositories, schemas and common utilities and reuse them.
 4. Identify related models and database relationships.
-5. Identify the permissions the feature needs (`identity.*` / `crm.*` / `inventory.*` / `erp.*`).
+5. Identify the permissions the feature needs (`identity.*` / `crm.*` / `sales.*` /
+   `purchase.*` / `logistics.*` / `inventory.*` / `accounting.*` / `reports.*` / `masters.*`).
    After catalog entries land, existing tenants get missing rows with `uv run seed-permissions`.
 6. Identify tenant isolation, lock-date, negative-stock, posting, VAT and e-invoicing
    requirements.
@@ -32,8 +33,9 @@ implemented vs planned so agents do not stub a slice without an API.
 | Module | Owns |
 | --- | --- |
 | `auth` (Identity) | **Implemented:** auth, users, roles, permissions, tenants/org-settings, branches, departments, employees (nested), audit-logs. Attachments in `app/common/attachments/` with `identity.attachment.*`. Tenant operational settings (`allow_negative_stock`, `costing_method`, `allow_over_receipt`, `over_receipt_tolerance_pct`, `qc_required_default`, `lock_date`, `hard_lock_date`, `lock_reason`, `hard_lock_reason`, `vat_on_advances`, `auto_apply_advances_on_invoice`, `credit_limit_policy`, `credit_limit_include_open_orders`) are first-class columns. |
-| `erp` | **Implemented:** currencies, exchange_rates, taxes, payment_terms, terms_templates, document_sequences, suppliers, supplier_products, quotations, proforma_invoices, period_lock, sales_orders, sales_invoices, credit_notes, purchase_orders, purchase_invoices, debit_notes, customer_payments, supplier_payments, landed_costs, accounting/accounts, accounting/ledger, accounting/opening_balances, accounting/reports. **Planned:** einvoicing **status APIs** (on sales invoices and credit notes; inbound e-bills as draft purchase invoices). |
-| `inventory_management` | **Implemented:** units, categories, products, price_lists, warehouses, stock, stock_transfers, stock_adjustments, costing (internal FIFO ledger), goods_receipts, quality_inspections, delivery_notes, packages, shipments, sales_returns, history (query layer). **Planned:** — |
+| `erp` | **Implemented:** currencies, exchange_rates, taxes, payment_terms, terms_templates, document_sequences, suppliers, supplier_products, quotations, proforma_invoices, period_lock, sales_orders, sales_invoices, credit_notes, purchase_orders, purchase_invoices, debit_notes, landed_costs, accounting/accounts, accounting/ledger, accounting/opening_balances, accounting/customer_payments, accounting/supplier_payments, accounting/reports. **Planned:** einvoicing **status APIs** (on sales invoices and credit notes; inbound e-bills as draft purchase invoices). |
+| `inventory_management` | **Implemented:** units, categories, products, price_lists, warehouses, stock, stock_transfers, stock_adjustments, costing (internal FIFO ledger), goods_receipts, quality_inspections, delivery_notes, packages, sales_returns, purchase_returns, history (query layer). **Planned:** — |
+| `logistics` | **Implemented:** shipments (API `/shipments`; packages stay in inventory_management but nav is Shipments). Packages do **not** reserve stock — sales-order confirm owns `qty_reserved`. | `/shipments` | — |
 | `crm` | **Implemented:** customers, contacts. **Planned:** leads, opportunities, activities. |
 | `communication_service` | **Planned:** email, whatsapp, chat, meetings. |
 | `notifications_service` | **Planned:** notifications, templates, delivery status. |
@@ -373,7 +375,7 @@ from `erp/sales_invoices/service.py`.
 | Classes          | `PascalCase`      | `LeadService`, `SalesOrderRepository`, `QuotationResponse`  |
 | Database tables  | `snake_case`      | `sales_orders`, `sales_order_items`, `purchase_invoices`    |
 | API paths        | hyphenated plural | `/customers`, `/products`, `/sales-orders`, `/purchase-invoices` |
-| Permissions      | `module.resource.action` | `identity.user.read`, `erp.quotation.approve`, `inventory.stock.adjust`, `erp.einvoice.submit` |
+| Permissions      | `module.resource.action` | `identity.user.read`, `sales.quotation.approve`, `inventory.stock.adjust`, `erp.einvoice.submit` |
 
 Avoid verb-style routes such as `/getCustomers` or `/createCustomer`.
 

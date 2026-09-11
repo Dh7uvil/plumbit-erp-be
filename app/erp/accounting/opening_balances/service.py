@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.catalog import ERP_MODULE, PERIOD_OVERRIDE
+from app.auth.catalog import ACCOUNTING_MODULE, PERIOD_OVERRIDE
 from app.auth.models import Tenant
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
@@ -170,7 +170,7 @@ class OpeningBalanceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.POST,
-                module=ERP_MODULE,
+                module=ACCOUNTING_MODULE,
                 entity_type="opening_balance",
                 entity_id=journal.id,
                 new_values={
@@ -251,7 +251,7 @@ class OpeningBalanceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=ACCOUNTING_MODULE,
                 entity_type="opening_balance",
                 entity_id=opening.id,
                 old_values={"journal_entry_id": str(opening.id)},

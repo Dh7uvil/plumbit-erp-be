@@ -10,7 +10,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.catalog import ERP_MODULE
+from app.auth.catalog import PURCHASE_MODULE
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
@@ -153,7 +153,7 @@ class SupplierProductService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="supplier_product",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, row),
@@ -213,7 +213,7 @@ class SupplierProductService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="supplier_product",
                 entity_id=row.id,
                 old_values=old_values,
@@ -233,7 +233,7 @@ class SupplierProductService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="supplier_product",
                 entity_id=supplier_product_id,
                 old_values=old_values,
@@ -267,7 +267,7 @@ class SupplierProductService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.LINK,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="supplier_product",
                 entity_id=row.id,
                 old_values=old_values,
@@ -297,7 +297,7 @@ class SupplierProductService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UNLINK,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="supplier_product",
                 entity_id=row.id,
                 old_values=old_values,

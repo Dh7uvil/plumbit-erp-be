@@ -44,6 +44,8 @@ from app.auth.catalog import (
     PURCHASE_INVOICE_UPDATE,
     PURCHASE_ORDER_READ,
     PURCHASE_ORDER_UPDATE,
+    PURCHASE_RETURN_READ,
+    PURCHASE_RETURN_UPDATE,
     QUALITY_INSPECTION_READ,
     QUALITY_INSPECTION_UPDATE,
     QUOTATION_READ,
@@ -72,6 +74,9 @@ from app.common.registries.delivery_note_dependents import (
 )
 from app.common.registries.purchase_invoice_dependents import (
     register as register_purchase_invoice_dependent,
+)
+from app.common.registries.purchase_return_dependents import (
+    register as register_purchase_return_dependent,
 )
 from app.common.registries.quotation_dependents import register as register_quotation_dependent
 from app.common.registries.sales_invoice_dependents import (
@@ -108,6 +113,7 @@ def wire_platform() -> None:
     _register_delivery_note_dependents()
     _register_sales_invoice_dependents()
     _register_purchase_invoice_dependents()
+    _register_purchase_return_dependents()
     _WIRED = True
 
 
@@ -118,6 +124,7 @@ def _register_unposted_probes() -> None:
     register_unposted("quality_inspection", _probe_unposted_quality_inspections)
     register_unposted("delivery_note", _probe_unposted_delivery_notes)
     register_unposted("sales_return", _probe_unposted_sales_returns)
+    register_unposted("purchase_return", _probe_unposted_purchase_returns)
     register_unposted("journal_entry", _probe_unposted_journals)
     register_unposted("sales_invoice", _probe_unposted_sales_invoices)
     register_unposted("purchase_invoice", _probe_unposted_purchase_invoices)
@@ -290,6 +297,33 @@ async def _probe_unposted_sales_returns(
     return documents, total
 
 
+async def _probe_unposted_purchase_returns(
+    session: AsyncSession,
+    tenant_id: UUID,
+    as_of: date,
+    page: PageParams,
+) -> tuple[list[UnpostedDocument], int]:
+    from app.inventory_management.purchase_returns.service import PurchaseReturnService
+
+    rows, total = await PurchaseReturnService(session).list(
+        tenant_id,
+        page=page,
+        status=StockDocumentStatus.DRAFT.value,
+        document_date_to=as_of,
+    )
+    documents = [
+        UnpostedDocument(
+            id=row.id,
+            document_type="purchase_return",
+            document_number=row.document_number,
+            document_date=row.document_date,
+            status=str(row.status),
+        )
+        for row in rows
+    ]
+    return documents, total
+
+
 async def _probe_unposted_journals(
     session: AsyncSession,
     tenant_id: UUID,
@@ -431,7 +465,7 @@ async def _probe_unposted_customer_payments(
     as_of: date,
     page: PageParams,
 ) -> tuple[list[UnpostedDocument], int]:
-    from app.erp.customer_payments.service import CustomerPaymentService
+    from app.erp.accounting.customer_payments.service import CustomerPaymentService
 
     rows, total = await CustomerPaymentService(session).list(
         tenant_id,
@@ -458,7 +492,7 @@ async def _probe_unposted_supplier_payments(
     as_of: date,
     page: PageParams,
 ) -> tuple[list[UnpostedDocument], int]:
-    from app.erp.supplier_payments.service import SupplierPaymentService
+    from app.erp.accounting.supplier_payments.service import SupplierPaymentService
 
     rows, total = await SupplierPaymentService(session).list(
         tenant_id,
@@ -649,6 +683,14 @@ def _register_attachment_entities() -> None:
             SALES_RETURN_READ,
             SALES_RETURN_UPDATE,
             _probe_via_get(_sales_return_get),
+        )
+    )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.PURCHASE_RETURN,
+            PURCHASE_RETURN_READ,
+            PURCHASE_RETURN_UPDATE,
+            _probe_via_get(_purchase_return_get),
         )
     )
     register(
@@ -852,7 +894,7 @@ async def _package_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) 
 
 
 async def _shipment_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
-    from app.inventory_management.shipments.service import ShipmentService
+    from app.logistics.shipments.service import ShipmentService
 
     return await ShipmentService(session).get(tenant_id, entity_id)
 
@@ -861,6 +903,12 @@ async def _sales_return_get(session: AsyncSession, tenant_id: UUID, entity_id: U
     from app.inventory_management.sales_returns.service import SalesReturnService
 
     return await SalesReturnService(session).get(tenant_id, entity_id)
+
+
+async def _purchase_return_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.inventory_management.purchase_returns.service import PurchaseReturnService
+
+    return await PurchaseReturnService(session).get(tenant_id, entity_id)
 
 
 async def _journal_entry_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
@@ -900,13 +948,13 @@ async def _debit_note_get(session: AsyncSession, tenant_id: UUID, entity_id: UUI
 
 
 async def _customer_payment_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
-    from app.erp.customer_payments.service import CustomerPaymentService
+    from app.erp.accounting.customer_payments.service import CustomerPaymentService
 
     return await CustomerPaymentService(session).get(tenant_id, entity_id)
 
 
 async def _supplier_payment_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
-    from app.erp.supplier_payments.service import SupplierPaymentService
+    from app.erp.accounting.supplier_payments.service import SupplierPaymentService
 
     return await SupplierPaymentService(session).get(tenant_id, entity_id)
 
@@ -922,38 +970,40 @@ def _register_outbox_handlers() -> None:
     from app.common.outbox.handlers import register as register_outbox
 
     for event_type in (
-        "erp.quotation.revised",
-        "erp.proforma_invoice.sent",
-        "erp.proforma_invoice.confirmed",
-        "erp.sales_order.acknowledged",
-        "inventory.goods_receipt.posted",
-        "inventory.goods_receipt.cancelled",
-        "inventory.quality_inspection.approved",
+        "sales.quotation.revised",
+        "sales.proforma_invoice.sent",
+        "sales.proforma_invoice.confirmed",
+        "sales.sales_order.acknowledged",
+        "purchase.goods_receipt.posted",
+        "purchase.goods_receipt.cancelled",
+        "purchase.quality_inspection.approved",
         "inventory.stock_transfer.posted",
         "inventory.stock_transfer.cancelled",
-        "inventory.delivery_note.posted",
-        "inventory.delivery_note.cancelled",
-        "inventory.sales_return.posted",
-        "inventory.sales_return.cancelled",
-        "erp.journal_entry.posted",
-        "erp.journal_entry.reversed",
-        "erp.sales_invoice.posted",
-        "erp.sales_invoice.cancelled",
+        "sales.delivery_note.posted",
+        "sales.delivery_note.cancelled",
+        "sales.sales_return.posted",
+        "sales.sales_return.cancelled",
+        "purchase.purchase_return.posted",
+        "purchase.purchase_return.cancelled",
+        "accounting.journal_entry.posted",
+        "accounting.journal_entry.reversed",
+        "sales.sales_invoice.posted",
+        "sales.sales_invoice.cancelled",
         "erp.einvoice.submit_requested",
-        "erp.purchase_invoice.posted",
-        "erp.purchase_invoice.cancelled",
-        "erp.credit_note.posted",
-        "erp.credit_note.cancelled",
-        "erp.debit_note.posted",
-        "erp.debit_note.cancelled",
-        "erp.customer_payment.posted",
-        "erp.customer_payment.cancelled",
-        "erp.customer_payment.allocated",
-        "erp.supplier_payment.posted",
-        "erp.supplier_payment.cancelled",
-        "erp.supplier_payment.allocated",
-        "erp.landed_cost.posted",
-        "erp.landed_cost.cancelled",
+        "purchase.purchase_invoice.posted",
+        "purchase.purchase_invoice.cancelled",
+        "sales.credit_note.posted",
+        "sales.credit_note.cancelled",
+        "purchase.debit_note.posted",
+        "purchase.debit_note.cancelled",
+        "sales.customer_payment.posted",
+        "sales.customer_payment.cancelled",
+        "sales.customer_payment.allocated",
+        "purchase.supplier_payment.posted",
+        "purchase.supplier_payment.cancelled",
+        "purchase.supplier_payment.allocated",
+        "purchase.landed_cost.posted",
+        "purchase.landed_cost.cancelled",
     ):
         register_outbox(event_type, _log_outbox_event)
 
@@ -990,7 +1040,7 @@ def _register_delivery_note_dependents() -> None:
 async def _probe_shipment_for_delivery_note(
     session: AsyncSession, tenant_id: UUID, delivery_note_id: UUID
 ) -> bool:
-    from app.inventory_management.shipments.service import ShipmentService
+    from app.logistics.shipments.service import ShipmentService
 
     return await ShipmentService(session).delivery_note_is_shipped(tenant_id, delivery_note_id)
 
@@ -1027,7 +1077,7 @@ async def _probe_credit_note_for_sales_invoice(
 async def _probe_customer_payment_for_sales_invoice(
     session: AsyncSession, tenant_id: UUID, sales_invoice_id: UUID
 ) -> bool:
-    from app.erp.customer_payments.service import CustomerPaymentService
+    from app.erp.accounting.customer_payments.service import CustomerPaymentService
 
     return await CustomerPaymentService(session).has_live_for_sales_invoice(
         tenant_id, sales_invoice_id
@@ -1054,8 +1104,22 @@ async def _probe_debit_note_for_purchase_invoice(
 async def _probe_supplier_payment_for_purchase_invoice(
     session: AsyncSession, tenant_id: UUID, purchase_invoice_id: UUID
 ) -> bool:
-    from app.erp.supplier_payments.service import SupplierPaymentService
+    from app.erp.accounting.supplier_payments.service import SupplierPaymentService
 
     return await SupplierPaymentService(session).has_live_for_purchase_invoice(
         tenant_id, purchase_invoice_id
+    )
+
+
+def _register_purchase_return_dependents() -> None:
+    register_purchase_return_dependent("debit_note", _probe_debit_note_for_purchase_return)
+
+
+async def _probe_debit_note_for_purchase_return(
+    session: AsyncSession, tenant_id: UUID, purchase_return_id: UUID
+) -> bool:
+    from app.erp.debit_notes.service import DebitNoteService
+
+    return await DebitNoteService(session).has_live_for_purchase_return(
+        tenant_id, purchase_return_id
     )

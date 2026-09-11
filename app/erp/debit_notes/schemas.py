@@ -32,6 +32,7 @@ class DebitNoteFilter(BaseFilter):
     status: InvoiceDocumentStatus | None = None
     supplier_id: UUID | None = None
     purchase_invoice_id: UUID | None = None
+    purchase_return_id: UUID | None = None
     currency_id: UUID | None = None
     debit_note_date_from: date | None = None
     debit_note_date_to: date | None = None
@@ -53,7 +54,8 @@ class DebitNoteLineInput(BaseModel):
     quantity: Decimal = Field(default=Decimal("1"), gt=0, max_digits=18, decimal_places=6)
     unit_id: UUID | None = None
     rate: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
-    purchase_invoice_line_id: UUID
+    purchase_invoice_line_id: UUID | None = None
+    purchase_return_line_id: UUID | None = None
     expense_account_id: UUID | None = None
     discount_type: DiscountType | None = None
     discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
@@ -84,7 +86,8 @@ class DebitNoteLineResponse(BaseModel):
     quantity: Decimal
     unit_id: UUID | None
     rate: Decimal
-    purchase_invoice_line_id: UUID
+    purchase_invoice_line_id: UUID | None
+    purchase_return_line_id: UUID | None = None
     expense_account_id: UUID | None
     discount_type: DiscountType | None
     discount_value: Decimal | None
@@ -96,7 +99,8 @@ class DebitNoteLineResponse(BaseModel):
 
 
 class DebitNoteCreate(BaseModel):
-    purchase_invoice_id: UUID
+    purchase_invoice_id: UUID | None = None
+    purchase_return_id: UUID | None = None
     supplier_id: UUID
     reason_code: DebitNoteReason
     branch_id: UUID | None = None
@@ -164,6 +168,13 @@ class DebitNoteCreateFromPurchaseInvoice(BaseModel):
     notes: str | None = None
 
 
+class DebitNoteCreateFromPurchaseReturn(BaseModel):
+    purchase_return_id: UUID
+    debit_note_date: date | None = None
+    reason_code: DebitNoteReason = DebitNoteReason.GOODS_REJECTED
+    notes: str | None = None
+
+
 class DebitNoteResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -176,7 +187,8 @@ class DebitNoteResponse(BaseModel):
     is_posted: bool
     debit_note_date: date
     document_date: date
-    purchase_invoice_id: UUID
+    purchase_invoice_id: UUID | None
+    purchase_return_id: UUID | None = None
     supplier_id: UUID
     reason_code: DebitNoteReason
     branch_id: UUID | None

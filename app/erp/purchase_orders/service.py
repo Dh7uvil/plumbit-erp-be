@@ -12,8 +12,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
-    ERP_MODULE,
     GOODS_RECEIPT_CREATE,
+    PURCHASE_MODULE,
     PURCHASE_ORDER_APPROVE,
     PURCHASE_ORDER_CLOSE,
     PURCHASE_ORDER_CREATE,
@@ -24,6 +24,8 @@ from app.auth.catalog import (
 from app.auth.org_service import OrganizationService
 from app.auth.schemas import AddressResponse
 from app.common.idempotency.service import IdempotencyService
+from app.common.print.schemas import PrintDocumentResponse
+from app.common.print.service import PrintService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import QuantityProgress, RelatedDocumentRef
@@ -183,6 +185,41 @@ class PurchaseOrderService:
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
 
+    async def print_document(
+        self,
+        tenant_id: UUID,
+        purchase_order_id: UUID,
+        *,
+        template_family: str = "uae",
+    ) -> PrintDocumentResponse:
+        row = await self.get(tenant_id, purchase_order_id)
+        supplier = await self.suppliers.get(tenant_id, row.supplier_id)
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        printer = PrintService(self.session)
+        family = template_family if template_family in {"uae", "china"} else "uae"
+        return await printer.assemble(
+            tenant_id,
+            document_type=DocumentType.PURCHASE_ORDER.value,
+            document_id=row.id,
+            document_number=row.document_number,
+            document_date=row.order_date,
+            template_family=family,
+            customer_code=supplier.code,
+            customer_name=supplier.name,
+            customer_address=row.supplier_address_snapshot
+            or format_address_snapshot(supplier.billing_address),
+            customer_trn=row.supplier_trn or supplier.trn,
+            currency_code=currency.code,
+            subtotal=row.subtotal,
+            tax_amount=row.tax_amount,
+            grand_total=row.grand_total,
+            notes=row.notes,
+            lines=[
+                printer.commercial_line(line, index=index)
+                for index, line in enumerate(row.lines, start=1)
+            ],
+        )
+
     async def compose_defaults(
         self, tenant_id: UUID, supplier_id: UUID
     ) -> PurchaseOrderComposeDefaults:
@@ -240,7 +277,7 @@ class PurchaseOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="purchase_order",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, row),
@@ -279,7 +316,7 @@ class PurchaseOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="purchase_order",
                 entity_id=purchase_order_id,
                 old_values=old_values,
@@ -376,7 +413,7 @@ class PurchaseOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.ISSUE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="purchase_order",
                 entity_id=row.id,
                 old_values=old_values,
@@ -490,7 +527,7 @@ class PurchaseOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CLONE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="purchase_order",
                 entity_id=row.id,
                 new_values=new_values,
@@ -711,7 +748,7 @@ class PurchaseOrderService:
                     tenant_id=tenant_id,
                     user_id=actor_user_id,
                     action=AuditAction.CREATE,
-                    module=ERP_MODULE,
+                    module=PURCHASE_MODULE,
                     entity_type="purchase_order",
                     entity_id=row.id,
                     new_values=await self._snapshot(tenant_id, row),
@@ -748,7 +785,7 @@ class PurchaseOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="purchase_order",
                 entity_id=purchase_order_id,
                 old_values=old_values,
@@ -799,7 +836,7 @@ class PurchaseOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=action_map[action],
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="purchase_order",
                 entity_id=row.id,
                 old_values=old_values,
@@ -836,6 +873,25 @@ class PurchaseOrderService:
             if line.qty_received < _ZERO:
                 raise ValidationError("Received quantity cannot be negative")
         self._refresh_receipt_status(row)
+        await self.session.flush()
+
+    async def apply_line_returns(
+        self,
+        tenant_id: UUID,
+        purchase_order_id: UUID,
+        returns: Mapping[UUID, Decimal],
+    ) -> None:
+        """Caller owns the transaction. qty may be negative to reverse a return."""
+
+        row = await self._require(tenant_id, purchase_order_id, for_update=True)
+        by_id = {line.id: line for line in row.lines}
+        for line_id, qty in returns.items():
+            line = by_id.get(line_id)
+            if line is None:
+                raise ValidationError("Purchase order line not found on this order")
+            line.qty_returned = quantize_quantity(line.qty_returned + qty)
+            if line.qty_returned < _ZERO:
+                raise ValidationError("Returned quantity cannot be negative")
         await self.session.flush()
 
     async def outstanding_by_line(

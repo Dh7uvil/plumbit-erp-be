@@ -55,6 +55,7 @@ SOURCE_GOODS_RECEIPT = "goods_receipt"
 SOURCE_QUALITY_INSPECTION = "quality_inspection"
 SOURCE_DELIVERY_NOTE = "delivery_note"
 SOURCE_SALES_RETURN = "sales_return"
+SOURCE_PURCHASE_RETURN = "purchase_return"
 _HOLD_AUDIT_TYPES = frozenset({StockMovementType.QC_HOLD, StockMovementType.QC_RELEASE})
 
 
@@ -585,6 +586,95 @@ class StockService:
             locked.row.qty_on_hand,
         )
         return movement
+
+    async def consume_source_locked(
+        self,
+        tenant_id: UUID,
+        locked: LockedBalance,
+        *,
+        qty: Decimal,
+        movement_type: StockMovementType,
+        source_type: str,
+        source_id: UUID,
+        source_line_id: UUID | None,
+        document_date: date,
+        notes: str | None,
+        original_source_type: str,
+        original_source_id: UUID,
+        original_source_line_id: UUID | None,
+        quality_hold_delta: Decimal = _ZERO,
+        occurred_at: datetime | None = None,
+        unit_id: UUID | None = None,
+    ) -> ApplyResult:
+        """Outbound consume that takes cost from a specific inbound source's layers."""
+
+        outbound_qty = quantize_quantity(qty)
+        if outbound_qty <= _ZERO:
+            raise ValidationError("Consume quantity must be positive")
+        hold = quantize_quantity(quality_hold_delta)
+        available = available_qty(
+            locked.row.qty_on_hand,
+            locked.row.qty_reserved,
+            locked.row.qty_quality_hold,
+        )
+        if available - outbound_qty - hold < _ZERO and not locked.allow_negative_stock:
+            raise InsufficientStockError(
+                details={
+                    "warehouse_id": str(locked.warehouse.id),
+                    "warehouse_code": locked.warehouse.code,
+                    "product_id": str(locked.product.id),
+                    "available_qty": str(available),
+                    "requested_qty": str(outbound_qty),
+                }
+            )
+        qty_before = locked.row.qty_on_hand
+        locked.row.qty_on_hand = quantize_quantity(qty_before - outbound_qty)
+        new_hold = quantize_quantity(locked.row.qty_quality_hold + hold)
+        if new_hold < _ZERO:
+            raise ValidationError("Quality hold cannot be negative")
+        locked.row.qty_quality_hold = new_hold
+        occurred = occurred_at or utcnow()
+        locked.row.last_movement_at = occurred
+        await self.session.flush()
+        movement = await self.movements.create(
+            tenant_id,
+            {
+                "movement_type": movement_type.value,
+                "warehouse_id": locked.warehouse.id,
+                "product_id": locked.product.id,
+                "unit_id": unit_id if unit_id is not None else locked.product.unit_id,
+                "qty": -outbound_qty,
+                "qty_before": qty_before,
+                "qty_after": locked.row.qty_on_hand,
+                "source_type": source_type,
+                "source_id": source_id,
+                "source_line_id": source_line_id,
+                "document_date": document_date,
+                "occurred_at": occurred,
+                "notes": notes,
+                "is_estimated_cost": False,
+            },
+        )
+        consumptions, total_value = await self.costing.consume_from_source(
+            tenant_id,
+            warehouse_id=locked.warehouse.id,
+            product_id=locked.product.id,
+            qty=outbound_qty,
+            movement_id=movement.id,
+            original_source_type=original_source_type,
+            original_source_id=original_source_id,
+            original_source_line_id=original_source_line_id,
+        )
+        movement.unit_cost = quantize_money(total_value / outbound_qty) if outbound_qty else None
+        movement.value = quantize_money(-total_value)
+        await self.costing.assert_balanced(
+            tenant_id,
+            locked.warehouse.id,
+            locked.product.id,
+            locked.row.qty_on_hand,
+        )
+        await self.session.flush()
+        return ApplyResult(movement=movement, consumptions=consumptions)
 
     async def reconsume_outbound_locked(
         self,

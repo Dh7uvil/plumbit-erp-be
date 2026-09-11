@@ -100,7 +100,7 @@ class LedgerPostingService:
         await self._mark_posted(tenant_id, entry, actor_id=actor_id, totals=_totals(prepared))
         await self.outbox.enqueue(
             tenant_id,
-            event_type="erp.journal_entry.posted",
+            event_type="accounting.journal_entry.posted",
             aggregate_type="journal_entry",
             aggregate_id=entry.id,
             payload={"journal_entry_id": str(entry.id)},
@@ -168,7 +168,7 @@ class LedgerPostingService:
         await self._mark_posted(tenant_id, row, actor_id=actor_id, totals=(debit_base, credit_base))
         await self.outbox.enqueue(
             tenant_id,
-            event_type="erp.journal_entry.posted",
+            event_type="accounting.journal_entry.posted",
             aggregate_type="journal_entry",
             aggregate_id=row.id,
             payload={"journal_entry_id": str(row.id), "source_type": source_type},
@@ -237,7 +237,7 @@ class LedgerPostingService:
         await self.session.flush()
         await self.outbox.enqueue(
             tenant_id,
-            event_type="erp.journal_entry.reversed",
+            event_type="accounting.journal_entry.reversed",
             aggregate_type="journal_entry",
             aggregate_id=original.id,
             payload={

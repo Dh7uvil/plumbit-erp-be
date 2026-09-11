@@ -60,6 +60,7 @@ _DOCUMENT_SEQUENCES: tuple[tuple[DocumentType, str], ...] = (
     (DocumentType.PACKAGE, "PKG"),
     (DocumentType.SHIPMENT, "SHP"),
     (DocumentType.SALES_RETURN, "SR"),
+    (DocumentType.PURCHASE_RETURN, "PR"),
     (DocumentType.JOURNAL_ENTRY, "JV"),
     (DocumentType.CUSTOMER_PAYMENT, "RCP"),
     (DocumentType.SUPPLIER_PAYMENT, "PAY"),

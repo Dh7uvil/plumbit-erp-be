@@ -4,12 +4,14 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Form, Header, Query, UploadFile, status
 
 from app.auth.catalog import (
     SUPPLIER_CREATE,
     SUPPLIER_DELETE,
+    SUPPLIER_EXPORT,
     SUPPLIER_HISTORY,
+    SUPPLIER_IMPORT,
     SUPPLIER_READ,
     SUPPLIER_UPDATE,
 )
@@ -17,12 +19,19 @@ from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
+from app.common.idempotency.service import require_idempotency_key
+from app.common.imex.http import parse_mapping_json, read_upload
+from app.common.imex.schemas import ImportPreviewResponse, ImportResult
+from app.common.imex.service import export_response, preview_file, template_response
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
+from app.core.enums import InvoiceDocumentStatus
 from app.erp.accounting.open_items.dependencies import OpenItemsServiceDependency
 from app.erp.accounting.open_items.schemas import OpenItemRow
 from app.erp.accounting.reports.dependencies import ReportServiceDependency
 from app.erp.accounting.reports.schemas import OutstandingSummary
+from app.erp.accounting.supplier_payments.dependencies import SupplierPaymentServiceDependency
+from app.erp.accounting.supplier_payments.schemas import SupplierPaymentResponse
 from app.erp.suppliers.dependencies import SupplierServiceDependency
 from app.erp.suppliers.schemas import (
     SupplierCreate,
@@ -36,6 +45,8 @@ from app.inventory_management.history.dependencies import HistoryServiceDependen
 from app.inventory_management.history.schemas import TradingHistoryFilter, TradingHistoryLine
 
 router = APIRouter(prefix="/suppliers", tags=["Suppliers"])
+
+IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
 
 
 @router.get("", response_model=ApiResponse[list[SupplierResponse]])
@@ -55,6 +66,70 @@ async def list_suppliers(
         is_active=filters.is_active,
     )
     return paginated_response(rows, params=page, total=total)
+
+
+@router.get("/import/template")
+async def supplier_import_template(
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_IMPORT))],
+):
+    return template_response("supplier")
+
+
+@router.post("/import/preview", response_model=ApiResponse[ImportPreviewResponse])
+async def supplier_import_preview(
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_IMPORT))],
+    file: Annotated[UploadFile, File()],
+) -> ApiResponse[ImportPreviewResponse]:
+    filename, content = await read_upload(file)
+    return ApiResponse(data=preview_file("supplier", filename=filename, content=content))
+
+
+@router.post(
+    "/import",
+    response_model=ApiResponse[ImportResult],
+    status_code=status.HTTP_201_CREATED,
+)
+async def supplier_import(
+    tenant: TenantContextDependency,
+    service: SupplierServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_IMPORT))],
+    file: Annotated[UploadFile, File()],
+    mapping: Annotated[str | None, Form()] = None,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[ImportResult]:
+    require_idempotency_key(idempotency_key)
+    filename, content = await read_upload(file)
+    result = await service.import_rows(
+        tenant.tenant_id,
+        filename=filename,
+        content=content,
+        mapping=parse_mapping_json(mapping),
+        actor_user_id=tenant.user_id,
+    )
+    return ApiResponse(data=result, message="Suppliers imported")
+
+
+@router.get("/export")
+async def supplier_export(
+    tenant: TenantContextDependency,
+    page: PaginationDependency,
+    service: SupplierServiceDependency,
+    filters: Annotated[SupplierFilter, Depends()],
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_EXPORT))],
+):
+    rows, _total = await service.list(
+        tenant.tenant_id,
+        page=page,
+        common_filter=filters,
+        tax_treatment=filters.tax_treatment.value if filters.tax_treatment else None,
+        currency_id=filters.currency_id,
+        is_active=filters.is_active,
+    )
+    return export_response(
+        "supplier",
+        ["name", "code", "trn", "email", "phone"],
+        [[row.name, row.code, row.trn or "", "", ""] for row in rows],
+    )
 
 
 @router.post("", response_model=ApiResponse[SupplierResponse], status_code=status.HTTP_201_CREATED)
@@ -184,3 +259,25 @@ async def get_supplier_outstanding_summary(
     return ApiResponse(
         data=await reports.supplier_outstanding(tenant.tenant_id, supplier_id, as_of=as_of)
     )
+
+
+@router.get(
+    "/{supplier_id}/payment-history",
+    response_model=ApiResponse[list[SupplierPaymentResponse]],
+)
+async def get_supplier_payment_history(
+    supplier_id: UUID,
+    tenant: TenantContextDependency,
+    page: PaginationDependency,
+    service: SupplierServiceDependency,
+    payments: SupplierPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_READ))],
+) -> ApiResponse[list[SupplierPaymentResponse]]:
+    await service.get(tenant.tenant_id, supplier_id)
+    rows, total = await payments.list(
+        tenant.tenant_id,
+        page=page,
+        status=InvoiceDocumentStatus.POSTED.value,
+        supplier_id=supplier_id,
+    )
+    return paginated_response(rows, params=page, total=total)

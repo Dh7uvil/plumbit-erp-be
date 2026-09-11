@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import IDENTITY_MODULE
-from app.auth.models import Address, Branch, Department, Tenant, User
+from app.auth.models import Address, Branch, Department, Employee, Tenant, User
 from app.auth.org_repository import OrganizationRepository
 from app.auth.repository import AccessRepository
 from app.auth.schemas import (
@@ -25,6 +25,7 @@ from app.auth.schemas import (
     DepartmentCreate,
     DepartmentResponse,
     DepartmentUpdate,
+    EmployeePickerResponse,
     TenantCurrentResponse,
     TenantCurrentUpdate,
     TenantSettings,
@@ -36,7 +37,14 @@ from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
 from app.common.utils.files import MIME_JPEG, MIME_PNG, MIME_WEBP, validate_upload
-from app.core.enums import AddressType, AuditAction, BranchStatus, CostingMethod, CreditLimitPolicy
+from app.core.enums import (
+    AddressType,
+    AuditAction,
+    BranchStatus,
+    CostingMethod,
+    CreditLimitPolicy,
+    EmployeeStatus,
+)
 from app.core.exceptions import (
     DuplicateResourceError,
     IntegrationError,
@@ -284,6 +292,36 @@ class OrganizationService:
         )
         responses = await self._branch_responses(tenant_id, list(branches))
         return responses, total
+
+    async def list_employees(
+        self,
+        tenant_id: UUID,
+        *,
+        page: PageParams,
+        status: str | None = None,
+        branch_id: UUID | None = None,
+        department_id: UUID | None = None,
+        search: str | None = None,
+    ) -> tuple[list[EmployeePickerResponse], int]:
+        rows, total = await self.org.list_employees(
+            tenant_id,
+            page=page,
+            status=status,
+            branch_id=branch_id,
+            department_id=department_id,
+            search=search,
+        )
+        return [
+            EmployeePickerResponse(
+                id=employee.id,
+                employee_code=employee.employee_code,
+                designation=employee.designation,
+                status=EmployeeStatus(employee.status),
+                user_id=employee.user_id,
+                name=user_name or employee.employee_code,
+            )
+            for employee, user_name in rows
+        ], total
 
     async def create_branch(
         self,
@@ -777,9 +815,17 @@ class OrganizationService:
     async def get_bank_details(self, tenant_id: UUID) -> str | None:
         """Return free-text bank details from tenant settings, if present."""
 
+        return await self._setting_text(tenant_id, "bank_details")
+
+    async def get_trn(self, tenant_id: UUID) -> str | None:
+        """Return the tenant TRN from settings, if present."""
+
+        return await self._setting_text(tenant_id, "trn")
+
+    async def _setting_text(self, tenant_id: UUID, key: str) -> str | None:
         tenant = await self._require_tenant(tenant_id)
         raw = tenant.settings or {}
-        value = raw.get("bank_details")
+        value = raw.get(key)
         if isinstance(value, str):
             stripped = value.strip()
             return stripped or None

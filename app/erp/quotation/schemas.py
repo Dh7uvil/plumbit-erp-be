@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.packing import PackingFields
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.core.enums import DiscountType, Incoterm, PlaceOfSupply, QuotationStatus, TaxTreatment
 
@@ -30,7 +31,7 @@ class QuotationFilter(BaseFilter):
     currency_id: UUID | None = None
 
 
-class QuotationLineInput(BaseModel):
+class QuotationLineInput(PackingFields):
     product_id: UUID | None = None
     description: str | None = None
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
@@ -55,7 +56,7 @@ class QuotationLineInput(BaseModel):
         return self
 
 
-class QuotationLineResponse(BaseModel):
+class QuotationLineResponse(PackingFields):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -100,6 +101,8 @@ class QuotationCreate(BaseModel):
     shipping_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    incoterm: Incoterm | None = None
+    incoterm_place: str | None = Field(default=None, max_length=120)
     lines: list[QuotationLineInput] = Field(default_factory=list)
 
 
@@ -119,6 +122,8 @@ class QuotationUpdate(BaseModel):
     shipping_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    incoterm: Incoterm | None = None
+    incoterm_place: str | None = Field(default=None, max_length=120)
     lines: list[QuotationLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
@@ -182,6 +187,8 @@ class QuotationResponse(BaseModel):
     payment_terms_id: UUID | None
     salesperson_id: UUID | None
     notes: str | None
+    incoterm: Incoterm | None = None
+    incoterm_place: str | None = None
     terms_and_conditions: str | None
     bill_to_snapshot: str | None
     ship_to_snapshot: str | None

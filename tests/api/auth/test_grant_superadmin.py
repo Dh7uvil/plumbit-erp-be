@@ -56,7 +56,7 @@ async def test_grant_superadmin_permissions_restores_missing_catalog_grant(
             )
         )
 
-    assert "erp.proforma_invoice.create" not in await _role_permission_codes(
+    assert "sales.proforma_invoice.create" not in await _role_permission_codes(
         client, headers, role_id
     )
 
@@ -101,7 +101,7 @@ async def test_grant_superadmin_permissions_seeds_missing_catalog_row(
     assert results[0].skipped is False
 
     codes = await _role_permission_codes(client, headers, role_id)
-    assert "erp.quotation.revise" in codes
+    assert "sales.quotation.revise" in codes
     assert codes == set(CATALOG_PERMISSIONS)
 
 

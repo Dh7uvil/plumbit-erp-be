@@ -127,6 +127,7 @@ class CustomerPaymentResponse(BaseModel):
     journal_entry_id: UUID | None
     reversal_journal_entry_id: UUID | None
     refund_journal_entry_id: UUID | None
+    realized_fx_amount: Decimal | None = None
     tax_id: UUID | None
     tax_amount: Decimal
     notes: str | None

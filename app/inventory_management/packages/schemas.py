@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.packing import PackingFields
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.core.enums import PackageStatus
 
@@ -21,14 +22,14 @@ class PackageFilter(BaseFilter):
     delivery_note_id: UUID | None = None
 
 
-class PackageLineInput(BaseModel):
+class PackageLineInput(PackingFields):
     sales_order_line_id: UUID
     product_id: UUID | None = None
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
     unit_id: UUID | None = None
 
 
-class PackageLineResponse(BaseModel):
+class PackageLineResponse(PackingFields):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID

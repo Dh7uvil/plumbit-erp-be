@@ -15,11 +15,11 @@ from app.erp.accounting.ledger.posting import SOURCE_OPENING_BALANCE
 from app.erp.accounting.open_items.repository import PaymentAllocationRepository
 from app.erp.accounting.open_items.schemas import OpenItemRow
 from app.erp.credit_notes.models import CreditNote
-from app.erp.customer_payments.models import CustomerPayment
+from app.erp.accounting.customer_payments.models import CustomerPayment
 from app.erp.debit_notes.models import DebitNote
 from app.erp.purchase_invoices.models import PurchaseInvoice
 from app.erp.sales_invoices.models import SalesInvoice
-from app.erp.supplier_payments.models import SupplierPayment
+from app.erp.accounting.supplier_payments.models import SupplierPayment
 
 _ZERO = Decimal("0")
 

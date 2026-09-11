@@ -3,6 +3,9 @@
 Revision ID: ${up_revision}
 Revises: ${down_revision | comma,n}
 Create Date: ${create_date}
+
+Rename this file to {NNN}_{revision}_{slug}.py where NNN is last + 1 in the
+down_revision chain (see alembic.ini). Do not squash historical revisions.
 """
 
 from collections.abc import Sequence

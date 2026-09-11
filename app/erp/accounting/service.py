@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.catalog import ERP_MODULE
+from app.auth.catalog import MASTERS_MODULE
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
@@ -205,7 +205,7 @@ class TaxService:
             tenant_id=tenant_id,
             user_id=actor_user_id,
             action=action,
-            module=ERP_MODULE,
+            module=MASTERS_MODULE,
             entity_type="tax",
             entity_id=entity_id,
             old_values=old_values,
@@ -261,7 +261,7 @@ class PaymentTermService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=MASTERS_MODULE,
                 entity_type="payment_term",
                 entity_id=row.id,
                 new_values=_payment_term_snapshot(row),
@@ -288,7 +288,7 @@ class PaymentTermService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=MASTERS_MODULE,
                 entity_type="payment_term",
                 entity_id=row.id,
                 old_values=old_values,
@@ -307,7 +307,7 @@ class PaymentTermService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=MASTERS_MODULE,
                 entity_type="payment_term",
                 entity_id=term_id,
                 old_values=_payment_term_snapshot(row),
@@ -378,7 +378,7 @@ class TermsTemplateService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=MASTERS_MODULE,
                 entity_type="terms_template",
                 entity_id=row.id,
                 new_values=_terms_template_snapshot(row),
@@ -412,7 +412,7 @@ class TermsTemplateService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=MASTERS_MODULE,
                 entity_type="terms_template",
                 entity_id=row.id,
                 old_values=old_values,
@@ -431,7 +431,7 @@ class TermsTemplateService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=MASTERS_MODULE,
                 entity_type="terms_template",
                 entity_id=template_id,
                 old_values=_terms_template_snapshot(row),
@@ -497,7 +497,7 @@ class DocumentSequenceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=MASTERS_MODULE,
                 entity_type="document_sequence",
                 entity_id=row.id,
                 new_values=_document_sequence_snapshot(row),
@@ -524,7 +524,7 @@ class DocumentSequenceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=MASTERS_MODULE,
                 entity_type="document_sequence",
                 entity_id=row.id,
                 old_values=old_values,
@@ -543,7 +543,7 @@ class DocumentSequenceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=MASTERS_MODULE,
                 entity_type="document_sequence",
                 entity_id=sequence_id,
                 old_values=_document_sequence_snapshot(row),

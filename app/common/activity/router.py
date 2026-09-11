@@ -21,7 +21,7 @@ router = APIRouter(prefix="/activity", tags=["Activity"])
     summary="List per-record activity",
     description=(
         "Paginated audit history for one entity. Requires the owning record's read "
-        "permission (for example `erp.quotation.read`), not `identity.audit_log.read`."
+        "permission (for example `sales.quotation.read`), not `identity.audit_log.read`."
     ),
 )
 async def list_activity(

@@ -213,6 +213,7 @@ class DocumentType(StrEnum):
     PACKAGE = "PACKAGE"
     SHIPMENT = "SHIPMENT"
     SALES_RETURN = "SALES_RETURN"
+    PURCHASE_RETURN = "PURCHASE_RETURN"
     JOURNAL_ENTRY = "JOURNAL_ENTRY"
     CUSTOMER_PAYMENT = "CUSTOMER_PAYMENT"
     SUPPLIER_PAYMENT = "SUPPLIER_PAYMENT"
@@ -358,10 +359,22 @@ class SalesReturnReason(StrEnum):
     OTHER = "OTHER"
 
 
+class PurchaseReturnReason(StrEnum):
+    DAMAGED = "DAMAGED"
+    QUALITY_REJECTION = "QUALITY_REJECTION"
+    WRONG_ITEM = "WRONG_ITEM"
+    OVER_SHIPMENT = "OVER_SHIPMENT"
+    OTHER = "OTHER"
+
+
 class ReturnDisposition(StrEnum):
     RESTOCK = "RESTOCK"
     QC_HOLD = "QC_HOLD"
     SCRAP = "SCRAP"
+
+
+class PurchaseReturnDisposition(StrEnum):
+    RETURN_TO_SUPPLIER = "RETURN_TO_SUPPLIER"
 
 
 class StockAdjustmentReason(StrEnum):
@@ -551,6 +564,7 @@ class AttachmentEntityType(StrEnum):
     DEBIT_NOTE = "DEBIT_NOTE"
     DELIVERY_NOTE = "DELIVERY_NOTE"
     SALES_RETURN = "SALES_RETURN"
+    PURCHASE_RETURN = "PURCHASE_RETURN"
     JOURNAL_ENTRY = "JOURNAL_ENTRY"
     ACCOUNT = "ACCOUNT"
     CUSTOMER_PAYMENT = "CUSTOMER_PAYMENT"

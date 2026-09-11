@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Sequence
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -65,6 +66,67 @@ class ProductService:
 
     async def get(self, tenant_id: UUID, product_id: UUID) -> ProductResponse:
         return ProductResponse.model_validate(await self._require(tenant_id, product_id))
+
+    async def find_by_sku(self, tenant_id: UUID, sku: str) -> ProductResponse | None:
+        token = sku.strip()
+        if not token:
+            return None
+        row = await self.repo.get_by_sku(tenant_id, token)
+        if row is None:
+            return None
+        return ProductResponse.model_validate(row)
+
+    async def import_rows(
+        self,
+        tenant_id: UUID,
+        *,
+        filename: str | None,
+        content: bytes,
+        mapping: builtins.list[object],
+        actor_user_id: UUID,
+    ):
+        from app.common.imex.http import mapping_or_suggested
+        from app.common.imex.schemas import ImexMappingEntry, ImportResult, ImportRowError
+        from app.common.imex.service import mapped_rows, parse_optional_decimal
+
+        entries = [
+            item if isinstance(item, ImexMappingEntry) else ImexMappingEntry.model_validate(item)
+            for item in mapping
+        ]
+        resolved = mapping_or_suggested(
+            "product", filename=filename, content=content, mapping=entries
+        )
+        rows = mapped_rows(filename=filename, content=content, mapping=resolved)
+        created_ids: builtins.list[UUID] = []
+        errors: builtins.list[ImportRowError] = []
+        for index, row in enumerate(rows, start=2):
+            try:
+                sku = (row.get("sku") or "").strip()
+                name = (row.get("name") or "").strip()
+                if not sku or not name:
+                    raise ValidationError("SKU and name are required")
+                created = await self.create(
+                    tenant_id,
+                    ProductCreate(
+                        sku=sku,
+                        name=name,
+                        selling_rate=(
+                            parse_optional_decimal(row.get("selling_rate")) or Decimal("0")
+                        ),
+                        purchase_rate=parse_optional_decimal(row.get("purchase_rate"))
+                        or Decimal("0"),
+                    ),
+                    actor_user_id=actor_user_id,
+                )
+                created_ids.append(created.id)
+            except (ValidationError, DuplicateResourceError, ValueError) as exc:
+                errors.append(ImportRowError(row_number=index, message=str(exc)))
+        return ImportResult(
+            created_ids=created_ids,
+            errors=errors,
+            created_count=len(created_ids),
+            error_count=len(errors),
+        )
 
     async def get_many(
         self, tenant_id: UUID, product_ids: Sequence[UUID]

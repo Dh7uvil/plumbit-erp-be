@@ -21,6 +21,7 @@ _ZERO = Decimal("0")
 SOURCE_GOODS_RECEIPT = "goods_receipt"
 SOURCE_DELIVERY_NOTE = "delivery_note"
 SOURCE_SALES_RETURN = "sales_return"
+SOURCE_PURCHASE_RETURN = "purchase_return"
 SOURCE_QUALITY_INSPECTION = "quality_inspection"
 SOURCE_STOCK_ADJUSTMENT = "stock_adjustment"
 SOURCE_LANDED_COST = "landed_cost"
@@ -139,6 +140,30 @@ class InventoryLedgerService:
             entry_date=entry_date,
             lines=lines,
             narration=f"Sales return {document_number or source_id}",
+            actor_id=actor_id,
+            branch_id=branch_id,
+        )
+
+    async def post_purchase_return(
+        self,
+        tenant_id: UUID,
+        *,
+        source_id: UUID,
+        entry_date: date,
+        amount: Decimal,
+        actor_id: UUID,
+        branch_id: UUID | None = None,
+        document_number: str | None = None,
+    ) -> None:
+        await self._post_pair(
+            tenant_id,
+            source_type=SOURCE_PURCHASE_RETURN,
+            source_id=source_id,
+            entry_date=entry_date,
+            debit_role=AccountSystemRole.GOODS_RECEIVED_NOT_INVOICED,
+            credit_role=AccountSystemRole.INVENTORY,
+            amount=amount,
+            narration=f"Purchase return {document_number or source_id}",
             actor_id=actor_id,
             branch_id=branch_id,
         )

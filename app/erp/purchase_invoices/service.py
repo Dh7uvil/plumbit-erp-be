@@ -12,18 +12,20 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
-    ERP_MODULE,
+    LANDED_COST_CREATE,
     PERIOD_OVERRIDE,
     PURCHASE_INVOICE_CANCEL,
     PURCHASE_INVOICE_DELETE,
     PURCHASE_INVOICE_POST,
-    LANDED_COST_CREATE,
+    PURCHASE_MODULE,
     SUPPLIER_PAYMENT_CREATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
 from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
+from app.common.print.schemas import PrintDocumentResponse
+from app.common.print.service import PrintService
 from app.common.registries.purchase_invoice_dependents import registered_probes
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
@@ -35,6 +37,7 @@ from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
     compute_header_totals,
     compute_line_amounts,
+    format_address_snapshot,
     place_of_supply_from_address,
     resolve_line_tax_category,
 )
@@ -192,6 +195,40 @@ class PurchaseInvoiceService:
         await self._attach_landed_cost_remaining(tenant_id, response)
         return response
 
+    async def print_document(
+        self,
+        tenant_id: UUID,
+        invoice_id: UUID,
+        *,
+        template_family: str = "uae",
+    ) -> PrintDocumentResponse:
+        row = await self.get(tenant_id, invoice_id)
+        supplier = await self.suppliers.get(tenant_id, row.supplier_id)
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        printer = PrintService(self.session)
+        family = template_family if template_family in {"uae", "china"} else "uae"
+        return await printer.assemble(
+            tenant_id,
+            document_type=DocumentType.PURCHASE_INVOICE.value,
+            document_id=row.id,
+            document_number=row.document_number,
+            document_date=row.invoice_date,
+            template_family=family,
+            customer_code=supplier.code,
+            customer_name=supplier.name,
+            customer_address=format_address_snapshot(supplier.billing_address),
+            customer_trn=row.supplier_trn or supplier.trn,
+            currency_code=currency.code,
+            subtotal=row.subtotal,
+            tax_amount=row.tax_amount,
+            grand_total=row.grand_total,
+            notes=row.notes,
+            lines=[
+                printer.commercial_line(line, index=index)
+                for index, line in enumerate(row.lines, start=1)
+            ],
+        )
+
     async def create(
         self, tenant_id: UUID, payload: PurchaseInvoiceCreate, *, actor_user_id: UUID
     ) -> PurchaseInvoiceResponse:
@@ -225,7 +262,7 @@ class PurchaseInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="purchase_invoice",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
@@ -321,7 +358,7 @@ class PurchaseInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="purchase_invoice",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
@@ -427,7 +464,7 @@ class PurchaseInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="purchase_invoice",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
@@ -469,7 +506,7 @@ class PurchaseInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="purchase_invoice",
                 entity_id=invoice_id,
                 old_values=old_values,
@@ -498,7 +535,7 @@ class PurchaseInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="purchase_invoice",
                 entity_id=invoice_id,
                 old_values=old_values,
@@ -567,7 +604,7 @@ class PurchaseInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.POST,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="purchase_invoice",
                 entity_id=invoice_id,
                 old_values=old_values,
@@ -575,14 +612,14 @@ class PurchaseInvoiceService:
             )
             await self.outbox.enqueue(
                 tenant_id,
-                event_type="erp.purchase_invoice.posted",
+                event_type="purchase.purchase_invoice.posted",
                 aggregate_type="purchase_invoice",
                 aggregate_id=invoice_id,
                 payload={"purchase_invoice_id": str(invoice_id)},
                 dedupe_key=f"purchase-invoice-posted:{invoice_id}",
             )
             if loaded.purchase_order_id is not None:
-                from app.erp.supplier_payments.service import SupplierPaymentService
+                from app.erp.accounting.supplier_payments.service import SupplierPaymentService
 
                 await SupplierPaymentService(
                     self.session, actor_permissions=self.actor_permissions
@@ -639,7 +676,7 @@ class PurchaseInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CANCEL,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="purchase_invoice",
                 entity_id=invoice_id,
                 old_values=old_values,
@@ -648,7 +685,7 @@ class PurchaseInvoiceService:
             if current == InvoiceDocumentStatus.POSTED:
                 await self.outbox.enqueue(
                     tenant_id,
-                    event_type="erp.purchase_invoice.cancelled",
+                    event_type="purchase.purchase_invoice.cancelled",
                     aggregate_type="purchase_invoice",
                     aggregate_id=invoice_id,
                     payload={"purchase_invoice_id": str(invoice_id)},
@@ -1619,7 +1656,7 @@ class PurchaseInvoiceService:
                     quantity_summary=quantity_summary([line.quantity for line in item.lines]),
                 )
             )
-        from app.erp.supplier_payments.service import SupplierPaymentService
+        from app.erp.accounting.supplier_payments.service import SupplierPaymentService
 
         for payment in await SupplierPaymentService(
             self.session, actor_permissions=self.actor_permissions

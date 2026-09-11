@@ -11,8 +11,9 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
-    INVENTORY_MODULE,
     PERIOD_OVERRIDE,
+    PURCHASE_MODULE,
+    PURCHASE_RETURN_CREATE,
     QUALITY_INSPECTION_APPROVE,
     QUALITY_INSPECTION_UPDATE,
 )
@@ -183,7 +184,7 @@ class QualityInspectionService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=INVENTORY_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="quality_inspection",
                 entity_id=inspection_id,
                 old_values=old_values,
@@ -212,7 +213,7 @@ class QualityInspectionService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=INVENTORY_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="quality_inspection",
                 entity_id=inspection_id,
                 old_values=old_values,
@@ -299,30 +300,34 @@ class QualityInspectionService:
                         unit_id=unit_by_grn_line.get(line.goods_receipt_line_id),
                     )
                 if line.qty_rejected > _ZERO and disposition is not None:
-                    movement_type = (
-                        StockMovementType.DAMAGE
-                        if disposition == QcDisposition.SCRAP
-                        else StockMovementType.RETURN_OUT
-                    )
-                    result = await self.stock.apply_locked(
-                        tenant_id,
-                        locked,
-                        qty=-line.qty_rejected,
-                        movement_type=movement_type,
-                        source_type=SOURCE_QUALITY_INSPECTION,
-                        source_id=row.id,
-                        source_line_id=line.id,
-                        document_date=row.inspection_date,
-                        notes=line.notes or disposition.value,
-                        occurred_at=occurred_at,
-                        unit_id=unit_by_grn_line.get(line.goods_receipt_line_id),
-                        quality_hold_delta=-line.qty_rejected,
-                    )
-                    if (
-                        disposition == QcDisposition.SCRAP
-                        and result.movement.value is not None
-                    ):
-                        scrap_value += result.movement.value
+                    if disposition == QcDisposition.RETURN_TO_SUPPLIER:
+                        # Leave rejected qty on quality hold. Purchase return posts the stock-out.
+                        pass
+                    else:
+                        movement_type = (
+                            StockMovementType.DAMAGE
+                            if disposition == QcDisposition.SCRAP
+                            else StockMovementType.RETURN_OUT
+                        )
+                        result = await self.stock.apply_locked(
+                            tenant_id,
+                            locked,
+                            qty=-line.qty_rejected,
+                            movement_type=movement_type,
+                            source_type=SOURCE_QUALITY_INSPECTION,
+                            source_id=row.id,
+                            source_line_id=line.id,
+                            document_date=row.inspection_date,
+                            notes=line.notes or disposition.value,
+                            occurred_at=occurred_at,
+                            unit_id=unit_by_grn_line.get(line.goods_receipt_line_id),
+                            quality_hold_delta=-line.qty_rejected,
+                        )
+                        if (
+                            disposition == QcDisposition.SCRAP
+                            and result.movement.value is not None
+                        ):
+                            scrap_value += result.movement.value
                 rework_released = _ZERO
                 if line.qty_rework > _ZERO and disposition == QcDisposition.REWORK_RELEASE:
                     await self.stock.apply_quality_hold_locked(
@@ -369,7 +374,7 @@ class QualityInspectionService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.APPROVE,
-                module=INVENTORY_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="quality_inspection",
                 entity_id=inspection_id,
                 old_values=old_values,
@@ -377,7 +382,7 @@ class QualityInspectionService:
             )
             await self.outbox.enqueue(
                 tenant_id,
-                event_type="inventory.quality_inspection.approved",
+                event_type="purchase.quality_inspection.approved",
                 aggregate_type="quality_inspection",
                 aggregate_id=inspection_id,
                 payload={"quality_inspection_id": str(inspection_id)},
@@ -414,7 +419,7 @@ class QualityInspectionService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CANCEL,
-                module=INVENTORY_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="quality_inspection",
                 entity_id=inspection_id,
                 old_values=old_values,
@@ -471,7 +476,7 @@ class QualityInspectionService:
             tenant_id=tenant_id,
             user_id=actor_user_id,
             action=AuditAction.CREATE,
-            module=INVENTORY_MODULE,
+            module=PURCHASE_MODULE,
             entity_type="quality_inspection",
             entity_id=row.id,
             new_values=await self._snapshot(loaded),
@@ -570,6 +575,10 @@ class QualityInspectionService:
             self.actor_permissions, QUALITY_INSPECTION_UPDATE
         ):
             actions.append("delete")
+        if status == QualityInspectionStatus.APPROVED and has_permission(
+            self.actor_permissions, PURCHASE_RETURN_CREATE
+        ):
+            actions.append("create_purchase_return")
         return actions
 
     def _to_response(self, row: QualityInspection) -> QualityInspectionResponse:

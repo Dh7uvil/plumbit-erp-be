@@ -62,6 +62,37 @@ class CostingRepository:
         result = await self.session.execute(statement)
         return result.scalars().all()
 
+    async def list_positive_fifo_for_source(
+        self,
+        tenant_id: UUID,
+        warehouse_id: UUID,
+        product_id: UUID,
+        *,
+        source_type: str,
+        source_id: UUID,
+        source_line_id: UUID | None = None,
+        for_update: bool = False,
+    ) -> Sequence[StockCostLayer]:
+        criteria = [
+            StockCostLayer.tenant_id == tenant_id,
+            StockCostLayer.warehouse_id == warehouse_id,
+            StockCostLayer.product_id == product_id,
+            StockCostLayer.source_type == source_type,
+            StockCostLayer.source_id == source_id,
+            StockCostLayer.qty_remaining > _ZERO,
+        ]
+        if source_line_id is not None:
+            criteria.append(StockCostLayer.source_line_id == source_line_id)
+        statement = (
+            select(StockCostLayer)
+            .where(*criteria)
+            .order_by(StockCostLayer.document_date.asc(), StockCostLayer.created_at.asc())
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self.session.execute(statement)
+        return result.scalars().all()
+
     async def list_negative_fifo(
         self,
         tenant_id: UUID,

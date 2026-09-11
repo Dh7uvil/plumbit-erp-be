@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.packing import PackingFields
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.schemas.warnings import DocumentWarning
 from app.core.enums import (
@@ -56,7 +57,7 @@ class SalesInvoiceFilter(BaseFilter):
         return self
 
 
-class SalesInvoiceLineInput(BaseModel):
+class SalesInvoiceLineInput(PackingFields):
     product_id: UUID | None = None
     description: str | None = None
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
@@ -92,7 +93,7 @@ class SalesInvoiceLineInput(BaseModel):
         return self
 
 
-class SalesInvoiceLineResponse(BaseModel):
+class SalesInvoiceLineResponse(PackingFields):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -133,6 +134,8 @@ class SalesInvoiceCreate(BaseModel):
     currency_id: UUID | None = None
     notes: str | None = None
     terms_and_conditions: str | None = None
+    bl_number: str | None = Field(default=None, max_length=80)
+    container_number: str | None = Field(default=None, max_length=80)
     terms_template_id: UUID | None = None
     discount_type: DiscountType | None = None
     discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
@@ -161,6 +164,8 @@ class SalesInvoiceUpdate(BaseModel):
     currency_id: UUID | None = None
     notes: str | None = None
     terms_and_conditions: str | None = None
+    bl_number: str | None = Field(default=None, max_length=80)
+    container_number: str | None = Field(default=None, max_length=80)
     discount_type: DiscountType | None = None
     discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     shipping_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
@@ -248,6 +253,8 @@ class SalesInvoiceResponse(BaseModel):
     ship_to_snapshot: str | None
     notes: str | None
     terms_and_conditions: str | None
+    bl_number: str | None = None
+    container_number: str | None = None
     amount_paid: Decimal
     amount_credited: Decimal
     balance_due: Decimal

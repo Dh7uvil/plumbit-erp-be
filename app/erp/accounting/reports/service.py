@@ -10,6 +10,8 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.common.registries.unposted_documents import registered_probes
+from app.common.schemas.pagination import PageParams
 from app.common.utils.currency import quantize_money
 from app.common.utils.datetime import utcnow
 from app.common.utils.export_evidence import has_export_evidence
@@ -21,6 +23,8 @@ from app.core.enums import (
     JournalEntryStatus,
     OpenItemType,
     PartyType,
+    PurchaseOrderStatus,
+    StockDocumentStatus,
 )
 from app.core.exceptions import ValidationError
 from app.crm.customers.models import Customer
@@ -34,6 +38,9 @@ from app.erp.accounting.reports.schemas import (
     AgingBucketTotals,
     AgingPartyRow,
     AgingResponse,
+    DashboardCreditBreach,
+    DashboardResponse,
+    DashboardUnpostedCount,
     ExportEvidenceExceptionLine,
     ExportEvidenceExceptionResponse,
     GeneralLedgerLine,
@@ -43,6 +50,10 @@ from app.erp.accounting.reports.schemas import (
     OutstandingSummary,
     PartyStatementLine,
     PartyStatementResponse,
+    ReceivedNotBilledLine,
+    ReceivedNotBilledResponse,
+    ThreeWayMatchLine,
+    ThreeWayMatchResponse,
     TrialBalanceLine,
     TrialBalanceResponse,
 )
@@ -386,6 +397,266 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             ]
         )
 
+    async def received_not_billed(self, tenant_id: UUID) -> ReceivedNotBilledResponse:
+        from app.inventory_management.goods_receipts.models import GoodsReceipt, GoodsReceiptLine
+
+        outstanding = GoodsReceiptLine.quantity - GoodsReceiptLine.qty_billed
+        statement = (
+            select(
+                GoodsReceipt.id,
+                GoodsReceiptLine.id,
+                GoodsReceipt.document_number,
+                GoodsReceipt.document_date,
+                GoodsReceipt.supplier_id,
+                Customer.name,
+                GoodsReceiptLine.product_id,
+                GoodsReceiptLine.description,
+                GoodsReceiptLine.quantity,
+                GoodsReceiptLine.qty_billed,
+                outstanding,
+                GoodsReceiptLine.rate,
+            )
+            .select_from(GoodsReceiptLine)
+            .join(GoodsReceipt, GoodsReceipt.id == GoodsReceiptLine.goods_receipt_id)
+            .join(Customer, Customer.id == GoodsReceipt.supplier_id)
+            .where(
+                GoodsReceipt.tenant_id == tenant_id,
+                GoodsReceipt.deleted_at.is_(None),
+                GoodsReceipt.status == StockDocumentStatus.POSTED.value,
+                GoodsReceiptLine.tenant_id == tenant_id,
+                outstanding > _ZERO,
+            )
+            .order_by(
+                GoodsReceipt.document_date,
+                GoodsReceipt.document_number,
+                GoodsReceiptLine.line_number,
+            )
+        )
+        rows = (await self.session.execute(statement)).all()
+        return ReceivedNotBilledResponse(
+            lines=[
+                ReceivedNotBilledLine(
+                    goods_receipt_id=row[0],
+                    goods_receipt_line_id=row[1],
+                    document_number=str(row[2]),
+                    document_date=row[3],
+                    supplier_id=row[4],
+                    supplier_name=str(row[5]),
+                    product_id=row[6],
+                    description=str(row[7] or ""),
+                    quantity=row[8],
+                    qty_billed=row[9],
+                    outstanding_qty=row[10],
+                    amount=quantize_money(row[8] * row[11]),
+                )
+                for row in rows
+            ]
+        )
+
+    async def three_way_match(self, tenant_id: UUID) -> ThreeWayMatchResponse:
+        from app.erp.purchase_invoices.models import PurchaseInvoice, PurchaseInvoiceLine
+        from app.erp.purchase_orders.models import PurchaseOrder, PurchaseOrderLine
+
+        billed_qty = func.coalesce(
+            select(func.coalesce(func.sum(PurchaseInvoiceLine.quantity), _ZERO))
+            .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.purchase_invoice_id)
+            .where(
+                PurchaseInvoiceLine.purchase_order_line_id == PurchaseOrderLine.id,
+                PurchaseInvoice.tenant_id == tenant_id,
+                PurchaseInvoice.deleted_at.is_(None),
+                PurchaseInvoice.status == InvoiceDocumentStatus.POSTED.value,
+                PurchaseInvoiceLine.tenant_id == tenant_id,
+            )
+            .correlate(PurchaseOrderLine)
+            .scalar_subquery(),
+            _ZERO,
+        )
+        billed_value = func.coalesce(
+            select(func.coalesce(func.sum(PurchaseInvoiceLine.amount), _ZERO))
+            .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.purchase_invoice_id)
+            .where(
+                PurchaseInvoiceLine.purchase_order_line_id == PurchaseOrderLine.id,
+                PurchaseInvoice.tenant_id == tenant_id,
+                PurchaseInvoice.deleted_at.is_(None),
+                PurchaseInvoice.status == InvoiceDocumentStatus.POSTED.value,
+                PurchaseInvoiceLine.tenant_id == tenant_id,
+            )
+            .correlate(PurchaseOrderLine)
+            .scalar_subquery(),
+            _ZERO,
+        )
+        statement = (
+            select(
+                PurchaseOrder.id,
+                PurchaseOrderLine.id,
+                PurchaseOrder.document_number,
+                PurchaseOrder.order_date,
+                PurchaseOrder.supplier_id,
+                Customer.name,
+                PurchaseOrderLine.product_id,
+                PurchaseOrderLine.description,
+                PurchaseOrderLine.quantity,
+                PurchaseOrderLine.qty_received,
+                billed_qty,
+                PurchaseOrderLine.amount,
+                PurchaseOrderLine.rate,
+                billed_value,
+            )
+            .select_from(PurchaseOrderLine)
+            .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderLine.purchase_order_id)
+            .join(Customer, Customer.id == PurchaseOrder.supplier_id)
+            .where(
+                PurchaseOrder.tenant_id == tenant_id,
+                PurchaseOrder.deleted_at.is_(None),
+                PurchaseOrder.status.notin_(
+                    (
+                        PurchaseOrderStatus.DRAFT.value,
+                        PurchaseOrderStatus.CANCELLED.value,
+                        PurchaseOrderStatus.REJECTED.value,
+                    )
+                ),
+                PurchaseOrderLine.tenant_id == tenant_id,
+            )
+            .order_by(
+                PurchaseOrder.order_date,
+                PurchaseOrder.document_number,
+                PurchaseOrderLine.line_number,
+            )
+        )
+        rows = (await self.session.execute(statement)).all()
+        lines: list[ThreeWayMatchLine] = []
+        for row in rows:
+            ordered_qty = row[8]
+            received_qty = row[9]
+            billed = row[10]
+            ordered_value = row[11]
+            rate = row[12]
+            billed_amt = row[13]
+            received_value = quantize_money(received_qty * rate)
+            status = self._three_way_status(
+                ordered_qty=ordered_qty,
+                received_qty=received_qty,
+                billed_qty=billed,
+                ordered_rate=rate,
+                billed_value=billed_amt,
+            )
+            lines.append(
+                ThreeWayMatchLine(
+                    purchase_order_id=row[0],
+                    purchase_order_line_id=row[1],
+                    document_number=str(row[2]),
+                    order_date=row[3],
+                    supplier_id=row[4],
+                    supplier_name=str(row[5]),
+                    product_id=row[6],
+                    description=str(row[7] or ""),
+                    ordered_qty=ordered_qty,
+                    received_qty=received_qty,
+                    billed_qty=billed,
+                    ordered_value=ordered_value,
+                    received_value=received_value,
+                    billed_value=billed_amt,
+                    status=status,
+                )
+            )
+        return ThreeWayMatchResponse(lines=lines)
+
+    def _three_way_status(
+        self,
+        *,
+        ordered_qty: Decimal,
+        received_qty: Decimal,
+        billed_qty: Decimal,
+        ordered_rate: Decimal,
+        billed_value: Decimal,
+    ) -> str:
+        if received_qty <= _ZERO:
+            return "UNRECEIVED"
+        if billed_qty <= _ZERO:
+            return "UNBILLED"
+        if ordered_qty != received_qty or received_qty != billed_qty:
+            return "QTY_VARIANCE"
+        if billed_qty > _ZERO:
+            billed_rate = billed_value / billed_qty
+            if abs(billed_rate - ordered_rate) > Decimal("0.01"):
+                return "PRICE_VARIANCE"
+        return "MATCHED"
+
+    async def dashboard(self, tenant_id: UUID, *, as_of: date | None = None) -> DashboardResponse:
+        from app.inventory_management.delivery_notes.models import DeliveryNote
+        from app.inventory_management.goods_receipts.models import GoodsReceipt
+
+        as_of_date = as_of or utcnow().date()
+        ar = await self.ar_aging(tenant_id, as_of=as_of_date)
+        ap = await self.ap_aging(tenant_id, as_of=as_of_date)
+        def _overdue(row: AgingPartyRow) -> Decimal:
+            return row.days_1_30 + row.days_31_60 + row.days_61_90 + row.days_91_plus
+
+        overdue_ar = sum(1 for row in ar.rows if _overdue(row) > _ZERO)
+        overdue_ap = sum(1 for row in ap.rows if _overdue(row) > _ZERO)
+        valuation = await self.stock_valuation(tenant_id, as_of=as_of_date)
+        page = PageParams(page=1, page_size=1)
+        unposted: list[DashboardUnpostedCount] = []
+        for probe in registered_probes():
+            documents, total = await probe(self.session, tenant_id, as_of_date, page)
+            name = documents[0].document_type if documents else "unposted"
+            if total:
+                unposted.append(DashboardUnpostedCount(document_type=name, count=total))
+        deliveries = await self.session.scalar(
+            select(func.count())
+            .select_from(DeliveryNote)
+            .where(
+                DeliveryNote.tenant_id == tenant_id,
+                DeliveryNote.deleted_at.is_(None),
+                DeliveryNote.status == StockDocumentStatus.POSTED.value,
+                DeliveryNote.document_date == as_of_date,
+            )
+        )
+        receipts = await self.session.scalar(
+            select(func.count())
+            .select_from(GoodsReceipt)
+            .where(
+                GoodsReceipt.tenant_id == tenant_id,
+                GoodsReceipt.deleted_at.is_(None),
+                GoodsReceipt.status == StockDocumentStatus.POSTED.value,
+                GoodsReceipt.document_date == as_of_date,
+            )
+        )
+        ar_by_party = {row.party_id: row.total for row in ar.rows}
+        customers = (
+            await self.session.execute(
+                select(Customer).where(
+                    Customer.tenant_id == tenant_id,
+                    Customer.deleted_at.is_(None),
+                    Customer.credit_limit.is_not(None),
+                )
+            )
+        ).scalars().all()
+        breaches: list[DashboardCreditBreach] = []
+        for customer in customers:
+            outstanding = ar_by_party.get(customer.id, _ZERO)
+            if customer.credit_limit is not None and outstanding > customer.credit_limit:
+                breaches.append(
+                    DashboardCreditBreach(
+                        customer_id=customer.id,
+                        customer_name=customer.name,
+                        credit_limit=customer.credit_limit,
+                        outstanding=outstanding,
+                    )
+                )
+        return DashboardResponse(
+            as_of=as_of_date,
+            open_ar=ar.totals.total,
+            open_ap=ap.totals.total,
+            overdue_ar_count=overdue_ar,
+            overdue_ap_count=overdue_ap,
+            stock_valuation=valuation.total_value,
+            unposted=unposted,
+            deliveries_today=int(deliveries or 0),
+            receipts_today=int(receipts or 0),
+            credit_limit_breaches=breaches,
+        )
+
     async def _sum_by_account(
         self,
         tenant_id: UUID,
@@ -668,11 +939,11 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             SUPPLIER_PARTY_ROLE,
             CustomerService,
         )
+        from app.erp.accounting.customer_payments.models import CustomerPayment
+        from app.erp.accounting.supplier_payments.models import SupplierPayment
         from app.erp.credit_notes.models import CreditNote
-        from app.erp.customer_payments.models import CustomerPayment
         from app.erp.debit_notes.models import DebitNote
         from app.erp.purchase_invoices.models import PurchaseInvoice
-        from app.erp.supplier_payments.models import SupplierPayment
 
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")

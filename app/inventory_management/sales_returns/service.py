@@ -11,7 +11,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
-    INVENTORY_MODULE,
+    SALES_MODULE,
     PERIOD_OVERRIDE,
     SALES_RETURN_DELETE,
     SALES_RETURN_POST,
@@ -23,7 +23,9 @@ from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
+from app.common.utils.conversion import quantity_summary
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.core.enums import (
@@ -150,7 +152,9 @@ class SalesReturnService:
     async def get(self, tenant_id: UUID, return_id: UUID) -> SalesReturnResponse:
         row = await self._require(tenant_id, return_id)
         await self._ensure_policy(tenant_id)
-        return self._to_response(row)
+        response = self._to_response(row)
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
 
     async def has_live_for_delivery_note(self, tenant_id: UUID, delivery_note_id: UUID) -> bool:
         return await self.repo.has_live_for_delivery_note(tenant_id, delivery_note_id)
@@ -189,7 +193,7 @@ class SalesReturnService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=INVENTORY_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_return",
                 entity_id=row.id,
                 new_values={"document_number": loaded.document_number},
@@ -224,7 +228,7 @@ class SalesReturnService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=INVENTORY_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_return",
                 entity_id=return_id,
             )
@@ -250,7 +254,7 @@ class SalesReturnService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=INVENTORY_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_return",
                 entity_id=return_id,
             )
@@ -379,14 +383,14 @@ class SalesReturnService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.POST,
-                module=INVENTORY_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_return",
                 entity_id=return_id,
                 new_values={"status": loaded.status},
             )
             await self.outbox.enqueue(
                 tenant_id,
-                event_type="inventory.sales_return.posted",
+                event_type="sales.sales_return.posted",
                 aggregate_type="sales_return",
                 aggregate_id=return_id,
                 payload={"sales_return_id": str(return_id)},
@@ -427,14 +431,14 @@ class SalesReturnService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CANCEL,
-                module=INVENTORY_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_return",
                 entity_id=return_id,
             )
             if current == StockDocumentStatus.POSTED:
                 await self.outbox.enqueue(
                     tenant_id,
-                    event_type="inventory.sales_return.cancelled",
+                    event_type="sales.sales_return.cancelled",
                     aggregate_type="sales_return",
                     aggregate_id=return_id,
                     payload={"sales_return_id": str(return_id)},
@@ -623,6 +627,7 @@ class SalesReturnService:
             cancel_reason=row.cancel_reason,
             available_actions=self._available_actions(status, period_locked=post_blocked),
             period_locked=date_locked,
+            related_documents=[],
             lines=[SalesReturnLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,
@@ -643,6 +648,56 @@ class SalesReturnService:
         ):
             actions.append("delete")
         return actions
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: SalesReturn
+    ) -> builtins.list[RelatedDocumentRef]:
+        from app.erp.credit_notes.repository import CreditNoteRepository
+        from app.erp.sales_orders.repository import SalesOrderRepository
+        from app.inventory_management.delivery_notes.repository import DeliveryNoteRepository
+
+        related: builtins.list[RelatedDocumentRef] = []
+        note = await DeliveryNoteRepository(self.session).get(tenant_id, row.delivery_note_id)
+        if note is not None:
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.DELIVERY_NOTE.value,
+                    document_id=note.id,
+                    document_number=note.document_number,
+                    status=note.status,
+                    relationship="source",
+                    document_date=note.document_date,
+                    quantity_summary=quantity_summary([line.quantity for line in note.lines]),
+                )
+            )
+        order = await SalesOrderRepository(self.session).get(tenant_id, row.sales_order_id)
+        if order is not None:
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.SALES_ORDER.value,
+                    document_id=order.id,
+                    document_number=order.document_number,
+                    status=order.status,
+                    relationship="source",
+                    document_date=order.order_date,
+                    quantity_summary=quantity_summary([line.quantity for line in order.lines]),
+                )
+            )
+        for credit in await CreditNoteRepository(self.session).list_for_sales_return(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.CREDIT_NOTE.value,
+                    document_id=credit.id,
+                    document_number=credit.document_number,
+                    status=credit.status,
+                    relationship="derived",
+                    document_date=credit.credit_note_date,
+                    amount_summary=str(credit.grand_total),
+                )
+            )
+        return related
 
     async def _ensure_policy(self, tenant_id: UUID) -> PeriodLockPolicy:
         if self._period_policy is None:

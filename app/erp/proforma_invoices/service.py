@@ -12,19 +12,22 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
-    ERP_MODULE,
     PROFORMA_INVOICE_CONFIRM,
     PROFORMA_INVOICE_CREATE,
     PROFORMA_INVOICE_DELETE,
     PROFORMA_INVOICE_SEND,
     PROFORMA_INVOICE_UPDATE,
     SALES_INVOICE_CREATE,
+    SALES_MODULE,
     SALES_ORDER_CREATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.outbox.service import OutboxService
+from app.common.print.schemas import PrintDocumentResponse
+from app.common.print.service import PrintService
 from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.packing import packing_persist
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
@@ -266,7 +269,7 @@ class ProformaInvoiceService:
         row = await self._require(tenant_id, proforma_invoice_id)
         response = self._to_response(row, today)
         response.related_documents = await self._related_documents(tenant_id, row)
-        from app.erp.customer_payments.service import CustomerPaymentService
+        from app.erp.accounting.customer_payments.service import CustomerPaymentService
 
         payments = await CustomerPaymentService(
             self.session, actor_permissions=self.actor_permissions
@@ -281,6 +284,157 @@ class ProformaInvoiceService:
         )
         response.advance_outstanding = quantize_money(outstanding)
         return response
+
+    async def print_document(
+        self,
+        tenant_id: UUID,
+        proforma_invoice_id: UUID,
+        *,
+        template_family: str = "uae",
+    ) -> PrintDocumentResponse:
+        row = await self.get(tenant_id, proforma_invoice_id)
+        customer = await self.customers.get(tenant_id, row.customer_id)
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        printer = PrintService(self.session)
+        family = template_family if template_family in {"uae", "china"} else "uae"
+        return await printer.assemble(
+            tenant_id,
+            document_type=DocumentType.PROFORMA_INVOICE.value,
+            document_id=row.id,
+            document_number=row.document_number,
+            document_date=row.document_date,
+            template_family=family,
+            customer_code=customer.code,
+            customer_name=customer.name,
+            customer_address=format_address_snapshot(customer.billing_address),
+            customer_trn=customer.trn,
+            incoterm=row.incoterm.value if row.incoterm else None,
+            incoterm_place=row.incoterm_place,
+            currency_code=currency.code,
+            subtotal=row.subtotal,
+            tax_amount=row.tax_amount,
+            grand_total=row.grand_total,
+            notes=row.notes,
+            lines=[
+                printer.commercial_line(line, index=index)
+                for index, line in enumerate(row.lines, start=1)
+            ],
+        )
+
+    async def import_drafts(
+        self,
+        tenant_id: UUID,
+        *,
+        filename: str | None,
+        content: bytes,
+        mapping: builtins.list[object],
+        actor_user_id: UUID,
+    ) -> object:
+        from app.common.imex.commercial import (
+            group_fill_forward,
+            import_result,
+            load_mapped_rows,
+            packing_kwargs,
+            require_line_quantity,
+        )
+        from app.common.imex.schemas import ImportRowError
+        from app.common.imex.service import parse_optional_date, parse_optional_decimal
+
+        rows = load_mapped_rows(
+            "proforma_invoice", filename=filename, content=content, mapping=mapping
+        )
+        created_ids: builtins.list[UUID] = []
+        errors: builtins.list[ImportRowError] = []
+        for (_key, items) in group_fill_forward(rows, ("customer_name", "document_date")).items():
+            first_row_number, header = items[0]
+            try:
+                customer = await self.customers.find_by_name_or_code(
+                    tenant_id, header.get("customer_name") or ""
+                )
+                if customer is None:
+                    raise ValidationError("Customer not found")
+                currency_id = customer.currency_id
+                currency_code = (header.get("currency_code") or "").strip()
+                if currency_code:
+                    currency = await self.currencies.get_by_code(tenant_id, currency_code)
+                    if currency is None:
+                        raise ValidationError(f"Unknown currency {currency_code}")
+                    currency_id = currency.id
+                incoterm = None
+                token = (header.get("incoterm") or "").strip().upper()
+                if token:
+                    try:
+                        incoterm = Incoterm(token[:3])
+                    except ValueError:
+                        incoterm = None
+                lines: builtins.list[ProformaInvoiceLineInput] = []
+                for _row_number, item in items:
+                    sku = (item.get("line.sku") or "").strip()
+                    product = await self.products.find_by_sku(tenant_id, sku) if sku else None
+                    lines.append(
+                        ProformaInvoiceLineInput(
+                            product_id=product.id if product else None,
+                            quantity=require_line_quantity(item),
+                            rate=parse_optional_decimal(item.get("line.unit_price")),
+                            **packing_kwargs(item, sku=sku),
+                        )
+                    )
+                created = await self.create(
+                    tenant_id,
+                    ProformaInvoiceCreate(
+                        customer_id=customer.id,
+                        proforma_date=parse_optional_date(header.get("document_date")),
+                        currency_id=currency_id,
+                        notes=(header.get("notes") or "").strip() or None,
+                        incoterm=incoterm,
+                        incoterm_place=(header.get("incoterm_place") or "").strip() or None,
+                        lines=lines,
+                    ),
+                    actor_user_id=actor_user_id,
+                )
+                created_ids.append(created.id)
+            except (ValidationError, ValueError) as exc:
+                errors.append(ImportRowError(row_number=first_row_number, message=str(exc)))
+        return import_result(created_ids, errors)
+
+    async def export_rows(
+        self,
+        tenant_id: UUID,
+        *,
+        common_filter: BaseFilter | None = None,
+        status: str | None = None,
+        customer_id: UUID | None = None,
+        branch_id: UUID | None = None,
+        currency_id: UUID | None = None,
+        source_quotation_id: UUID | None = None,
+        source_sales_order_id: UUID | None = None,
+    ) -> builtins.list[builtins.list[object]]:
+        from app.common.imex.commercial import commercial_export_row
+        from app.core.constants import MAX_PAGE_SIZE
+
+        exported: builtins.list[builtins.list[object]] = []
+        page = 1
+        while True:
+            rows, total = await self.list(
+                tenant_id,
+                page=PageParams(page=page, page_size=MAX_PAGE_SIZE),
+                common_filter=common_filter,
+                status=status,
+                customer_id=customer_id,
+                branch_id=branch_id,
+                currency_id=currency_id,
+                source_quotation_id=source_quotation_id,
+                source_sales_order_id=source_sales_order_id,
+            )
+            for row in rows:
+                for line in row.lines:
+                    exported.append(
+                        commercial_export_row(row, line, party_id=row.customer_id)
+                    )
+            if len(rows) < MAX_PAGE_SIZE or page * MAX_PAGE_SIZE >= total:
+                break
+            page += 1
+        return exported
 
     async def compose_defaults(
         self, tenant_id: UUID, customer_id: UUID
@@ -336,7 +490,7 @@ class ProformaInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="proforma_invoice",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
@@ -433,7 +587,7 @@ class ProformaInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="proforma_invoice",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
@@ -553,7 +707,7 @@ class ProformaInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="proforma_invoice",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
@@ -593,7 +747,7 @@ class ProformaInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="proforma_invoice",
                 entity_id=proforma_invoice_id,
                 old_values=old_values,
@@ -630,7 +784,7 @@ class ProformaInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.SEND,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="proforma_invoice",
                 entity_id=row.id,
                 old_values=old_values,
@@ -638,7 +792,7 @@ class ProformaInvoiceService:
             )
             await self.outbox.enqueue(
                 tenant_id,
-                event_type="erp.proforma_invoice.sent",
+                event_type="sales.proforma_invoice.sent",
                 aggregate_type="proforma_invoice",
                 aggregate_id=row.id,
                 payload={"proforma_invoice_id": str(row.id)},
@@ -680,7 +834,7 @@ class ProformaInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CONFIRM,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="proforma_invoice",
                 entity_id=row.id,
                 old_values=old_values,
@@ -688,7 +842,7 @@ class ProformaInvoiceService:
             )
             await self.outbox.enqueue(
                 tenant_id,
-                event_type="erp.proforma_invoice.confirmed",
+                event_type="sales.proforma_invoice.confirmed",
                 aggregate_type="proforma_invoice",
                 aggregate_id=row.id,
                 payload={"proforma_invoice_id": str(row.id)},
@@ -808,7 +962,7 @@ class ProformaInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CLONE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="proforma_invoice",
                 entity_id=row.id,
                 new_values=new_values,
@@ -837,7 +991,7 @@ class ProformaInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="proforma_invoice",
                 entity_id=proforma_invoice_id,
                 old_values=old_values,
@@ -921,7 +1075,7 @@ class ProformaInvoiceService:
             tenant_id=tenant_id,
             user_id=actor_user_id,
             action=AuditAction.CONVERT,
-            module=ERP_MODULE,
+            module=SALES_MODULE,
             entity_type="proforma_invoice",
             entity_id=row.id,
             old_values=old_values,
@@ -973,7 +1127,7 @@ class ProformaInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=action_map[action],
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="proforma_invoice",
                 entity_id=row.id,
                 old_values=old_values,
@@ -1164,6 +1318,7 @@ class ProformaInvoiceService:
                     "source_quotation_line_id": line.source_quotation_line_id,
                     "source_sales_order_line_id": line.source_sales_order_line_id,
                     "qty_converted": _ZERO,
+                    **packing_persist(line),
                 }
             )
             nets.append(net)
@@ -1447,7 +1602,7 @@ class ProformaInvoiceService:
                     quantity_summary=quantity_summary([line.quantity for line in item.lines]),
                 )
             )
-        from app.erp.customer_payments.service import CustomerPaymentService
+        from app.erp.accounting.customer_payments.service import CustomerPaymentService
 
         for payment in await CustomerPaymentService(
             self.session, actor_permissions=self.actor_permissions

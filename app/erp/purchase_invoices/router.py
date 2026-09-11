@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, Request, status
+from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
 
 from app.auth.catalog import (
     PURCHASE_INVOICE_CANCEL,
@@ -19,11 +19,13 @@ from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
 from app.common.idempotency.service import hash_request, require_idempotency_key
+from app.common.print.schemas import PrintDocumentResponse
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
 from app.erp.accounting.open_items.schemas import ApplyCreditsRequest
+from app.erp.accounting.supplier_payments.dependencies import SupplierPaymentServiceDependency
 from app.erp.purchase_invoices.dependencies import PurchaseInvoiceServiceDependency
 from app.erp.purchase_invoices.schemas import (
     PurchaseInvoiceCancelRequest,
@@ -34,7 +36,6 @@ from app.erp.purchase_invoices.schemas import (
     PurchaseInvoiceResponse,
     PurchaseInvoiceUpdate,
 )
-from app.erp.supplier_payments.dependencies import SupplierPaymentServiceDependency
 
 router = APIRouter(prefix="/purchase-invoices", tags=["Purchase Invoices"])
 
@@ -139,6 +140,21 @@ async def get_purchase_invoice(
     _: Annotated[CurrentUser, Depends(require_permission(PURCHASE_INVOICE_READ))],
 ) -> ApiResponse[PurchaseInvoiceResponse]:
     return ApiResponse(data=await service.get(tenant.tenant_id, invoice_id))
+
+
+@router.get("/{invoice_id}/print", response_model=ApiResponse[PrintDocumentResponse])
+async def print_purchase_invoice(
+    invoice_id: UUID,
+    tenant: TenantContextDependency,
+    service: PurchaseInvoiceServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(PURCHASE_INVOICE_READ))],
+    template_family: Annotated[str, Query()] = "uae",
+) -> ApiResponse[PrintDocumentResponse]:
+    return ApiResponse(
+        data=await service.print_document(
+            tenant.tenant_id, invoice_id, template_family=template_family
+        )
+    )
 
 
 @router.patch("/{invoice_id}", response_model=ApiResponse[PurchaseInvoiceResponse])

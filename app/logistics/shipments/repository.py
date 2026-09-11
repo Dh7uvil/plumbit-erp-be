@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.repositories.base import BaseRepository
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
-from app.inventory_management.shipments.models import Shipment
+from app.logistics.shipments.models import Shipment
 
 
 class ShipmentRepository:

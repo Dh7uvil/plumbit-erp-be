@@ -9,9 +9,12 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.catalog import INVENTORY_MODULE, PACKAGE_DELETE, PACKAGE_UPDATE
+from app.auth.catalog import LOGISTICS_MODULE, PACKAGE_DELETE, PACKAGE_UPDATE
 from app.auth.org_service import OrganizationService
+from app.common.print.schemas import PrintDocumentResponse
+from app.common.print.service import PrintService
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.packing import packing_persist
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
@@ -100,6 +103,154 @@ class PackageService:
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
 
+    async def print_document(
+        self,
+        tenant_id: UUID,
+        package_id: UUID,
+        *,
+        template_family: str = "china",
+    ) -> PrintDocumentResponse:
+        from app.common.utils.document_totals import format_address_snapshot
+        from app.crm.customers.service import CustomerService
+
+        row = await self.get(tenant_id, package_id)
+        order = await self.sales_orders.get(tenant_id, row.sales_order_id)
+        customer = await CustomerService(self.session).get(tenant_id, order.customer_id)
+        printer = PrintService(self.session)
+        family = template_family if template_family in {"uae", "china"} else "china"
+        return await printer.assemble(
+            tenant_id,
+            document_type=DocumentType.PACKAGE.value,
+            document_id=row.id,
+            document_number=row.document_number,
+            document_date=order.order_date,
+            template_family=family,
+            customer_code=customer.code,
+            customer_name=customer.name,
+            customer_address=format_address_snapshot(customer.billing_address),
+            customer_trn=customer.trn,
+            lpo_number=order.customer_po_number,
+            notes=row.notes or row.shipping_marks,
+            lines=[
+                printer.commercial_line(line, index=index)
+                for index, line in enumerate(row.lines, start=1)
+            ],
+        )
+
+    async def import_drafts(
+        self,
+        tenant_id: UUID,
+        *,
+        filename: str | None,
+        content: bytes,
+        mapping: builtins.list[object],
+        actor_user_id: UUID,
+    ) -> object:
+        from app.common.imex.commercial import (
+            group_fill_forward,
+            import_result,
+            load_mapped_rows,
+            packing_kwargs,
+            require_line_quantity,
+        )
+        from app.common.imex.schemas import ImportRowError
+        from app.core.constants import MAX_PAGE_SIZE
+
+        rows = load_mapped_rows("package", filename=filename, content=content, mapping=mapping)
+        created_ids: builtins.list[UUID] = []
+        errors: builtins.list[ImportRowError] = []
+        for (_key, items) in group_fill_forward(rows, ("sales_order_number",)).items():
+            first_row_number, header = items[0]
+            try:
+                so_number = (header.get("sales_order_number") or "").strip()
+                if not so_number:
+                    raise ValidationError("Sales order is required")
+                matches, _total = await self.sales_orders.list(
+                    tenant_id,
+                    page=PageParams(page=1, page_size=MAX_PAGE_SIZE),
+                    common_filter=BaseFilter(search=so_number),
+                )
+                order = next(
+                    (item for item in matches if item.document_number == so_number),
+                    None,
+                )
+                if order is None:
+                    raise ValidationError(f"Sales order {so_number} not found")
+                used: set[UUID] = set()
+                lines: builtins.list[PackageLineInput] = []
+                for _row_number, item in items:
+                    sku = (item.get("line.sku") or "").strip()
+                    product = await self.products.find_by_sku(tenant_id, sku) if sku else None
+                    match = None
+                    for so_line in order.lines:
+                        if so_line.id in used:
+                            continue
+                        if product is not None and so_line.product_id == product.id:
+                            match = so_line
+                            break
+                        if (
+                            product is None
+                            and sku
+                            and sku.lower() in (so_line.description or "").lower()
+                        ):
+                            match = so_line
+                            break
+                    if match is None:
+                        raise ValidationError(f"No sales-order line for SKU {sku or '(blank)'}")
+                    used.add(match.id)
+                    packing = packing_kwargs(item, sku=sku)
+                    packing.pop("description", None)
+                    lines.append(
+                        PackageLineInput(
+                            sales_order_line_id=match.id,
+                            product_id=match.product_id,
+                            quantity=require_line_quantity(item),
+                            **packing,
+                        )
+                    )
+                created = await self.create(
+                    tenant_id,
+                    PackageCreate(sales_order_id=order.id, lines=lines),
+                    actor_user_id=actor_user_id,
+                )
+                created_ids.append(created.id)
+            except (ValidationError, ValueError) as exc:
+                errors.append(ImportRowError(row_number=first_row_number, message=str(exc)))
+        return import_result(created_ids, errors)
+
+    async def export_rows(
+        self,
+        tenant_id: UUID,
+        *,
+        common_filter: BaseFilter | None = None,
+        status: str | None = None,
+        sales_order_id: UUID | None = None,
+        delivery_note_id: UUID | None = None,
+    ) -> builtins.list[builtins.list[object]]:
+        from app.common.imex.commercial import commercial_export_row
+        from app.core.constants import MAX_PAGE_SIZE
+
+        exported: builtins.list[builtins.list[object]] = []
+        page = 1
+        while True:
+            rows, total = await self.list(
+                tenant_id,
+                page=PageParams(page=page, page_size=MAX_PAGE_SIZE),
+                common_filter=common_filter,
+                status=status,
+                sales_order_id=sales_order_id,
+                delivery_note_id=delivery_note_id,
+            )
+            for row in rows:
+                for line in row.lines:
+                    exported.append(
+                        commercial_export_row(row, line, party_id=row.sales_order_id)
+                    )
+            if len(rows) < MAX_PAGE_SIZE or page * MAX_PAGE_SIZE >= total:
+                break
+            page += 1
+        return exported
+
     async def create(
         self, tenant_id: UUID, payload: PackageCreate, *, actor_user_id: UUID
     ) -> PackageResponse:
@@ -130,7 +281,7 @@ class PackageService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=INVENTORY_MODULE,
+                module=LOGISTICS_MODULE,
                 entity_type="package",
                 entity_id=row.id,
                 new_values={"document_number": loaded.document_number},
@@ -164,7 +315,7 @@ class PackageService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=INVENTORY_MODULE,
+                module=LOGISTICS_MODULE,
                 entity_type="package",
                 entity_id=package_id,
             )
@@ -189,7 +340,7 @@ class PackageService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=INVENTORY_MODULE,
+                module=LOGISTICS_MODULE,
                 entity_type="package",
                 entity_id=package_id,
             )
@@ -216,7 +367,7 @@ class PackageService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.PACK,
-                module=INVENTORY_MODULE,
+                module=LOGISTICS_MODULE,
                 entity_type="package",
                 entity_id=package_id,
             )
@@ -243,7 +394,7 @@ class PackageService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CANCEL,
-                module=INVENTORY_MODULE,
+                module=LOGISTICS_MODULE,
                 entity_type="package",
                 entity_id=package_id,
             )
@@ -275,7 +426,7 @@ class PackageService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.LINK,
-                module=INVENTORY_MODULE,
+                module=LOGISTICS_MODULE,
                 entity_type="package",
                 entity_id=package_id,
                 new_values={"delivery_note_id": str(delivery_note_id)},
@@ -303,7 +454,7 @@ class PackageService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UNLINK,
-                module=INVENTORY_MODULE,
+                module=LOGISTICS_MODULE,
                 entity_type="package",
                 entity_id=package_id,
             )
@@ -369,6 +520,7 @@ class PackageService:
                     "product_id": product_id,
                     "quantity": quantize_quantity(line.quantity),
                     "unit_id": unit_id,
+                    **packing_persist(line),
                 }
             )
         fiscal_year = await year_for(

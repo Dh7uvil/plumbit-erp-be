@@ -9,7 +9,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.catalog import ERP_MODULE
+from app.auth.catalog import MASTERS_MODULE
 from app.auth.org_service import OrganizationService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
@@ -88,6 +88,12 @@ class CurrencyService:
     async def get(self, tenant_id: UUID, currency_id: UUID) -> CurrencyResponse:
         return CurrencyResponse.model_validate(await self._require(tenant_id, currency_id))
 
+    async def get_by_code(self, tenant_id: UUID, code: str) -> CurrencyResponse | None:
+        row = await self.repo.get_by_code(tenant_id, code.strip().upper())
+        if row is None:
+            return None
+        return CurrencyResponse.model_validate(row)
+
     async def get_base(self, tenant_id: UUID) -> CurrencyResponse:
         row = await self.repo.get_base(tenant_id)
         if row is None:
@@ -123,7 +129,7 @@ class CurrencyService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=MASTERS_MODULE,
                 entity_type="currency",
                 entity_id=row.id,
                 new_values=_currency_snapshot(row),
@@ -157,7 +163,7 @@ class CurrencyService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=MASTERS_MODULE,
                 entity_type="currency",
                 entity_id=updated.id,
                 old_values=old_values,
@@ -182,7 +188,7 @@ class CurrencyService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=MASTERS_MODULE,
                 entity_type="currency",
                 entity_id=currency_id,
                 old_values=_currency_snapshot(row),
@@ -264,7 +270,7 @@ class ExchangeRateService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=action,
-                module=ERP_MODULE,
+                module=MASTERS_MODULE,
                 entity_type="exchange_rate",
                 entity_id=row.id,
                 old_values=old_values,

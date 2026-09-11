@@ -47,6 +47,23 @@ class SupplierService:
     async def get(self, tenant_id: UUID, supplier_id: UUID) -> SupplierResponse:
         return self._to_response(await self._parties.get(tenant_id, supplier_id))
 
+    async def import_rows(
+        self,
+        tenant_id: UUID,
+        *,
+        filename: str | None,
+        content: bytes,
+        mapping: list[object],
+        actor_user_id: UUID,
+    ):
+        return await self._parties.import_rows(
+            tenant_id,
+            filename=filename,
+            content=content,
+            mapping=mapping,
+            actor_user_id=actor_user_id,
+        )
+
     async def create(
         self, tenant_id: UUID, payload: SupplierCreate, *, actor_user_id: UUID
     ) -> SupplierResponse:

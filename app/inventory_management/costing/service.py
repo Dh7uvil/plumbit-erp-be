@@ -152,6 +152,62 @@ class CostingService:
         await self.session.flush()
         return tuple(consumed), quantize_money(total)
 
+    async def consume_from_source(
+        self,
+        tenant_id: UUID,
+        *,
+        warehouse_id: UUID,
+        product_id: UUID,
+        qty: Decimal,
+        movement_id: UUID,
+        original_source_type: str,
+        original_source_id: UUID,
+        original_source_line_id: UUID | None,
+    ) -> tuple[tuple[CostConsumption, ...], Decimal]:
+        """Consume remaining qty from the original inbound layers only, not today's FIFO mix."""
+
+        remaining = quantize_quantity(qty)
+        if remaining <= _ZERO:
+            raise ValidationError("Consume quantity must be positive")
+        layers = await self.repo.list_positive_fifo_for_source(
+            tenant_id,
+            warehouse_id,
+            product_id,
+            source_type=original_source_type,
+            source_id=original_source_id,
+            source_line_id=original_source_line_id,
+            for_update=True,
+        )
+        consumed: list[CostConsumption] = []
+        total = _ZERO
+        for layer in layers:
+            if remaining <= _ZERO:
+                break
+            take = layer.qty_remaining if layer.qty_remaining <= remaining else remaining
+            take = quantize_quantity(take)
+            if take <= _ZERO:
+                continue
+            layer.qty_remaining = quantize_quantity(layer.qty_remaining - take)
+            layer_cost = layer.landed_unit_cost
+            await self.repo.create_consumption(
+                tenant_id,
+                {
+                    "movement_id": movement_id,
+                    "layer_id": layer.id,
+                    "qty": take,
+                    "unit_cost": layer_cost,
+                },
+            )
+            consumed.append(CostConsumption(layer_id=layer.id, qty=take, unit_cost=layer_cost))
+            total += take * layer_cost
+            remaining -= take
+        if remaining > _ZERO:
+            raise ValidationError(
+                "Original receipt layers do not have enough remaining quantity to return"
+            )
+        await self.session.flush()
+        return tuple(consumed), quantize_money(total)
+
     async def offset_negative_layers(
         self,
         tenant_id: UUID,

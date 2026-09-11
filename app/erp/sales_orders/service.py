@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
-    ERP_MODULE,
+    SALES_MODULE,
     PROFORMA_INVOICE_CREATE,
     SALES_ORDER_ACKNOWLEDGE,
     SALES_ORDER_APPROVE,
@@ -249,7 +249,7 @@ class SalesOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_order",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, row),
@@ -371,7 +371,7 @@ class SalesOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_order",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, row),
@@ -505,7 +505,7 @@ class SalesOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_order",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, row),
@@ -578,7 +578,7 @@ class SalesOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_order",
                 entity_id=sales_order_id,
                 old_values=old_values,
@@ -670,7 +670,7 @@ class SalesOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CONFIRM,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_order",
                 entity_id=row.id,
                 old_values=old_values,
@@ -787,7 +787,7 @@ class SalesOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CLONE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_order",
                 entity_id=row.id,
                 new_values=new_values,
@@ -827,7 +827,7 @@ class SalesOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.ACKNOWLEDGE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_order",
                 entity_id=row.id,
                 old_values=old_values,
@@ -835,7 +835,7 @@ class SalesOrderService:
             )
             await self.outbox.enqueue(
                 tenant_id,
-                event_type="erp.sales_order.acknowledged",
+                event_type="sales.sales_order.acknowledged",
                 aggregate_type="sales_order",
                 aggregate_id=row.id,
                 payload={"sales_order_id": str(row.id)},
@@ -890,7 +890,7 @@ class SalesOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_order",
                 entity_id=sales_order_id,
                 old_values=old_values,
@@ -943,7 +943,7 @@ class SalesOrderService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=action_map[action],
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_order",
                 entity_id=row.id,
                 old_values=old_values,
@@ -1154,7 +1154,7 @@ class SalesOrderService:
             QualityInspectionRepository,
         )
         from app.inventory_management.sales_returns.repository import SalesReturnRepository
-        from app.inventory_management.shipments.repository import ShipmentRepository
+        from app.logistics.shipments.repository import ShipmentRepository
 
         row = await self._require(tenant_id, sales_order_id)
         rows: builtins.list[OrderTrackerRow] = []
@@ -1250,6 +1250,51 @@ class SalesOrderService:
                 )
         else:
             rows.append(self._tracker_pending("goods_receipt", DocumentType.GOODS_RECEIPT.value))
+
+        from app.erp.landed_costs.repository import LandedCostRepository
+        from app.inventory_management.purchase_returns.repository import PurchaseReturnRepository
+
+        landed_rows: builtins.list[OrderTrackerRow] = []
+        return_rows: builtins.list[OrderTrackerRow] = []
+        lc_repo = LandedCostRepository(self.session)
+        pr_repo = PurchaseReturnRepository(self.session)
+        for receipt in receipts:
+            for landed in await lc_repo.list_for_goods_receipt(tenant_id, receipt.id):
+                landed_rows.append(
+                    self._tracker_row(
+                        stage="landed_cost",
+                        document_type=DocumentType.LANDED_COST.value,
+                        document_id=landed.id,
+                        document_number=landed.document_number,
+                        status=landed.status,
+                        document_date=landed.document_date,
+                        quantity_summary=None,
+                    )
+                )
+            for item in await pr_repo.list_for_goods_receipt(tenant_id, receipt.id):
+                return_rows.append(
+                    self._tracker_row(
+                        stage="purchase_return",
+                        document_type=DocumentType.PURCHASE_RETURN.value,
+                        document_id=item.id,
+                        document_number=item.document_number,
+                        status=item.status,
+                        document_date=item.document_date,
+                        quantity_summary=self._qty_summary(
+                            [line.quantity for line in item.lines]
+                        ),
+                    )
+                )
+        if landed_rows:
+            rows.extend(landed_rows)
+        elif receipts:
+            rows.append(self._tracker_pending("landed_cost", DocumentType.LANDED_COST.value))
+        if return_rows:
+            rows.extend(return_rows)
+        elif receipts:
+            rows.append(
+                self._tracker_pending("purchase_return", DocumentType.PURCHASE_RETURN.value)
+            )
 
         inspections: builtins.list[OrderTrackerRow] = []
         qc_repo = QualityInspectionRepository(self.session)
@@ -1452,12 +1497,21 @@ class SalesOrderService:
         else:
             rows.append(self._tracker_pending("debit_note", DocumentType.DEBIT_NOTE.value))
 
-        from app.erp.customer_payments.service import CustomerPaymentService
-        from app.erp.supplier_payments.service import SupplierPaymentService
+        from app.erp.accounting.customer_payments.service import CustomerPaymentService
+        from app.erp.accounting.supplier_payments.service import SupplierPaymentService
 
         payments = await CustomerPaymentService(
             self.session, actor_permissions=self.actor_permissions
         ).list_for_sales_order(tenant_id, row.id)
+        seen_receipts: set[UUID] = {payment.id for payment in payments}
+        if row.source_proforma_invoice_id is not None:
+            for payment in await CustomerPaymentService(
+                self.session, actor_permissions=self.actor_permissions
+            ).list_for_proforma_invoice(tenant_id, row.source_proforma_invoice_id):
+                if payment.id in seen_receipts:
+                    continue
+                seen_receipts.add(payment.id)
+                payments.append(payment)
         if payments:
             for payment in payments:
                 rows.append(
@@ -2043,7 +2097,7 @@ class SalesOrderService:
                         ),
                     )
                 )
-        from app.erp.customer_payments.service import CustomerPaymentService
+        from app.erp.accounting.customer_payments.service import CustomerPaymentService
 
         for payment in await CustomerPaymentService(
             self.session, actor_permissions=self.actor_permissions

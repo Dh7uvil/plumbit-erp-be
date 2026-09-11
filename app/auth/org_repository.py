@@ -3,7 +3,7 @@
 from collections.abc import Mapping, Sequence
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import Address, Branch, Department, Employee, Tenant, User
@@ -154,6 +154,50 @@ class OrganizationRepository:
 
     async def get_employee(self, tenant_id: UUID, employee_id: UUID) -> Employee | None:
         return await self.employees.get(tenant_id, employee_id)
+
+    async def list_employees(
+        self,
+        tenant_id: UUID,
+        *,
+        page: PageParams,
+        status: str | None = None,
+        branch_id: UUID | None = None,
+        department_id: UUID | None = None,
+        search: str | None = None,
+    ) -> tuple[Sequence[tuple[Employee, str | None]], int]:
+        conditions = [
+            Employee.tenant_id == tenant_id,
+            Employee.deleted_at.is_(None),
+        ]
+        if status is not None:
+            conditions.append(Employee.status == status)
+        if branch_id is not None:
+            conditions.append(Employee.branch_id == branch_id)
+        if department_id is not None:
+            conditions.append(Employee.department_id == department_id)
+        statement = (
+            select(Employee, User.name)
+            .outerjoin(User, User.id == Employee.user_id)
+            .where(*conditions)
+        )
+        if search:
+            pattern = f"%{search}%"
+            statement = statement.where(
+                or_(
+                    Employee.employee_code.ilike(pattern),
+                    Employee.designation.ilike(pattern),
+                    User.name.ilike(pattern),
+                )
+            )
+        count_statement = select(func.count()).select_from(statement.subquery())
+        total = await self.session.scalar(count_statement)
+        statement = (
+            statement.order_by(Employee.employee_code.asc())
+            .offset(page.offset)
+            .limit(page.page_size)
+        )
+        rows = (await self.session.execute(statement)).all()
+        return [(row[0], row[1]) for row in rows], int(total or 0)
 
     async def create_employee(self, tenant_id: UUID, values: Mapping[str, object]) -> Employee:
         return await self.employees.create(tenant_id, values)

@@ -107,5 +107,10 @@ class PackageLine(TenantModel):
         ForeignKey("units.id", ondelete="RESTRICT"),
         nullable=True,
     )
+    carton_qty: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    packing_unit: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    cbm: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    item_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
     package: Mapped[Package] = relationship(back_populates="lines")

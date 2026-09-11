@@ -38,6 +38,7 @@ class DebitNoteRepository:
                     "status",
                     "supplier_id",
                     "purchase_invoice_id",
+                    "purchase_return_id",
                     "currency_id",
                 }
             ),
@@ -136,6 +137,36 @@ class DebitNoteRepository:
         )
         result = await self.session.execute(statement)
         return result.scalar_one_or_none() is not None
+
+    async def has_live_for_purchase_return(
+        self, tenant_id: UUID, purchase_return_id: UUID
+    ) -> bool:
+        statement = (
+            select(DebitNote.id)
+            .where(
+                DebitNote.tenant_id == tenant_id,
+                DebitNote.purchase_return_id == purchase_return_id,
+                DebitNote.deleted_at.is_(None),
+                DebitNote.status != InvoiceDocumentStatus.CANCELLED.value,
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none() is not None
+
+    async def list_for_purchase_return(
+        self, tenant_id: UUID, purchase_return_id: UUID
+    ) -> builtins.list[DebitNote]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(
+                DebitNote.purchase_return_id == purchase_return_id,
+                DebitNote.status != InvoiceDocumentStatus.CANCELLED.value,
+            )
+            .options(*self._with_children())
+            .order_by(DebitNote.debit_note_date, DebitNote.created_at)
+        )
+        return list((await self.session.execute(statement)).scalars().all())
 
     async def list_for_purchase_invoice(
         self, tenant_id: UUID, purchase_invoice_id: UUID

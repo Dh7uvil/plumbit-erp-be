@@ -17,13 +17,15 @@ from app.auth.catalog import (
     CREDIT_NOTE_CANCEL,
     CREDIT_NOTE_DELETE,
     CREDIT_NOTE_POST,
-    ERP_MODULE,
     PERIOD_OVERRIDE,
+    SALES_MODULE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
 from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
+from app.common.print.schemas import PrintDocumentResponse
+from app.common.print.service import PrintService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
@@ -33,6 +35,7 @@ from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
     compute_header_totals,
     compute_line_amounts,
+    format_address_snapshot,
     place_of_supply_from_address,
     resolve_line_tax_category,
 )
@@ -171,6 +174,40 @@ class CreditNoteService:
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
 
+    async def print_document(
+        self,
+        tenant_id: UUID,
+        credit_note_id: UUID,
+        *,
+        template_family: str = "uae",
+    ) -> PrintDocumentResponse:
+        row = await self.get(tenant_id, credit_note_id)
+        customer = await self.customers.get(tenant_id, row.customer_id)
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        printer = PrintService(self.session)
+        family = template_family if template_family in {"uae", "china"} else "uae"
+        return await printer.assemble(
+            tenant_id,
+            document_type=DocumentType.CREDIT_NOTE.value,
+            document_id=row.id,
+            document_number=row.document_number,
+            document_date=row.credit_note_date,
+            template_family=family,
+            customer_code=customer.code,
+            customer_name=customer.name,
+            customer_address=format_address_snapshot(customer.billing_address),
+            customer_trn=customer.trn,
+            currency_code=currency.code,
+            subtotal=row.subtotal,
+            tax_amount=row.tax_amount,
+            grand_total=row.grand_total,
+            notes=row.notes,
+            lines=[
+                printer.commercial_line(line, index=index)
+                for index, line in enumerate(row.lines, start=1)
+            ],
+        )
+
     async def create(
         self, tenant_id: UUID, payload: CreditNoteCreate, *, actor_user_id: UUID
     ) -> CreditNoteResponse:
@@ -204,7 +241,7 @@ class CreditNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="credit_note",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
@@ -394,7 +431,7 @@ class CreditNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="credit_note",
                 entity_id=credit_note_id,
                 old_values=old_values,
@@ -423,7 +460,7 @@ class CreditNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="credit_note",
                 entity_id=credit_note_id,
                 old_values=old_values,
@@ -498,7 +535,7 @@ class CreditNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.POST,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="credit_note",
                 entity_id=credit_note_id,
                 old_values=old_values,
@@ -506,7 +543,7 @@ class CreditNoteService:
             )
             await self.outbox.enqueue(
                 tenant_id,
-                event_type="erp.credit_note.posted",
+                event_type="sales.credit_note.posted",
                 aggregate_type="credit_note",
                 aggregate_id=credit_note_id,
                 payload={"credit_note_id": str(credit_note_id)},
@@ -557,7 +594,7 @@ class CreditNoteService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CANCEL,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="credit_note",
                 entity_id=credit_note_id,
                 old_values=old_values,
@@ -566,7 +603,7 @@ class CreditNoteService:
             if current == InvoiceDocumentStatus.POSTED:
                 await self.outbox.enqueue(
                     tenant_id,
-                    event_type="erp.credit_note.cancelled",
+                    event_type="sales.credit_note.cancelled",
                     aggregate_type="credit_note",
                     aggregate_id=credit_note_id,
                     payload={"credit_note_id": str(credit_note_id)},
@@ -620,7 +657,7 @@ class CreditNoteService:
             tenant_id=tenant_id,
             user_id=actor_user_id,
             action=AuditAction.CREATE,
-            module=ERP_MODULE,
+            module=SALES_MODULE,
             entity_type="credit_note",
             entity_id=row.id,
             new_values=await self._snapshot(tenant_id, loaded),

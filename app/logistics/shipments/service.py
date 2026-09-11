@@ -9,7 +9,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
-    INVENTORY_MODULE,
+    LOGISTICS_MODULE,
     SHIPMENT_CLOSE,
     SHIPMENT_DELETE,
     SHIPMENT_DISPATCH,
@@ -40,15 +40,15 @@ from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import DocumentSequenceService
 from app.inventory_management.delivery_notes.service import DeliveryNoteService
-from app.inventory_management.shipments.models import Shipment
-from app.inventory_management.shipments.repository import ShipmentRepository
-from app.inventory_management.shipments.schemas import (
+from app.logistics.shipments.models import Shipment
+from app.logistics.shipments.repository import ShipmentRepository
+from app.logistics.shipments.schemas import (
     ShipmentCreate,
     ShipmentResponse,
     ShipmentTrackingUpdate,
     ShipmentUpdate,
 )
-from app.inventory_management.shipments.workflow import (
+from app.logistics.shipments.workflow import (
     assert_editable,
     assert_trackable,
     next_status,
@@ -153,7 +153,7 @@ class ShipmentService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=INVENTORY_MODULE,
+                module=LOGISTICS_MODULE,
                 entity_type="shipment",
                 entity_id=row.id,
                 new_values={"document_number": row.document_number},
@@ -232,7 +232,7 @@ class ShipmentService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=INVENTORY_MODULE,
+                module=LOGISTICS_MODULE,
                 entity_type="shipment",
                 entity_id=shipment_id,
             )
@@ -257,7 +257,7 @@ class ShipmentService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=INVENTORY_MODULE,
+                module=LOGISTICS_MODULE,
                 entity_type="shipment",
                 entity_id=shipment_id,
             )
@@ -325,7 +325,7 @@ class ShipmentService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=INVENTORY_MODULE,
+                module=LOGISTICS_MODULE,
                 entity_type="shipment",
                 entity_id=shipment_id,
                 old_values=old_values,
@@ -354,7 +354,7 @@ class ShipmentService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.LINK,
-                module=INVENTORY_MODULE,
+                module=LOGISTICS_MODULE,
                 entity_type="shipment",
                 entity_id=shipment_id,
                 new_values={"delivery_note_ids": [str(item) for item in delivery_note_ids]},
@@ -379,7 +379,7 @@ class ShipmentService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UNLINK,
-                module=INVENTORY_MODULE,
+                module=LOGISTICS_MODULE,
                 entity_type="shipment",
                 entity_id=shipment_id,
                 new_values={"delivery_note_id": str(delivery_note_id)},
@@ -408,7 +408,7 @@ class ShipmentService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=audit_action,
-                module=INVENTORY_MODULE,
+                module=LOGISTICS_MODULE,
                 entity_type="shipment",
                 entity_id=shipment_id,
             )

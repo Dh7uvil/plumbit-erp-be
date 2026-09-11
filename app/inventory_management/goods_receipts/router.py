@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, Request, status
+from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
 
 from app.auth.catalog import (
     GOODS_RECEIPT_CREATE,
@@ -18,6 +18,7 @@ from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
 from app.common.idempotency.service import hash_request, require_idempotency_key
+from app.common.print.schemas import PrintDocumentResponse
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
@@ -111,6 +112,21 @@ async def get_goods_receipt(
     _: Annotated[CurrentUser, Depends(require_permission(GOODS_RECEIPT_READ))],
 ) -> ApiResponse[GoodsReceiptResponse]:
     return ApiResponse(data=await service.get(tenant.tenant_id, receipt_id))
+
+
+@router.get("/{receipt_id}/print", response_model=ApiResponse[PrintDocumentResponse])
+async def print_goods_receipt(
+    receipt_id: UUID,
+    tenant: TenantContextDependency,
+    service: GoodsReceiptServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(GOODS_RECEIPT_READ))],
+    template_family: Annotated[str, Query()] = "uae",
+) -> ApiResponse[PrintDocumentResponse]:
+    return ApiResponse(
+        data=await service.print_document(
+            tenant.tenant_id, receipt_id, template_family=template_family
+        )
+    )
 
 
 @router.patch("/{receipt_id}", response_model=ApiResponse[GoodsReceiptResponse])

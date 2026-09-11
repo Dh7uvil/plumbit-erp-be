@@ -18,7 +18,7 @@
           "Activity"
         ],
         "summary": "List per-record activity",
-        "description": "Paginated audit history for one entity. Requires the owning record's read permission (for example `erp.quotation.read`), not `identity.audit_log.read`.",
+        "description": "Paginated audit history for one entity. Requires the owning record's read permission (for example `sales.quotation.read`), not `identity.audit_log.read`.",
         "operationId": "list_activity_api_v1_activity_get",
         "security": [
           {

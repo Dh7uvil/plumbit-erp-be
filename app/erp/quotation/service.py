@@ -12,7 +12,6 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
-    ERP_MODULE,
     PROFORMA_INVOICE_CREATE,
     QUOTATION_APPROVE,
     QUOTATION_CREATE,
@@ -21,12 +20,16 @@ from app.auth.catalog import (
     QUOTATION_SEND,
     QUOTATION_UPDATE,
     SALES_INVOICE_CREATE,
+    SALES_MODULE,
     SALES_ORDER_CREATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.outbox.service import OutboxService
+from app.common.print.schemas import PrintDocumentResponse
+from app.common.print.service import PrintService
 from app.common.registries.quotation_dependents import registered_probes
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.packing import packing_persist
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
@@ -49,6 +52,7 @@ from app.core.enums import (
     AuditAction,
     DiscountType,
     DocumentType,
+    Incoterm,
     PlaceOfSupply,
     QuotationStatus,
     TaxCategory,
@@ -176,6 +180,185 @@ class QuotationService:
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
 
+    async def print_document(
+        self,
+        tenant_id: UUID,
+        quotation_id: UUID,
+        *,
+        template_family: str = "uae",
+    ) -> PrintDocumentResponse:
+        row = await self.get(tenant_id, quotation_id)
+        customer = await self.customers.get(tenant_id, row.customer_id)
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        printer = PrintService(self.session)
+        family = template_family if template_family in {"uae", "china"} else "uae"
+        return await printer.assemble(
+            tenant_id,
+            document_type=DocumentType.QUOTATION.value,
+            document_id=row.id,
+            document_number=row.document_number,
+            document_date=row.document_date,
+            template_family=family,
+            customer_code=customer.code,
+            customer_name=customer.name,
+            customer_address=format_address_snapshot(customer.billing_address),
+            customer_trn=customer.trn,
+            incoterm=row.incoterm.value if row.incoterm else None,
+            incoterm_place=row.incoterm_place,
+            currency_code=currency.code,
+            subtotal=row.subtotal,
+            tax_amount=row.tax_amount,
+            grand_total=row.grand_total,
+            notes=row.notes,
+            lines=[
+                printer.commercial_line(line, index=index)
+                for index, line in enumerate(row.lines, start=1)
+            ],
+        )
+
+    async def import_drafts(
+        self,
+        tenant_id: UUID,
+        *,
+        filename: str | None,
+        content: bytes,
+        mapping: builtins.list[object],
+        actor_user_id: UUID,
+    ) -> object:
+        from app.common.imex.http import mapping_or_suggested
+        from app.common.imex.schemas import ImexMappingEntry, ImportResult, ImportRowError
+        from app.common.imex.service import mapped_rows, parse_optional_date, parse_optional_decimal
+
+        entries = [
+            item if isinstance(item, ImexMappingEntry) else ImexMappingEntry.model_validate(item)
+            for item in mapping
+        ]
+        resolved = mapping_or_suggested(
+            "quotation", filename=filename, content=content, mapping=entries
+        )
+        rows = mapped_rows(filename=filename, content=content, mapping=resolved)
+        created_ids: builtins.list[UUID] = []
+        errors: builtins.list[ImportRowError] = []
+        groups: dict[tuple[str, str], builtins.list[tuple[int, dict[str, str]]]] = {}
+        last_customer = ""
+        last_date = ""
+        for index, row in enumerate(rows, start=2):
+            customer_name = (row.get("customer_name") or "").strip() or last_customer
+            document_date = (row.get("document_date") or "").strip() or last_date
+            last_customer = customer_name
+            last_date = document_date
+            groups.setdefault((customer_name.lower(), document_date), []).append((index, row))
+        for (_key, items) in groups.items():
+            first_row_number, header = items[0]
+            try:
+                customer = await self.customers.find_by_name_or_code(
+                    tenant_id, header.get("customer_name") or ""
+                )
+                if customer is None:
+                    raise ValidationError("Customer not found")
+                currency_id = customer.currency_id
+                currency_code = (header.get("currency_code") or "").strip()
+                if currency_code:
+                    currency = await self.currencies.get_by_code(tenant_id, currency_code)
+                    if currency is None:
+                        raise ValidationError(f"Unknown currency {currency_code}")
+                    currency_id = currency.id
+                incoterm = None
+                token = (header.get("incoterm") or "").strip().upper()
+                if token:
+                    try:
+                        incoterm = Incoterm(token[:3])
+                    except ValueError:
+                        incoterm = None
+                lines: builtins.list[QuotationLineInput] = []
+                for _row_number, item in items:
+                    sku = (item.get("line.sku") or "").strip()
+                    product = await self.products.find_by_sku(tenant_id, sku) if sku else None
+                    qty = parse_optional_decimal(item.get("line.quantity"))
+                    if qty is None or qty <= _ZERO:
+                        raise ValidationError("Each line requires a quantity")
+                    lines.append(
+                        QuotationLineInput(
+                            product_id=product.id if product else None,
+                            description=(item.get("line.description") or "").strip() or sku or None,
+                            quantity=qty,
+                            rate=parse_optional_decimal(item.get("line.unit_price")),
+                            carton_qty=parse_optional_decimal(item.get("line.carton_qty")),
+                            packing_unit=(item.get("line.packing_unit") or "").strip() or None,
+                            cbm=parse_optional_decimal(item.get("line.cbm")),
+                            weight=parse_optional_decimal(item.get("line.weight")),
+                            item_code=(item.get("line.item_code") or sku or None),
+                        )
+                    )
+                created = await self.create(
+                    tenant_id,
+                    QuotationCreate(
+                        customer_id=customer.id,
+                        quote_date=parse_optional_date(header.get("document_date")),
+                        currency_id=currency_id,
+                        notes=(header.get("notes") or "").strip() or None,
+                        incoterm=incoterm,
+                        incoterm_place=(header.get("incoterm_place") or "").strip() or None,
+                        lines=lines,
+                    ),
+                    actor_user_id=actor_user_id,
+                )
+                created_ids.append(created.id)
+            except (ValidationError, ValueError) as exc:
+                errors.append(ImportRowError(row_number=first_row_number, message=str(exc)))
+        return ImportResult(
+            created_ids=created_ids,
+            errors=errors,
+            created_count=len(created_ids),
+            error_count=len(errors),
+        )
+
+    async def export_rows(
+        self,
+        tenant_id: UUID,
+        *,
+        common_filter: BaseFilter | None = None,
+        status: str | None = None,
+        customer_id: UUID | None = None,
+        branch_id: UUID | None = None,
+        currency_id: UUID | None = None,
+    ) -> builtins.list[builtins.list[object]]:
+        from app.core.constants import MAX_PAGE_SIZE
+
+        exported: builtins.list[builtins.list[object]] = []
+        page = 1
+        while True:
+            rows, total = await self.list(
+                tenant_id,
+                page=PageParams(page=page, page_size=MAX_PAGE_SIZE),
+                common_filter=common_filter,
+                status=status,
+                customer_id=customer_id,
+                branch_id=branch_id,
+                currency_id=currency_id,
+            )
+            for row in rows:
+                for line in row.lines:
+                    exported.append(
+                        [
+                            row.document_number,
+                            row.document_date.isoformat(),
+                            str(row.customer_id),
+                            line.item_code or "",
+                            line.description,
+                            str(line.quantity),
+                            str(line.rate),
+                            str(line.carton_qty or ""),
+                            line.packing_unit or "",
+                            str(line.cbm or ""),
+                            str(line.weight or ""),
+                        ]
+                    )
+            if len(rows) < MAX_PAGE_SIZE or page * MAX_PAGE_SIZE >= total:
+                break
+            page += 1
+        return exported
+
     async def compose_defaults(
         self, tenant_id: UUID, customer_id: UUID
     ) -> QuotationComposeDefaults:
@@ -228,7 +411,7 @@ class QuotationService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="quotation",
                 entity_id=row.id,
                 new_values=await self._quotation_snapshot(tenant_id, row),
@@ -263,7 +446,7 @@ class QuotationService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="quotation",
                 entity_id=quotation_id,
                 old_values=old_values,
@@ -333,7 +516,7 @@ class QuotationService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.SEND,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="quotation",
                 entity_id=row.id,
                 old_values=old_values,
@@ -413,7 +596,7 @@ class QuotationService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.REVISE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="quotation",
                 entity_id=row.id,
                 old_values=old_values,
@@ -421,7 +604,7 @@ class QuotationService:
             )
             await self.outbox.enqueue(
                 tenant_id,
-                event_type="erp.quotation.revised",
+                event_type="sales.quotation.revised",
                 aggregate_type="quotation",
                 aggregate_id=row.id,
                 payload={
@@ -519,7 +702,7 @@ class QuotationService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CLONE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="quotation",
                 entity_id=row.id,
                 new_values=new_values,
@@ -550,7 +733,7 @@ class QuotationService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="quotation",
                 entity_id=quotation_id,
                 old_values=old_values,
@@ -604,7 +787,7 @@ class QuotationService:
             tenant_id=tenant_id,
             user_id=actor_user_id,
             action=AuditAction.ACCEPT,
-            module=ERP_MODULE,
+            module=SALES_MODULE,
             entity_type="quotation",
             entity_id=row.id,
             old_values=old_values,
@@ -677,7 +860,7 @@ class QuotationService:
             tenant_id=tenant_id,
             user_id=actor_user_id,
             action=AuditAction.CONVERT,
-            module=ERP_MODULE,
+            module=SALES_MODULE,
             entity_type="quotation",
             entity_id=row.id,
             old_values=old_values,
@@ -723,7 +906,7 @@ class QuotationService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=action_map[action],
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="quotation",
                 entity_id=row.id,
                 old_values=old_values,
@@ -800,6 +983,8 @@ class QuotationService:
             "payment_terms_id": payload.payment_terms_id or customer.payment_terms_id,
             "salesperson_id": payload.salesperson_id or customer.salesperson_id,
             "notes": payload.notes,
+            "incoterm": payload.incoterm.value if payload.incoterm else None,
+            "incoterm_place": payload.incoterm_place,
             "terms_and_conditions": terms_body,
             "bill_to_snapshot": format_address_snapshot(customer.billing_address),
             "ship_to_snapshot": format_address_snapshot(customer.shipping_address),
@@ -893,6 +1078,7 @@ class QuotationService:
                     "tax_amount": tax_amount,
                     "amount": net,
                     "qty_converted": _ZERO,
+                    **packing_persist(line),
                 }
             )
             nets.append(net)
@@ -917,6 +1103,11 @@ class QuotationService:
                     discount_type=DiscountType(line.discount_type) if line.discount_type else None,
                     discount_value=line.discount_value,
                     tax_id=line.tax_id,
+                    carton_qty=line.carton_qty,
+                    packing_unit=line.packing_unit,
+                    cbm=line.cbm,
+                    weight=line.weight,
+                    item_code=line.item_code,
                 )
                 for line in existing.lines
             ]
@@ -932,6 +1123,10 @@ class QuotationService:
             payment_terms_id=values.get("payment_terms_id", existing.payment_terms_id),
             salesperson_id=values.get("salesperson_id", existing.salesperson_id),
             notes=values.get("notes", existing.notes),
+            incoterm=values.get(
+                "incoterm", Incoterm(existing.incoterm) if existing.incoterm else None
+            ),
+            incoterm_place=values.get("incoterm_place", existing.incoterm_place),
             terms_and_conditions=values.get("terms_and_conditions", existing.terms_and_conditions),
             discount_type=values.get(
                 "discount_type",
@@ -1009,6 +1204,8 @@ class QuotationService:
             payment_terms_id=row.payment_terms_id,
             salesperson_id=row.salesperson_id,
             notes=row.notes,
+            incoterm=Incoterm(row.incoterm) if row.incoterm else None,
+            incoterm_place=row.incoterm_place,
             terms_and_conditions=row.terms_and_conditions,
             bill_to_snapshot=row.bill_to_snapshot,
             ship_to_snapshot=row.ship_to_snapshot,

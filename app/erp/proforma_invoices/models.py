@@ -268,6 +268,11 @@ class ProformaInvoiceLine(TenantModel):
     )
     qty_converted: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     hs_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    carton_qty: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    packing_unit: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    cbm: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    item_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
     proforma_invoice: Mapped[ProformaInvoice] = relationship(back_populates="lines")
 

@@ -13,19 +13,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
     CUSTOMER_PAYMENT_CREATE,
-    ERP_MODULE,
     PERIOD_OVERRIDE,
     SALES_INVOICE_CANCEL,
     SALES_INVOICE_DELETE,
     SALES_INVOICE_POST,
+    SALES_MODULE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
 from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
+from app.common.print.schemas import PrintDocumentResponse
+from app.common.print.service import PrintService
 from app.common.registries.sales_invoice_dependents import registered_probes
 from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.packing import packing_persist
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.schemas.warnings import DocumentWarning
@@ -212,6 +215,155 @@ class SalesInvoiceService:
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
 
+    async def print_document(
+        self,
+        tenant_id: UUID,
+        invoice_id: UUID,
+        *,
+        template_family: str = "uae",
+    ) -> PrintDocumentResponse:
+        row = await self.get(tenant_id, invoice_id)
+        customer = await self.customers.get(tenant_id, row.customer_id)
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        printer = PrintService(self.session)
+        family = template_family if template_family in {"uae", "china"} else "uae"
+        return await printer.assemble(
+            tenant_id,
+            document_type=DocumentType.SALES_INVOICE.value,
+            document_id=row.id,
+            document_number=row.document_number,
+            document_date=row.invoice_date,
+            template_family=family,
+            customer_code=customer.code,
+            customer_name=customer.name,
+            customer_address=row.bill_to_snapshot,
+            customer_trn=row.customer_trn,
+            bl_number=row.bl_number,
+            container_number=row.container_number,
+            currency_code=currency.code,
+            subtotal=row.subtotal,
+            tax_amount=row.tax_amount,
+            grand_total=row.grand_total,
+            notes=row.notes,
+            lines=[
+                printer.commercial_line(line, index=index)
+                for index, line in enumerate(row.lines, start=1)
+            ],
+        )
+
+    async def import_drafts(
+        self,
+        tenant_id: UUID,
+        *,
+        filename: str | None,
+        content: bytes,
+        mapping: builtins.list[object],
+        actor_user_id: UUID,
+    ) -> object:
+        from app.common.imex.commercial import (
+            group_fill_forward,
+            import_result,
+            load_mapped_rows,
+            packing_kwargs,
+            require_line_quantity,
+        )
+        from app.common.imex.schemas import ImportRowError
+        from app.common.imex.service import parse_optional_date, parse_optional_decimal
+
+        rows = load_mapped_rows(
+            "sales_invoice", filename=filename, content=content, mapping=mapping
+        )
+        created_ids: builtins.list[UUID] = []
+        errors: builtins.list[ImportRowError] = []
+        for (_key, items) in group_fill_forward(rows, ("customer_name", "document_date")).items():
+            first_row_number, header = items[0]
+            try:
+                customer = await self.customers.find_by_name_or_code(
+                    tenant_id, header.get("customer_name") or ""
+                )
+                if customer is None:
+                    raise ValidationError("Customer not found")
+                currency_id = customer.currency_id
+                shipping = parse_optional_decimal(header.get("shipping_amount")) or _ZERO
+                lines: builtins.list[SalesInvoiceLineInput] = []
+                for _row_number, item in items:
+                    sku = (item.get("line.sku") or "").strip()
+                    product = await self.products.find_by_sku(tenant_id, sku) if sku else None
+                    lines.append(
+                        SalesInvoiceLineInput(
+                            product_id=product.id if product else None,
+                            quantity=require_line_quantity(item),
+                            rate=parse_optional_decimal(item.get("line.unit_price")),
+                            **packing_kwargs(item, sku=sku),
+                        )
+                    )
+                created = await self.create(
+                    tenant_id,
+                    SalesInvoiceCreate(
+                        customer_id=customer.id,
+                        invoice_date=parse_optional_date(header.get("document_date")),
+                        currency_id=currency_id,
+                        notes=(header.get("notes") or "").strip() or None,
+                        bl_number=(header.get("bl_number") or "").strip() or None,
+                        container_number=(header.get("container_number") or "").strip()
+                        or None,
+                        shipping_amount=shipping,
+                        lines=lines,
+                    ),
+                    actor_user_id=actor_user_id,
+                )
+                created_ids.append(created.id)
+            except (ValidationError, ValueError) as exc:
+                errors.append(ImportRowError(row_number=first_row_number, message=str(exc)))
+        return import_result(created_ids, errors)
+
+    async def export_rows(
+        self,
+        tenant_id: UUID,
+        *,
+        common_filter: BaseFilter | None = None,
+        status: str | None = None,
+        customer_id: UUID | None = None,
+        sales_order_id: UUID | None = None,
+        source_quotation_id: UUID | None = None,
+        source_proforma_invoice_id: UUID | None = None,
+        branch_id: UUID | None = None,
+        currency_id: UUID | None = None,
+        payment_status: str | None = None,
+        invoice_date_from: date | None = None,
+        invoice_date_to: date | None = None,
+    ) -> builtins.list[builtins.list[object]]:
+        from app.common.imex.commercial import commercial_export_row
+        from app.core.constants import MAX_PAGE_SIZE
+
+        exported: builtins.list[builtins.list[object]] = []
+        page = 1
+        while True:
+            rows, total = await self.list(
+                tenant_id,
+                page=PageParams(page=page, page_size=MAX_PAGE_SIZE),
+                common_filter=common_filter,
+                status=status,
+                customer_id=customer_id,
+                sales_order_id=sales_order_id,
+                source_quotation_id=source_quotation_id,
+                source_proforma_invoice_id=source_proforma_invoice_id,
+                branch_id=branch_id,
+                currency_id=currency_id,
+                payment_status=payment_status,
+                invoice_date_from=invoice_date_from,
+                invoice_date_to=invoice_date_to,
+            )
+            for row in rows:
+                for line in row.lines:
+                    exported.append(
+                        commercial_export_row(row, line, party_id=row.customer_id)
+                    )
+            if len(rows) < MAX_PAGE_SIZE or page * MAX_PAGE_SIZE >= total:
+                break
+            page += 1
+        return exported
+
     async def create(
         self, tenant_id: UUID, payload: SalesInvoiceCreate, *, actor_user_id: UUID
     ) -> SalesInvoiceResponse:
@@ -245,7 +397,7 @@ class SalesInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_invoice",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
@@ -355,7 +507,7 @@ class SalesInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_invoice",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
@@ -465,7 +617,7 @@ class SalesInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_invoice",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
@@ -595,7 +747,7 @@ class SalesInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_invoice",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
@@ -749,7 +901,7 @@ class SalesInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CREATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_invoice",
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
@@ -791,7 +943,7 @@ class SalesInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_invoice",
                 entity_id=invoice_id,
                 old_values=old_values,
@@ -820,7 +972,7 @@ class SalesInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_invoice",
                 entity_id=invoice_id,
                 old_values=old_values,
@@ -916,7 +1068,7 @@ class SalesInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.POST,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_invoice",
                 entity_id=invoice_id,
                 old_values=old_values,
@@ -924,7 +1076,7 @@ class SalesInvoiceService:
             )
             await self.outbox.enqueue(
                 tenant_id,
-                event_type="erp.sales_invoice.posted",
+                event_type="sales.sales_invoice.posted",
                 aggregate_type="sales_invoice",
                 aggregate_id=invoice_id,
                 payload={"sales_invoice_id": str(invoice_id)},
@@ -939,7 +1091,7 @@ class SalesInvoiceService:
                 dedupe_key=f"einvoice-submit:{invoice_id}",
             )
             if loaded.source_proforma_invoice_id is not None:
-                from app.erp.customer_payments.service import CustomerPaymentService
+                from app.erp.accounting.customer_payments.service import CustomerPaymentService
 
                 await CustomerPaymentService(
                     self.session, actor_permissions=self.actor_permissions
@@ -996,7 +1148,7 @@ class SalesInvoiceService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CANCEL,
-                module=ERP_MODULE,
+                module=SALES_MODULE,
                 entity_type="sales_invoice",
                 entity_id=invoice_id,
                 old_values=old_values,
@@ -1005,7 +1157,7 @@ class SalesInvoiceService:
             if current == InvoiceDocumentStatus.POSTED:
                 await self.outbox.enqueue(
                     tenant_id,
-                    event_type="erp.sales_invoice.cancelled",
+                    event_type="sales.sales_invoice.cancelled",
                     aggregate_type="sales_invoice",
                     aggregate_id=invoice_id,
                     payload={"sales_invoice_id": str(invoice_id)},
@@ -1408,6 +1560,8 @@ class SalesInvoiceService:
             "ship_to_snapshot": format_address_snapshot(customer.shipping_address),
             "notes": payload.notes,
             "terms_and_conditions": terms_body,
+            "bl_number": payload.bl_number,
+            "container_number": payload.container_number,
             "amount_paid": _ZERO,
             "amount_credited": _ZERO,
             "balance_due": grand,
@@ -1500,6 +1654,7 @@ class SalesInvoiceService:
                     "cogs_amount": _ZERO,
                     "cogs_status": CogsStatus.NOT_APPLICABLE.value,
                     "qty_credited": _ZERO,
+                    **packing_persist(line),
                 }
             )
             nets.append(net)
@@ -1544,6 +1699,8 @@ class SalesInvoiceService:
             currency_id=values.get("currency_id", existing.currency_id),
             notes=values.get("notes", existing.notes),
             terms_and_conditions=values.get("terms_and_conditions", existing.terms_and_conditions),
+            bl_number=values.get("bl_number", existing.bl_number),
+            container_number=values.get("container_number", existing.container_number),
             discount_type=(
                 values["discount_type"]
                 if "discount_type" in values
@@ -1575,6 +1732,8 @@ class SalesInvoiceService:
             currency_id=row.currency_id,
             notes=row.notes,
             terms_and_conditions=row.terms_and_conditions,
+            bl_number=row.bl_number,
+            container_number=row.container_number,
             discount_type=DiscountType(row.discount_type) if row.discount_type else None,
             discount_value=row.discount_value,
             shipping_amount=row.shipping_amount,
@@ -1704,6 +1863,8 @@ class SalesInvoiceService:
             ship_to_snapshot=row.ship_to_snapshot,
             notes=row.notes,
             terms_and_conditions=row.terms_and_conditions,
+            bl_number=row.bl_number,
+            container_number=row.container_number,
             amount_paid=row.amount_paid,
             amount_credited=row.amount_credited,
             balance_due=row.balance_due,
@@ -1840,7 +2001,7 @@ class SalesInvoiceService:
                     quantity_summary=quantity_summary([line.quantity for line in item.lines]),
                 )
             )
-        from app.erp.customer_payments.service import CustomerPaymentService
+        from app.erp.accounting.customer_payments.service import CustomerPaymentService
 
         for payment in await CustomerPaymentService(
             self.session, actor_permissions=self.actor_permissions

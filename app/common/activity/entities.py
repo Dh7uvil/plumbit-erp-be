@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from app.auth.catalog import (
     ACCOUNT_READ,
+    ACCOUNTING_MODULE,
     CONTACT_READ,
     CREDIT_NOTE_READ,
     CRM_MODULE,
@@ -13,26 +14,28 @@ from app.auth.catalog import (
     CUSTOMER_PAYMENT_READ,
     DEBIT_NOTE_READ,
     DELIVERY_NOTE_READ,
-    ERP_MODULE,
     GOODS_RECEIPT_READ,
     INVENTORY_MODULE,
     JOURNAL_ENTRY_READ,
     LANDED_COST_READ,
+    LOGISTICS_MODULE,
     PACKAGE_READ,
     PRODUCT_READ,
     PROFORMA_INVOICE_READ,
     PURCHASE_INVOICE_READ,
+    PURCHASE_MODULE,
     PURCHASE_ORDER_READ,
     QUALITY_INSPECTION_READ,
     QUOTATION_READ,
     SALES_INVOICE_READ,
+    SALES_MODULE,
     SALES_ORDER_READ,
     SALES_RETURN_READ,
     SHIPMENT_READ,
     STOCK_ADJUSTMENT_READ,
     STOCK_TRANSFER_READ,
-    SUPPLIER_PRODUCT_READ,
     SUPPLIER_PAYMENT_READ,
+    SUPPLIER_PRODUCT_READ,
     SUPPLIER_READ,
 )
 
@@ -146,25 +149,25 @@ class ActivityEntitySpec:
 
 ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
     "quotation": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=SALES_MODULE,
         entity_type="quotation",
         read_permission=QUOTATION_READ,
         changed_fields=_QUOTATION_FIELDS | frozenset({"revision_number", "revision_reason"}),
     ),
     "proforma_invoice": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=SALES_MODULE,
         entity_type="proforma_invoice",
         read_permission=PROFORMA_INVOICE_READ,
         changed_fields=_PROFORMA_INVOICE_FIELDS,
     ),
     "sales_order": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=SALES_MODULE,
         entity_type="sales_order",
         read_permission=SALES_ORDER_READ,
         changed_fields=_SALES_ORDER_FIELDS,
     ),
     "sales_invoice": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=SALES_MODULE,
         entity_type="sales_invoice",
         read_permission=SALES_INVOICE_READ,
         changed_fields=_DOCUMENT_MONEY_FIELDS
@@ -181,13 +184,13 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         ),
     ),
     "purchase_order": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=PURCHASE_MODULE,
         entity_type="purchase_order",
         read_permission=PURCHASE_ORDER_READ,
         changed_fields=_PURCHASE_ORDER_FIELDS,
     ),
     "purchase_invoice": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=PURCHASE_MODULE,
         entity_type="purchase_invoice",
         read_permission=PURCHASE_INVOICE_READ,
         changed_fields=_DOCUMENT_MONEY_FIELDS
@@ -204,7 +207,7 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         ),
     ),
     "credit_note": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=SALES_MODULE,
         entity_type="credit_note",
         read_permission=CREDIT_NOTE_READ,
         changed_fields=_DOCUMENT_MONEY_FIELDS
@@ -219,7 +222,7 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         ),
     ),
     "debit_note": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=PURCHASE_MODULE,
         entity_type="debit_note",
         read_permission=DEBIT_NOTE_READ,
         changed_fields=_DOCUMENT_MONEY_FIELDS
@@ -246,7 +249,7 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         changed_fields=_STOCK_FIELDS | frozenset({"warehouse", "reason"}),
     ),
     "goods_receipt": ActivityEntitySpec(
-        module=INVENTORY_MODULE,
+        module=PURCHASE_MODULE,
         entity_type="goods_receipt",
         read_permission=GOODS_RECEIPT_READ,
         changed_fields=_STOCK_FIELDS
@@ -263,7 +266,7 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         ),
     ),
     "quality_inspection": ActivityEntitySpec(
-        module=INVENTORY_MODULE,
+        module=PURCHASE_MODULE,
         entity_type="quality_inspection",
         read_permission=QUALITY_INSPECTION_READ,
         changed_fields=frozenset(
@@ -278,7 +281,7 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         ),
     ),
     "delivery_note": ActivityEntitySpec(
-        module=INVENTORY_MODULE,
+        module=SALES_MODULE,
         entity_type="delivery_note",
         read_permission=DELIVERY_NOTE_READ,
         changed_fields=_STOCK_FIELDS
@@ -293,7 +296,7 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         ),
     ),
     "sales_return": ActivityEntitySpec(
-        module=INVENTORY_MODULE,
+        module=SALES_MODULE,
         entity_type="sales_return",
         read_permission=SALES_RETURN_READ,
         changed_fields=_STOCK_FIELDS
@@ -308,14 +311,14 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         ),
     ),
     "package": ActivityEntitySpec(
-        module=INVENTORY_MODULE,
+        module=LOGISTICS_MODULE,
         entity_type="package",
         read_permission=PACKAGE_READ,
         changed_fields=_STOCK_FIELDS
         | frozenset({"sales_order", "warehouse", "package_type", "gross_weight"}),
     ),
     "shipment": ActivityEntitySpec(
-        module=INVENTORY_MODULE,
+        module=LOGISTICS_MODULE,
         entity_type="shipment",
         read_permission=SHIPMENT_READ,
         changed_fields=_STOCK_FIELDS
@@ -336,13 +339,13 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         changed_fields=_PARTY_FIELDS,
     ),
     "supplier": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=PURCHASE_MODULE,
         entity_type="supplier",
         read_permission=SUPPLIER_READ,
         changed_fields=_PARTY_FIELDS,
     ),
     "supplier_product": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=PURCHASE_MODULE,
         entity_type="supplier_product",
         read_permission=SUPPLIER_PRODUCT_READ,
         changed_fields=frozenset(
@@ -383,7 +386,7 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         changed_fields=frozenset({"name", "email", "phone", "is_primary"}),
     ),
     "account": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=ACCOUNTING_MODULE,
         entity_type="account",
         read_permission=ACCOUNT_READ,
         changed_fields=frozenset(
@@ -400,14 +403,14 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         ),
     ),
     "journal_entry": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=ACCOUNTING_MODULE,
         entity_type="journal_entry",
         read_permission=JOURNAL_ENTRY_READ,
         changed_fields=_STOCK_FIELDS
         | frozenset({"entry_date", "narration", "journal_type", "total_debit_base", "total_credit_base"}),
     ),
     "customer_payment": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=SALES_MODULE,
         entity_type="customer_payment",
         read_permission=CUSTOMER_PAYMENT_READ,
         changed_fields=frozenset(
@@ -428,7 +431,7 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         ),
     ),
     "supplier_payment": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=PURCHASE_MODULE,
         entity_type="supplier_payment",
         read_permission=SUPPLIER_PAYMENT_READ,
         changed_fields=frozenset(
@@ -449,7 +452,7 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         ),
     ),
     "landed_cost": ActivityEntitySpec(
-        module=ERP_MODULE,
+        module=PURCHASE_MODULE,
         entity_type="landed_cost",
         read_permission=LANDED_COST_READ,
         changed_fields=frozenset(

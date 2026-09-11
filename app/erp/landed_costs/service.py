@@ -11,7 +11,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
-    ERP_MODULE,
+    PURCHASE_MODULE,
     LANDED_COST_CANCEL,
     LANDED_COST_POST,
     LANDED_COST_UPDATE,
@@ -224,7 +224,7 @@ class LandedCostService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.UPDATE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="landed_cost",
                 entity_id=landed_cost_id,
                 old_values=old_values,
@@ -250,7 +250,7 @@ class LandedCostService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.DELETE,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="landed_cost",
                 entity_id=landed_cost_id,
                 old_values=await self._snapshot(row),
@@ -313,7 +313,7 @@ class LandedCostService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.POST,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="landed_cost",
                 entity_id=landed_cost_id,
                 old_values=old_values,
@@ -321,7 +321,7 @@ class LandedCostService:
             )
             await self.outbox.enqueue(
                 tenant_id,
-                event_type="erp.landed_cost.posted",
+                event_type="purchase.landed_cost.posted",
                 aggregate_type="landed_cost",
                 aggregate_id=landed_cost_id,
                 payload={
@@ -375,7 +375,7 @@ class LandedCostService:
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
                 action=AuditAction.CANCEL,
-                module=ERP_MODULE,
+                module=PURCHASE_MODULE,
                 entity_type="landed_cost",
                 entity_id=landed_cost_id,
                 old_values=old_values,
@@ -384,7 +384,7 @@ class LandedCostService:
             if current == StockDocumentStatus.POSTED:
                 await self.outbox.enqueue(
                     tenant_id,
-                    event_type="erp.landed_cost.cancelled",
+                    event_type="purchase.landed_cost.cancelled",
                     aggregate_type="landed_cost",
                     aggregate_id=landed_cost_id,
                     payload={"landed_cost_id": str(landed_cost_id)},
@@ -478,7 +478,7 @@ class LandedCostService:
             tenant_id=tenant_id,
             user_id=actor_user_id,
             action=AuditAction.CREATE,
-            module=ERP_MODULE,
+            module=PURCHASE_MODULE,
             entity_type="landed_cost",
             entity_id=row.id,
             new_values=await self._snapshot(loaded),
@@ -915,7 +915,7 @@ class LandedCostService:
     ) -> builtins.list[RelatedDocumentRef]:
         from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
         from app.inventory_management.goods_receipts.repository import GoodsReceiptRepository
-        from app.inventory_management.shipments.repository import ShipmentRepository
+        from app.logistics.shipments.repository import ShipmentRepository
 
         related: builtins.list[RelatedDocumentRef] = []
         if row.shipment_id is not None:

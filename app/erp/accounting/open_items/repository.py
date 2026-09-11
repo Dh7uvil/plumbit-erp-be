@@ -10,8 +10,8 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.enums import InvoiceDocumentStatus, PaymentAllocationSource
 from app.erp.accounting.open_items.models import PaymentAllocation
-from app.erp.customer_payments.models import CustomerPayment
-from app.erp.supplier_payments.models import SupplierPayment
+from app.erp.accounting.customer_payments.models import CustomerPayment
+from app.erp.accounting.supplier_payments.models import SupplierPayment
 
 _ZERO = Decimal("0")
 _NOTE_SOURCES = (

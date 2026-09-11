@@ -314,14 +314,19 @@ class BalanceSheetLine(BaseModel):
     account_type: str
     account_subtype: str
     amount: Decimal
+    comparative_amount: Decimal | None = None
 
 
 class BalanceSheetResponse(BaseModel):
     as_of: date
+    comparative_as_of: date | None = None
     total_assets: Decimal
     total_liabilities: Decimal
     total_equity: Decimal
     current_earnings: Decimal
+    comparative_total_assets: Decimal | None = None
+    comparative_total_liabilities: Decimal | None = None
+    comparative_total_equity: Decimal | None = None
     is_balanced: bool
     lines: list[BalanceSheetLine] = Field(default_factory=list)
 
@@ -330,16 +335,20 @@ class CashFlowLine(BaseModel):
     key: str
     label: str
     amount: Decimal
+    comparative_amount: Decimal | None = None
     account_id: UUID | None = None
 
 
 class CashFlowResponse(BaseModel):
     from_date: date
     to_date: date
+    comparative_from: date | None = None
+    comparative_to: date | None = None
     net_profit: Decimal
     cash_opening: Decimal
     cash_closing: Decimal
     net_change: Decimal
+    comparative_net_change: Decimal | None = None
     lines: list[CashFlowLine] = Field(default_factory=list)
 
 
@@ -385,3 +394,69 @@ class Vat201Response(BaseModel):
     recoverable_input_vat: Decimal
     net_vat: Decimal
     export_evidence_exceptions: int
+
+
+class ThreeWayMatchLine(BaseModel):
+    purchase_order_id: UUID
+    purchase_order_line_id: UUID
+    document_number: str
+    order_date: date
+    supplier_id: UUID
+    supplier_name: str
+    product_id: UUID | None
+    description: str
+    ordered_qty: Decimal
+    received_qty: Decimal
+    billed_qty: Decimal
+    ordered_value: Decimal
+    received_value: Decimal
+    billed_value: Decimal
+    status: str
+
+
+class ThreeWayMatchResponse(BaseModel):
+    lines: list[ThreeWayMatchLine] = Field(default_factory=list)
+
+
+class ReceivedNotBilledLine(BaseModel):
+    goods_receipt_id: UUID
+    goods_receipt_line_id: UUID
+    document_number: str
+    document_date: date
+    supplier_id: UUID
+    supplier_name: str
+    product_id: UUID | None
+    description: str
+    quantity: Decimal
+    qty_billed: Decimal
+    outstanding_qty: Decimal
+    amount: Decimal
+
+
+class ReceivedNotBilledResponse(BaseModel):
+    lines: list[ReceivedNotBilledLine] = Field(default_factory=list)
+
+
+class DashboardUnpostedCount(BaseModel):
+    document_type: str
+    count: int
+
+
+class DashboardCreditBreach(BaseModel):
+    customer_id: UUID
+    customer_name: str
+    credit_limit: Decimal
+    outstanding: Decimal
+
+
+class DashboardResponse(BaseModel):
+    as_of: date
+    open_ar: Decimal
+    open_ap: Decimal
+    overdue_ar_count: int
+    overdue_ap_count: int
+    stock_valuation: Decimal
+    unposted: list[DashboardUnpostedCount] = Field(default_factory=list)
+    deliveries_today: int
+    receipts_today: int
+    credit_limit_breaches: list[DashboardCreditBreach] = Field(default_factory=list)

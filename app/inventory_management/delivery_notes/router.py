@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, Request, status
+from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
 
 from app.auth.catalog import (
     DELIVERY_NOTE_CREATE,
@@ -18,6 +18,7 @@ from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
 from app.common.idempotency.service import hash_request, require_idempotency_key
+from app.common.print.schemas import PrintDocumentResponse
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
@@ -112,6 +113,21 @@ async def get_delivery_note(
     _: Annotated[CurrentUser, Depends(require_permission(DELIVERY_NOTE_READ))],
 ) -> ApiResponse[DeliveryNoteResponse]:
     return ApiResponse(data=await service.get(tenant.tenant_id, note_id))
+
+
+@router.get("/{note_id}/print", response_model=ApiResponse[PrintDocumentResponse])
+async def print_delivery_note(
+    note_id: UUID,
+    tenant: TenantContextDependency,
+    service: DeliveryNoteServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(DELIVERY_NOTE_READ))],
+    template_family: Annotated[str, Query()] = "uae",
+) -> ApiResponse[PrintDocumentResponse]:
+    return ApiResponse(
+        data=await service.print_document(
+            tenant.tenant_id, note_id, template_family=template_family
+        )
+    )
 
 
 @router.patch("/{note_id}", response_model=ApiResponse[DeliveryNoteResponse])

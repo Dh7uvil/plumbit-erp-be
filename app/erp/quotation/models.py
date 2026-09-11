@@ -102,6 +102,8 @@ class Quotation(AuditUserMixin, SoftDeleteTenantModel):
         nullable=True,
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    incoterm: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    incoterm_place: Mapped[str | None] = mapped_column(String(120), nullable=True)
     terms_and_conditions: Mapped[str | None] = mapped_column(Text, nullable=True)
     bill_to_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
     ship_to_snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -248,6 +250,17 @@ class QuotationLine(TenantModel):
         nullable=False,
         server_default=text("0"),
     )
+    carton_qty: Mapped[Decimal | None] = mapped_column(
+        Numeric(QUANTITY_PRECISION, QUANTITY_SCALE), nullable=True
+    )
+    packing_unit: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    cbm: Mapped[Decimal | None] = mapped_column(
+        Numeric(QUANTITY_PRECISION, QUANTITY_SCALE), nullable=True
+    )
+    weight: Mapped[Decimal | None] = mapped_column(
+        Numeric(QUANTITY_PRECISION, QUANTITY_SCALE), nullable=True
+    )
+    item_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
     quotation: Mapped[Quotation] = relationship(back_populates="lines")
 

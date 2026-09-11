@@ -26,17 +26,20 @@ from app.erp.accounting.reports.schemas import (
     AgingResponse,
     BalanceSheetResponse,
     CashFlowResponse,
+    DashboardResponse,
     ExportEvidenceExceptionResponse,
     GeneralLedgerResponse,
     InvoicedNotDispatchedResponse,
     PartyStatementResponse,
     ProfitAndLossResponse,
     PurchaseSuggestionResponse,
+    ReceivedNotBilledResponse,
     StockAgingResponse,
     StockMovementReportResponse,
     StockValuationGlResponse,
     StockValuationResponse,
     TaxRegisterResponse,
+    ThreeWayMatchResponse,
     TrialBalanceResponse,
     Vat201Response,
 )
@@ -154,6 +157,43 @@ async def get_invoiced_not_dispatched(
     _: Annotated[CurrentUser, Depends(require_permission(REPORT_TAX))],
 ) -> ApiResponse[InvoicedNotDispatchedResponse]:
     return ApiResponse(data=await service.invoiced_not_dispatched(tenant.tenant_id))
+
+
+@router.get(
+    "/received-not-billed",
+    response_model=ApiResponse[ReceivedNotBilledResponse],
+)
+async def get_received_not_billed(
+    request: Request,
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(REPORT_INVENTORY))],
+    export_format: FormatQuery = None,
+) -> Any:
+    data = await service.received_not_billed(tenant.tenant_id)
+    return _maybe_csv(request, export_format, data, filename="received-not-billed.csv")
+
+
+@router.get("/three-way-match", response_model=ApiResponse[ThreeWayMatchResponse])
+async def get_three_way_match(
+    request: Request,
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(REPORT_INVENTORY))],
+    export_format: FormatQuery = None,
+) -> Any:
+    data = await service.three_way_match(tenant.tenant_id)
+    return _maybe_csv(request, export_format, data, filename="three-way-match.csv")
+
+
+@router.get("/dashboard", response_model=ApiResponse[DashboardResponse])
+async def get_dashboard(
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(REPORT_FINANCIAL))],
+    as_of: date | None = None,
+) -> ApiResponse[DashboardResponse]:
+    return ApiResponse(data=await service.dashboard(tenant.tenant_id, as_of=as_of))
 
 
 @router.get("/ar-aging", response_model=ApiResponse[AgingResponse])

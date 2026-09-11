@@ -78,21 +78,24 @@ from the session — `branch_id` is never a substitute for `tenant_id`.
 
 Use RBAC combined with permission-based authorization. Permissions are formatted as
 `<module>.<resource>.<action>`, where `<module>` is the catalog prefix (`identity`, `crm`,
-`inventory`, `erp`) — not the Python package name:
+`sales`, `purchase`, `logistics`, `inventory`, `accounting`, `reports`, `masters`) — not the
+Python package name:
 
 ```text
 identity.user.read          identity.role.update       identity.organization.update
-identity.attachment.read    erp.quotation.approve      erp.period.lock
-crm.customer.create         inventory.stock.adjust     erp.sales_order.create
-crm.customer.update         inventory.product.read     erp.purchase_invoice.approve
-crm.lead.read               inventory.stock.read       erp.journal_entry.post
-erp.einvoice.submit         erp.einvoice.read          erp.credit_note.create
+identity.attachment.read    sales.quotation.approve    accounting.period.lock
+crm.customer.create         inventory.stock.adjust     sales.sales_order.create
+crm.customer.update         inventory.product.read     purchase.purchase_invoice.approve
+crm.lead.read               inventory.stock.read       accounting.journal_entry.post
+erp.einvoice.submit         erp.einvoice.read          sales.credit_note.create
 ```
 
 Do not invent `users.*` codes. The live catalog in `app/auth/catalog.py` is `identity.*` /
-`crm.*` / `inventory.*` / `erp.*`. Existing tenants get missing catalog rows with
+`crm.*` / `sales.*` / `purchase.*` / `logistics.*` / `inventory.*` / `accounting.*` /
+`reports.*` / `masters.*`. Existing tenants get missing catalog rows with
 `uv run seed-permissions` (role grants are unchanged). Superadmin inherits the full catalog
-via `uv run grant-superadmin-permissions`.
+via `uv run grant-superadmin-permissions`. Alembic 031 remaps historical `erp.*` document
+grants onto the new codes.
 
 A role such as `Sales Manager` is a bundle of those permissions. Authorization is enforced at
 the API/service boundary using the shared permission dependency in `app/common/dependencies/` —
@@ -344,7 +347,7 @@ Setting or advancing a lock is refused while any warehouse has negative on-hand 
 `details.reason=negative_stock_disallowed`). When negatives are allowed, the caller must pass
 `acknowledge_negative_stock` (`details.reason=acknowledgement_required`). Unlocking or clearing
 skips the gate. Locking and unlocking are audited (`entity_type=period_lock`). Changing lock
-columns is permissioned `erp.period.lock`; `erp.period.override` bypasses the transaction lock
+columns is permissioned `accounting.period.lock`; `accounting.period.override` bypasses the transaction lock
 only. Org profile stays `identity.organization.update` and does not write lock dates.
 AI may **flag** unposted documents and anomalies before close; it must not set the lock.
 
@@ -592,7 +595,7 @@ DRAFT  →  POSTED (local ledger)  →  einvoice pending  →  exchanged
   original row.
 
 Inbound: ASP webhook → verified → `DRAFT` purchase invoice for matching against PO/GRN. Never
-auto-post inbound e-bills. Inbound receive may reuse `erp.purchase_invoice.create`. Outbound
+auto-post inbound e-bills. Inbound receive may reuse `purchase.purchase_invoice.create`. Outbound
 uses `erp.einvoice.submit` / `erp.einvoice.read`.
 
 Workers include einvoice submit / poll / inbound webhook. Feature-flag the slice until the

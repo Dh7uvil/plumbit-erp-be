@@ -591,7 +591,7 @@ async def test_available_actions_respect_permissions(client: AsyncClient) -> Non
         headers=headers,
         json={
             "name": f"Quote reader {suffix}",
-            "permission_ids": [codes["erp.quotation.read"], codes["erp.quotation.create"]],
+            "permission_ids": [codes["sales.quotation.read"], codes["sales.quotation.create"]],
         },
     )
     assert role.status_code == 201, role.text

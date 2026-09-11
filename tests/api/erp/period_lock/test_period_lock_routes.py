@@ -283,7 +283,7 @@ async def test_available_actions_drop_post_when_locked(client: AsyncClient) -> N
     product_id = await _create_product(client, headers, ids)
     clerk = await _stock_clerk_headers(client, headers, tenant_id)
     override = await _user_headers(
-        client, headers, tenant_id, codes=_STOCK_CLERK_CODES + ("erp.period.override",)
+        client, headers, tenant_id, codes=_STOCK_CLERK_CODES + ("accounting.period.override",)
     )
     created = await client.post(
         "/api/v1/stock-adjustments",

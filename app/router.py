@@ -9,6 +9,7 @@ from app.common.outbox.router import router as outbox_router
 from app.crm.router import router as crm_router
 from app.erp.router import router as erp_router
 from app.inventory_management.router import router as inventory_management_router
+from app.logistics.router import router as logistics_router
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -21,3 +22,4 @@ api_router.include_router(outbox_router)
 api_router.include_router(crm_router)
 api_router.include_router(erp_router)
 api_router.include_router(inventory_management_router)
+api_router.include_router(logistics_router)
