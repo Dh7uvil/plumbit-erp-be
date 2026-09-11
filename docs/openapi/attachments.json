@@ -654,7 +654,8 @@
           "JOURNAL_ENTRY",
           "ACCOUNT",
           "CUSTOMER_PAYMENT",
-          "SUPPLIER_PAYMENT"
+          "SUPPLIER_PAYMENT",
+          "LANDED_COST"
         ],
         "title": "AttachmentEntityType"
       },

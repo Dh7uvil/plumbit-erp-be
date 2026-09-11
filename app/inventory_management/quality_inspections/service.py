@@ -21,6 +21,7 @@ from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
 from app.common.utils.currency import quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
@@ -123,7 +124,9 @@ class QualityInspectionService:
     async def get(self, tenant_id: UUID, inspection_id: UUID) -> QualityInspectionResponse:
         row = await self._require(tenant_id, inspection_id)
         await self._ensure_policy(tenant_id)
-        return self._to_response(row)
+        response = self._to_response(row)
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
 
     async def create(
         self, tenant_id: UUID, payload: QualityInspectionCreate, *, actor_user_id: UUID
@@ -607,6 +610,23 @@ class QualityInspectionService:
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: QualityInspection
+    ) -> builtins.list[RelatedDocumentRef]:
+        receipt = await self.receipts.repo.get(tenant_id, row.goods_receipt_id)
+        if receipt is None:
+            return []
+        return [
+            RelatedDocumentRef(
+                document_type=DocumentType.GOODS_RECEIPT.value,
+                document_id=receipt.id,
+                document_number=receipt.document_number,
+                status=receipt.status,
+                relationship="source",
+                document_date=receipt.document_date,
+            )
+        ]
 
     async def _ensure_policy(self, tenant_id: UUID) -> PeriodLockPolicy:
         if self._period_policy is None:

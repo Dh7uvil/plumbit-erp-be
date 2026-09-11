@@ -17,6 +17,7 @@ from app.auth.catalog import (
     GOODS_RECEIPT_READ,
     INVENTORY_MODULE,
     JOURNAL_ENTRY_READ,
+    LANDED_COST_READ,
     PACKAGE_READ,
     PRODUCT_READ,
     PROFORMA_INVOICE_READ,
@@ -444,6 +445,22 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
                 "version",
                 "currency",
                 "exchange_rate",
+            }
+        ),
+    ),
+    "landed_cost": ActivityEntitySpec(
+        module=ERP_MODULE,
+        entity_type="landed_cost",
+        read_permission=LANDED_COST_READ,
+        changed_fields=frozenset(
+            {
+                "document_number",
+                "document_date",
+                "allocation_method",
+                "status",
+                "version",
+                "charge_count",
+                "allocation_count",
             }
         ),
     ),

@@ -101,3 +101,27 @@ async def test_warehouse_list_returns_multiple_for_one_tenant(client: AsyncClien
     assert first.json()["data"]["id"] in ids
     assert extra["id"] in ids
     assert listed.json()["meta"]["total"] >= 2
+
+
+@pytest.mark.asyncio
+async def test_warehouse_designated_zone_defaults_false_and_updates(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    suffix = uuid4().hex[:8]
+    created = await client.post(
+        "/api/v1/warehouses",
+        headers=headers,
+        json={"code": f"DZ-{suffix}", "name": f"Zone {suffix}", "is_designated_zone": True},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["data"]["is_designated_zone"] is True
+    updated = await client.patch(
+        f"/api/v1/warehouses/{created.json()['data']['id']}",
+        headers=headers,
+        json={"is_designated_zone": False},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["data"]["is_designated_zone"] is False
+    listed = await client.get("/api/v1/warehouses", headers=headers)
+    main = next(item for item in listed.json()["data"] if item["code"] == "MAIN")
+    assert main["is_designated_zone"] is False

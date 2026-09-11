@@ -98,6 +98,7 @@ class WarehouseService:
                         "phone": payload.phone,
                         "address_id": address_id,
                         "is_default": make_default,
+                        "is_designated_zone": payload.is_designated_zone,
                         "created_by": actor_user_id,
                         "updated_by": actor_user_id,
                     },
@@ -180,6 +181,7 @@ class WarehouseService:
             "name": row.name,
             "phone": row.phone,
             "is_default": row.is_default,
+            "is_designated_zone": row.is_designated_zone,
             "is_active": row.is_active,
         }
         if row.address_id is not None:
@@ -206,6 +208,7 @@ class WarehouseService:
                 phone=row.phone,
                 address=addresses.get(row.address_id) if row.address_id is not None else None,
                 is_default=row.is_default,
+                is_designated_zone=row.is_designated_zone,
                 is_active=row.is_active,
                 created_at=row.created_at,
                 updated_at=row.updated_at,

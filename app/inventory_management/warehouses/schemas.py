@@ -25,6 +25,7 @@ class WarehouseCreate(BaseModel):
     phone: str | None = Field(default=None, max_length=50)
     address: AddressPayload | None = None
     is_default: bool = False
+    is_designated_zone: bool = False
 
     @field_validator("code")
     @classmethod
@@ -50,6 +51,7 @@ class WarehouseUpdate(BaseModel):
     phone: str | None = Field(default=None, max_length=50)
     address: AddressPayload | None = None
     is_default: bool | None = None
+    is_designated_zone: bool | None = None
     is_active: bool | None = None
 
     @field_validator("name")
@@ -78,6 +80,7 @@ class WarehouseResponse(BaseModel):
     phone: str | None
     address: AddressResponse | None = None
     is_default: bool
+    is_designated_zone: bool
     is_active: bool
     created_at: datetime
     updated_at: datetime

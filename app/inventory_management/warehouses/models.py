@@ -45,3 +45,9 @@ class Warehouse(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
         default=False,
         server_default=text("false"),
     )
+    is_designated_zone: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )

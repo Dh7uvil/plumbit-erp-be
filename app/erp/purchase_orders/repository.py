@@ -92,6 +92,20 @@ class PurchaseOrderRepository:
         ordered = [loaded[row.id] for row in rows if row.id in loaded]
         return ordered, total
 
+    async def list_for_source_sales_orders(
+        self, tenant_id: UUID, sales_order_ids: Sequence[UUID]
+    ) -> Sequence[PurchaseOrder]:
+        if not sales_order_ids:
+            return []
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(PurchaseOrder.source_sales_order_id.in_(list(sales_order_ids)))
+            .options(self._with_lines())
+            .order_by(PurchaseOrder.order_date, PurchaseOrder.created_at)
+        )
+        result = await self.session.execute(statement)
+        return result.scalars().all()
+
     async def create(self, tenant_id: UUID, values: Mapping[str, object]) -> PurchaseOrder:
         return await self._repo.create(tenant_id, values)
 

@@ -745,6 +745,7 @@
           "CUSTOMS_DUTY",
           "FREIGHT_IN",
           "PURCHASE_PRICE_VARIANCE",
+          "LANDED_COST_VARIANCE",
           "ADVANCE_FROM_CUSTOMER",
           "ADVANCE_TO_SUPPLIER",
           "FX_GAIN_LOSS",

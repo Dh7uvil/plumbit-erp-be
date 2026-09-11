@@ -150,7 +150,7 @@ Solid = implemented. Dashed in draw.io = planned.
 | Identity (`app/auth/`) | tenants, auth, users, roles, permissions, branches, departments, employees (nested), audit logs; tenant columns `allow_negative_stock`, `costing_method`, `allow_over_receipt`, `qc_required_default`, `lock_date`, `hard_lock_date`, `lock_reason`, `hard_lock_reason`, `fiscal_year_start_month`, `fiscal_year_start_day`, `books_start_date`, `vat_on_advances`, `auto_apply_advances_on_invoice`, `credit_limit_policy`, `credit_limit_include_open_orders` | `/tenants`, `/auth/login`, `/users`, `/roles` | — |
 | CRM (`app/crm/`) | customers, contacts | `/customers`, `/contacts` | leads, opportunities, activities |
 | Inventory (`app/inventory_management/`) | units, categories, products, price lists, warehouses, stock, FIFO costing, stock transfers, stock adjustments, goods receipts, quality inspections, delivery notes, packages, shipments, sales returns, trading history | `/units`, `/products`, `/warehouses`, `/stock`, `/stock-transfers`, `/stock-adjustments`, `/goods-receipts`, `/quality-inspections`, `/delivery-notes`, `/packages`, `/shipments`, `/sales-returns` | — |
-| ERP (`app/erp/`) | currencies, exchange rates, taxes, payment terms, terms templates, document sequences, suppliers, supplier products, quotations, proforma invoices, period lock, sales orders, sales invoices, credit notes, purchase orders, purchase invoices, debit notes, customer payments, supplier payments, chart of accounts, journals, opening balances, ledger reports | `/quotations`, `/proforma-invoices`, `/suppliers`, `/supplier-products`, `/exchange-rates`, `/period-lock`, `/sales-orders`, `/sales-invoices`, `/credit-notes`, `/purchase-orders`, `/purchase-invoices`, `/debit-notes`, `/customer-payments`, `/supplier-payments`, `/accounts`, `/journals`, `/opening-balances`, `/reports/trial-balance`, `/reports/ar-aging` | einvoicing status APIs |
+| ERP (`app/erp/`) | currencies, exchange rates, taxes, payment terms, terms templates, document sequences, suppliers, supplier products, quotations, proforma invoices, period lock, sales orders, sales invoices, credit notes, purchase orders, purchase invoices, debit notes, customer payments, supplier payments, landed costs, chart of accounts, journals, opening balances, ledger and Stage I reports | `/quotations`, `/proforma-invoices`, `/suppliers`, `/supplier-products`, `/exchange-rates`, `/period-lock`, `/sales-orders`, `/sales-invoices`, `/credit-notes`, `/purchase-orders`, `/purchase-invoices`, `/debit-notes`, `/customer-payments`, `/supplier-payments`, `/landed-costs`, `/accounts`, `/journals`, `/opening-balances`, `/reports/trial-balance`, `/reports/ar-aging`, `/reports/stock-valuation`, `/reports/profit-and-loss`, `/reports/vat-201` | einvoicing status APIs |
 | Common | attachments, activity, outbox | `/attachments`, `/activity`, `/outbox-events` | — |
 | `integrations` | storage | — | email, WhatsApp, video, AI, forecast, `einvoicing/` ASP adapters |
 | `communication_service` | — | — | email, WhatsApp, chat, meetings (Agora) |
@@ -264,9 +264,14 @@ Keep the ERP modular. Do not turn it into microservices early.
 
 - Amplify, API Gateway, and Lambda packaging.
 - SES, Agora, WhatsApp Go adapter, OpenAI, Forecast ML, `app/workers/`.
-- Customer and supplier payments (sales/purchase invoices, credit notes, and debit notes already post through `LedgerPostingService`; inventory documents post via `InventoryLedgerService`).
 - UAE e-invoicing ASP adapter, PINT-AE completeness fields, inbound e-bill drafts.
 - Splitting PostgreSQL per tenant.
+
+Customer and supplier payments post through `LedgerPostingService`. Landed cost documents
+allocate posted expense bills onto GRN layers (`LC` sequence) and revalue remaining stock at
+`landed_unit_cost`. Inventory reports, P&L, balance sheet, cash flow, sales/purchase registers,
+and VAT 201 live on `/api/v1/reports`. Sales-order confirm is the reservation writer; packages
+do not reserve.
 
 Quotations already return `available_actions`, `version`, `is_posted` (always false), and `document_number` / `document_date` aliases. Stock adjustments and transfers use the same document contract; `POST /{resource}/{id}/post` moves quantity through `StockService`. PATCH and workflow verbs require `If-Match` (or body `version`); a mismatch is `DOCUMENT_STALE`.
 

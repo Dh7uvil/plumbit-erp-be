@@ -844,6 +844,8 @@ class DeliveryNoteService:
     ) -> builtins.list[RelatedDocumentRef]:
         from app.erp.sales_invoices.repository import SalesInvoiceRepository
         from app.erp.sales_orders.repository import SalesOrderRepository
+        from app.inventory_management.packages.repository import PackageRepository
+        from app.inventory_management.shipments.repository import ShipmentRepository
 
         related: builtins.list[RelatedDocumentRef] = []
         order = await SalesOrderRepository(self.session).get(tenant_id, row.sales_order_id)
@@ -856,6 +858,30 @@ class DeliveryNoteService:
                     status=order.status,
                     relationship="source",
                     document_date=order.order_date,
+                )
+            )
+        if row.shipment_id is not None:
+            shipment = await ShipmentRepository(self.session).get(tenant_id, row.shipment_id)
+            if shipment is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.SHIPMENT.value,
+                        document_id=shipment.id,
+                        document_number=shipment.document_number,
+                        status=shipment.status,
+                        relationship="related",
+                        document_date=shipment.etd,
+                    )
+                )
+        for item in await PackageRepository(self.session).list_for_delivery_note(tenant_id, row.id):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.PACKAGE.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=None,
                 )
             )
         for item in await SalesInvoiceRepository(self.session).list_for_delivery_note(

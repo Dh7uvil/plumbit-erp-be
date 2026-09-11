@@ -746,6 +746,54 @@
           }
         }
       }
+    },
+    "/api/v1/goods-receipts/{receipt_id}/landed-cost-eligible": {
+      "get": {
+        "tags": [
+          "Goods Receipts"
+        ],
+        "summary": "Get Landed Cost Eligible",
+        "operationId": "get_landed_cost_eligible_api_v1_goods_receipts__receipt_id__landed_cost_eligible_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "receipt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Receipt Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LandedCostEligibleResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -783,6 +831,40 @@
           "data"
         ],
         "title": "ApiResponse[GoodsReceiptResponse]"
+      },
+      "ApiResponse_LandedCostEligibleResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/LandedCostEligibleResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[LandedCostEligibleResponse]"
       },
       "ApiResponse_list_GoodsReceiptResponse__": {
         "properties": {
@@ -1826,6 +1908,107 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "LandedCostEligibleLine": {
+        "properties": {
+          "goods_receipt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Goods Receipt Id"
+          },
+          "goods_receipt_line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Goods Receipt Line Id"
+          },
+          "goods_receipt_number": {
+            "type": "string",
+            "title": "Goods Receipt Number"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Quantity"
+          },
+          "net_weight": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Weight"
+          },
+          "landed_unit_cost": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Landed Unit Cost"
+          },
+          "line_value": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Line Value"
+          },
+          "qty_remaining": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Remaining"
+          }
+        },
+        "type": "object",
+        "required": [
+          "goods_receipt_id",
+          "goods_receipt_line_id",
+          "goods_receipt_number",
+          "product_id",
+          "description",
+          "quantity",
+          "net_weight",
+          "landed_unit_cost",
+          "line_value",
+          "qty_remaining"
+        ],
+        "title": "LandedCostEligibleLine"
+      },
+      "LandedCostEligibleResponse": {
+        "properties": {
+          "goods_receipt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Goods Receipt Id"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/LandedCostEligibleLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "goods_receipt_id"
+        ],
+        "title": "LandedCostEligibleResponse"
       },
       "PlaceOfSupply": {
         "type": "string",

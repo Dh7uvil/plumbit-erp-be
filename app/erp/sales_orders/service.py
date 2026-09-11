@@ -1954,6 +1954,7 @@ class SalesOrderService:
         from app.erp.quotation.repository import QuotationRepository
         from app.erp.sales_invoices.repository import SalesInvoiceRepository
         from app.inventory_management.delivery_notes.repository import DeliveryNoteRepository
+        from app.inventory_management.packages.repository import PackageRepository
 
         related: builtins.list[RelatedDocumentRef] = []
         if row.source_quotation_id is not None:
@@ -2056,6 +2057,17 @@ class SalesOrderService:
                     relationship="child",
                     document_date=payment.payment_date,
                     amount_summary=str(payment.amount_received),
+                )
+            )
+        for item in await PackageRepository(self.session).list_for_sales_order(tenant_id, row.id):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.PACKAGE.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=None,
                 )
             )
         return related

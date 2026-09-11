@@ -61,6 +61,13 @@ def test_catalog_includes_quote_ready_permissions() -> None:
     assert "erp.opening_balance.manage" in CATALOG_PERMISSIONS
     assert "erp.report.ledger" in CATALOG_PERMISSIONS
     assert "erp.report.ar_ap" in CATALOG_PERMISSIONS
+    assert "erp.report.inventory" in CATALOG_PERMISSIONS
+    assert "erp.report.financial" in CATALOG_PERMISSIONS
+    assert "erp.landed_cost.create" in CATALOG_PERMISSIONS
+    assert "erp.landed_cost.read" in CATALOG_PERMISSIONS
+    assert "erp.landed_cost.update" in CATALOG_PERMISSIONS
+    assert "erp.landed_cost.post" in CATALOG_PERMISSIONS
+    assert "erp.landed_cost.cancel" in CATALOG_PERMISSIONS
     assert "erp.customer_payment.create" in CATALOG_PERMISSIONS
     assert "erp.customer_payment.post" in CATALOG_PERMISSIONS
     assert "erp.supplier_payment.create" in CATALOG_PERMISSIONS

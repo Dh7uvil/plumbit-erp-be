@@ -667,7 +667,8 @@
           "SALES_RETURN",
           "JOURNAL_ENTRY",
           "CUSTOMER_PAYMENT",
-          "SUPPLIER_PAYMENT"
+          "SUPPLIER_PAYMENT",
+          "LANDED_COST"
         ],
         "title": "DocumentType"
       },

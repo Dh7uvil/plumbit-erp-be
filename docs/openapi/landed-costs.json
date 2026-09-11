@@ -1,24 +1,24 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Plumbit ERP API \u2014 Delivery Notes",
-    "description": "Outbound delivery notes that deduct stock on post and write COGS (DR COGS / CR INVENTORY). Posted notes may be cancelled only when no dependent shipment, return, or live sales invoice exists.",
+    "title": "Plumbit ERP API \u2014 Landed Costs",
+    "description": "Landed Costs",
     "version": "0.1.0"
   },
   "tags": [
     {
-      "name": "Delivery Notes",
-      "description": "Outbound delivery notes that deduct stock on post and write COGS (DR COGS / CR INVENTORY). Posted notes may be cancelled only when no dependent shipment, return, or live sales invoice exists."
+      "name": "Landed Costs",
+      "description": "Landed Costs"
     }
   ],
   "paths": {
-    "/api/v1/delivery-notes": {
+    "/api/v1/landed-costs": {
       "get": {
         "tags": [
-          "Delivery Notes"
+          "Landed Costs"
         ],
-        "summary": "List Delivery Notes",
-        "operationId": "list_delivery_notes_api_v1_delivery_notes_get",
+        "summary": "List Landed Costs",
+        "operationId": "list_landed_costs_api_v1_landed_costs_get",
         "security": [
           {
             "HTTPBearer": []
@@ -138,57 +138,6 @@
             }
           },
           {
-            "name": "sales_order_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Sales Order Id"
-            }
-          },
-          {
-            "name": "customer_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Customer Id"
-            }
-          },
-          {
-            "name": "warehouse_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Warehouse Id"
-            }
-          },
-          {
             "name": "shipment_id",
             "in": "query",
             "required": false,
@@ -206,23 +155,7 @@
             }
           },
           {
-            "name": "unshipped",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Unshipped"
-            }
-          },
-          {
-            "name": "product_id",
+            "name": "goods_receipt_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -235,7 +168,24 @@
                   "type": "null"
                 }
               ],
-              "title": "Product Id"
+              "title": "Goods Receipt Id"
+            }
+          },
+          {
+            "name": "purchase_invoice_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Purchase Invoice Id"
             }
           },
           {
@@ -279,7 +229,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_list_DeliveryNoteResponse__"
+                  "$ref": "#/components/schemas/ApiResponse_list_LandedCostResponse__"
                 }
               }
             }
@@ -298,10 +248,10 @@
       },
       "post": {
         "tags": [
-          "Delivery Notes"
+          "Landed Costs"
         ],
-        "summary": "Create Delivery Note",
-        "operationId": "create_delivery_note_api_v1_delivery_notes_post",
+        "summary": "Create Landed Cost",
+        "operationId": "create_landed_cost_api_v1_landed_costs_post",
         "security": [
           {
             "HTTPBearer": []
@@ -312,7 +262,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DeliveryNoteCreate"
+                "$ref": "#/components/schemas/LandedCostCreate"
               }
             }
           }
@@ -323,7 +273,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DeliveryNoteResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_LandedCostResponse_"
                 }
               }
             }
@@ -341,13 +291,13 @@
         }
       }
     },
-    "/api/v1/delivery-notes/from-sales-order": {
+    "/api/v1/landed-costs/from-bills": {
       "post": {
         "tags": [
-          "Delivery Notes"
+          "Landed Costs"
         ],
-        "summary": "Create Delivery Note From Sales Order",
-        "operationId": "create_delivery_note_from_sales_order_api_v1_delivery_notes_from_sales_order_post",
+        "summary": "Create Landed Cost From Bills",
+        "operationId": "create_landed_cost_from_bills_api_v1_landed_costs_from_bills_post",
         "security": [
           {
             "HTTPBearer": []
@@ -376,7 +326,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DeliveryNoteCreateFromSalesOrder"
+                "$ref": "#/components/schemas/LandedCostCreateFromBills"
               }
             }
           }
@@ -387,7 +337,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DeliveryNoteResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_LandedCostResponse_"
                 }
               }
             }
@@ -405,13 +355,13 @@
         }
       }
     },
-    "/api/v1/delivery-notes/{note_id}": {
+    "/api/v1/landed-costs/{landed_cost_id}": {
       "get": {
         "tags": [
-          "Delivery Notes"
+          "Landed Costs"
         ],
-        "summary": "Get Delivery Note",
-        "operationId": "get_delivery_note_api_v1_delivery_notes__note_id__get",
+        "summary": "Get Landed Cost",
+        "operationId": "get_landed_cost_api_v1_landed_costs__landed_cost_id__get",
         "security": [
           {
             "HTTPBearer": []
@@ -419,13 +369,13 @@
         ],
         "parameters": [
           {
-            "name": "note_id",
+            "name": "landed_cost_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Note Id"
+              "title": "Landed Cost Id"
             }
           }
         ],
@@ -435,7 +385,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DeliveryNoteResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_LandedCostResponse_"
                 }
               }
             }
@@ -454,10 +404,10 @@
       },
       "patch": {
         "tags": [
-          "Delivery Notes"
+          "Landed Costs"
         ],
-        "summary": "Update Delivery Note",
-        "operationId": "update_delivery_note_api_v1_delivery_notes__note_id__patch",
+        "summary": "Update Landed Cost",
+        "operationId": "update_landed_cost_api_v1_landed_costs__landed_cost_id__patch",
         "security": [
           {
             "HTTPBearer": []
@@ -465,13 +415,13 @@
         ],
         "parameters": [
           {
-            "name": "note_id",
+            "name": "landed_cost_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Note Id"
+              "title": "Landed Cost Id"
             }
           },
           {
@@ -496,7 +446,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DeliveryNoteUpdate"
+                "$ref": "#/components/schemas/LandedCostUpdate"
               }
             }
           }
@@ -507,7 +457,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DeliveryNoteResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_LandedCostResponse_"
                 }
               }
             }
@@ -526,10 +476,10 @@
       },
       "delete": {
         "tags": [
-          "Delivery Notes"
+          "Landed Costs"
         ],
-        "summary": "Delete Delivery Note",
-        "operationId": "delete_delivery_note_api_v1_delivery_notes__note_id__delete",
+        "summary": "Delete Landed Cost",
+        "operationId": "delete_landed_cost_api_v1_landed_costs__landed_cost_id__delete",
         "security": [
           {
             "HTTPBearer": []
@@ -537,13 +487,13 @@
         ],
         "parameters": [
           {
-            "name": "note_id",
+            "name": "landed_cost_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Note Id"
+              "title": "Landed Cost Id"
             }
           },
           {
@@ -569,7 +519,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DeliveryNoteResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_LandedCostResponse_"
                 }
               }
             }
@@ -587,13 +537,13 @@
         }
       }
     },
-    "/api/v1/delivery-notes/{note_id}/post": {
+    "/api/v1/landed-costs/{landed_cost_id}/post": {
       "post": {
         "tags": [
-          "Delivery Notes"
+          "Landed Costs"
         ],
-        "summary": "Post Delivery Note",
-        "operationId": "post_delivery_note_api_v1_delivery_notes__note_id__post_post",
+        "summary": "Post Landed Cost",
+        "operationId": "post_landed_cost_api_v1_landed_costs__landed_cost_id__post_post",
         "security": [
           {
             "HTTPBearer": []
@@ -601,13 +551,13 @@
         ],
         "parameters": [
           {
-            "name": "note_id",
+            "name": "landed_cost_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Note Id"
+              "title": "Landed Cost Id"
             }
           },
           {
@@ -649,7 +599,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DeliveryNoteResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_LandedCostResponse_"
                 }
               }
             }
@@ -667,13 +617,13 @@
         }
       }
     },
-    "/api/v1/delivery-notes/{note_id}/cancel": {
+    "/api/v1/landed-costs/{landed_cost_id}/cancel": {
       "post": {
         "tags": [
-          "Delivery Notes"
+          "Landed Costs"
         ],
-        "summary": "Cancel Delivery Note",
-        "operationId": "cancel_delivery_note_api_v1_delivery_notes__note_id__cancel_post",
+        "summary": "Cancel Landed Cost",
+        "operationId": "cancel_landed_cost_api_v1_landed_costs__landed_cost_id__cancel_post",
         "security": [
           {
             "HTTPBearer": []
@@ -681,13 +631,13 @@
         ],
         "parameters": [
           {
-            "name": "note_id",
+            "name": "landed_cost_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Note Id"
+              "title": "Landed Cost Id"
             }
           },
           {
@@ -729,7 +679,7 @@
               "schema": {
                 "anyOf": [
                   {
-                    "$ref": "#/components/schemas/DeliveryNoteCancelRequest"
+                    "$ref": "#/components/schemas/LandedCostCancelRequest"
                   },
                   {
                     "type": "null"
@@ -746,7 +696,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DeliveryNoteResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_LandedCostResponse_"
                 }
               }
             }
@@ -764,13 +714,13 @@
         }
       }
     },
-    "/api/v1/delivery-notes/{note_id}/packages": {
-      "post": {
+    "/api/v1/landed-costs/{landed_cost_id}/journal": {
+      "get": {
         "tags": [
-          "Delivery Notes"
+          "Landed Costs"
         ],
-        "summary": "Attach Package To Delivery Note",
-        "operationId": "attach_package_to_delivery_note_api_v1_delivery_notes__note_id__packages_post",
+        "summary": "Get Landed Cost Journal",
+        "operationId": "get_landed_cost_journal_api_v1_landed_costs__landed_cost_id__journal_get",
         "security": [
           {
             "HTTPBearer": []
@@ -778,81 +728,13 @@
         ],
         "parameters": [
           {
-            "name": "note_id",
+            "name": "landed_cost_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Note Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PackageAttachRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_PackageResponse_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/delivery-notes/{note_id}/packages/{package_id}": {
-      "delete": {
-        "tags": [
-          "Delivery Notes"
-        ],
-        "summary": "Detach Package From Delivery Note",
-        "operationId": "detach_package_from_delivery_note_api_v1_delivery_notes__note_id__packages__package_id__delete",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "note_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Note Id"
-            }
-          },
-          {
-            "name": "package_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Package Id"
+              "title": "Landed Cost Id"
             }
           }
         ],
@@ -862,7 +744,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_PackageResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_JournalEntryResponse_"
                 }
               }
             }
@@ -883,7 +765,7 @@
   },
   "components": {
     "schemas": {
-      "ApiResponse_DeliveryNoteResponse_": {
+      "ApiResponse_JournalEntryResponse_": {
         "properties": {
           "success": {
             "type": "boolean",
@@ -892,7 +774,7 @@
             "default": true
           },
           "data": {
-            "$ref": "#/components/schemas/DeliveryNoteResponse"
+            "$ref": "#/components/schemas/JournalEntryResponse"
           },
           "message": {
             "anyOf": [
@@ -915,9 +797,9 @@
         "required": [
           "data"
         ],
-        "title": "ApiResponse[DeliveryNoteResponse]"
+        "title": "ApiResponse[JournalEntryResponse]"
       },
-      "ApiResponse_PackageResponse_": {
+      "ApiResponse_LandedCostResponse_": {
         "properties": {
           "success": {
             "type": "boolean",
@@ -926,7 +808,7 @@
             "default": true
           },
           "data": {
-            "$ref": "#/components/schemas/PackageResponse"
+            "$ref": "#/components/schemas/LandedCostResponse"
           },
           "message": {
             "anyOf": [
@@ -949,9 +831,9 @@
         "required": [
           "data"
         ],
-        "title": "ApiResponse[PackageResponse]"
+        "title": "ApiResponse[LandedCostResponse]"
       },
-      "ApiResponse_list_DeliveryNoteResponse__": {
+      "ApiResponse_list_LandedCostResponse__": {
         "properties": {
           "success": {
             "type": "boolean",
@@ -961,7 +843,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/DeliveryNoteResponse"
+              "$ref": "#/components/schemas/LandedCostResponse"
             },
             "type": "array",
             "title": "Data"
@@ -987,9 +869,521 @@
         "required": [
           "data"
         ],
-        "title": "ApiResponse[list[DeliveryNoteResponse]]"
+        "title": "ApiResponse[list[LandedCostResponse]]"
       },
-      "DeliveryNoteCancelRequest": {
+      "ExpenseCategory": {
+        "type": "string",
+        "enum": [
+          "FREIGHT",
+          "CUSTOMS_DUTY",
+          "INSURANCE",
+          "CLEARING",
+          "INSPECTION",
+          "OTHER"
+        ],
+        "title": "ExpenseCategory"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "JournalEntryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tenant Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "entry_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Entry Date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JournalEntryStatus"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "is_posted": {
+            "type": "boolean",
+            "title": "Is Posted"
+          },
+          "journal_type": {
+            "$ref": "#/components/schemas/JournalType"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "reversal_of_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reversal Of Id"
+          },
+          "reversed_by_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reversed By Id"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "exchange_rate": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Exchange Rate"
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "narration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Narration"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "posted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted At"
+          },
+          "posted_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted By"
+          },
+          "total_debit_base": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Debit Base"
+          },
+          "total_credit_base": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Credit Base"
+          },
+          "available_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Actions"
+          },
+          "period_locked": {
+            "type": "boolean",
+            "title": "Period Locked",
+            "default": false
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/JournalLineResponse"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "document_number",
+          "entry_date",
+          "status",
+          "version",
+          "is_posted",
+          "journal_type",
+          "source_type",
+          "source_id",
+          "reversal_of_id",
+          "reversed_by_id",
+          "currency_id",
+          "exchange_rate",
+          "branch_id",
+          "narration",
+          "reference",
+          "posted_at",
+          "posted_by",
+          "total_debit_base",
+          "total_credit_base",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "JournalEntryResponse"
+      },
+      "JournalEntryStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "POSTED",
+          "CANCELLED"
+        ],
+        "title": "JournalEntryStatus"
+      },
+      "JournalLineResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "line_number": {
+            "type": "integer",
+            "title": "Line Number"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "debit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Debit"
+          },
+          "credit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Credit"
+          },
+          "debit_base": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Debit Base"
+          },
+          "credit_base": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Credit Base"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "exchange_rate": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Exchange Rate"
+          },
+          "party_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PartyType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "party_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Id"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "external_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Reference"
+          },
+          "tax_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Id"
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "line_number",
+          "account_id",
+          "debit",
+          "credit",
+          "debit_base",
+          "credit_base",
+          "currency_id",
+          "exchange_rate",
+          "party_type",
+          "party_id",
+          "due_date",
+          "external_reference",
+          "tax_id",
+          "branch_id",
+          "description"
+        ],
+        "title": "JournalLineResponse"
+      },
+      "JournalType": {
+        "type": "string",
+        "enum": [
+          "MANUAL",
+          "OPENING_BALANCE",
+          "SYSTEM",
+          "REVERSAL"
+        ],
+        "title": "JournalType"
+      },
+      "LandedCostAllocationInput": {
+        "properties": {
+          "goods_receipt_line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Goods Receipt Line Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "goods_receipt_line_id"
+        ],
+        "title": "LandedCostAllocationInput"
+      },
+      "LandedCostAllocationMethod": {
+        "type": "string",
+        "enum": [
+          "VALUE",
+          "WEIGHT",
+          "QUANTITY"
+        ],
+        "title": "LandedCostAllocationMethod"
+      },
+      "LandedCostAllocationResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "line_number": {
+            "type": "integer",
+            "title": "Line Number"
+          },
+          "goods_receipt_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Goods Receipt Id"
+          },
+          "goods_receipt_line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Goods Receipt Line Id"
+          },
+          "allocation_base": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Allocation Base"
+          },
+          "allocated_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Allocated Amount"
+          },
+          "qty_remaining_at_post": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty Remaining At Post"
+          },
+          "qty_consumed_at_post": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty Consumed At Post"
+          },
+          "previous_landed_unit_cost": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Landed Unit Cost"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "line_number",
+          "goods_receipt_id",
+          "goods_receipt_line_id",
+          "allocation_base",
+          "allocated_amount"
+        ],
+        "title": "LandedCostAllocationResponse"
+      },
+      "LandedCostCancelRequest": {
         "properties": {
           "reason": {
             "anyOf": [
@@ -1017,16 +1411,103 @@
           }
         },
         "type": "object",
-        "title": "DeliveryNoteCancelRequest"
+        "title": "LandedCostCancelRequest"
       },
-      "DeliveryNoteCreate": {
+      "LandedCostChargeInput": {
         "properties": {
-          "sales_order_id": {
+          "purchase_invoice_line_id": {
             "type": "string",
             "format": "uuid",
-            "title": "Sales Order Id"
+            "title": "Purchase Invoice Line Id"
           },
-          "warehouse_id": {
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "purchase_invoice_line_id"
+        ],
+        "title": "LandedCostChargeInput"
+      },
+      "LandedCostChargeResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "line_number": {
+            "type": "integer",
+            "title": "Line Number"
+          },
+          "purchase_invoice_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Purchase Invoice Id"
+          },
+          "purchase_invoice_line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Purchase Invoice Line Id"
+          },
+          "expense_category": {
+            "$ref": "#/components/schemas/ExpenseCategory"
+          },
+          "bill_number": {
+            "type": "string",
+            "title": "Bill Number"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "line_number",
+          "purchase_invoice_id",
+          "purchase_invoice_line_id",
+          "expense_category",
+          "bill_number",
+          "amount"
+        ],
+        "title": "LandedCostChargeResponse"
+      },
+      "LandedCostCreate": {
+        "properties": {
+          "document_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Date"
+          },
+          "allocation_method": {
+            "$ref": "#/components/schemas/LandedCostAllocationMethod",
+            "default": "VALUE"
+          },
+          "shipment_id": {
             "anyOf": [
               {
                 "type": "string",
@@ -1036,7 +1517,89 @@
                 "type": "null"
               }
             ],
-            "title": "Warehouse Id"
+            "title": "Shipment Id"
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "charges": {
+            "items": {
+              "$ref": "#/components/schemas/LandedCostChargeInput"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Charges"
+          },
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/LandedCostAllocationInput"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Allocations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "charges",
+          "allocations"
+        ],
+        "title": "LandedCostCreate"
+      },
+      "LandedCostCreateFromBills": {
+        "properties": {
+          "purchase_invoice_line_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Purchase Invoice Line Ids"
+          },
+          "goods_receipt_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Goods Receipt Ids"
+          },
+          "shipment_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipment Id"
+          },
+          "allocation_method": {
+            "$ref": "#/components/schemas/LandedCostAllocationMethod",
+            "default": "VALUE"
           },
           "document_date": {
             "anyOf": [
@@ -1062,112 +1625,6 @@
             ],
             "title": "Branch Id"
           },
-          "currency_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Currency Id"
-          },
-          "vehicle_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Vehicle Number"
-          },
-          "driver_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Driver Name"
-          },
-          "driver_contact": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 40
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Driver Contact"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "lines": {
-            "items": {
-              "$ref": "#/components/schemas/DeliveryNoteLineInput"
-            },
-            "type": "array",
-            "minItems": 1,
-            "title": "Lines"
-          }
-        },
-        "type": "object",
-        "required": [
-          "sales_order_id",
-          "lines"
-        ],
-        "title": "DeliveryNoteCreate"
-      },
-      "DeliveryNoteCreateFromSalesOrder": {
-        "properties": {
-          "sales_order_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Sales Order Id"
-          },
-          "warehouse_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Warehouse Id"
-          },
-          "document_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Document Date"
-          },
           "notes": {
             "anyOf": [
               {
@@ -1182,162 +1639,11 @@
         },
         "type": "object",
         "required": [
-          "sales_order_id"
+          "purchase_invoice_line_ids"
         ],
-        "title": "DeliveryNoteCreateFromSalesOrder"
+        "title": "LandedCostCreateFromBills"
       },
-      "DeliveryNoteLineInput": {
-        "properties": {
-          "sales_order_line_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Sales Order Line Id"
-          },
-          "product_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Product Id"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "quantity": {
-            "anyOf": [
-              {
-                "type": "number",
-                "exclusiveMinimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
-              }
-            ],
-            "title": "Quantity"
-          },
-          "unit_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Id"
-          },
-          "rate": {
-            "anyOf": [
-              {
-                "type": "number",
-                "minimum": 0.0
-              },
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
-              }
-            ],
-            "title": "Rate",
-            "default": "0"
-          }
-        },
-        "type": "object",
-        "required": [
-          "sales_order_line_id",
-          "quantity"
-        ],
-        "title": "DeliveryNoteLineInput"
-      },
-      "DeliveryNoteLineResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "line_number": {
-            "type": "integer",
-            "title": "Line Number"
-          },
-          "sales_order_line_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Sales Order Line Id"
-          },
-          "product_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Product Id"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description"
-          },
-          "quantity": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Quantity"
-          },
-          "unit_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Id"
-          },
-          "rate": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Rate"
-          },
-          "qty_invoiced": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Qty Invoiced",
-            "default": "0"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "line_number",
-          "sales_order_line_id",
-          "product_id",
-          "description",
-          "quantity",
-          "unit_id",
-          "rate"
-        ],
-        "title": "DeliveryNoteLineResponse"
-      },
-      "DeliveryNoteResponse": {
+      "LandedCostResponse": {
         "properties": {
           "id": {
             "type": "string",
@@ -1369,32 +1675,8 @@
             "format": "date",
             "title": "Document Date"
           },
-          "sales_order_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Sales Order Id"
-          },
-          "customer_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Customer Id"
-          },
-          "warehouse_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Warehouse Id"
-          },
-          "branch_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Branch Id"
+          "allocation_method": {
+            "$ref": "#/components/schemas/LandedCostAllocationMethod"
           },
           "shipment_id": {
             "anyOf": [
@@ -1408,59 +1690,41 @@
             ],
             "title": "Shipment Id"
           },
-          "tax_treatment": {
-            "$ref": "#/components/schemas/TaxTreatment"
-          },
-          "place_of_supply": {
-            "$ref": "#/components/schemas/PlaceOfSupply"
-          },
-          "currency_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Currency Id"
-          },
-          "base_currency_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Base Currency Id"
-          },
-          "exchange_rate": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Exchange Rate"
-          },
-          "vehicle_number": {
+          "branch_id": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "format": "uuid"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Vehicle Number"
+            "title": "Branch Id"
           },
-          "driver_name": {
+          "journal_entry_id": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "format": "uuid"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Driver Name"
+            "title": "Journal Entry Id"
           },
-          "driver_contact": {
+          "reversal_journal_entry_id": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "format": "uuid"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Driver Contact"
+            "title": "Reversal Journal Entry Id"
           },
           "notes": {
             "anyOf": [
@@ -1472,6 +1736,11 @@
               }
             ],
             "title": "Notes"
+          },
+          "total_charges": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Charges"
           },
           "posted_at": {
             "anyOf": [
@@ -1551,12 +1820,19 @@
             "type": "array",
             "title": "Related Documents"
           },
-          "lines": {
+          "charges": {
             "items": {
-              "$ref": "#/components/schemas/DeliveryNoteLineResponse"
+              "$ref": "#/components/schemas/LandedCostChargeResponse"
             },
             "type": "array",
-            "title": "Lines"
+            "title": "Charges"
+          },
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/LandedCostAllocationResponse"
+            },
+            "type": "array",
+            "title": "Allocations"
           },
           "created_at": {
             "type": "string",
@@ -1578,20 +1854,13 @@
           "version",
           "is_posted",
           "document_date",
-          "sales_order_id",
-          "customer_id",
-          "warehouse_id",
-          "branch_id",
+          "allocation_method",
           "shipment_id",
-          "tax_treatment",
-          "place_of_supply",
-          "currency_id",
-          "base_currency_id",
-          "exchange_rate",
-          "vehicle_number",
-          "driver_name",
-          "driver_contact",
+          "branch_id",
+          "journal_entry_id",
+          "reversal_journal_entry_id",
           "notes",
+          "total_charges",
           "posted_at",
           "posted_by",
           "cancelled_at",
@@ -1600,22 +1869,10 @@
           "created_at",
           "updated_at"
         ],
-        "title": "DeliveryNoteResponse"
+        "title": "LandedCostResponse"
       },
-      "DeliveryNoteUpdate": {
+      "LandedCostUpdate": {
         "properties": {
-          "warehouse_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Warehouse Id"
-          },
           "document_date": {
             "anyOf": [
               {
@@ -1627,6 +1884,28 @@
               }
             ],
             "title": "Document Date"
+          },
+          "allocation_method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LandedCostAllocationMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shipment_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipment Id"
           },
           "branch_id": {
             "anyOf": [
@@ -1640,54 +1919,6 @@
             ],
             "title": "Branch Id"
           },
-          "currency_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Currency Id"
-          },
-          "vehicle_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Vehicle Number"
-          },
-          "driver_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Driver Name"
-          },
-          "driver_contact": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 40
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Driver Contact"
-          },
           "notes": {
             "anyOf": [
               {
@@ -1699,11 +1930,11 @@
             ],
             "title": "Notes"
           },
-          "lines": {
+          "charges": {
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/DeliveryNoteLineInput"
+                  "$ref": "#/components/schemas/LandedCostChargeInput"
                 },
                 "type": "array",
                 "minItems": 1
@@ -1712,7 +1943,22 @@
                 "type": "null"
               }
             ],
-            "title": "Lines"
+            "title": "Charges"
+          },
+          "allocations": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/LandedCostAllocationInput"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allocations"
           },
           "version": {
             "anyOf": [
@@ -1728,325 +1974,15 @@
           }
         },
         "type": "object",
-        "title": "DeliveryNoteUpdate"
+        "title": "LandedCostUpdate"
       },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "type": "array",
-            "title": "Detail"
-          }
-        },
-        "type": "object",
-        "title": "HTTPValidationError"
-      },
-      "PackageAttachRequest": {
-        "properties": {
-          "package_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Package Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "package_id"
-        ],
-        "title": "PackageAttachRequest"
-      },
-      "PackageLineResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "line_number": {
-            "type": "integer",
-            "title": "Line Number"
-          },
-          "sales_order_line_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Sales Order Line Id"
-          },
-          "product_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Product Id"
-          },
-          "quantity": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Quantity"
-          },
-          "unit_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Unit Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "line_number",
-          "sales_order_line_id",
-          "product_id",
-          "quantity",
-          "unit_id"
-        ],
-        "title": "PackageLineResponse"
-      },
-      "PackageResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "tenant_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Tenant Id"
-          },
-          "document_number": {
-            "type": "string",
-            "title": "Document Number"
-          },
-          "status": {
-            "$ref": "#/components/schemas/PackageStatus"
-          },
-          "version": {
-            "type": "integer",
-            "title": "Version"
-          },
-          "sales_order_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Sales Order Id"
-          },
-          "delivery_note_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Delivery Note Id"
-          },
-          "package_number": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Package Number"
-          },
-          "length": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Length"
-          },
-          "width": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Width"
-          },
-          "height": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Height"
-          },
-          "dimension_unit": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dimension Unit"
-          },
-          "gross_weight": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gross Weight"
-          },
-          "net_weight": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Net Weight"
-          },
-          "weight_unit": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Weight Unit"
-          },
-          "shipping_marks": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Shipping Marks"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "available_actions": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Available Actions"
-          },
-          "related_documents": {
-            "items": {
-              "$ref": "#/components/schemas/RelatedDocumentRef"
-            },
-            "type": "array",
-            "title": "Related Documents"
-          },
-          "lines": {
-            "items": {
-              "$ref": "#/components/schemas/PackageLineResponse"
-            },
-            "type": "array",
-            "title": "Lines"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "tenant_id",
-          "document_number",
-          "status",
-          "version",
-          "sales_order_id",
-          "delivery_note_id",
-          "package_number",
-          "length",
-          "width",
-          "height",
-          "dimension_unit",
-          "gross_weight",
-          "net_weight",
-          "weight_unit",
-          "shipping_marks",
-          "notes",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "PackageResponse"
-      },
-      "PackageStatus": {
+      "PartyType": {
         "type": "string",
         "enum": [
-          "DRAFT",
-          "PACKED",
-          "CANCELLED"
+          "CUSTOMER",
+          "SUPPLIER"
         ],
-        "title": "PackageStatus"
-      },
-      "PlaceOfSupply": {
-        "type": "string",
-        "enum": [
-          "ABU_DHABI",
-          "DUBAI",
-          "SHARJAH",
-          "AJMAN",
-          "UMM_AL_QUWAIN",
-          "RAS_AL_KHAIMAH",
-          "FUJAIRAH",
-          "OUTSIDE_UAE"
-        ],
-        "title": "PlaceOfSupply"
+        "title": "PartyType"
       },
       "RelatedDocumentRef": {
         "properties": {
@@ -2124,17 +2060,6 @@
           "CANCELLED"
         ],
         "title": "StockDocumentStatus"
-      },
-      "TaxTreatment": {
-        "type": "string",
-        "enum": [
-          "REGISTERED",
-          "UNREGISTERED",
-          "EXPORT",
-          "GCC",
-          "EXEMPT"
-        ],
-        "title": "TaxTreatment"
       },
       "ValidationError": {
         "properties": {
