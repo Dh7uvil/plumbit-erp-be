@@ -63,6 +63,7 @@ _DOCUMENT_SEQUENCES: tuple[tuple[DocumentType, str], ...] = (
     (DocumentType.JOURNAL_ENTRY, "JV"),
     (DocumentType.CUSTOMER_PAYMENT, "RCP"),
     (DocumentType.SUPPLIER_PAYMENT, "PAY"),
+    (DocumentType.LANDED_COST, "LC"),
 )
 
 _SEQUENCE_PADDING = 6

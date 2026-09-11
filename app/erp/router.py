@@ -11,6 +11,7 @@ from app.erp.credit_notes.router import router as credit_notes_router
 from app.erp.customer_payments.router import router as customer_payments_router
 from app.erp.debit_notes.router import router as debit_notes_router
 from app.erp.exchange_rates.router import router as exchange_rates_router
+from app.erp.landed_costs.router import router as landed_costs_router
 from app.erp.period_lock.router import router as period_lock_router
 from app.erp.proforma_invoices.router import router as proforma_invoices_router
 from app.erp.purchase_invoices.router import router as purchase_invoices_router
@@ -37,6 +38,7 @@ router.include_router(customer_payments_router)
 router.include_router(purchase_orders_router)
 router.include_router(purchase_invoices_router)
 router.include_router(debit_notes_router)
+router.include_router(landed_costs_router)
 router.include_router(supplier_payments_router)
 router.include_router(accounts_router)
 router.include_router(journals_router)

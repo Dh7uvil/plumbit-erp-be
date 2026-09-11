@@ -728,6 +728,11 @@
             "type": "boolean",
             "title": "Is Default",
             "default": false
+          },
+          "is_designated_zone": {
+            "type": "boolean",
+            "title": "Is Designated Zone",
+            "default": false
           }
         },
         "type": "object",
@@ -782,6 +787,10 @@
             "type": "boolean",
             "title": "Is Default"
           },
+          "is_designated_zone": {
+            "type": "boolean",
+            "title": "Is Designated Zone"
+          },
           "is_active": {
             "type": "boolean",
             "title": "Is Active"
@@ -805,6 +814,7 @@
           "name",
           "phone",
           "is_default",
+          "is_designated_zone",
           "is_active",
           "created_at",
           "updated_at"
@@ -858,6 +868,17 @@
               }
             ],
             "title": "Is Default"
+          },
+          "is_designated_zone": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Designated Zone"
           },
           "is_active": {
             "anyOf": [

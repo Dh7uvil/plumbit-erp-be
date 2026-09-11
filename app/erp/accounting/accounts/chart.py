@@ -254,6 +254,15 @@ UAE_CHART: tuple[ChartSeedRow, ...] = (
         AccountSystemRole.COGS,
     ),
     ChartSeedRow(
+        "5250",
+        "Landed Cost Variance",
+        AccountType.EXPENSE,
+        AccountSubtype.COGS,
+        "5000",
+        False,
+        AccountSystemRole.LANDED_COST_VARIANCE,
+    ),
+    ChartSeedRow(
         "5300",
         "Inventory Adjustment",
         AccountType.EXPENSE,

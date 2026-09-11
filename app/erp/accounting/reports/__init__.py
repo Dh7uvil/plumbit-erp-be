@@ -1,1 +1,1 @@
-"""Ledger reports: trial balance, general ledger, account statement."""
+"""Ledger, inventory, financial, and tax reports."""

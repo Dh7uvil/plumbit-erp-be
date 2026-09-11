@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.core.enums import PackageStatus
 
 
@@ -111,6 +112,7 @@ class PackageResponse(BaseModel):
     shipping_marks: str | None
     notes: str | None
     available_actions: list[str] = Field(default_factory=list)
+    related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
     lines: list[PackageLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

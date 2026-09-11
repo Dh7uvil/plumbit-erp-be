@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -175,9 +176,7 @@ async def test_export_and_cogs_pending_tax_reports(client: AsyncClient) -> None:
     assert data["export_evidence_ok"] is False
     assert data["cogs_status"] == "PENDING"
 
-    exceptions = await client.get(
-        "/api/v1/reports/export-evidence-exceptions", headers=headers
-    )
+    exceptions = await client.get("/api/v1/reports/export-evidence-exceptions", headers=headers)
     assert exceptions.status_code == 200, exceptions.text
     exception_rows = exceptions.json()["data"]["lines"]
     assert len(exception_rows) == 1
@@ -191,3 +190,160 @@ async def test_export_and_cogs_pending_tax_reports(client: AsyncClient) -> None:
     assert len(pending_rows) == 1
     assert pending_rows[0]["sales_invoice_id"] == data["id"]
     assert pending_rows[0]["cogs_status"] == "PENDING"
+
+    register = await client.get(
+        "/api/v1/reports/sales-register",
+        headers=headers,
+        params={"from": today, "to": today},
+    )
+    assert register.status_code == 200, register.text
+    register_ids = [row["document_id"] for row in register.json()["data"]["lines"]]
+    assert data["id"] in register_ids
+
+    vat = await client.get(
+        "/api/v1/reports/vat-201",
+        headers=headers,
+        params={"from": today, "to": today},
+    )
+    assert vat.status_code == 200, vat.text
+    assert vat.json()["data"]["export_evidence_exceptions"] == 1
+    boxes = {item["code"]: item for item in vat.json()["data"]["boxes"]}
+    assert Decimal(boxes["2"]["net_amount"]) > Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_stock_valuation_matches_remaining_layers_and_gl(client: AsyncClient) -> None:
+    from tests.api.erp.purchase_invoices.test_routes import _enable_books
+    from tests.api.inventory_management.goods_receipts.test_routes import (
+        _create_from_po,
+        _issue_tracked_po,
+        _post_grn,
+    )
+
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    ctx = await _issue_tracked_po(client, headers, quantity="4")
+    created = await _create_from_po(client, headers, ctx["order"]["id"])
+    posted = await _post_grn(
+        client, headers, created["body"]["data"]["id"], created["body"]["data"]["version"]
+    )
+    assert posted.status_code == 200, posted.text
+    today = datetime.now(UTC).date().isoformat()
+    valuation = await client.get(
+        "/api/v1/reports/stock-valuation",
+        headers=headers,
+        params={"as_of": today, "product_id": ctx["product_id"]},
+    )
+    assert valuation.status_code == 200, valuation.text
+    data = valuation.json()["data"]
+    assert Decimal(data["total_qty"]) == Decimal("4.000000")
+    assert Decimal(data["total_value"]) == Decimal("320.0000")
+    csv_body = await client.get(
+        "/api/v1/reports/stock-valuation",
+        headers=headers,
+        params={"as_of": today, "format": "csv"},
+    )
+    assert csv_body.status_code == 200, csv_body.text
+    assert "text/csv" in csv_body.headers["content-type"]
+    recon = await client.get(
+        "/api/v1/reports/stock-valuation-gl",
+        headers=headers,
+        params={"as_of": today},
+    )
+    assert recon.status_code == 200, recon.text
+    assert Decimal(recon.json()["data"]["difference"]) == Decimal("0.0000")
+    movement = await client.get(
+        "/api/v1/reports/stock-movement",
+        headers=headers,
+        params={"from": today, "to": today, "product_id": ctx["product_id"]},
+    )
+    assert movement.status_code == 200, movement.text
+    assert Decimal(movement.json()["data"]["total_closing_qty"]) == Decimal("4.000000")
+    aging = await client.get(
+        "/api/v1/reports/stock-aging",
+        headers=headers,
+        params={"as_of": today, "product_id": ctx["product_id"]},
+    )
+    assert aging.status_code == 200, aging.text
+    assert Decimal(aging.json()["data"]["totals"]["total"]) == Decimal("320.0000")
+
+    stock = await client.get(f"/api/v1/stock?product_id={ctx['product_id']}", headers=headers)
+    row = stock.json()["data"][0]
+    reorder = await client.patch(
+        f"/api/v1/stock/{row['id']}/reorder",
+        headers=headers,
+        json={"reorder_level": "10", "reorder_qty": "6"},
+    )
+    assert reorder.status_code == 200, reorder.text
+    suggestions = await client.get("/api/v1/reports/purchase-suggestions", headers=headers)
+    assert suggestions.status_code == 200, suggestions.text
+    assert any(
+        item["product_id"] == ctx["product_id"] for item in suggestions.json()["data"]["lines"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_profit_and_loss_balance_sheet_and_cash_flow(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    accounts = await _accounts(client, headers)
+    created = await client.post(
+        "/api/v1/journals",
+        headers=headers,
+        json={
+            "narration": "Cash sale",
+            "lines": [
+                {"account_id": accounts["BANK"], "debit": "50.0000", "credit": "0"},
+                {"account_id": accounts["SALES_REVENUE"], "debit": "0", "credit": "50.0000"},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    row = created.json()["data"]
+    posted = await client.post(
+        f"/api/v1/journals/{row['id']}/post",
+        headers=_if_match(headers, row["version"], key=uuid4().hex),
+    )
+    assert posted.status_code == 200, posted.text
+    entry_date = posted.json()["data"]["entry_date"]
+    pnl = await client.get(
+        "/api/v1/reports/profit-and-loss",
+        headers=headers,
+        params={"from": entry_date, "to": entry_date, "include_ytd": True},
+    )
+    assert pnl.status_code == 200, pnl.text
+    profit = pnl.json()["data"]
+    assert Decimal(profit["net_profit"]) == Decimal("50.0000")
+    assert profit["lines"][0]["account_id"]
+    sheet = await client.get(
+        "/api/v1/reports/balance-sheet",
+        headers=headers,
+        params={"as_of": entry_date},
+    )
+    assert sheet.status_code == 200, sheet.text
+    balance = sheet.json()["data"]
+    assert balance["is_balanced"] is True
+    assert Decimal(balance["current_earnings"]) == Decimal("50.0000")
+    cash = await client.get(
+        "/api/v1/reports/cash-flow",
+        headers=headers,
+        params={"from": entry_date, "to": entry_date},
+    )
+    assert cash.status_code == 200, cash.text
+    flow = cash.json()["data"]
+    assert Decimal(flow["net_profit"]) == Decimal("50.0000")
+    assert Decimal(flow["net_change"]) == Decimal("50.0000")
+    purchase = await client.get(
+        "/api/v1/reports/purchase-register",
+        headers=headers,
+        params={"from": entry_date, "to": entry_date},
+    )
+    assert purchase.status_code == 200, purchase.text
+    vat = await client.get(
+        "/api/v1/reports/vat-201",
+        headers=headers,
+        params={"from": entry_date, "to": entry_date},
+    )
+    assert vat.status_code == 200, vat.text
+    assert Decimal(vat.json()["data"]["net_vat"]) == Decimal("0.0000")

@@ -18,6 +18,7 @@ from app.auth.catalog import (
     INVENTORY_MODULE,
     PERIOD_OVERRIDE,
     QUALITY_INSPECTION_CREATE,
+    LANDED_COST_CREATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
@@ -907,6 +908,10 @@ class GoodsReceiptService:
             and has_permission(self.actor_permissions, QUALITY_INSPECTION_CREATE)
         ):
             actions.append("create_inspection")
+        if status == StockDocumentStatus.POSTED and has_permission(
+            self.actor_permissions, LANDED_COST_CREATE
+        ):
+            actions.append("create_landed_cost")
         return actions
 
     def _to_response(self, row: GoodsReceipt) -> GoodsReceiptResponse:
@@ -955,6 +960,9 @@ class GoodsReceiptService:
     ) -> builtins.list[RelatedDocumentRef]:
         from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
         from app.erp.purchase_orders.repository import PurchaseOrderRepository
+        from app.inventory_management.quality_inspections.repository import (
+            QualityInspectionRepository,
+        )
 
         related: builtins.list[RelatedDocumentRef] = []
         if row.purchase_order_id is not None:
@@ -984,6 +992,34 @@ class GoodsReceiptService:
                     relationship="child",
                     document_date=item.invoice_date,
                     quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+        for item in await QualityInspectionRepository(self.session).list_for_goods_receipt(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.QUALITY_INSPECTION.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.inspection_date,
+                )
+            )
+        from app.erp.landed_costs.repository import LandedCostRepository
+
+        for item in await LandedCostRepository(self.session).list_for_goods_receipt(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.LANDED_COST.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.document_date,
                 )
             )
         return related

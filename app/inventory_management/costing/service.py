@@ -100,17 +100,18 @@ class CostingService:
             take = layer.qty_remaining if layer.qty_remaining <= remaining else remaining
             take = quantize_quantity(take)
             layer.qty_remaining = quantize_quantity(layer.qty_remaining - take)
+            layer_cost = layer.landed_unit_cost
             await self.repo.create_consumption(
                 tenant_id,
                 {
                     "movement_id": movement_id,
                     "layer_id": layer.id,
                     "qty": take,
-                    "unit_cost": layer.unit_cost,
+                    "unit_cost": layer_cost,
                 },
             )
-            consumed.append(CostConsumption(layer_id=layer.id, qty=take, unit_cost=layer.unit_cost))
-            total += take * layer.unit_cost
+            consumed.append(CostConsumption(layer_id=layer.id, qty=take, unit_cost=layer_cost))
+            total += take * layer_cost
             remaining -= take
         if remaining > _ZERO:
             if not allow_negative:
@@ -398,7 +399,7 @@ class CostingService:
     ) -> Decimal:
         latest = await self.repo.latest_layer(tenant_id, warehouse_id, product_id)
         if latest is not None:
-            return latest.unit_cost
+            return latest.landed_unit_cost
         return quantize_money(fallback)
 
     async def _extend_or_create_negative(

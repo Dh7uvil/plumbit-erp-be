@@ -32,6 +32,8 @@ from app.auth.catalog import (
     GOODS_RECEIPT_UPDATE,
     JOURNAL_ENTRY_READ,
     JOURNAL_ENTRY_UPDATE,
+    LANDED_COST_READ,
+    LANDED_COST_UPDATE,
     PACKAGE_READ,
     PACKAGE_UPDATE,
     PRODUCT_READ,
@@ -123,6 +125,7 @@ def _register_unposted_probes() -> None:
     register_unposted("debit_note", _probe_unposted_debit_notes)
     register_unposted("customer_payment", _probe_unposted_customer_payments)
     register_unposted("supplier_payment", _probe_unposted_supplier_payments)
+    register_unposted("landed_cost", _probe_unposted_landed_costs)
 
 
 async def _probe_unposted_adjustments(
@@ -476,6 +479,33 @@ async def _probe_unposted_supplier_payments(
     return documents, total
 
 
+async def _probe_unposted_landed_costs(
+    session: AsyncSession,
+    tenant_id: UUID,
+    as_of: date,
+    page: PageParams,
+) -> tuple[list[UnpostedDocument], int]:
+    from app.erp.landed_costs.service import LandedCostService
+
+    rows, total = await LandedCostService(session).list(
+        tenant_id,
+        page=page,
+        status=StockDocumentStatus.DRAFT.value,
+        document_date_to=as_of,
+    )
+    documents = [
+        UnpostedDocument(
+            id=row.id,
+            document_type="landed_cost",
+            document_number=row.document_number,
+            document_date=row.document_date,
+            status=str(row.status),
+        )
+        for row in rows
+    ]
+    return documents, total
+
+
 def _register_attachment_entities() -> None:
     register(
         AttachmentEntitySpec(
@@ -685,6 +715,14 @@ def _register_attachment_entities() -> None:
             _probe_via_get(_supplier_payment_get),
         )
     )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.LANDED_COST,
+            LANDED_COST_READ,
+            LANDED_COST_UPDATE,
+            _probe_via_get(_landed_cost_get),
+        )
+    )
 
 
 def _probe_via_get(
@@ -873,6 +911,12 @@ async def _supplier_payment_get(session: AsyncSession, tenant_id: UUID, entity_i
     return await SupplierPaymentService(session).get(tenant_id, entity_id)
 
 
+async def _landed_cost_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.erp.landed_costs.service import LandedCostService
+
+    return await LandedCostService(session).get(tenant_id, entity_id)
+
+
 def _register_outbox_handlers() -> None:
     # Phases 34 and 35 replace these logging no-ops with real handlers.
     from app.common.outbox.handlers import register as register_outbox
@@ -908,6 +952,8 @@ def _register_outbox_handlers() -> None:
         "erp.supplier_payment.posted",
         "erp.supplier_payment.cancelled",
         "erp.supplier_payment.allocated",
+        "erp.landed_cost.posted",
+        "erp.landed_cost.cancelled",
     ):
         register_outbox(event_type, _log_outbox_event)
 

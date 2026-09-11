@@ -18,6 +18,7 @@ from app.auth.catalog import (
 from app.auth.org_service import OrganizationService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
 from app.common.utils.datetime import today_in_timezone
 from app.core.enums import (
@@ -113,7 +114,10 @@ class ShipmentService:
         return [self._to_response(row) for row in rows], total
 
     async def get(self, tenant_id: UUID, shipment_id: UUID) -> ShipmentResponse:
-        return self._to_response(await self._require(tenant_id, shipment_id))
+        row = await self._require(tenant_id, shipment_id)
+        response = self._to_response(row)
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
 
     async def delivery_note_is_shipped(self, tenant_id: UUID, delivery_note_id: UUID) -> bool:
         note = await self.delivery_notes._require(tenant_id, delivery_note_id)
@@ -468,6 +472,23 @@ class ShipmentService:
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: Shipment
+    ) -> builtins.list[RelatedDocumentRef]:
+        related: builtins.list[RelatedDocumentRef] = []
+        for note in await self.delivery_notes.repo.list_for_shipment(tenant_id, row.id):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.DELIVERY_NOTE.value,
+                    document_id=note.id,
+                    document_number=note.document_number,
+                    status=note.status,
+                    relationship="child",
+                    document_date=note.document_date,
+                )
+            )
+        return related
 
     def _available_actions(self, status: ShipmentStatus) -> builtins.list[str]:
         actions: builtins.list[str] = []

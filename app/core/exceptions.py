@@ -58,6 +58,9 @@ class ErrorCode(StrEnum):
     PAYMENT_ACCOUNT_INVALID = "PAYMENT_ACCOUNT_INVALID"
     PAYMENT_NOTHING_TO_APPLY = "PAYMENT_NOTHING_TO_APPLY"
     CREDIT_LIMIT_EXCEEDED = "CREDIT_LIMIT_EXCEEDED"
+    LANDED_COST_WEIGHT_REQUIRED = "LANDED_COST_WEIGHT_REQUIRED"
+    LANDED_COST_LINE_OVER_ALLOCATED = "LANDED_COST_LINE_OVER_ALLOCATED"
+    LANDED_COST_CANNOT_CANCEL = "LANDED_COST_CANNOT_CANCEL"
     INTEGRATION_ERROR = "INTEGRATION_ERROR"
     INTERNAL_ERROR = "INTERNAL_ERROR"
     RATE_LIMITED = "RATE_LIMITED"
@@ -398,6 +401,24 @@ class CreditLimitExceededError(AppError):
     default_code = ErrorCode.CREDIT_LIMIT_EXCEEDED
     default_status = HTTPStatus.CONFLICT
     default_message = "This document exceeds the customer credit limit"
+
+
+class LandedCostWeightRequiredError(AppError):
+    default_code = ErrorCode.LANDED_COST_WEIGHT_REQUIRED
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "Weight allocation requires net weight on every goods receipt line"
+
+
+class LandedCostLineOverAllocatedError(AppError):
+    default_code = ErrorCode.LANDED_COST_LINE_OVER_ALLOCATED
+    default_status = HTTPStatus.CONFLICT
+    default_message = "This bill line is already fully allocated to landed cost"
+
+
+class LandedCostCannotCancelError(AppError):
+    default_code = ErrorCode.LANDED_COST_CANNOT_CANCEL
+    default_status = HTTPStatus.CONFLICT
+    default_message = "This landed cost cannot be cancelled"
 
 
 class InternalError(AppError):

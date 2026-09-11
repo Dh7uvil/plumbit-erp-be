@@ -74,7 +74,8 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "account": ("create", "read", "update", "delete"),
         "journal_entry": ("create", "read", "update", "delete", "post", "reverse"),
         "opening_balance": ("manage",),
-        "report": ("ledger", "tax", "ar_ap"),
+        "report": ("ledger", "tax", "ar_ap", "inventory", "financial"),
+        "landed_cost": ("read", "create", "update", "post", "cancel"),
         "sales_invoice": ("create", "read", "update", "delete", "post", "cancel"),
         "purchase_invoice": ("create", "read", "update", "delete", "post", "cancel"),
         "credit_note": ("create", "read", "update", "delete", "post", "cancel"),
@@ -285,6 +286,13 @@ OPENING_BALANCE_MANAGE = build_permission(ERP_MODULE, "opening_balance", "manage
 REPORT_LEDGER = build_permission(ERP_MODULE, "report", "ledger")
 REPORT_TAX = build_permission(ERP_MODULE, "report", "tax")
 REPORT_AR_AP = build_permission(ERP_MODULE, "report", "ar_ap")
+REPORT_INVENTORY = build_permission(ERP_MODULE, "report", "inventory")
+REPORT_FINANCIAL = build_permission(ERP_MODULE, "report", "financial")
+LANDED_COST_CREATE = build_permission(ERP_MODULE, "landed_cost", "create")
+LANDED_COST_READ = build_permission(ERP_MODULE, "landed_cost", "read")
+LANDED_COST_UPDATE = build_permission(ERP_MODULE, "landed_cost", "update")
+LANDED_COST_POST = build_permission(ERP_MODULE, "landed_cost", "post")
+LANDED_COST_CANCEL = build_permission(ERP_MODULE, "landed_cost", "cancel")
 SALES_INVOICE_CREATE = build_permission(ERP_MODULE, "sales_invoice", "create")
 SALES_INVOICE_READ = build_permission(ERP_MODULE, "sales_invoice", "read")
 SALES_INVOICE_UPDATE = build_permission(ERP_MODULE, "sales_invoice", "update")

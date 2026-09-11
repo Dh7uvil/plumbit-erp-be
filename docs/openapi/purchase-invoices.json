@@ -2326,6 +2326,24 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Qty Debited"
+          },
+          "landed_cost_allocated": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Landed Cost Allocated",
+            "default": "0"
+          },
+          "landed_cost_remaining": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Landed Cost Remaining"
           }
         },
         "type": "object",

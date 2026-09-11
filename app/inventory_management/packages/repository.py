@@ -83,6 +83,18 @@ class PackageRepository:
         result = await self.session.execute(statement)
         return result.scalars().all()
 
+    async def list_for_delivery_note(
+        self, tenant_id: UUID, delivery_note_id: UUID
+    ) -> Sequence[Package]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(Package.delivery_note_id == delivery_note_id)
+            .options(self._with_lines())
+            .order_by(Package.created_at)
+        )
+        result = await self.session.execute(statement)
+        return result.scalars().all()
+
     async def packed_qty_by_sales_order_line(
         self,
         tenant_id: UUID,

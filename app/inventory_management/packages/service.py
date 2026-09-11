@@ -13,6 +13,7 @@ from app.auth.catalog import INVENTORY_MODULE, PACKAGE_DELETE, PACKAGE_UPDATE
 from app.auth.org_service import OrganizationService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
 from app.common.utils.currency import quantize_quantity
 from app.common.utils.datetime import today_in_timezone
@@ -94,7 +95,10 @@ class PackageService:
         return [self._to_response(row) for row in rows], total
 
     async def get(self, tenant_id: UUID, package_id: UUID) -> PackageResponse:
-        return self._to_response(await self._require(tenant_id, package_id))
+        row = await self._require(tenant_id, package_id)
+        response = self._to_response(row)
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
 
     async def create(
         self, tenant_id: UUID, payload: PackageCreate, *, actor_user_id: UUID
@@ -442,6 +446,37 @@ class PackageService:
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: Package
+    ) -> builtins.list[RelatedDocumentRef]:
+        related: builtins.list[RelatedDocumentRef] = []
+        order = await self.sales_orders.repo.get(tenant_id, row.sales_order_id)
+        if order is not None:
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.SALES_ORDER.value,
+                    document_id=order.id,
+                    document_number=order.document_number,
+                    status=order.status,
+                    relationship="source",
+                    document_date=order.order_date,
+                )
+            )
+        if row.delivery_note_id is not None:
+            note = await self.delivery_notes.repo.get(tenant_id, row.delivery_note_id)
+            if note is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.DELIVERY_NOTE.value,
+                        document_id=note.id,
+                        document_number=note.document_number,
+                        status=note.status,
+                        relationship="related",
+                        document_date=note.document_date,
+                    )
+                )
+        return related
 
     def _available_actions(self, status: PackageStatus) -> builtins.list[str]:
         actions: builtins.list[str] = []

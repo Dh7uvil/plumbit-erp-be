@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.core.enums import Incoterm, ShipmentStatus, ShipmentType, TransportMode
 
 
@@ -156,5 +157,6 @@ class ShipmentResponse(BaseModel):
     total_packages: int | None
     notes: str | None
     available_actions: list[str] = Field(default_factory=list)
+    related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

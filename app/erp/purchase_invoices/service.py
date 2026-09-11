@@ -17,6 +17,7 @@ from app.auth.catalog import (
     PURCHASE_INVOICE_CANCEL,
     PURCHASE_INVOICE_DELETE,
     PURCHASE_INVOICE_POST,
+    LANDED_COST_CREATE,
     SUPPLIER_PAYMENT_CREATE,
 )
 from app.auth.org_service import OrganizationService
@@ -188,6 +189,7 @@ class PurchaseInvoiceService:
         await self._ensure_policy(tenant_id)
         response = self._to_response(row, today=await self._today(tenant_id))
         response.related_documents = await self._related_documents(tenant_id, row)
+        await self._attach_landed_cost_remaining(tenant_id, response)
         return response
 
     async def create(
@@ -1449,6 +1451,12 @@ class PurchaseInvoiceService:
         ):
             actions.append("pay_bill")
             actions.append("apply_debits")
+        if (
+            status == InvoiceDocumentStatus.POSTED
+            and any(line.line_type == PurchaseInvoiceLineType.EXPENSE.value for line in row.lines)
+            and has_permission(self.actor_permissions, LANDED_COST_CREATE)
+        ):
+            actions.append("create_landed_cost")
         return actions
 
     def _to_response(
@@ -1627,7 +1635,38 @@ class PurchaseInvoiceService:
                     amount_summary=str(payment.amount_paid),
                 )
             )
+        from app.erp.landed_costs.repository import LandedCostRepository
+
+        for item in await LandedCostRepository(self.session).list_for_purchase_invoice(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.LANDED_COST.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.document_date,
+                    amount_summary=str(sum((charge.amount for charge in item.charges), Decimal("0"))),
+                )
+            )
         return related
+
+    async def _attach_landed_cost_remaining(
+        self, tenant_id: UUID, response: PurchaseInvoiceResponse
+    ) -> None:
+        from app.erp.landed_costs.repository import LandedCostRepository
+
+        line_ids = [line.id for line in response.lines]
+        allocated = await LandedCostRepository(self.session).posted_allocated_by_bill_line(
+            tenant_id, line_ids
+        )
+        for line in response.lines:
+            taken = allocated.get(line.id, _ZERO)
+            line.landed_cost_allocated = quantize_money(taken)
+            if line.line_type == PurchaseInvoiceLineType.EXPENSE:
+                line.landed_cost_remaining = quantize_money(line.amount - taken)
 
     async def _require(
         self, tenant_id: UUID, invoice_id: UUID, *, for_update: bool = False

@@ -1,4 +1,4 @@
-"""Trial balance, general ledger, party statements, and tax exception reports."""
+"""Trial balance, general ledger, party statements, and Stage I reports."""
 
 from __future__ import annotations
 
@@ -26,6 +26,8 @@ from app.core.exceptions import ValidationError
 from app.crm.customers.models import Customer
 from app.erp.accounting.accounts.service import AccountService
 from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
+from app.erp.accounting.reports.financials import FinancialReports
+from app.erp.accounting.reports.inventory import InventoryReports
 from app.erp.accounting.reports.schemas import (
     AccountStatementLine,
     AccountStatementResponse,
@@ -44,6 +46,7 @@ from app.erp.accounting.reports.schemas import (
     TrialBalanceLine,
     TrialBalanceResponse,
 )
+from app.erp.accounting.reports.tax_registers import TaxRegisters
 from app.erp.sales_invoices.models import SalesInvoice, SalesInvoiceLine
 
 _ZERO = Decimal("0")
@@ -60,7 +63,7 @@ def _posted_join():
     )
 
 
-class ReportService:
+class ReportService(InventoryReports, FinancialReports, TaxRegisters):
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.accounts = AccountService(session)
@@ -77,9 +80,7 @@ class ReportService:
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
         accounts = await self.accounts.repo.list_all(tenant_id)
-        opening_map = await self._sum_by_account(
-            tenant_id, before=from_date, branch_id=branch_id
-        )
+        opening_map = await self._sum_by_account(tenant_id, before=from_date, branch_id=branch_id)
         period_map = await self._sum_by_account(
             tenant_id, start=from_date, end=to_date, branch_id=branch_id
         )
@@ -92,11 +93,7 @@ class ReportService:
             period = period_map.get(account.id, (_ZERO, _ZERO))
             closing_d = quantize_money(opening[0] + period[0])
             closing_c = quantize_money(opening[1] + period[1])
-            if (
-                not include_zero
-                and opening == (_ZERO, _ZERO)
-                and period == (_ZERO, _ZERO)
-            ):
+            if not include_zero and opening == (_ZERO, _ZERO) and period == (_ZERO, _ZERO):
                 continue
             lines.append(
                 TrialBalanceLine(
@@ -183,8 +180,7 @@ class ReportService:
         lines: list[GeneralLedgerLine] = []
         for line, header in rows:
             running = quantize_money(
-                running
-                + self._delta(account.account_type, line.debit_base, line.credit_base)
+                running + self._delta(account.account_type, line.debit_base, line.credit_base)
             )
             lines.append(
                 GeneralLedgerLine(
@@ -339,9 +335,7 @@ class ReportService:
             lines=lines,
         )
 
-    async def invoiced_not_dispatched(
-        self, tenant_id: UUID
-    ) -> InvoicedNotDispatchedResponse:
+    async def invoiced_not_dispatched(self, tenant_id: UUID) -> InvoicedNotDispatchedResponse:
         statement = (
             select(
                 SalesInvoice.id,
@@ -531,9 +525,7 @@ class ReportService:
             party_type=PartyType.SUPPLIER,
         )
 
-    async def _aging(
-        self, tenant_id: UUID, *, as_of: date, party_type: PartyType
-    ) -> AgingResponse:
+    async def _aging(self, tenant_id: UUID, *, as_of: date, party_type: PartyType) -> AgingResponse:
         from app.erp.accounting.open_items.service import OpenItemsService
 
         if party_type == PartyType.CUSTOMER:
@@ -577,9 +569,7 @@ class ReportService:
         rows.sort(key=lambda row: row.party_name)
         return AgingResponse(as_of=as_of, rows=rows, totals=totals)
 
-    def _bucket_items(
-        self, items, *, as_of: date, party_type: PartyType
-    ) -> AgingBucketTotals:
+    def _bucket_items(self, items, *, as_of: date, party_type: PartyType) -> AgingBucketTotals:
         buckets = AgingBucketTotals()
         outstanding_types = (
             {OpenItemType.SALES_INVOICE, OpenItemType.OPENING_AR}
@@ -595,9 +585,7 @@ class ReportService:
             if item.document_date > as_of:
                 continue
             if item.item_type in credit_types:
-                buckets.unapplied_credits = quantize_money(
-                    buckets.unapplied_credits + item.balance
-                )
+                buckets.unapplied_credits = quantize_money(buckets.unapplied_credits + item.balance)
                 continue
             if item.item_type not in outstanding_types:
                 continue

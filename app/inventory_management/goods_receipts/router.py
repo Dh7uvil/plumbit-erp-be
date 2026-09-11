@@ -11,6 +11,7 @@ from app.auth.catalog import (
     GOODS_RECEIPT_POST,
     GOODS_RECEIPT_READ,
     GOODS_RECEIPT_UPDATE,
+    LANDED_COST_READ,
 )
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
@@ -20,6 +21,8 @@ from app.common.idempotency.service import hash_request, require_idempotency_key
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
+from app.erp.landed_costs.dependencies import LandedCostServiceDependency
+from app.erp.landed_costs.schemas import LandedCostEligibleResponse
 from app.inventory_management.goods_receipts.dependencies import GoodsReceiptServiceDependency
 from app.inventory_management.goods_receipts.schemas import (
     GoodsReceiptCancelRequest,
@@ -195,3 +198,18 @@ async def cancel_goods_receipt(
         endpoint=request.url.path,
     )
     return ApiResponse(data=row, message="Goods receipt cancelled")
+
+
+@router.get(
+    "/{receipt_id}/landed-cost-eligible",
+    response_model=ApiResponse[LandedCostEligibleResponse],
+)
+async def get_landed_cost_eligible(
+    receipt_id: UUID,
+    tenant: TenantContextDependency,
+    landed_costs: LandedCostServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(LANDED_COST_READ))],
+) -> ApiResponse[LandedCostEligibleResponse]:
+    return ApiResponse(
+        data=await landed_costs.eligible_for_goods_receipt(tenant.tenant_id, receipt_id)
+    )

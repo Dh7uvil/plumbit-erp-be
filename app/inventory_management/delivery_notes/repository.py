@@ -101,6 +101,18 @@ class DeliveryNoteRepository:
         result = await self.session.execute(statement)
         return result.scalars().all()
 
+    async def list_for_shipment(
+        self, tenant_id: UUID, shipment_id: UUID
+    ) -> Sequence[DeliveryNote]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(DeliveryNote.shipment_id == shipment_id)
+            .options(self._with_lines())
+            .order_by(DeliveryNote.document_date, DeliveryNote.created_at)
+        )
+        result = await self.session.execute(statement)
+        return result.scalars().all()
+
     async def create(self, tenant_id: UUID, values: Mapping[str, object]) -> DeliveryNote:
         return await self._repo.create(tenant_id, values)
 

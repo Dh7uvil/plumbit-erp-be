@@ -49,6 +49,7 @@ import app.erp.accounting.open_items.models as _payment_allocations  # noqa: E40
 import app.erp.credit_notes.models as _credit_notes  # noqa: E402, F401
 import app.erp.customer_payments.models as _customer_payments  # noqa: E402, F401
 import app.erp.debit_notes.models as _debit_notes  # noqa: E402, F401
+import app.erp.landed_costs.models as _landed_costs  # noqa: E402, F401
 import app.erp.exchange_rates.models as _exchange_rates  # noqa: E402, F401
 import app.erp.proforma_invoices.models as _proforma_invoices  # noqa: E402, F401
 import app.erp.purchase_invoices.models as _purchase_invoices  # noqa: E402, F401

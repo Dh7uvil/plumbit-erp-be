@@ -55,7 +55,7 @@ app/
 │                                 quotations, proforma_invoices, period_lock, sales_orders,
 │                                 sales_invoices, credit_notes, purchase_orders,
 │                                 purchase_invoices, debit_notes, customer_payments,
-│                                 supplier_payments, accounting/accounts,
+│                                 supplier_payments, landed_costs, accounting/accounts,
 │                                 accounting/ledger, accounting/opening_balances,
 │                                 accounting/reports
 │                                 planned: einvoicing (status APIs on sales invoices and credit notes;
@@ -76,7 +76,8 @@ concept only — they never appear in the URL, which is a flat set of hyphenated
 
 Document-number prefixes: `QUO`, `SO`, `DN` (delivery notes), `INV`, `CN` (credit notes), `PO`,
 `GRN`, `BILL` (purchase invoices), `SDN` (debit notes), `STR`, `STA`, `PFI`, `QCR`, `PKG`, `SHP`,
-`SR` (sales returns), `JV` (journal entries), `RCP` (customer receipts), `PAY` (supplier payments).
+`SR` (sales returns), `JV` (journal entries), `RCP` (customer receipts), `PAY` (supplier payments),
+`LC` (landed costs).
 Prefer a unique prefix per type; URLs must be unique even if a prefix is shared.
 
 ## Detailed instruction files
@@ -123,7 +124,8 @@ Read the relevant file before working in that area — each one is the authority
   writes AR / revenue / VAT only; `cogs_amount` is a non-GL snapshot. GRN post writes
   `DR INVENTORY / CR GRNI`. Inventory journals go through `InventoryLedgerService` →
   `LedgerPostingService` and are skipped when `books_start_date` is unset. Stock transfers
-  write no journal.
+  write no journal. Sales-order confirm reserves stock; packages do not. Delivery notes
+  release the reservation and post the outbound movement.
 - Every workflow document response includes `available_actions`. That list is the only legal
   source of UI buttons.
 - UAE VAT: require TRN when `REGISTERED`; place of supply from emirate; never recompute posted tax.

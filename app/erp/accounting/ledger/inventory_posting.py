@@ -12,6 +12,7 @@ from app.auth.org_service import OrganizationService
 from app.common.utils.currency import quantize_money
 from app.core.enums import AccountSystemRole, JournalType
 from app.erp.accounting.accounts.service import AccountResolver
+from app.erp.accounting.ledger.models import JournalEntry
 from app.erp.accounting.ledger.posting import LedgerPostingService
 from app.erp.accounting.ledger.schemas import JournalLineInput
 from app.erp.exchange_rates.service import CurrencyService
@@ -22,6 +23,7 @@ SOURCE_DELIVERY_NOTE = "delivery_note"
 SOURCE_SALES_RETURN = "sales_return"
 SOURCE_QUALITY_INSPECTION = "quality_inspection"
 SOURCE_STOCK_ADJUSTMENT = "stock_adjustment"
+SOURCE_LANDED_COST = "landed_cost"
 
 
 class InventoryLedgerService:
@@ -198,6 +200,37 @@ class InventoryLedgerService:
             branch_id=branch_id,
         )
 
+    async def post_landed_cost(
+        self,
+        tenant_id: UUID,
+        *,
+        source_id: UUID,
+        entry_date: date,
+        lines: list[JournalLineInput],
+        actor_id: UUID,
+        branch_id: UUID | None = None,
+        document_number: str | None = None,
+    ):
+        if not await self._should_post(tenant_id, entry_date):
+            return None
+        if not lines:
+            return None
+        currency_id = (await self.currencies.get_base(tenant_id)).id
+        return await self.posting.post_for_document(
+            tenant_id,
+            source_type=SOURCE_LANDED_COST,
+            source_id=source_id,
+            entry_date=entry_date,
+            lines=lines,
+            currency_id=currency_id,
+            exchange_rate=Decimal("1"),
+            narration=f"Landed cost {document_number or source_id}",
+            branch_id=branch_id,
+            actor_id=actor_id,
+            journal_type=JournalType.SYSTEM,
+            reference=document_number,
+        )
+
     async def reverse(
         self,
         tenant_id: UUID,
@@ -207,11 +240,11 @@ class InventoryLedgerService:
         reversal_date: date,
         reason: str,
         actor_id: UUID,
-    ) -> None:
+    ) -> JournalEntry | None:
         existing = await self.posting.repo.get_posted_for_source(tenant_id, source_type, source_id)
         if existing is None:
-            return
-        await self.posting.reverse(
+            return None
+        return await self.posting.reverse(
             tenant_id,
             existing.id,
             reversal_date=reversal_date,
