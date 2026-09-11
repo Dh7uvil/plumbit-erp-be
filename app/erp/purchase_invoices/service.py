@@ -25,7 +25,9 @@ from app.common.period_lock import PeriodLockPolicy
 from app.common.registries.purchase_invoice_dependents import registered_probes
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
+from app.common.utils.conversion import quantity_summary
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
@@ -176,12 +178,15 @@ class PurchaseInvoiceService:
             extra_criteria=extra or None,
         )
         await self._ensure_policy(tenant_id)
-        return [self._to_response(row) for row in rows], total
+        today = await self._today(tenant_id)
+        return [self._to_response(row, today=today) for row in rows], total
 
     async def get(self, tenant_id: UUID, invoice_id: UUID) -> PurchaseInvoiceResponse:
         row = await self._require(tenant_id, invoice_id)
         await self._ensure_policy(tenant_id)
-        return self._to_response(row)
+        response = self._to_response(row, today=await self._today(tenant_id))
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
 
     async def create(
         self, tenant_id: UUID, payload: PurchaseInvoiceCreate, *, actor_user_id: UUID
@@ -1400,9 +1405,21 @@ class PurchaseInvoiceService:
             actions.append("delete")
         return actions
 
-    def _to_response(self, row: PurchaseInvoice) -> PurchaseInvoiceResponse:
+    def _to_response(
+        self, row: PurchaseInvoice, *, today: date | None = None
+    ) -> PurchaseInvoiceResponse:
         status = InvoiceDocumentStatus(row.status)
         period_locked = self._date_in_locked_period(row.invoice_date)
+        debited = row.amount_debited
+        is_fully_debited = debited > _ZERO and debited >= row.grand_total
+        is_partially_debited = debited > _ZERO and not is_fully_debited
+        is_overdue = (
+            today is not None
+            and row.due_date is not None
+            and row.due_date < today
+            and status == InvoiceDocumentStatus.POSTED
+            and row.balance_due > _ZERO
+        )
         return PurchaseInvoiceResponse(
             id=row.id,
             tenant_id=row.tenant_id,
@@ -1455,7 +1472,11 @@ class PurchaseInvoiceService:
             cancelled_at=row.cancelled_at,
             cancelled_by=row.cancelled_by,
             cancel_reason=row.cancel_reason,
+            is_overdue=is_overdue,
+            is_partially_debited=is_partially_debited,
+            is_fully_debited=is_fully_debited,
             available_actions=self._available_actions(row, status, period_locked=period_locked),
+            related_documents=[],
             lines=[
                 PurchaseInvoiceLineResponse(
                     id=line.id,
@@ -1491,6 +1512,60 @@ class PurchaseInvoiceService:
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: PurchaseInvoice
+    ) -> builtins.list[RelatedDocumentRef]:
+        from app.erp.debit_notes.repository import DebitNoteRepository
+        from app.erp.purchase_orders.repository import PurchaseOrderRepository
+        from app.inventory_management.goods_receipts.repository import GoodsReceiptRepository
+
+        related: builtins.list[RelatedDocumentRef] = []
+        if row.purchase_order_id is not None:
+            order = await PurchaseOrderRepository(self.session).get(
+                tenant_id, row.purchase_order_id
+            )
+            if order is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.PURCHASE_ORDER.value,
+                        document_id=order.id,
+                        document_number=order.document_number,
+                        status=order.status,
+                        relationship="source",
+                        document_date=order.order_date,
+                    )
+                )
+        if row.goods_receipt_id is not None:
+            receipt = await GoodsReceiptRepository(self.session).get(
+                tenant_id, row.goods_receipt_id
+            )
+            if receipt is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.GOODS_RECEIPT.value,
+                        document_id=receipt.id,
+                        document_number=receipt.document_number,
+                        status=receipt.status,
+                        relationship="source",
+                        document_date=receipt.document_date,
+                    )
+                )
+        for item in await DebitNoteRepository(self.session).list_for_purchase_invoice(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.DEBIT_NOTE.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.debit_note_date,
+                    quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+        return related
 
     async def _require(
         self, tenant_id: UUID, invoice_id: UUID, *, for_update: bool = False

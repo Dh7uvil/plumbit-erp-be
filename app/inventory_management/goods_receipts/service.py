@@ -25,7 +25,9 @@ from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
+from app.common.utils.conversion import quantity_summary
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import place_of_supply_from_address
@@ -159,7 +161,9 @@ class GoodsReceiptService:
     async def get(self, tenant_id: UUID, receipt_id: UUID) -> GoodsReceiptResponse:
         row = await self._require(tenant_id, receipt_id)
         await self._ensure_policy(tenant_id)
-        return self._to_response(row)
+        response = self._to_response(row)
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
 
     async def create(
         self, tenant_id: UUID, payload: GoodsReceiptCreate, *, actor_user_id: UUID
@@ -945,6 +949,44 @@ class GoodsReceiptService:
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: GoodsReceipt
+    ) -> builtins.list[RelatedDocumentRef]:
+        from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
+        from app.erp.purchase_orders.repository import PurchaseOrderRepository
+
+        related: builtins.list[RelatedDocumentRef] = []
+        if row.purchase_order_id is not None:
+            order = await PurchaseOrderRepository(self.session).get(
+                tenant_id, row.purchase_order_id
+            )
+            if order is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.PURCHASE_ORDER.value,
+                        document_id=order.id,
+                        document_number=order.document_number,
+                        status=order.status,
+                        relationship="source",
+                        document_date=order.order_date,
+                    )
+                )
+        for item in await PurchaseInvoiceRepository(self.session).list_for_goods_receipt(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.PURCHASE_INVOICE.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.invoice_date,
+                    quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+        return related
 
     async def _ensure_policy(self, tenant_id: UUID) -> PeriodLockPolicy:
         if self._period_policy is None:

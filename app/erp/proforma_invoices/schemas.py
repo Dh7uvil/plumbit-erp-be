@@ -7,7 +7,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.core.enums import (
     DiscountType,
     Incoterm,
@@ -34,6 +36,7 @@ class ProformaInvoiceFilter(BaseFilter):
     branch_id: UUID | None = None
     currency_id: UUID | None = None
     source_quotation_id: UUID | None = None
+    source_sales_order_id: UUID | None = None
 
 
 class ProformaInvoiceLineInput(BaseModel):
@@ -47,6 +50,7 @@ class ProformaInvoiceLineInput(BaseModel):
     tax_id: UUID | None = None
     hs_code: str | None = Field(default=None, max_length=20)
     source_quotation_line_id: UUID | None = None
+    source_sales_order_line_id: UUID | None = None
 
     @field_validator("description", "hs_code")
     @classmethod
@@ -82,6 +86,15 @@ class ProformaInvoiceLineResponse(BaseModel):
     amount: Decimal
     hs_code: str | None
     source_quotation_line_id: UUID | None
+    source_sales_order_line_id: UUID | None = None
+    qty_converted: Decimal = Decimal("0")
+    qty_remaining: Decimal = Decimal("0")
+
+    @model_validator(mode="after")
+    def compute_remaining(self) -> "ProformaInvoiceLineResponse":
+        leftover = self.quantity - self.qty_converted
+        self.qty_remaining = leftover if leftover > 0 else Decimal("0")
+        return self
 
 
 class ProformaInvoiceMilestoneInput(BaseModel):
@@ -137,6 +150,7 @@ class ProformaInvoiceCreate(BaseModel):
     adjustment_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
     source_quotation_id: UUID | None = None
+    source_sales_order_id: UUID | None = None
     incoterm: Incoterm | None = None
     incoterm_place: str | None = Field(default=None, max_length=120)
     port_of_loading: str | None = Field(default=None, max_length=120)
@@ -247,10 +261,26 @@ class ConvertProformaToSalesOrderRequest(BaseModel):
     warehouse_id: UUID | None = None
     branch_id: UUID | None = None
     version: int | None = Field(default=None, ge=1)
+    lines: list[ConversionLineInput] | None = None
 
     @field_validator("customer_po_number")
     @classmethod
     def normalize_po(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class ConvertProformaToSalesInvoiceRequest(BaseModel):
+    invoice_date: date | None = None
+    notes: str | None = None
+    version: int | None = Field(default=None, ge=1)
+    lines: list[ConversionLineInput] | None = None
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_notes(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()
@@ -297,6 +327,7 @@ class ProformaInvoiceResponse(BaseModel):
     foreign_amount: Decimal
     base_amount: Decimal
     source_quotation_id: UUID | None
+    source_sales_order_id: UUID | None = None
     incoterm: Incoterm | None
     incoterm_place: str | None
     port_of_loading: str | None
@@ -322,6 +353,7 @@ class ProformaInvoiceResponse(BaseModel):
     converted_document_id: UUID | None
     advance_required_amount: Decimal
     available_actions: list[str] = Field(default_factory=list)
+    related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
     lines: list[ProformaInvoiceLineResponse] = Field(default_factory=list)
     milestones: list[ProformaInvoiceMilestoneResponse] = Field(default_factory=list)
     created_at: datetime

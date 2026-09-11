@@ -26,7 +26,9 @@ from app.auth.schemas import AddressResponse
 from app.common.idempotency.service import IdempotencyService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.schemas.related_documents import QuantityProgress, RelatedDocumentRef
 from app.common.services.audit import AuditWriter
+from app.common.utils.conversion import quantity_summary, remaining_qty
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
@@ -176,10 +178,10 @@ class PurchaseOrderService:
 
     async def get(self, tenant_id: UUID, purchase_order_id: UUID) -> PurchaseOrderResponse:
         requires_approval = await self.org.purchase_order_requires_approval(tenant_id)
-        return self._to_response(
-            await self._require(tenant_id, purchase_order_id),
-            requires_approval=requires_approval,
-        )
+        row = await self._require(tenant_id, purchase_order_id)
+        response = self._to_response(row, requires_approval=requires_approval)
+        response.related_documents = await self._related_documents(tenant_id, row)
+        return response
 
     async def compose_defaults(
         self, tenant_id: UUID, supplier_id: UUID
@@ -1300,10 +1302,93 @@ class PurchaseOrderService:
             available_actions=self._available_actions(
                 row, status, requires_approval=requires_approval
             ),
+            quantity_progress=self._quantity_progress(row),
+            related_documents=[],
             lines=[PurchaseOrderLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
+
+    def _quantity_progress(self, row: PurchaseOrder) -> QuantityProgress:
+        ordered = sum((line.quantity for line in row.lines), _ZERO)
+        received = sum((line.qty_received for line in row.lines), _ZERO)
+        billed = sum((line.qty_billed for line in row.lines), _ZERO)
+        return QuantityProgress(
+            ordered=ordered,
+            fulfilled=received,
+            invoiced=billed,
+            remaining_to_fulfill=remaining_qty(ordered, received),
+            remaining_to_invoice=remaining_qty(ordered, billed),
+        )
+
+    async def _related_documents(
+        self, tenant_id: UUID, row: PurchaseOrder
+    ) -> builtins.list[RelatedDocumentRef]:
+        from app.erp.debit_notes.repository import DebitNoteRepository
+        from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
+        from app.erp.sales_orders.repository import SalesOrderRepository
+        from app.inventory_management.goods_receipts.repository import GoodsReceiptRepository
+
+        related: builtins.list[RelatedDocumentRef] = []
+        if row.source_sales_order_id is not None:
+            order = await SalesOrderRepository(self.session).get(
+                tenant_id, row.source_sales_order_id
+            )
+            if order is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.SALES_ORDER.value,
+                        document_id=order.id,
+                        document_number=order.document_number,
+                        status=order.status,
+                        relationship="source",
+                        document_date=order.order_date,
+                    )
+                )
+        receipts = await GoodsReceiptRepository(self.session).list_for_purchase_orders(
+            tenant_id, [row.id]
+        )
+        for item in receipts:
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.GOODS_RECEIPT.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.document_date,
+                    quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+        invoices = await PurchaseInvoiceRepository(self.session).list_for_purchase_order(
+            tenant_id, row.id
+        )
+        dn_repo = DebitNoteRepository(self.session)
+        for item in invoices:
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.PURCHASE_INVOICE.value,
+                    document_id=item.id,
+                    document_number=item.document_number,
+                    status=item.status,
+                    relationship="child",
+                    document_date=item.invoice_date,
+                    quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                )
+            )
+            for note in await dn_repo.list_for_purchase_invoice(tenant_id, item.id):
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.DEBIT_NOTE.value,
+                        document_id=note.id,
+                        document_number=note.document_number,
+                        status=note.status,
+                        relationship="child",
+                        document_date=note.debit_note_date,
+                        quantity_summary=quantity_summary([line.quantity for line in note.lines]),
+                    )
+                )
+        return related
 
     async def _today(self, tenant_id: UUID) -> date:
         return today_in_timezone(await self.org.get_timezone(tenant_id))

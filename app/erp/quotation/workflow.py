@@ -23,10 +23,11 @@ _TRANSITIONS: dict[tuple[QuotationStatus, str], QuotationStatus] = {
     (QuotationStatus.ACCEPTED, "revise"): QuotationStatus.DRAFT,
     (QuotationStatus.ACCEPTED, "cancel"): QuotationStatus.CANCELLED,
     (QuotationStatus.ACCEPTED, "convert"): QuotationStatus.CONVERTED,
+    (QuotationStatus.PARTIALLY_CONVERTED, "convert"): QuotationStatus.CONVERTED,
 }
 
 _EDITABLE = frozenset({QuotationStatus.DRAFT})
-_CONVERTIBLE = frozenset({QuotationStatus.ACCEPTED})
+_CONVERTIBLE = frozenset({QuotationStatus.ACCEPTED, QuotationStatus.PARTIALLY_CONVERTED})
 _PROFORMA_SOURCE = frozenset({QuotationStatus.SENT, QuotationStatus.ACCEPTED})
 
 
@@ -51,7 +52,7 @@ def assert_editable(status: QuotationStatus) -> None:
 def assert_convertible(status: QuotationStatus) -> None:
     if status not in _CONVERTIBLE:
         raise InvalidStatusTransitionError(
-            "Only an accepted quotation can be converted to a sales order"
+            "Only an accepted or partially converted quotation can be converted"
         )
 
 

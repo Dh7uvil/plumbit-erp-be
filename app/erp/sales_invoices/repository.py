@@ -40,6 +40,8 @@ class SalesInvoiceRepository:
                     "status",
                     "customer_id",
                     "sales_order_id",
+                    "source_quotation_id",
+                    "source_proforma_invoice_id",
                     "branch_id",
                     "currency_id",
                     "payment_status",
@@ -103,6 +105,50 @@ class SalesInvoiceRepository:
             )
             .options(*self._with_children())
             .order_by(SalesInvoice.invoice_date, SalesInvoice.created_at)
+        )
+        return list((await self.session.execute(statement)).scalars().all())
+
+    async def list_for_quotation(
+        self, tenant_id: UUID, quotation_id: UUID
+    ) -> builtins.list[SalesInvoice]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(
+                SalesInvoice.source_quotation_id == quotation_id,
+                SalesInvoice.status != InvoiceDocumentStatus.CANCELLED.value,
+            )
+            .options(*self._with_children())
+            .order_by(SalesInvoice.invoice_date, SalesInvoice.created_at)
+        )
+        return list((await self.session.execute(statement)).scalars().all())
+
+    async def list_for_proforma_invoice(
+        self, tenant_id: UUID, proforma_invoice_id: UUID
+    ) -> builtins.list[SalesInvoice]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(
+                SalesInvoice.source_proforma_invoice_id == proforma_invoice_id,
+                SalesInvoice.status != InvoiceDocumentStatus.CANCELLED.value,
+            )
+            .options(*self._with_children())
+            .order_by(SalesInvoice.invoice_date, SalesInvoice.created_at)
+        )
+        return list((await self.session.execute(statement)).scalars().all())
+
+    async def list_for_delivery_note(
+        self, tenant_id: UUID, delivery_note_id: UUID
+    ) -> builtins.list[SalesInvoice]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .join(SalesInvoiceLine, SalesInvoiceLine.sales_invoice_id == SalesInvoice.id)
+            .where(
+                SalesInvoiceLine.delivery_note_id == delivery_note_id,
+                SalesInvoice.status != InvoiceDocumentStatus.CANCELLED.value,
+            )
+            .options(*self._with_children())
+            .order_by(SalesInvoice.invoice_date, SalesInvoice.created_at)
+            .distinct()
         )
         return list((await self.session.execute(statement)).scalars().all())
 

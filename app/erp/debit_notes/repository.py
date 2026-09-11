@@ -136,3 +136,17 @@ class DebitNoteRepository:
         )
         result = await self.session.execute(statement)
         return result.scalar_one_or_none() is not None
+
+    async def list_for_purchase_invoice(
+        self, tenant_id: UUID, purchase_invoice_id: UUID
+    ) -> builtins.list[DebitNote]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(
+                DebitNote.purchase_invoice_id == purchase_invoice_id,
+                DebitNote.status != InvoiceDocumentStatus.CANCELLED.value,
+            )
+            .options(*self._with_children())
+            .order_by(DebitNote.debit_note_date, DebitNote.created_at)
+        )
+        return list((await self.session.execute(statement)).scalars().all())

@@ -14,6 +14,7 @@ from app.auth.catalog import (
     QUOTATION_REVISE,
     QUOTATION_SEND,
     QUOTATION_UPDATE,
+    SALES_INVOICE_CREATE,
     SALES_ORDER_CREATE,
 )
 from app.common.dependencies.auth import CurrentUser
@@ -29,6 +30,7 @@ from app.erp.proforma_invoices.schemas import ProformaInvoiceResponse
 from app.erp.quotation.dependencies import QuotationServiceDependency
 from app.erp.quotation.schemas import (
     ConvertToProformaInvoiceRequest,
+    ConvertToSalesInvoiceRequest,
     ConvertToSalesOrderRequest,
     QuotationComposeDefaults,
     QuotationCreate,
@@ -40,6 +42,8 @@ from app.erp.quotation.schemas import (
     QuotationRevisionResponse,
     QuotationUpdate,
 )
+from app.erp.sales_invoices.dependencies import SalesInvoiceServiceDependency
+from app.erp.sales_invoices.schemas import SalesInvoiceResponse
 from app.erp.sales_orders.dependencies import SalesOrderServiceDependency
 from app.erp.sales_orders.schemas import SalesOrderResponse
 
@@ -365,6 +369,7 @@ async def convert_quotation_to_sales_order(
         customer_po_date=body.customer_po_date,
         warehouse_id=body.warehouse_id,
         branch_id=body.branch_id,
+        conversion_lines=body.lines,
         idempotency_key=require_idempotency_key(idempotency_key),
         request_hash=hash_request(method=request.method, path=request.url.path, body=raw_body),
         endpoint=request.url.path,
@@ -397,3 +402,35 @@ async def convert_quotation_to_proforma_invoice(
         incoterm_place=body.incoterm_place,
     )
     return ApiResponse(data=row, message="Proforma invoice created from quotation")
+
+
+@router.post(
+    "/{quotation_id}/convert-to-sales-invoice",
+    response_model=ApiResponse[SalesInvoiceResponse],
+)
+async def convert_quotation_to_sales_invoice(
+    quotation_id: UUID,
+    request: Request,
+    tenant: TenantContextDependency,
+    sales_invoices: SalesInvoiceServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(QUOTATION_UPDATE))],
+    __: Annotated[CurrentUser, Depends(require_permission(SALES_INVOICE_CREATE))],
+    if_match: IfMatch = None,
+    idempotency_key: IdempotencyKeyHeader = None,
+    payload: Annotated[ConvertToSalesInvoiceRequest | None, Body()] = None,
+) -> ApiResponse[SalesInvoiceResponse]:
+    body = payload or ConvertToSalesInvoiceRequest()
+    raw_body = await request.body()
+    row = await sales_invoices.create_from_quotation(
+        tenant.tenant_id,
+        quotation_id,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(if_match=if_match, body_version=body.version),
+        invoice_date=body.invoice_date,
+        notes=body.notes,
+        conversion_lines=body.lines,
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=raw_body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(data=row, message="Quotation converted to a sales invoice")

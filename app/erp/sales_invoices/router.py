@@ -56,6 +56,8 @@ async def list_sales_invoices(
         status=filters.status.value if filters.status else None,
         customer_id=filters.customer_id,
         sales_order_id=filters.sales_order_id,
+        source_quotation_id=filters.source_quotation_id,
+        source_proforma_invoice_id=filters.source_proforma_invoice_id,
         branch_id=filters.branch_id,
         currency_id=filters.currency_id,
         payment_status=filters.payment_status.value if filters.payment_status else None,

@@ -7,7 +7,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.related_documents import QuantityProgress, RelatedDocumentRef
 from app.core.enums import (
     BillingStatus,
     DiscountType,
@@ -87,8 +89,19 @@ class SalesOrderLineResponse(BaseModel):
     qty_returned: Decimal = Decimal("0")
     qty_reserved: Decimal = Decimal("0")
     qty_invoiced: Decimal
+    qty_converted: Decimal = Decimal("0")
+    qty_remaining_to_deliver: Decimal = Decimal("0")
+    qty_remaining_to_invoice: Decimal = Decimal("0")
     source_quotation_line_id: UUID | None
     source_proforma_invoice_line_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def compute_remaining(self) -> "SalesOrderLineResponse":
+        leftover_deliver = self.quantity - self.qty_delivered
+        leftover_invoice = self.quantity - self.qty_invoiced
+        self.qty_remaining_to_deliver = leftover_deliver if leftover_deliver > 0 else Decimal("0")
+        self.qty_remaining_to_invoice = leftover_invoice if leftover_invoice > 0 else Decimal("0")
+        return self
 
 
 class SalesOrderCreate(BaseModel):
@@ -238,6 +251,8 @@ class SalesOrderResponse(BaseModel):
     acknowledged_at: datetime | None = None
     acknowledged_by: UUID | None = None
     available_actions: list[str] = Field(default_factory=list)
+    quantity_progress: QuantityProgress | None = None
+    related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
     lines: list[SalesOrderLineResponse] = Field(default_factory=list)
     reservation_shortfalls: list["ReservationShortfall"] = Field(default_factory=list)
     created_at: datetime
@@ -275,6 +290,13 @@ class CustomerPoDuplicate(BaseModel):
     customer_po_number: str | None
     customer_po_date: date | None
     status: SalesOrderStatus
+
+
+class ConvertSalesOrderToProformaInvoiceRequest(BaseModel):
+    proforma_date: date | None = None
+    valid_until: date | None = None
+    version: int | None = Field(default=None, ge=1)
+    lines: list[ConversionLineInput] | None = None
 
 
 class OrderTrackerRow(BaseModel):

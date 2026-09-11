@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
 
 from app.auth.catalog import (
+    PROFORMA_INVOICE_CREATE,
     PURCHASE_ORDER_CREATE,
     SALES_ORDER_ACKNOWLEDGE,
     SALES_ORDER_APPROVE,
@@ -24,6 +25,8 @@ from app.common.idempotency.service import hash_request, require_idempotency_key
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
+from app.erp.proforma_invoices.dependencies import ProformaInvoiceServiceDependency
+from app.erp.proforma_invoices.schemas import ProformaInvoiceResponse
 from app.erp.purchase_orders.dependencies import PurchaseOrderServiceDependency
 from app.erp.purchase_orders.schemas import (
     PurchaseOrderFromSalesOrderRequest,
@@ -33,6 +36,7 @@ from app.erp.purchase_orders.schemas import (
 )
 from app.erp.sales_orders.dependencies import SalesOrderServiceDependency
 from app.erp.sales_orders.schemas import (
+    ConvertSalesOrderToProformaInvoiceRequest,
     CustomerPoDuplicate,
     OrderTrackerResponse,
     SalesOrderCancelRequest,
@@ -384,6 +388,32 @@ async def get_sales_order_tracker(
 ) -> ApiResponse[OrderTrackerResponse]:
     data = await service.tracker(tenant.tenant_id, sales_order_id)
     return ApiResponse(data=data)
+
+
+@router.post(
+    "/{sales_order_id}/convert-to-proforma-invoice",
+    response_model=ApiResponse[ProformaInvoiceResponse],
+)
+async def convert_sales_order_to_proforma_invoice(
+    sales_order_id: UUID,
+    tenant: TenantContextDependency,
+    proforma_invoices: ProformaInvoiceServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_READ))],
+    __: Annotated[CurrentUser, Depends(require_permission(PROFORMA_INVOICE_CREATE))],
+    if_match: IfMatch = None,
+    payload: Annotated[ConvertSalesOrderToProformaInvoiceRequest | None, Body()] = None,
+) -> ApiResponse[ProformaInvoiceResponse]:
+    body = payload or ConvertSalesOrderToProformaInvoiceRequest()
+    row = await proforma_invoices.create_from_sales_order(
+        tenant.tenant_id,
+        sales_order_id,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(if_match=if_match, body_version=body.version),
+        proforma_date=body.proforma_date,
+        valid_until=body.valid_until,
+        conversion_lines=body.lines,
+    )
+    return ApiResponse(data=row, message="Proforma invoice created from sales order")
 
 
 @router.post(

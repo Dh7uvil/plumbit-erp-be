@@ -172,6 +172,40 @@
             }
           },
           {
+            "name": "source_quotation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Quotation Id"
+            }
+          },
+          {
+            "name": "source_proforma_invoice_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Proforma Invoice Id"
+            }
+          },
+          {
             "name": "branch_id",
             "in": "query",
             "required": false,
@@ -1060,6 +1094,34 @@
         ],
         "title": "CogsStatus"
       },
+      "ConversionLineInput": {
+        "properties": {
+          "source_line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Source Line Id"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              }
+            ],
+            "title": "Quantity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_line_id",
+          "quantity"
+        ],
+        "title": "ConversionLineInput"
+      },
       "DiscountType": {
         "type": "string",
         "enum": [
@@ -1506,6 +1568,63 @@
         ],
         "title": "PlaceOfSupply"
       },
+      "RelatedDocumentRef": {
+        "properties": {
+          "document_type": {
+            "type": "string",
+            "title": "Document Type"
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "relationship": {
+            "type": "string",
+            "title": "Relationship"
+          },
+          "document_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Date"
+          },
+          "quantity_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_type",
+          "document_id",
+          "document_number",
+          "status",
+          "relationship"
+        ],
+        "title": "RelatedDocumentRef"
+      },
       "SalesInvoiceCancelRequest": {
         "properties": {
           "reason": {
@@ -1602,6 +1721,30 @@
               }
             ],
             "title": "Sales Order Id"
+          },
+          "source_quotation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Quotation Id"
+          },
+          "source_proforma_invoice_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Proforma Invoice Id"
           },
           "payment_terms_id": {
             "anyOf": [
@@ -1823,6 +1966,20 @@
               }
             ],
             "title": "Notes"
+          },
+          "lines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ConversionLineInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lines"
           }
         },
         "type": "object",
@@ -1908,6 +2065,30 @@
               }
             ],
             "title": "Sales Order Line Id"
+          },
+          "source_quotation_line_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Quotation Line Id"
+          },
+          "source_proforma_invoice_line_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Proforma Invoice Line Id"
           },
           "delivery_note_id": {
             "anyOf": [
@@ -2038,6 +2219,30 @@
               }
             ],
             "title": "Sales Order Line Id"
+          },
+          "source_quotation_line_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Quotation Line Id"
+          },
+          "source_proforma_invoice_line_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Proforma Invoice Line Id"
           },
           "delivery_note_id": {
             "anyOf": [
@@ -2371,6 +2576,30 @@
             ],
             "title": "Sales Order Id"
           },
+          "source_quotation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Quotation Id"
+          },
+          "source_proforma_invoice_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Proforma Invoice Id"
+          },
           "payment_terms_id": {
             "anyOf": [
               {
@@ -2656,12 +2885,34 @@
             ],
             "title": "Cancel Reason"
           },
+          "is_overdue": {
+            "type": "boolean",
+            "title": "Is Overdue",
+            "default": false
+          },
+          "is_partially_credited": {
+            "type": "boolean",
+            "title": "Is Partially Credited",
+            "default": false
+          },
+          "is_fully_credited": {
+            "type": "boolean",
+            "title": "Is Fully Credited",
+            "default": false
+          },
           "available_actions": {
             "items": {
               "type": "string"
             },
             "type": "array",
             "title": "Available Actions"
+          },
+          "related_documents": {
+            "items": {
+              "$ref": "#/components/schemas/RelatedDocumentRef"
+            },
+            "type": "array",
+            "title": "Related Documents"
           },
           "lines": {
             "items": {

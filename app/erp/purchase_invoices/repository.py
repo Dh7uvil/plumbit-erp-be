@@ -143,3 +143,45 @@ class PurchaseInvoiceRepository:
         )
         result = await self.session.execute(statement)
         return result.scalar_one_or_none() is not None
+
+    async def list_for_purchase_order(
+        self, tenant_id: UUID, purchase_order_id: UUID
+    ) -> builtins.list[PurchaseInvoice]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(
+                PurchaseInvoice.purchase_order_id == purchase_order_id,
+                PurchaseInvoice.status != InvoiceDocumentStatus.CANCELLED.value,
+            )
+            .options(*self._with_children())
+            .order_by(PurchaseInvoice.invoice_date, PurchaseInvoice.created_at)
+        )
+        return list((await self.session.execute(statement)).scalars().all())
+
+    async def list_for_goods_receipt(
+        self, tenant_id: UUID, goods_receipt_id: UUID
+    ) -> builtins.list[PurchaseInvoice]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(
+                PurchaseInvoice.goods_receipt_id == goods_receipt_id,
+                PurchaseInvoice.status != InvoiceDocumentStatus.CANCELLED.value,
+            )
+            .options(*self._with_children())
+            .order_by(PurchaseInvoice.invoice_date, PurchaseInvoice.created_at)
+        )
+        return list((await self.session.execute(statement)).scalars().all())
+
+    async def list_for_goods_receipt(
+        self, tenant_id: UUID, goods_receipt_id: UUID
+    ) -> builtins.list[PurchaseInvoice]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(
+                PurchaseInvoice.goods_receipt_id == goods_receipt_id,
+                PurchaseInvoice.status != InvoiceDocumentStatus.CANCELLED.value,
+            )
+            .options(*self._with_children())
+            .order_by(PurchaseInvoice.invoice_date, PurchaseInvoice.created_at)
+        )
+        return list((await self.session.execute(statement)).scalars().all())

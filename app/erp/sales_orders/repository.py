@@ -48,7 +48,9 @@ class SalesOrderRepository:
             SalesOrder,
             allowed_sort_fields=_SORT_FIELDS,
             allowed_filter_fields=_FILTER_FIELDS,
-            search_fields=frozenset({"document_number", "reference_number", "notes"}),
+            search_fields=frozenset(
+                {"document_number", "reference_number", "customer_po_number", "notes"}
+            ),
         )
 
     def _with_lines(self) -> Any:
@@ -143,3 +145,25 @@ class SalesOrderRepository:
         statement = statement.order_by(SalesOrder.created_at.desc())
         result = await self.session.execute(statement)
         return list(result.scalars().all())
+
+    async def list_for_quotation(
+        self, tenant_id: UUID, quotation_id: UUID
+    ) -> builtins.list[SalesOrder]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(SalesOrder.source_quotation_id == quotation_id)
+            .options(self._with_lines())
+            .order_by(SalesOrder.order_date, SalesOrder.created_at)
+        )
+        return list((await self.session.execute(statement)).scalars().all())
+
+    async def list_for_proforma_invoice(
+        self, tenant_id: UUID, proforma_invoice_id: UUID
+    ) -> builtins.list[SalesOrder]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(SalesOrder.source_proforma_invoice_id == proforma_invoice_id)
+            .options(self._with_lines())
+            .order_by(SalesOrder.order_date, SalesOrder.created_at)
+        )
+        return list((await self.session.execute(statement)).scalars().all())

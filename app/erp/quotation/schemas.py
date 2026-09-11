@@ -7,7 +7,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.related_documents import RelatedDocumentRef
 from app.core.enums import DiscountType, Incoterm, PlaceOfSupply, QuotationStatus, TaxTreatment
 
 
@@ -70,6 +72,14 @@ class QuotationLineResponse(BaseModel):
     tax_rate: Decimal
     tax_amount: Decimal
     amount: Decimal
+    qty_converted: Decimal = Decimal("0")
+    qty_remaining: Decimal = Decimal("0")
+
+    @model_validator(mode="after")
+    def compute_remaining(self) -> "QuotationLineResponse":
+        leftover = self.quantity - self.qty_converted
+        self.qty_remaining = leftover if leftover > 0 else Decimal("0")
+        return self
 
 
 class QuotationCreate(BaseModel):
@@ -135,6 +145,7 @@ class ConvertToSalesOrderRequest(BaseModel):
     warehouse_id: UUID | None = None
     branch_id: UUID | None = None
     version: int | None = Field(default=None, ge=1)
+    lines: list[ConversionLineInput] | None = None
 
     @field_validator("reference_number", "customer_po_number")
     @classmethod
@@ -191,6 +202,7 @@ class QuotationResponse(BaseModel):
     revision_count: int = 0
     display_number: str
     available_actions: list[str] = Field(default_factory=list)
+    related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
     lines: list[QuotationLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
@@ -202,10 +214,26 @@ class ConvertToProformaInvoiceRequest(BaseModel):
     incoterm: Incoterm | None = None
     incoterm_place: str | None = Field(default=None, max_length=120)
     version: int | None = Field(default=None, ge=1)
+    lines: list[ConversionLineInput] | None = None
 
     @field_validator("incoterm_place")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class ConvertToSalesInvoiceRequest(BaseModel):
+    invoice_date: date | None = None
+    notes: str | None = None
+    version: int | None = Field(default=None, ge=1)
+    lines: list[ConversionLineInput] | None = None
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_notes(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()

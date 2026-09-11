@@ -291,3 +291,44 @@ async def test_available_actions_respect_permissions(client: AsyncClient) -> Non
     fetched = await client.get(f"/api/v1/sales-orders/{order_id}", headers=limited_headers)
     assert fetched.status_code == 200, fetched.text
     assert fetched.json()["data"]["available_actions"] == ["clone"]
+
+
+@pytest.mark.asyncio
+async def test_confirmed_order_converts_to_proforma_invoice(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded_ids(client, headers)
+    customer_id = await _create_customer(client, headers)
+    product_id = await _create_product(client, headers, ids)
+    created = await _create_order(
+        client, headers, customer_id=customer_id, product_id=product_id, quantity="2"
+    )
+    assert created["status_code"] == 201, created["text"]
+    order = created["body"]["data"]
+    confirmed = await client.post(
+        f"/api/v1/sales-orders/{order['id']}/confirm",
+        headers=_if_match(headers, order["version"]),
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    confirmed_order = confirmed.json()["data"]
+    assert "create_proforma" in confirmed_order["available_actions"]
+    line_id = confirmed_order["lines"][0]["id"]
+
+    partial = await client.post(
+        f"/api/v1/sales-orders/{order['id']}/convert-to-proforma-invoice",
+        headers=_if_match(headers, confirmed_order["version"]),
+        json={"lines": [{"source_line_id": line_id, "quantity": "1"}]},
+    )
+    assert partial.status_code == 200, partial.text
+    pfi = partial.json()["data"]
+    assert pfi["source_sales_order_id"] == order["id"]
+    assert Decimal(pfi["lines"][0]["quantity"]) == Decimal("1")
+
+    refreshed = await client.get(f"/api/v1/sales-orders/{order['id']}", headers=headers)
+    data = refreshed.json()["data"]
+    assert Decimal(data["lines"][0]["qty_converted"]) == Decimal("1")
+    assert data["quantity_progress"]["ordered"] is not None
+    assert any(
+        item["document_type"] == "PROFORMA_INVOICE" and item["relationship"] == "child"
+        for item in data["related_documents"]
+    )

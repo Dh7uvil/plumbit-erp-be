@@ -1859,6 +1859,18 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Qty Billed"
           },
+          "qty_remaining_to_receive": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Remaining To Receive",
+            "default": "0"
+          },
+          "qty_remaining_to_bill": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Remaining To Bill",
+            "default": "0"
+          },
           "source_sales_order_line_id": {
             "anyOf": [
               {
@@ -2282,6 +2294,23 @@
             "type": "array",
             "title": "Available Actions"
           },
+          "quantity_progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuantityProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "related_documents": {
+            "items": {
+              "$ref": "#/components/schemas/RelatedDocumentRef"
+            },
+            "type": "array",
+            "title": "Related Documents"
+          },
           "lines": {
             "items": {
               "$ref": "#/components/schemas/PurchaseOrderLineResponse"
@@ -2581,6 +2610,44 @@
         "type": "object",
         "title": "PurchaseOrderUpdate"
       },
+      "QuantityProgress": {
+        "properties": {
+          "ordered": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Ordered"
+          },
+          "fulfilled": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Fulfilled"
+          },
+          "invoiced": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Invoiced"
+          },
+          "remaining_to_fulfill": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Remaining To Fulfill"
+          },
+          "remaining_to_invoice": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Remaining To Invoice"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ordered",
+          "fulfilled",
+          "invoiced",
+          "remaining_to_fulfill",
+          "remaining_to_invoice"
+        ],
+        "title": "QuantityProgress"
+      },
       "ReceiptStatus": {
         "type": "string",
         "enum": [
@@ -2589,6 +2656,63 @@
           "RECEIVED"
         ],
         "title": "ReceiptStatus"
+      },
+      "RelatedDocumentRef": {
+        "properties": {
+          "document_type": {
+            "type": "string",
+            "title": "Document Type"
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "relationship": {
+            "type": "string",
+            "title": "Relationship"
+          },
+          "document_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Date"
+          },
+          "quantity_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_type",
+          "document_id",
+          "document_number",
+          "status",
+          "relationship"
+        ],
+        "title": "RelatedDocumentRef"
       },
       "TaxTreatment": {
         "type": "string",

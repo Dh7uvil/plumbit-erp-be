@@ -246,6 +246,7 @@ class SalesOrderLine(TenantModel):
     qty_returned: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     qty_reserved: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     qty_invoiced: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
+    qty_converted: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     source_quotation_line_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("quotation_lines.id", ondelete="SET NULL"),
