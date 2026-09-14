@@ -102,7 +102,8 @@ async def test_create_from_sales_order_and_post_writes_ar_journal(client: AsyncC
         headers={**headers, "Idempotency-Key": uuid4().hex},
         json={"sales_order_id": order["id"]},
     )
-    assert duplicate.status_code == 422, duplicate.text
+    assert duplicate.status_code == 409, duplicate.text
+    assert duplicate.json()["error"]["code"] == "INVOICE_QTY_EXCEEDED"
 
 
 @pytest.mark.asyncio
@@ -266,3 +267,26 @@ async def test_export_invoice_posts_without_vat_and_records_evidence_gap(
     )
     accounts = {line["account_id"] for line in journal.json()["data"]["lines"]}
     assert mapped["VAT_OUTPUT"] not in accounts
+
+
+@pytest.mark.asyncio
+async def test_draft_sales_invoice_reserves_remaining_qty(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    ctx = await _receive_stock(client, headers, quantity="2")
+    product_id = str(ctx["product_id"])
+    order = await _confirm_sales_order(client, headers, product_id=product_id, quantity="2")
+    first = await client.post(
+        "/api/v1/sales-invoices/from-sales-order",
+        headers={**headers, "Idempotency-Key": uuid4().hex},
+        json={"sales_order_id": order["id"]},
+    )
+    assert first.status_code == 201, first.text
+    second = await client.post(
+        "/api/v1/sales-invoices/from-sales-order",
+        headers={**headers, "Idempotency-Key": uuid4().hex},
+        json={"sales_order_id": order["id"]},
+    )
+    assert second.status_code == 409, second.text
+    assert second.json()["error"]["code"] == "INVOICE_QTY_EXCEEDED"

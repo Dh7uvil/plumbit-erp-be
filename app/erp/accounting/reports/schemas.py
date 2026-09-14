@@ -26,6 +26,8 @@ class TrialBalanceLine(BaseModel):
     period_credit: Decimal
     closing_debit: Decimal
     closing_credit: Decimal
+    closing_net_debit: Decimal = Decimal("0")
+    closing_net_credit: Decimal = Decimal("0")
 
 
 class TrialBalanceResponse(ReportCurrencyMixin):
@@ -38,6 +40,8 @@ class TrialBalanceResponse(ReportCurrencyMixin):
     total_period_credit: Decimal
     total_closing_debit: Decimal
     total_closing_credit: Decimal
+    total_closing_net_debit: Decimal = Decimal("0")
+    total_closing_net_credit: Decimal = Decimal("0")
     lines: list[TrialBalanceLine] = Field(default_factory=list)
 
 
@@ -104,7 +108,7 @@ class ExportEvidenceExceptionLine(BaseModel):
     overdue: bool
 
 
-class ExportEvidenceExceptionResponse(BaseModel):
+class ExportEvidenceExceptionResponse(ReportCurrencyMixin):
     as_of: date
     window_days: int
     lines: list[ExportEvidenceExceptionLine] = Field(default_factory=list)
@@ -124,7 +128,7 @@ class InvoicedNotDispatchedLine(BaseModel):
     cogs_status: str
 
 
-class InvoicedNotDispatchedResponse(BaseModel):
+class InvoicedNotDispatchedResponse(ReportCurrencyMixin):
     lines: list[InvoicedNotDispatchedLine] = Field(default_factory=list)
 
 
@@ -142,12 +146,15 @@ class AgingPartyRow(AgingBucketTotals):
     party_id: UUID
     party_name: str
     currency_id: UUID | None = None
+    currency_code: str | None = None
+    base: AgingBucketTotals | None = None
 
 
 class AgingResponse(ReportCurrencyMixin):
     as_of: date
     rows: list[AgingPartyRow] = Field(default_factory=list)
     totals: AgingBucketTotals
+    base_totals: AgingBucketTotals | None = None
 
 
 class PartyStatementLine(BaseModel):
@@ -284,7 +291,7 @@ class PurchaseSuggestionLine(BaseModel):
     preferred_supplier_name: str | None = None
 
 
-class PurchaseSuggestionResponse(BaseModel):
+class PurchaseSuggestionResponse(ReportCurrencyMixin):
     as_of: date
     lines: list[PurchaseSuggestionLine] = Field(default_factory=list)
 

@@ -64,6 +64,10 @@ async def test_trial_balance_and_general_ledger_drill_through(client: AsyncClien
     trial = tb.json()["data"]
     assert trial["is_balanced"] is True
     assert trial["total_closing_debit"] == trial["total_closing_credit"]
+    assert trial["total_closing_net_debit"] == trial["total_closing_net_credit"]
+    bank = next(line for line in trial["lines"] if line["account_id"] == accounts["BANK"])
+    assert Decimal(bank["closing_net_debit"]) == Decimal("40.0000")
+    assert Decimal(bank["closing_net_credit"]) == Decimal("0")
     gl = await client.get(
         "/api/v1/reports/general-ledger",
         headers=headers,

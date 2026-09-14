@@ -45,8 +45,11 @@ from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
-from app.inventory_management.common.journal_lookup import journal_for_source
 from app.erp.accounting.service import DocumentSequenceService
+from app.inventory_management.common.journal_lookup import (
+    journal_for_source,
+    posted_journal_id_for_source,
+)
 from app.inventory_management.goods_receipts.service import GoodsReceiptService
 from app.inventory_management.quality_inspections.models import QualityInspection
 from app.inventory_management.quality_inspections.repository import QualityInspectionRepository
@@ -129,6 +132,13 @@ class QualityInspectionService:
         await self._ensure_policy(tenant_id)
         response = self._to_response(row)
         response.related_documents = await self._related_documents(tenant_id, row)
+        response.journal_entry_id = await posted_journal_id_for_source(
+            self.session,
+            tenant_id,
+            source_type=SOURCE_QUALITY_INSPECTION,
+            source_id=inspection_id,
+            actor_permissions=self.actor_permissions,
+        )
         return response
 
     async def journal(self, tenant_id: UUID, inspection_id: UUID) -> JournalEntryResponse:
@@ -338,11 +348,8 @@ class QualityInspectionService:
                             unit_id=unit_by_grn_line.get(line.goods_receipt_line_id),
                             quality_hold_delta=-line.qty_rejected,
                         )
-                        if (
-                            disposition == QcDisposition.SCRAP
-                            and result.movement.value is not None
-                        ):
-                            scrap_value += result.movement.value
+                        if disposition == QcDisposition.SCRAP and result.movement.value is not None:
+                            scrap_value += abs(result.movement.value)
                 rework_released = _ZERO
                 if line.qty_rework > _ZERO and disposition == QcDisposition.REWORK_RELEASE:
                     await self.stock.apply_quality_hold_locked(

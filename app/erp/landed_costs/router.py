@@ -8,6 +8,7 @@ from fastapi import APIRouter, Body, Depends, Header, Request, status
 from app.auth.catalog import (
     LANDED_COST_CANCEL,
     LANDED_COST_CREATE,
+    LANDED_COST_DELETE,
     LANDED_COST_POST,
     LANDED_COST_READ,
     LANDED_COST_UPDATE,
@@ -133,7 +134,7 @@ async def delete_landed_cost(
     landed_cost_id: UUID,
     tenant: TenantContextDependency,
     service: LandedCostServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(LANDED_COST_UPDATE))],
+    _: Annotated[CurrentUser, Depends(require_permission(LANDED_COST_DELETE))],
     if_match: IfMatch = None,
 ) -> ApiResponse[LandedCostResponse]:
     row = await service.delete(

@@ -76,6 +76,18 @@ async def test_grn_post_after_books_start_debits_inventory(client: AsyncClient) 
     assert Decimal(inventory["debit"]) > Decimal("0")
     assert Decimal(grni["credit"]) == Decimal(inventory["debit"])
 
+    today = datetime.now(UTC).date().isoformat()
+    recon = await client.get(
+        "/api/v1/reports/stock-valuation-gl",
+        headers=headers,
+        params={"as_of": today},
+    )
+    assert recon.status_code == 200, recon.text
+    body = recon.json()["data"]
+    assert Decimal(body["valuation_total"]) == Decimal(inventory["debit"])
+    assert Decimal(body["gl_balance"]) == Decimal(inventory["debit"])
+    assert Decimal(body["difference"]) == Decimal("0.0000")
+
     cancelled = await client.post(
         f"/api/v1/goods-receipts/{created['body']['data']['id']}/cancel",
         headers=_idempotent(headers, posted.json()["data"]["version"]),

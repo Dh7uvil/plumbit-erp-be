@@ -1936,6 +1936,17 @@
             "format": "uuid",
             "title": "Currency Id"
           },
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code"
+          },
           "original_amount": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -1945,6 +1956,42 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Balance"
+          },
+          "doc_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Amount"
+          },
+          "base_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Amount"
+          },
+          "base_balance": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Balance"
           },
           "is_debit": {
             "type": "boolean",
@@ -1992,6 +2039,18 @@
       },
       "OutstandingSummary": {
         "properties": {
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code",
+            "description": "ISO currency code for monetary amounts (tenant base currency)."
+          },
           "party_id": {
             "type": "string",
             "format": "uuid",
@@ -2138,9 +2197,16 @@
             "title": "Name"
           },
           "code": {
-            "type": "string",
-            "maxLength": 50,
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Code"
           },
           "company_type": {
@@ -2286,7 +2352,6 @@
         "type": "object",
         "required": [
           "name",
-          "code",
           "tax_treatment"
         ],
         "title": "SupplierCreate"

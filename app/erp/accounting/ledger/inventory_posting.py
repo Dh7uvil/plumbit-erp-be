@@ -11,11 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.org_service import OrganizationService
 from app.common.utils.currency import quantize_money
 from app.core.enums import AccountSystemRole, JournalType
+from app.core.exceptions import ValidationError
 from app.erp.accounting.accounts.service import AccountResolver
 from app.erp.accounting.ledger.models import JournalEntry
 from app.erp.accounting.ledger.posting import LedgerPostingService
 from app.erp.accounting.ledger.schemas import JournalLineInput
-from app.core.exceptions import ValidationError
 from app.erp.exchange_rates.service import CurrencyService
 
 _ZERO = Decimal("0")
@@ -108,8 +108,8 @@ class InventoryLedgerService:
         document_number: str | None = None,
     ) -> None:
         await self._ensure_can_post(tenant_id, entry_date)
-        restored = quantize_money(restored_amount)
-        scrap = quantize_money(scrap_amount)
+        restored = quantize_money(abs(restored_amount))
+        scrap = quantize_money(abs(scrap_amount))
         lines: list[JournalLineInput] = []
         if restored > _ZERO:
             inventory = await self.resolver.require(tenant_id, AccountSystemRole.INVENTORY)
@@ -298,8 +298,8 @@ class InventoryLedgerService:
         branch_id: UUID | None,
     ) -> None:
         await self._ensure_can_post(tenant_id, entry_date)
-        money = quantize_money(amount)
-        if money <= _ZERO:
+        money = quantize_money(abs(amount))
+        if money == _ZERO:
             return
         debit = await self.resolver.require(tenant_id, debit_role)
         credit = await self.resolver.require(tenant_id, credit_role)

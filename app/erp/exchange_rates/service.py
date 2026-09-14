@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
@@ -31,6 +32,7 @@ from app.erp.exchange_rates.schemas import (
     CurrencyUpdate,
     ExchangeRateResolveResponse,
     ExchangeRateResponse,
+    ExchangeRateUpdate,
     ExchangeRateUpsert,
 )
 
@@ -99,6 +101,9 @@ class CurrencyService:
         if row is None:
             raise ResourceNotFoundError("Base currency not found")
         return CurrencyResponse.model_validate(row)
+
+    async def codes_by_ids(self, tenant_id: UUID, currency_ids: Sequence[UUID]) -> dict[UUID, str]:
+        return await self.repo.codes_by_ids(tenant_id, currency_ids)
 
     async def require_id(self, tenant_id: UUID, currency_id: UUID) -> UUID:
         await self._require(tenant_id, currency_id)
@@ -216,11 +221,12 @@ class ExchangeRateService:
         self,
         tenant_id: UUID,
         *,
+        page: PageParams,
         effective_date: date | None = None,
-    ) -> list[ExchangeRateResponse]:
+    ) -> tuple[list[ExchangeRateResponse], int]:
         on_date = effective_date or await self._tenant_today(tenant_id)
-        rows = await self.repo.list_for_date(tenant_id, effective_date=on_date)
-        return [ExchangeRateResponse.model_validate(row) for row in rows]
+        rows, total = await self.repo.list(tenant_id, page=page, effective_date=on_date)
+        return [ExchangeRateResponse.model_validate(row) for row in rows], total
 
     async def upsert(
         self,
@@ -279,6 +285,72 @@ class ExchangeRateService:
                 ),
             )
             return ExchangeRateResponse.model_validate(row)
+
+    async def update(
+        self,
+        tenant_id: UUID,
+        rate_id: UUID,
+        payload: ExchangeRateUpdate,
+        *,
+        actor_user_id: UUID,
+    ) -> ExchangeRateResponse:
+        async with transaction(self.session):
+            row = await self.repo.get(tenant_id, rate_id)
+            if row is None:
+                raise ResourceNotFoundError("Exchange rate not found")
+            from_currency = await self.currencies.get(tenant_id, row.from_currency_id)
+            to_currency = await self.currencies.get(tenant_id, row.to_currency_id)
+            old_values = _exchange_rate_snapshot(
+                row, from_currency=from_currency.code, to_currency=to_currency.code
+            )
+            row.rate = payload.rate_to_base
+            if payload.effective_date is not None:
+                row.effective_date = payload.effective_date
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            await self.session.refresh(row, attribute_names=["updated_at"])
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=MASTERS_MODULE,
+                entity_type="exchange_rate",
+                entity_id=row.id,
+                old_values=old_values,
+                new_values=_exchange_rate_snapshot(
+                    row, from_currency=from_currency.code, to_currency=to_currency.code
+                ),
+            )
+            return ExchangeRateResponse.model_validate(row)
+
+    async def delete(
+        self,
+        tenant_id: UUID,
+        rate_id: UUID,
+        *,
+        actor_user_id: UUID,
+    ) -> ExchangeRateResponse:
+        async with transaction(self.session):
+            row = await self.repo.get(tenant_id, rate_id)
+            if row is None:
+                raise ResourceNotFoundError("Exchange rate not found")
+            from_currency = await self.currencies.get(tenant_id, row.from_currency_id)
+            to_currency = await self.currencies.get(tenant_id, row.to_currency_id)
+            snapshot = _exchange_rate_snapshot(
+                row, from_currency=from_currency.code, to_currency=to_currency.code
+            )
+            response = ExchangeRateResponse.model_validate(row)
+            await self.repo.delete(tenant_id, rate_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.DELETE,
+                module=MASTERS_MODULE,
+                entity_type="exchange_rate",
+                entity_id=rate_id,
+                old_values=snapshot,
+            )
+            return response
 
     async def resolve(
         self,

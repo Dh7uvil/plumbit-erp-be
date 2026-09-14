@@ -478,7 +478,7 @@ async def convert_quotation_to_proforma_invoice(
     quotation_id: UUID,
     tenant: TenantContextDependency,
     proforma_invoices: ProformaInvoiceServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(QUOTATION_READ))],
+    _: Annotated[CurrentUser, Depends(require_permission(QUOTATION_UPDATE))],
     __: Annotated[CurrentUser, Depends(require_permission(PROFORMA_INVOICE_CREATE))],
     if_match: IfMatch = None,
     payload: Annotated[ConvertToProformaInvoiceRequest | None, Body()] = None,

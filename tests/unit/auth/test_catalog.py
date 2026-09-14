@@ -66,8 +66,10 @@ def test_catalog_includes_quote_ready_permissions() -> None:
     assert "purchase.landed_cost.create" in CATALOG_PERMISSIONS
     assert "purchase.landed_cost.read" in CATALOG_PERMISSIONS
     assert "purchase.landed_cost.update" in CATALOG_PERMISSIONS
+    assert "purchase.landed_cost.delete" in CATALOG_PERMISSIONS
     assert "purchase.landed_cost.post" in CATALOG_PERMISSIONS
     assert "purchase.landed_cost.cancel" in CATALOG_PERMISSIONS
+    assert "purchase.purchase_return.cancel" in CATALOG_PERMISSIONS
     assert "sales.customer_payment.create" in CATALOG_PERMISSIONS
     assert "sales.customer_payment.post" in CATALOG_PERMISSIONS
     assert "purchase.supplier_payment.create" in CATALOG_PERMISSIONS

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -233,6 +235,19 @@ def decode_access_token(
         issuer=issuer,
         audience=audience,
     )
+
+
+def generate_password_reset_token() -> str:
+    """Return a URL-safe one-time token. Store only its HMAC digest."""
+
+    return uuid4().hex + uuid4().hex
+
+
+def hash_password_reset_token(token: str, *, secret: str) -> str:
+    """HMAC-SHA256 digest of a reset token using the JWT secret as pepper."""
+
+    digest = hmac.new(secret.encode("utf-8"), token.encode("utf-8"), hashlib.sha256)
+    return digest.hexdigest()
 
 
 def decode_refresh_token(

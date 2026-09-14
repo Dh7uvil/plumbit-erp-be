@@ -51,6 +51,8 @@ from app.auth.schemas import (
     DepartmentUpdate,
     EmployeeFilter,
     EmployeePickerResponse,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
     LoginRequest,
     LogoutRequest,
     MeResponse,
@@ -58,6 +60,7 @@ from app.auth.schemas import (
     PermissionMatrixResponse,
     PermissionResponse,
     RefreshRequest,
+    ResetPasswordRequest,
     RoleCreate,
     RoleDetailResponse,
     RoleFilter,
@@ -265,6 +268,43 @@ async def change_password(
         payload=payload,
     )
     return ApiResponse(data=tokens, message="Password changed successfully")
+
+
+@auth_router.post(
+    "/forgot-password",
+    response_model=ApiResponse[ForgotPasswordResponse],
+    summary="Request a password reset",
+    description=(
+        "Always returns a generic success message. A reset token is created when the "
+        "email belongs to an active user. Rate-limited."
+    ),
+)
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    request: Request,
+    service: AuthServiceDependency,
+) -> ApiResponse[ForgotPasswordResponse]:
+    enforce_auth_rate_limit(
+        f"forgot-password:{client_key(request)}:{payload.tenant_id}:{payload.email}"
+    )
+    data = await service.request_password_reset(payload)
+    return ApiResponse(data=data, message=data.message)
+
+
+@auth_router.post(
+    "/reset-password",
+    response_model=ApiResponse[None],
+    summary="Reset password with a token",
+    description="Consume a one-time reset token and set a new password. Rate-limited.",
+)
+async def reset_password(
+    payload: ResetPasswordRequest,
+    request: Request,
+    service: AuthServiceDependency,
+) -> ApiResponse[None]:
+    enforce_auth_rate_limit(f"reset-password:{client_key(request)}")
+    await service.reset_password(payload)
+    return ApiResponse(data=None, message="Password reset successfully")
 
 
 @users_router.get(

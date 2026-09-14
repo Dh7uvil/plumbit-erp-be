@@ -44,8 +44,8 @@ from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
-from app.inventory_management.common.journal_lookup import journal_for_source
 from app.erp.accounting.service import DocumentSequenceService
+from app.inventory_management.common.journal_lookup import journal_for_source
 from app.inventory_management.products.service import ProductService
 from app.inventory_management.stock.service import SOURCE_STOCK_ADJUSTMENT, StockService
 from app.inventory_management.stock_adjustments.models import StockAdjustment
@@ -324,8 +324,7 @@ class StockAdjustmentService:
                         unit_cost=line.unit_cost,
                     )
                     if result.movement.value is not None:
-                        sign = Decimal("1") if line.qty_delta > _ZERO else Decimal("-1")
-                        inventory_delta += result.movement.value * sign
+                        inventory_delta += result.movement.value
             row.status = target.value
             row.is_posted = True
             row.posted_at = occurred_at

@@ -596,6 +596,11 @@
             "title": "Credit Limit Include Open Orders",
             "default": true
           },
+          "allow_negative_cash": {
+            "type": "boolean",
+            "title": "Allow Negative Cash",
+            "default": false
+          },
           "lock_date": {
             "anyOf": [
               {
@@ -970,6 +975,17 @@
               }
             ],
             "title": "Credit Limit Include Open Orders"
+          },
+          "allow_negative_cash": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Negative Cash"
           },
           "headquarters": {
             "anyOf": [

@@ -27,6 +27,8 @@ from app.auth.schemas import (
     DepartmentSummary,
     EmployeeSummary,
     EmployeeUpsert,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
     LoginRequest,
     MeResponse,
     PermissionMatrixAction,
@@ -34,6 +36,7 @@ from app.auth.schemas import (
     PermissionMatrixResource,
     PermissionMatrixResponse,
     PermissionResponse,
+    ResetPasswordRequest,
     RoleCreate,
     RoleDetailResponse,
     RoleResponse,
@@ -48,6 +51,7 @@ from app.auth.schemas import (
     UserResponse,
     UserUpdate,
 )
+from app.common.outbox.service import OutboxService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter, audit_field_changes
@@ -70,7 +74,9 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_refresh_token,
+    generate_password_reset_token,
     hash_password,
+    hash_password_reset_token,
     verify_password,
 )
 from app.db.session import transaction
@@ -104,6 +110,7 @@ class AuthService:
         self.repo = AccessRepository(session)
         self.org = OrganizationRepository(session)
         self.audit = AuditWriter(session)
+        self.outbox = OutboxService(session)
 
     async def list_active_tenants(self) -> list[TenantPublicResponse]:
         rows = await self.repo.list_active_tenants()
@@ -259,6 +266,99 @@ class AuthService:
                 new_values={"password_changed": True},
             )
             return await self._issue_token_pair(user)
+
+    async def request_password_reset(
+        self, payload: ForgotPasswordRequest
+    ) -> ForgotPasswordResponse:
+        """Always succeed with a generic message. Never confirm whether the email exists."""
+
+        settings = get_settings()
+        generic = ForgotPasswordResponse(
+            message=(
+                "If an account exists for that email, password reset instructions have been sent."
+            )
+        )
+        raw_token: str | None = None
+        async with transaction(self.session):
+            tenant = await self.repo.get_tenant(payload.tenant_id)
+            user = (
+                await self.repo.get_user_by_email(payload.tenant_id, payload.email)
+                if tenant is not None and tenant.status == TenantStatus.ACTIVE
+                else None
+            )
+            if (
+                user is not None
+                and user.status == UserStatus.ACTIVE
+                and user.password_hash is not None
+            ):
+                raw_token = generate_password_reset_token()
+                token_hash = hash_password_reset_token(
+                    raw_token, secret=settings.jwt_secret.get_secret_value()
+                )
+                expires_at = utcnow() + timedelta(minutes=settings.password_reset_ttl_minutes)
+                await self.repo.create_password_reset_token(
+                    user.tenant_id,
+                    user_id=user.id,
+                    token_hash=token_hash,
+                    expires_at=expires_at,
+                )
+                await self.outbox.enqueue(
+                    user.tenant_id,
+                    event_type="identity.password_reset.requested",
+                    aggregate_type="user",
+                    aggregate_id=user.id,
+                    payload={
+                        "user_id": str(user.id),
+                        "email": user.email,
+                        "reset_token": raw_token,
+                        "expires_at": expires_at.isoformat(),
+                    },
+                    dedupe_key=f"password-reset:{user.id}:{token_hash[:12]}",
+                )
+                await self.audit.write(
+                    tenant_id=user.tenant_id,
+                    user_id=user.id,
+                    action=AuditAction.UPDATE,
+                    module=IDENTITY_MODULE,
+                    entity_type="user",
+                    entity_id=user.id,
+                    new_values={"password_reset_requested": True},
+                )
+        if settings.env == "testing" and raw_token is not None:
+            return ForgotPasswordResponse(message=generic.message, reset_token=raw_token)
+        return generic
+
+    async def reset_password(self, payload: ResetPasswordRequest) -> None:
+        settings = get_settings()
+        token_hash = hash_password_reset_token(
+            payload.token.strip(), secret=settings.jwt_secret.get_secret_value()
+        )
+        new_hash = self._hash_password(payload.new_password)
+        async with transaction(self.session):
+            stored = await self.repo.get_password_reset_token(token_hash, for_update=True)
+            if stored is None or stored.used_at is not None or stored.expires_at <= utcnow():
+                raise InvalidTokenError("Invalid or expired password reset token")
+            user = await self.repo.get_user(stored.tenant_id, stored.user_id)
+            tenant = await self.repo.get_tenant(stored.tenant_id)
+            if (
+                user is None
+                or user.status != UserStatus.ACTIVE
+                or tenant is None
+                or tenant.status != TenantStatus.ACTIVE
+            ):
+                raise InvalidTokenError("Invalid or expired password reset token")
+            user.password_hash = new_hash
+            stored.used_at = utcnow()
+            await self.repo.revoke_user_refresh_tokens(user.tenant_id, user.id)
+            await self.audit.write(
+                tenant_id=user.tenant_id,
+                user_id=user.id,
+                action=AuditAction.UPDATE,
+                module=IDENTITY_MODULE,
+                entity_type="user",
+                entity_id=user.id,
+                new_values={"password_reset": True},
+            )
 
     async def list_users(
         self,

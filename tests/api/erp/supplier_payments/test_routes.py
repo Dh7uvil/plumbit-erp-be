@@ -29,7 +29,7 @@ async def _enable_books(client: AsyncClient, headers: dict[str, str]) -> None:
     updated = await client.patch(
         "/api/v1/tenants/current",
         headers=headers,
-        json={"books_start_date": today},
+        json={"books_start_date": today, "allow_negative_cash": True},
     )
     assert updated.status_code == 200, updated.text
 
@@ -285,6 +285,12 @@ async def test_tt_advance_auto_settles_bill_from_purchase_order(client: AsyncCli
 async def test_opening_ap_collection(client: AsyncClient) -> None:
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)
+    overdraft = await client.patch(
+        "/api/v1/tenants/current",
+        headers=headers,
+        json={"allow_negative_cash": True},
+    )
+    assert overdraft.status_code == 200, overdraft.text
     accounts = await _accounts(client, headers)
     today = datetime.now(UTC).date()
     supplier_id = await _create_supplier(client, headers, tax_treatment="UNREGISTERED", trn=None)
@@ -475,3 +481,37 @@ async def test_unapplied_supplier_payment_appears_in_ap_aging(client: AsyncClien
     assert Decimal(data["totals"]["total"]) == -advance
     row = next(item for item in data["rows"] if item["party_id"] == supplier_id)
     assert Decimal(row["unapplied_credits"]) == advance
+    assert data["base_totals"] is not None
+    assert row["base"] is not None
+
+
+@pytest.mark.asyncio
+async def test_supplier_payment_post_rejects_negative_cash(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    today = datetime.now(UTC).date().isoformat()
+    updated = await client.patch(
+        "/api/v1/tenants/current",
+        headers=headers,
+        json={"books_start_date": today},
+    )
+    assert updated.status_code == 200, updated.text
+    accounts = await _accounts(client, headers)
+    supplier_id = await _create_supplier(client, headers)
+    created = await client.post(
+        "/api/v1/supplier-payments",
+        headers=headers,
+        json={
+            "supplier_id": supplier_id,
+            "amount_paid": "25.0000",
+            "payment_account_id": accounts["CASH_ON_HAND"],
+            "payment_method": "CASH",
+        },
+    )
+    assert created.status_code == 201, created.text
+    posted = await client.post(
+        f"/api/v1/supplier-payments/{created.json()['data']['id']}/post",
+        headers=_idempotent(headers, created.json()["data"]["version"]),
+    )
+    assert posted.status_code == 409, posted.text
+    assert posted.json()["error"]["code"] == "INSUFFICIENT_CASH"

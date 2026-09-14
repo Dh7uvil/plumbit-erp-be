@@ -74,6 +74,28 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
 
 
+class ForgotPasswordRequest(BaseModel):
+    tenant_id: UUID
+    email: str = Field(min_length=3, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return _normalize_email(value)
+
+
+class ForgotPasswordResponse(BaseModel):
+    """Always the same public message. ``reset_token`` is testing-only."""
+
+    message: str
+    reset_token: str | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=255)
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+
+
 class TokenPairResponse(BaseModel):
     access_token: str
     refresh_token: str
@@ -588,6 +610,7 @@ class TenantCurrentResponse(BaseModel):
     auto_apply_advances_on_invoice: bool = True
     credit_limit_policy: CreditLimitPolicy = CreditLimitPolicy.WARN
     credit_limit_include_open_orders: bool = True
+    allow_negative_cash: bool = False
     lock_date: date | None = None
     hard_lock_date: date | None = None
     headquarters: AddressPayload | None = None
@@ -627,6 +650,7 @@ class TenantCurrentUpdate(BaseModel):
     auto_apply_advances_on_invoice: bool | None = None
     credit_limit_policy: CreditLimitPolicy | None = None
     credit_limit_include_open_orders: bool | None = None
+    allow_negative_cash: bool | None = None
     headquarters: AddressPayload | None = None
 
     @field_validator(

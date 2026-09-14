@@ -14,8 +14,8 @@ from app.auth.catalog import (
     CUSTOMER_PAYMENT_CANCEL,
     CUSTOMER_PAYMENT_DELETE,
     CUSTOMER_PAYMENT_POST,
-    SALES_MODULE,
     PERIOD_OVERRIDE,
+    SALES_MODULE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
@@ -58,14 +58,6 @@ from app.erp.accounting.accounts.service import (
     AccountService,
     PartyAccountResolver,
 )
-from app.erp.accounting.fiscal import year_for
-from app.erp.accounting.ledger.posting import LedgerPostingService
-from app.erp.accounting.ledger.schemas import JournalEntryResponse, JournalLineInput
-from app.erp.accounting.ledger.service import JournalEntryService
-from app.erp.accounting.open_items.repository import PaymentAllocationRepository
-from app.erp.accounting.open_items.schemas import PaymentAllocationInput
-from app.erp.accounting.open_items.service import OpenItemsService
-from app.erp.accounting.service import DocumentSequenceService, TaxService
 from app.erp.accounting.customer_payments.models import CustomerPayment
 from app.erp.accounting.customer_payments.repository import CustomerPaymentRepository
 from app.erp.accounting.customer_payments.schemas import (
@@ -74,7 +66,20 @@ from app.erp.accounting.customer_payments.schemas import (
     CustomerPaymentResponse,
     CustomerPaymentUpdate,
 )
-from app.erp.accounting.customer_payments.workflow import assert_editable, next_status, transition_actions
+from app.erp.accounting.customer_payments.workflow import (
+    assert_editable,
+    next_status,
+    transition_actions,
+)
+from app.erp.accounting.fiscal import year_for
+from app.erp.accounting.ledger.cash_guard import assert_cash_available
+from app.erp.accounting.ledger.posting import LedgerPostingService
+from app.erp.accounting.ledger.schemas import JournalEntryResponse, JournalLineInput
+from app.erp.accounting.ledger.service import JournalEntryService
+from app.erp.accounting.open_items.repository import PaymentAllocationRepository
+from app.erp.accounting.open_items.schemas import PaymentAllocationInput
+from app.erp.accounting.open_items.service import OpenItemsService
+from app.erp.accounting.service import DocumentSequenceService, TaxService
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 
 _ZERO = Decimal("0")
@@ -521,6 +526,16 @@ class CustomerPaymentService:
                 raise PaymentNothingToApplyError()
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(row.payment_date, can_override=self._can_override)
+            settings = await self.org.get_money_movement_settings(tenant_id)
+            outflow = quantize_money(row.amount_unapplied * row.exchange_rate)
+            await assert_cash_available(
+                self.session,
+                tenant_id,
+                account_id=row.payment_account_id,
+                outflow_base=outflow,
+                allow_negative_cash=settings.allow_negative_cash,
+                as_of=row.payment_date,
+            )
             old_values = await self._snapshot(tenant_id, row)
             lines = await self._refund_journal_lines(tenant_id, row)
             journal = await self.posting.post_for_document(
@@ -1120,9 +1135,7 @@ class CustomerPaymentService:
         elif row.proforma_invoice_id is not None:
             from app.erp.proforma_invoices.service import ProformaInvoiceService
 
-            pfi = await ProformaInvoiceService(self.session).get(
-                tenant_id, row.proforma_invoice_id
-            )
+            pfi = await ProformaInvoiceService(self.session).get(tenant_id, row.proforma_invoice_id)
             if pfi.tax_treatment == TaxTreatment.EXPORT:
                 return unapplied, _ZERO
         if tax is None or tax.tax_category != TaxCategory.STANDARD or tax.rate <= _ZERO:
@@ -1364,9 +1377,7 @@ class CustomerPaymentService:
             actions.append("refund")
         return actions
 
-    async def _to_response(
-        self, tenant_id: UUID, row: CustomerPayment
-    ) -> CustomerPaymentResponse:
+    async def _to_response(self, tenant_id: UUID, row: CustomerPayment) -> CustomerPaymentResponse:
         status = InvoiceDocumentStatus(row.status)
         period_locked = self._date_in_locked_period(row.payment_date)
         live = await self.allocations.list_live_for_payment(

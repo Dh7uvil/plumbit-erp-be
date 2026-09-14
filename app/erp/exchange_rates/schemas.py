@@ -73,6 +73,11 @@ class ExchangeRateUpsert(BaseModel):
     effective_date: date | None = None
 
 
+class ExchangeRateUpdate(BaseModel):
+    rate_to_base: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
+    effective_date: date | None = None
+
+
 class ExchangeRateResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

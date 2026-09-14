@@ -355,7 +355,11 @@ class InventoryReports:
                     preferred_supplier_name=supplier_name,
                 )
             )
-        return PurchaseSuggestionResponse(as_of=as_of_date, lines=lines)
+        return PurchaseSuggestionResponse(
+            currency_code=await self._report_currency_code(tenant_id),
+            as_of=as_of_date,
+            lines=lines,
+        )
 
     async def _valuation_layers(
         self,

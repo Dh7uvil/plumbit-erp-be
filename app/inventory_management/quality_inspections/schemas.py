@@ -129,6 +129,7 @@ class QualityInspectionResponse(BaseModel):
     available_actions: list[str] = Field(default_factory=list)
     period_locked: bool = False
     related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
+    journal_entry_id: UUID | None = None
     lines: list[QualityInspectionLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

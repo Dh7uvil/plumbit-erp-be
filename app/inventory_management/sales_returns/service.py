@@ -11,8 +11,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
-    SALES_MODULE,
     PERIOD_OVERRIDE,
+    SALES_MODULE,
     SALES_RETURN_DELETE,
     SALES_RETURN_POST,
     SALES_RETURN_UPDATE,
@@ -49,9 +49,9 @@ from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
-from app.inventory_management.common.journal_lookup import journal_for_source
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.sales_orders.service import SalesOrderService
+from app.inventory_management.common.journal_lookup import journal_for_source
 from app.inventory_management.delivery_notes.service import DeliveryNoteService
 from app.inventory_management.products.service import ProductService
 from app.inventory_management.sales_returns.models import SalesReturn
@@ -369,7 +369,7 @@ class SalesReturnService:
                             unit_id=line.unit_id,
                         )
                         if scrapped.movement.value is not None:
-                            scrap_value += scrapped.movement.value
+                            scrap_value += abs(scrapped.movement.value)
                 so_returns[dn_line.sales_order_line_id] = (
                     so_returns.get(dn_line.sales_order_line_id, _ZERO) + line.quantity
                 )
