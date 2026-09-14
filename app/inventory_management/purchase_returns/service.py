@@ -51,6 +51,8 @@ from app.core.permissions import has_permission
 from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
+from app.erp.accounting.ledger.schemas import JournalEntryResponse
+from app.inventory_management.common.journal_lookup import journal_for_source
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.purchase_orders.service import PurchaseOrderService
 from app.inventory_management.goods_receipts.service import GoodsReceiptService
@@ -158,6 +160,17 @@ class PurchaseReturnService:
         response = self._to_response(row)
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
+
+    async def journal(self, tenant_id: UUID, return_id: UUID) -> JournalEntryResponse:
+        await self._require(tenant_id, return_id)
+        return await journal_for_source(
+            self.session,
+            tenant_id,
+            source_type=SOURCE_PURCHASE_RETURN,
+            source_id=return_id,
+            label="Purchase return",
+            actor_permissions=self.actor_permissions,
+        )
 
     async def has_live_for_goods_receipt(self, tenant_id: UUID, goods_receipt_id: UUID) -> bool:
         return await self.repo.has_live_for_goods_receipt(tenant_id, goods_receipt_id)
@@ -311,7 +324,7 @@ class PurchaseReturnService:
                 already = await self.repo.posted_qty_for_goods_receipt_line(
                     tenant_id, line.goods_receipt_line_id, exclude_return_id=row.id
                 )
-                returnable = quantize_quantity(dn_line.quantity - already)
+                returnable = self._returnable_qty(dn_line, already)
                 if line.quantity > returnable:
                     raise ValidationError("Return quantity exceeds returnable quantity")
                 stockable = await self._is_stockable(tenant_id, line.product_id)
@@ -527,7 +540,7 @@ class PurchaseReturnService:
             already = await self.repo.posted_qty_for_goods_receipt_line(
                 tenant_id, line.goods_receipt_line_id, exclude_return_id=exclude_return_id
             )
-            returnable = quantize_quantity(dn_line.quantity - already)
+            returnable = self._returnable_qty(dn_line, already)
             if line.quantity > returnable:
                 raise ValidationError("Return quantity exceeds returnable quantity")
             product_id = line.product_id if line.product_id is not None else dn_line.product_id
@@ -581,6 +594,14 @@ class PurchaseReturnService:
             notes=values.get("notes", existing.notes),
             lines=lines,
         )
+
+    @staticmethod
+    def _returnable_qty(dn_line, already: Decimal) -> Decimal:
+        physical = quantize_quantity(dn_line.qty_on_hold + dn_line.qty_accepted)
+        if physical <= _ZERO:
+            physical = quantize_quantity(dn_line.quantity)
+        returnable = quantize_quantity(physical - already)
+        return returnable if returnable > _ZERO else _ZERO
 
     async def _is_stockable(self, tenant_id: UUID, product_id: UUID | None) -> bool:
         if product_id is None:

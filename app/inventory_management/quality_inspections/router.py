@@ -19,6 +19,7 @@ from app.common.idempotency.service import hash_request, require_idempotency_key
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
+from app.erp.accounting.ledger.schemas import JournalEntryResponse
 from app.inventory_management.quality_inspections.dependencies import (
     QualityInspectionServiceDependency,
 )
@@ -158,3 +159,13 @@ async def cancel_quality_inspection(
         reason=body.reason,
     )
     return ApiResponse(data=row, message="Quality inspection cancelled")
+
+
+@router.get("/{inspection_id}/journal", response_model=ApiResponse[JournalEntryResponse])
+async def get_quality_inspection_journal(
+    inspection_id: UUID,
+    tenant: TenantContextDependency,
+    service: QualityInspectionServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(QUALITY_INSPECTION_READ))],
+) -> ApiResponse[JournalEntryResponse]:
+    return ApiResponse(data=await service.journal(tenant.tenant_id, inspection_id))

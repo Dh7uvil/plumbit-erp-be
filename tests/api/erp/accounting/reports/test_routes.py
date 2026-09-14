@@ -284,6 +284,50 @@ async def test_stock_valuation_matches_remaining_layers_and_gl(client: AsyncClie
 
 
 @pytest.mark.asyncio
+async def test_receipt_delivery_invoice_cycle_stock_valuation_gl_ties_out(
+    client: AsyncClient,
+) -> None:
+    from uuid import uuid4
+
+    from tests.api.erp.purchase_invoices.test_routes import _enable_books
+    from tests.api.inventory_management.delivery_notes.test_routes import (
+        _confirm_sales_order,
+        _create_and_post_delivery_note,
+        _idempotent,
+        _receive_stock,
+    )
+
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    ctx = await _receive_stock(client, headers, quantity="4")
+    product_id = str(ctx["product_id"])
+    order = await _confirm_sales_order(client, headers, product_id=product_id, quantity="4")
+    await _create_and_post_delivery_note(client, headers, order["id"])
+    created = await client.post(
+        "/api/v1/sales-invoices/from-sales-order",
+        headers={**headers, "Idempotency-Key": uuid4().hex},
+        json={"sales_order_id": order["id"]},
+    )
+    assert created.status_code == 201, created.text
+    invoice = created.json()["data"]
+    posted = await client.post(
+        f"/api/v1/sales-invoices/{invoice['id']}/post",
+        headers=_idempotent(headers, invoice["version"]),
+    )
+    assert posted.status_code == 200, posted.text
+
+    today = datetime.now(UTC).date().isoformat()
+    recon = await client.get(
+        "/api/v1/reports/stock-valuation-gl",
+        headers=headers,
+        params={"as_of": today},
+    )
+    assert recon.status_code == 200, recon.text
+    assert Decimal(recon.json()["data"]["difference"]) == Decimal("0.0000")
+
+
+@pytest.mark.asyncio
 async def test_profit_and_loss_balance_sheet_and_cash_flow(client: AsyncClient) -> None:
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)

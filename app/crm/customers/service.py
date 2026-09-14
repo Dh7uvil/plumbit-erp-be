@@ -41,6 +41,7 @@ class PartyRole:
     extra_address_not_found_message: str
     audit_module: str
     audit_entity_type: str
+    code_prefix: str
 
 
 CUSTOMER_PARTY_ROLE = PartyRole(
@@ -52,6 +53,7 @@ CUSTOMER_PARTY_ROLE = PartyRole(
     extra_address_not_found_message="Customer address not found",
     audit_module=CRM_MODULE,
     audit_entity_type="customer",
+    code_prefix="CUS",
 )
 
 
@@ -64,6 +66,7 @@ SUPPLIER_PARTY_ROLE = PartyRole(
     extra_address_not_found_message="Supplier address not found",
     audit_module=PURCHASE_MODULE,
     audit_entity_type="supplier",
+    code_prefix="SUP",
 )
 
 
@@ -133,8 +136,6 @@ class CustomerService:
         mapping: list[object],
         actor_user_id: UUID,
     ):
-        from uuid import uuid4
-
         from app.common.imex.http import mapping_or_suggested
         from app.common.imex.schemas import ImexMappingEntry, ImportResult, ImportRowError
         from app.common.imex.service import mapped_rows
@@ -156,7 +157,7 @@ class CustomerService:
                 if not name:
                     raise ValidationError("Name is required")
                 trn = (row.get("trn") or "").strip() or None
-                code = (row.get("code") or "").strip() or f"IMP-{uuid4().hex[:8].upper()}"
+                code = (row.get("code") or "").strip() or None
                 created = await self.create(
                     tenant_id,
                     CustomerCreate(
@@ -214,12 +215,15 @@ class CustomerService:
                 payload.shipping_address,
                 address_type=AddressType.SHIPPING,
             )
+            code = payload.code or await self.repo.next_code(
+                tenant_id, prefix=self.role.code_prefix
+            )
             try:
                 row = await self.repo.create(
                     tenant_id,
                     {
                         "name": payload.name,
-                        "code": payload.code,
+                        "code": code,
                         "company_type": payload.company_type.value,
                         "trn": payload.trn,
                         "tax_treatment": payload.tax_treatment.value,

@@ -29,6 +29,7 @@ from app.core.enums import (
 from app.core.exceptions import ValidationError
 from app.crm.customers.models import Customer
 from app.erp.accounting.accounts.service import AccountService
+from app.erp.exchange_rates.service import CurrencyService
 from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
 from app.erp.accounting.reports.financials import FinancialReports
 from app.erp.accounting.reports.inventory import InventoryReports
@@ -78,6 +79,10 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.accounts = AccountService(session)
+        self.currencies = CurrencyService(session)
+
+    async def _report_currency_code(self, tenant_id: UUID) -> str:
+        return (await self.currencies.get_base(tenant_id)).code
 
     async def trial_balance(
         self,
@@ -136,6 +141,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             quantize_money(tot_cc),
         )
         return TrialBalanceResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             from_date=from_date,
             to_date=to_date,
             is_balanced=tot_cd == tot_cc,
@@ -213,6 +219,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                 )
             )
         return GeneralLedgerResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             account_id=account.id,
             account_code=account.code,
             account_name=account.name,
@@ -272,6 +279,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                 )
             )
         return AccountStatementResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             party_type=party_type.value,
             party_id=party_id,
             from_date=from_date,
@@ -434,6 +442,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
         )
         rows = (await self.session.execute(statement)).all()
         return ReceivedNotBilledResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             lines=[
                 ReceivedNotBilledLine(
                     goods_receipt_id=row[0],
@@ -559,7 +568,10 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                     status=status,
                 )
             )
-        return ThreeWayMatchResponse(lines=lines)
+        return ThreeWayMatchResponse(
+            currency_code=await self._report_currency_code(tenant_id),
+            lines=lines,
+        )
 
     def _three_way_status(
         self,
@@ -645,6 +657,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                     )
                 )
         return DashboardResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             as_of=as_of_date,
             open_ar=ar.totals.total,
             open_ap=ap.totals.total,
@@ -780,6 +793,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             as_of=as_of or utcnow().date(),
             credit_limit=customer.credit_limit,
             party_type=PartyType.CUSTOMER,
+            currency_code=await self._report_currency_code(tenant_id),
         )
 
     async def supplier_outstanding(
@@ -794,6 +808,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             as_of=as_of or utcnow().date(),
             credit_limit=None,
             party_type=PartyType.SUPPLIER,
+            currency_code=await self._report_currency_code(tenant_id),
         )
 
     async def _aging(self, tenant_id: UUID, *, as_of: date, party_type: PartyType) -> AgingResponse:
@@ -838,7 +853,12 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             for name, value in buckets.model_dump().items():
                 setattr(totals, name, quantize_money(getattr(totals, name) + value))
         rows.sort(key=lambda row: row.party_name)
-        return AgingResponse(as_of=as_of, rows=rows, totals=totals)
+        return AgingResponse(
+            currency_code=await self._report_currency_code(tenant_id),
+            as_of=as_of,
+            rows=rows,
+            totals=totals,
+        )
 
     def _bucket_items(self, items, *, as_of: date, party_type: PartyType) -> AgingBucketTotals:
         buckets = AgingBucketTotals()
@@ -848,9 +868,9 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             else {OpenItemType.PURCHASE_INVOICE, OpenItemType.OPENING_AP}
         )
         credit_types = (
-            {OpenItemType.CREDIT_NOTE}
+            {OpenItemType.CREDIT_NOTE, OpenItemType.CUSTOMER_PAYMENT}
             if party_type == PartyType.CUSTOMER
-            else {OpenItemType.DEBIT_NOTE}
+            else {OpenItemType.DEBIT_NOTE, OpenItemType.SUPPLIER_PAYMENT}
         )
         for item in items:
             if item.document_date > as_of:
@@ -891,6 +911,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
         as_of: date,
         credit_limit: Decimal | None,
         party_type: PartyType,
+        currency_code: str | None = None,
     ) -> OutstandingSummary:
         outstanding_types = (
             {OpenItemType.SALES_INVOICE, OpenItemType.OPENING_AR}
@@ -917,6 +938,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
         if credit_limit is not None:
             available = quantize_money(credit_limit - (balance_due - unapplied))
         return OutstandingSummary(
+            currency_code=currency_code,
             party_id=party_id,
             balance_due=balance_due,
             overdue=overdue,
@@ -1144,6 +1166,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
         if not lines:
             running = opening
         return PartyStatementResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             party_type=party_type.value,
             party_id=party_id,
             party_name=party.name,

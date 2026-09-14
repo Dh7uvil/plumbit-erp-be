@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
@@ -87,6 +87,29 @@ class QualityInspectionRepository:
         )
         result = await self.session.execute(statement)
         return result.scalars().all()
+
+    async def has_open_for_receipt_line(
+        self,
+        tenant_id: UUID,
+        goods_receipt_line_id: UUID,
+        *,
+        exclude_inspection_id: UUID | None = None,
+    ) -> bool:
+        statement = (
+            select(QualityInspection.id)
+            .join(QualityInspectionLine)
+            .where(
+                QualityInspection.tenant_id == tenant_id,
+                QualityInspection.deleted_at.is_(None),
+                QualityInspection.status == QualityInspectionStatus.DRAFT.value,
+                QualityInspectionLine.goods_receipt_line_id == goods_receipt_line_id,
+            )
+            .limit(1)
+        )
+        if exclude_inspection_id is not None:
+            statement = statement.where(QualityInspection.id != exclude_inspection_id)
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none() is not None
 
     async def has_approved_for_goods_receipt(self, tenant_id: UUID, goods_receipt_id: UUID) -> bool:
         statement = (

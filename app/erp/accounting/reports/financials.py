@@ -98,6 +98,7 @@ class FinancialReports:
             )
         net_profit = quantize_money(total_income - total_expense)
         return ProfitAndLossResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             from_date=from_date,
             to_date=to_date,
             comparative_from=comparative_from,
@@ -210,6 +211,7 @@ class FinancialReports:
         total_liabilities = quantize_money(total_liabilities)
         total_equity = quantize_money(total_equity)
         return BalanceSheetResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             as_of=as_of,
             total_assets=total_assets,
             total_liabilities=total_liabilities,
@@ -366,6 +368,7 @@ class FinancialReports:
                 line.comparative_amount = prior_by_key.get(line.key, _ZERO)
             comparative_net_change = prior.net_change
         return CashFlowResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             from_date=from_date,
             to_date=to_date,
             comparative_from=comparative_from,

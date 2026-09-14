@@ -59,6 +59,8 @@ from app.core.permissions import has_permission
 from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
+from app.erp.accounting.ledger.schemas import JournalEntryResponse
+from app.inventory_management.common.journal_lookup import journal_for_source
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 from app.erp.purchase_orders.service import PurchaseOrderService
@@ -168,6 +170,17 @@ class GoodsReceiptService:
         response = self._to_response(row)
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
+
+    async def journal(self, tenant_id: UUID, receipt_id: UUID) -> JournalEntryResponse:
+        await self._require(tenant_id, receipt_id)
+        return await journal_for_source(
+            self.session,
+            tenant_id,
+            source_type=SOURCE_GOODS_RECEIPT,
+            source_id=receipt_id,
+            label="Goods receipt",
+            actor_permissions=self.actor_permissions,
+        )
 
     async def print_document(
         self,
@@ -432,6 +445,8 @@ class GoodsReceiptService:
                     po_receipts[line.purchase_order_line_id] = received_this_doc[
                         line.purchase_order_line_id
                     ]
+                if line.quantity > _ZERO and line.product_id is None:
+                    raise ValidationError("Stock-moving goods receipt lines require a product")
                 if not stockable or line.product_id is None:
                     continue
                 product = await self.products.get(tenant_id, line.product_id)
@@ -650,6 +665,10 @@ class GoodsReceiptService:
             line.qty_returned = quantize_quantity(line.qty_returned + qty)
             if line.qty_returned < _ZERO:
                 raise ValidationError("Returned quantity cannot be negative")
+            hold_release = min(qty, line.qty_on_hold)
+            if hold_release > _ZERO:
+                line.qty_on_hold = quantize_quantity(line.qty_on_hold - hold_release)
+        row.qc_status = self._qc_status_from_lines(row.lines).value
         await self.session.flush()
 
     async def _cancel_posted(

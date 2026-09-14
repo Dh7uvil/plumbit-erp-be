@@ -15,6 +15,7 @@ from app.erp.accounting.accounts.service import AccountResolver
 from app.erp.accounting.ledger.models import JournalEntry
 from app.erp.accounting.ledger.posting import LedgerPostingService
 from app.erp.accounting.ledger.schemas import JournalLineInput
+from app.core.exceptions import ValidationError
 from app.erp.exchange_rates.service import CurrencyService
 
 _ZERO = Decimal("0")
@@ -106,8 +107,7 @@ class InventoryLedgerService:
         branch_id: UUID | None = None,
         document_number: str | None = None,
     ) -> None:
-        if not await self._should_post(tenant_id, entry_date):
-            return
+        await self._ensure_can_post(tenant_id, entry_date)
         restored = quantize_money(restored_amount)
         scrap = quantize_money(scrap_amount)
         lines: list[JournalLineInput] = []
@@ -236,8 +236,7 @@ class InventoryLedgerService:
         branch_id: UUID | None = None,
         document_number: str | None = None,
     ):
-        if not await self._should_post(tenant_id, entry_date):
-            return None
+        await self._ensure_can_post(tenant_id, entry_date)
         if not lines:
             return None
         currency_id = (await self.currencies.get_base(tenant_id)).id
@@ -277,11 +276,12 @@ class InventoryLedgerService:
             actor_id=actor_id,
         )
 
-    async def _should_post(self, tenant_id: UUID, entry_date: date) -> bool:
+    async def _ensure_can_post(self, tenant_id: UUID, entry_date: date) -> None:
         tenant = await self.org._require_tenant(tenant_id)
-        if tenant.books_start_date is None:
-            return False
-        return entry_date >= tenant.books_start_date
+        if tenant.books_start_date is not None and entry_date < tenant.books_start_date:
+            raise ValidationError(
+                "Inventory journal entry date is before the tenant books start date"
+            )
 
     async def _post_pair(
         self,
@@ -297,8 +297,7 @@ class InventoryLedgerService:
         actor_id: UUID,
         branch_id: UUID | None,
     ) -> None:
-        if not await self._should_post(tenant_id, entry_date):
-            return
+        await self._ensure_can_post(tenant_id, entry_date)
         money = quantize_money(amount)
         if money <= _ZERO:
             return

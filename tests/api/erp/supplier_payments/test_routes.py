@@ -335,3 +335,143 @@ async def test_opening_ap_collection(client: AsyncClient) -> None:
     assert Decimal(posted.json()["data"]["amount_unapplied"]) == Decimal("0")
     remaining = await client.get(f"/api/v1/suppliers/{supplier_id}/open-items", headers=headers)
     assert remaining.json()["data"] == []
+
+
+@pytest.mark.asyncio
+async def test_allocate_posted_advance_to_bill(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    accounts = await _accounts(client, headers)
+    supplier_id = await _create_supplier(client, headers)
+    bill = await _posted_expense_bill(client, headers, supplier_id=supplier_id)
+    total = Decimal(str(bill["grand_total"]))
+    created = await client.post(
+        "/api/v1/supplier-payments",
+        headers=headers,
+        json={
+            "supplier_id": supplier_id,
+            "amount_paid": str(total),
+            "payment_account_id": accounts["BANK"],
+            "payment_method": "TT",
+        },
+    )
+    assert created.status_code == 201, created.text
+    posted = await client.post(
+        f"/api/v1/supplier-payments/{created.json()['data']['id']}/post",
+        headers=_idempotent(headers, created.json()["data"]["version"]),
+    )
+    assert posted.status_code == 200, posted.text
+    payment = posted.json()["data"]
+    assert Decimal(payment["amount_unapplied"]) == total
+    allocated = await client.post(
+        f"/api/v1/supplier-payments/{payment['id']}/allocate",
+        headers={**headers, "If-Match": str(payment["version"])},
+        json={
+            "version": payment["version"],
+            "allocations": [
+                {
+                    "item_type": "PURCHASE_INVOICE",
+                    "item_id": bill["id"],
+                    "amount": str(total),
+                }
+            ],
+        },
+    )
+    assert allocated.status_code == 200, allocated.text
+    assert Decimal(allocated.json()["data"]["amount_unapplied"]) == Decimal("0")
+    fetched = await client.get(f"/api/v1/purchase-invoices/{bill['id']}", headers=headers)
+    body = fetched.json()["data"]
+    assert body["payment_status"] == "PAID"
+    assert Decimal(body["balance_due"]) == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_allocate_rejects_applying_payment_to_itself(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    accounts = await _accounts(client, headers)
+    supplier_id = await _create_supplier(client, headers)
+    created = await client.post(
+        "/api/v1/supplier-payments",
+        headers=headers,
+        json={
+            "supplier_id": supplier_id,
+            "amount_paid": "50.0000",
+            "payment_account_id": accounts["BANK"],
+            "payment_method": "TT",
+        },
+    )
+    assert created.status_code == 201, created.text
+    posted = await client.post(
+        f"/api/v1/supplier-payments/{created.json()['data']['id']}/post",
+        headers=_idempotent(headers, created.json()["data"]["version"]),
+    )
+    assert posted.status_code == 200, posted.text
+    payment = posted.json()["data"]
+    allocated = await client.post(
+        f"/api/v1/supplier-payments/{payment['id']}/allocate",
+        headers={**headers, "If-Match": str(payment["version"])},
+        json={
+            "version": payment["version"],
+            "allocations": [
+                {
+                    "item_type": "SUPPLIER_PAYMENT",
+                    "item_id": payment["id"],
+                    "amount": "50.0000",
+                }
+            ],
+        },
+    )
+    assert allocated.status_code == 422, allocated.text
+    body = allocated.json()["error"]
+    assert body["code"] == "VALIDATION_ERROR"
+    assert "bills" in body["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_unapplied_supplier_payment_appears_in_ap_aging(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    accounts = await _accounts(client, headers)
+    supplier_id = await _create_supplier(client, headers)
+    advance = Decimal("5000.0000")
+    created = await client.post(
+        "/api/v1/supplier-payments",
+        headers=headers,
+        json={
+            "supplier_id": supplier_id,
+            "amount_paid": str(advance),
+            "payment_account_id": accounts["BANK"],
+            "payment_method": "TT",
+        },
+    )
+    assert created.status_code == 201, created.text
+    posted = await client.post(
+        f"/api/v1/supplier-payments/{created.json()['data']['id']}/post",
+        headers=_idempotent(headers, created.json()["data"]["version"]),
+    )
+    assert posted.status_code == 200, posted.text
+    assert Decimal(posted.json()["data"]["amount_unapplied"]) == advance
+
+    summary = await client.get(
+        f"/api/v1/suppliers/{supplier_id}/outstanding-summary",
+        headers=headers,
+    )
+    assert summary.status_code == 200, summary.text
+    assert Decimal(summary.json()["data"]["unapplied_credits"]) == advance
+
+    today = datetime.now(UTC).date().isoformat()
+    aging = await client.get(
+        "/api/v1/reports/ap-aging",
+        headers=headers,
+        params={"as_of": today},
+    )
+    assert aging.status_code == 200, aging.text
+    data = aging.json()["data"]
+    assert Decimal(data["totals"]["unapplied_credits"]) == advance
+    assert Decimal(data["totals"]["total"]) == -advance
+    row = next(item for item in data["rows"] if item["party_id"] == supplier_id)
+    assert Decimal(row["unapplied_credits"]) == advance

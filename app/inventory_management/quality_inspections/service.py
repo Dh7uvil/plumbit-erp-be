@@ -44,6 +44,8 @@ from app.core.permissions import has_permission
 from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
+from app.erp.accounting.ledger.schemas import JournalEntryResponse
+from app.inventory_management.common.journal_lookup import journal_for_source
 from app.erp.accounting.service import DocumentSequenceService
 from app.inventory_management.goods_receipts.service import GoodsReceiptService
 from app.inventory_management.quality_inspections.models import QualityInspection
@@ -129,6 +131,17 @@ class QualityInspectionService:
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
 
+    async def journal(self, tenant_id: UUID, inspection_id: UUID) -> JournalEntryResponse:
+        await self._require(tenant_id, inspection_id)
+        return await journal_for_source(
+            self.session,
+            tenant_id,
+            source_type=SOURCE_QUALITY_INSPECTION,
+            source_id=inspection_id,
+            label="Quality inspection",
+            actor_permissions=self.actor_permissions,
+        )
+
     async def create(
         self, tenant_id: UUID, payload: QualityInspectionCreate, *, actor_user_id: UUID
     ) -> QualityInspectionResponse:
@@ -172,7 +185,9 @@ class QualityInspectionService:
             self._assert_version(existing, expected_version)
             old_values = await self._snapshot(existing)
             create_payload = self._update_to_create(existing, payload)
-            header, line_rows = await self._build_draft(tenant_id, create_payload)
+            header, line_rows = await self._build_draft(
+                tenant_id, create_payload, exclude_inspection_id=inspection_id
+            )
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(header["inspection_date"], can_override=self._can_override)
             header["updated_by"] = actor_user_id
@@ -484,7 +499,11 @@ class QualityInspectionService:
         return self._to_response(loaded)
 
     async def _build_draft(
-        self, tenant_id: UUID, payload: QualityInspectionCreate
+        self,
+        tenant_id: UUID,
+        payload: QualityInspectionCreate,
+        *,
+        exclude_inspection_id: UUID | None = None,
     ) -> tuple[dict[str, Any], builtins.list[dict[str, Any]]]:
         receipt = await self.receipts.get(tenant_id, payload.goods_receipt_id)
         if receipt.status != StockDocumentStatus.POSTED:
@@ -503,6 +522,12 @@ class QualityInspectionService:
             if line.goods_receipt_line_id in seen:
                 raise ValidationError("Duplicate goods receipt line on the inspection")
             seen.add(line.goods_receipt_line_id)
+            if await self.repo.has_open_for_receipt_line(
+                tenant_id, line.goods_receipt_line_id, exclude_inspection_id=exclude_inspection_id
+            ):
+                raise ValidationError(
+                    "An open quality inspection already exists for this goods receipt line"
+                )
             if line.goods_receipt_line_id not in hold_by_line:
                 raise ValidationError("Goods receipt line does not belong to this receipt")
             remaining = hold_by_line[line.goods_receipt_line_id]

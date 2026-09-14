@@ -126,7 +126,7 @@ async def test_cannot_inspect_more_than_remaining_hold(client: AsyncClient) -> N
         },
     )
     assert extra.status_code == 422, extra.text
-    assert extra.json()["error"]["code"] == "QUALITY_QTY_MISMATCH"
+    assert extra.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 @pytest.mark.asyncio

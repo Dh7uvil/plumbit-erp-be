@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
+from app.common.utils.datetime import utcnow
 from tests.conftest import login_headers, provision_admin
 
 
@@ -281,3 +282,22 @@ async def test_supplier_api_rejects_customer_company_type(client: AsyncClient) -
     )
     assert created.status_code == 422, created.text
     assert created.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_supplier_code_is_auto_generated_when_omitted(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    currency_id = await _currency_id(client, headers)
+    year = utcnow().year
+    created = await client.post(
+        "/api/v1/suppliers",
+        headers=headers,
+        json={
+            "name": f"Vendor {uuid4().hex[:8]}",
+            "tax_treatment": "UNREGISTERED",
+            "currency_id": currency_id,
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["data"]["code"] == f"SUP{year}01"

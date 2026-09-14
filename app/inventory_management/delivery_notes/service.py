@@ -54,6 +54,8 @@ from app.core.permissions import has_permission
 from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
+from app.erp.accounting.ledger.schemas import JournalEntryResponse
+from app.inventory_management.common.journal_lookup import journal_for_source
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 from app.erp.sales_orders.service import SalesOrderService
@@ -163,6 +165,17 @@ class DeliveryNoteService:
         response = self._to_response(row)
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
+
+    async def journal(self, tenant_id: UUID, note_id: UUID) -> JournalEntryResponse:
+        await self._require(tenant_id, note_id)
+        return await journal_for_source(
+            self.session,
+            tenant_id,
+            source_type=SOURCE_DELIVERY_NOTE,
+            source_id=note_id,
+            label="Delivery note",
+            actor_permissions=self.actor_permissions,
+        )
 
     async def print_document(
         self,
@@ -445,6 +458,8 @@ class DeliveryNoteService:
                     raise ValidationError(
                         "Delivery quantity exceeds outstanding quantity on the sales order line"
                     )
+                if line.quantity > _ZERO and line.product_id is None:
+                    raise ValidationError("Stock-moving delivery note lines require a product")
                 stockable = await self._is_stockable(tenant_id, line.product_id)
                 if stockable and line.product_id is not None:
                     locked = await self.stock.lock_balance(

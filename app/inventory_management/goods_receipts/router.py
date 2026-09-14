@@ -22,6 +22,7 @@ from app.common.print.schemas import PrintDocumentResponse
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
+from app.erp.accounting.ledger.schemas import JournalEntryResponse
 from app.erp.landed_costs.dependencies import LandedCostServiceDependency
 from app.erp.landed_costs.schemas import LandedCostEligibleResponse
 from app.inventory_management.goods_receipts.dependencies import GoodsReceiptServiceDependency
@@ -214,6 +215,16 @@ async def cancel_goods_receipt(
         endpoint=request.url.path,
     )
     return ApiResponse(data=row, message="Goods receipt cancelled")
+
+
+@router.get("/{receipt_id}/journal", response_model=ApiResponse[JournalEntryResponse])
+async def get_goods_receipt_journal(
+    receipt_id: UUID,
+    tenant: TenantContextDependency,
+    service: GoodsReceiptServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(GOODS_RECEIPT_READ))],
+) -> ApiResponse[JournalEntryResponse]:
+    return ApiResponse(data=await service.journal(tenant.tenant_id, receipt_id))
 
 
 @router.get(

@@ -1,4 +1,4 @@
-"""Inventory documents post to the GL only after books_start_date is set."""
+"""Inventory documents post to the GL even when books_start_date is unset."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ async def _enable_books(client: AsyncClient, headers: dict[str, str]) -> None:
 
 
 @pytest.mark.asyncio
-async def test_grn_post_without_books_start_writes_no_journal(client: AsyncClient) -> None:
+async def test_grn_post_without_books_start_writes_journal(client: AsyncClient) -> None:
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)
     ctx = await _issue_tracked_po(client, headers, quantity="4")
@@ -37,13 +37,12 @@ async def test_grn_post_without_books_start_writes_no_journal(client: AsyncClien
         client, headers, created["body"]["data"]["id"], created["body"]["data"]["version"]
     )
     assert posted.status_code == 200, posted.text
-    journals = await client.get(
-        "/api/v1/journals",
+    journal = await client.get(
+        f"/api/v1/goods-receipts/{created['body']['data']['id']}/journal",
         headers=headers,
-        params={"journal_type": "SYSTEM", "page_size": 50},
     )
-    assert journals.status_code == 200, journals.text
-    assert journals.json()["meta"]["total"] == 0
+    assert journal.status_code == 200, journal.text
+    assert journal.json()["data"]["status"] == "POSTED"
 
 
 @pytest.mark.asyncio

@@ -481,6 +481,7 @@ class DebitNoteService:
             if row.purchase_invoice_id is not None:
                 invoice = await self._assert_qty_headroom(tenant_id, row)
             await self._recompute_posted_totals(tenant_id, row)
+            await self._assert_standalone_cap(tenant_id, row)
             journal = await self.posting.post_for_document(
                 tenant_id,
                 source_type=SOURCE_DEBIT_NOTE,
@@ -676,6 +677,21 @@ class DebitNoteService:
         row.amount_applied = quantize_money(_ZERO)
         row.amount_unapplied = quantize_money(_ZERO)
         row.is_posted = False
+
+    async def _assert_standalone_cap(self, tenant_id: UUID, row: DebitNote) -> None:
+        if row.purchase_invoice_id is not None:
+            return
+        from app.core.enums import OpenItemType
+        from app.erp.accounting.open_items.service import OpenItemsService
+
+        items = await OpenItemsService(self.session).list_ap_open_items(tenant_id, row.supplier_id)
+        outstanding_types = {OpenItemType.PURCHASE_INVOICE, OpenItemType.OPENING_AP}
+        outstanding = _ZERO
+        for item in items:
+            if item.item_type in outstanding_types:
+                outstanding = quantize_money(outstanding + item.balance)
+        if row.grand_total > outstanding:
+            raise ValidationError("Standalone debit note total exceeds supplier open balance")
 
     async def _assert_qty_headroom(self, tenant_id: UUID, row: DebitNote) -> PurchaseInvoice:
         invoice = await self.purchase_invoices._require(
