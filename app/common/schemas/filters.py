@@ -31,26 +31,18 @@ class BaseFilter(BaseModel):
         normalized = value.strip()
         return normalized or None
 
-    @field_validator("sort_by")
-    @classmethod
-    def validate_sort_field(cls, value: str) -> str:
-        """Reject fields not explicitly exposed by the filter schema."""
-
-        if value not in cls.allowed_sort_fields:
-            allowed = ", ".join(sorted(cls.allowed_sort_fields))
-            msg = f"sort_by must be one of: {allowed}"
-            raise ValueError(msg)
-        return value
-
     @model_validator(mode="after")
-    def validate_date_range(self) -> "BaseFilter":
-        """Reject inverted date ranges."""
+    def validate_sort_and_date_range(self) -> "BaseFilter":
+        """Reject disallowed sort fields and inverted date ranges."""
 
+        allowed = type(self).allowed_sort_fields
+        if self.sort_by not in allowed:
+            names = ", ".join(sorted(allowed))
+            raise ValueError(f"sort_by must be one of: {names}")
         if (
             self.date_from is not None
             and self.date_to is not None
             and self.date_from > self.date_to
         ):
-            msg = "date_from must be before or equal to date_to"
-            raise ValueError(msg)
+            raise ValueError("date_from must be before or equal to date_to")
         return self

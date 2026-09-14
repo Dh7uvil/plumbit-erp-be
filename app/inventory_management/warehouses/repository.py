@@ -23,7 +23,9 @@ class WarehouseRepository:
         self._repo = BaseRepository(
             session,
             Warehouse,
-            allowed_sort_fields=frozenset({"created_at", "updated_at", "code", "name"}),
+            allowed_sort_fields=frozenset(
+                {"created_at", "updated_at", "code", "name", "is_active", "is_default"}
+            ),
             allowed_filter_fields=frozenset({"is_active", "is_default"}),
             search_fields=WAREHOUSE_FIELDS,
             related_searches=(address_search("address_id"),),

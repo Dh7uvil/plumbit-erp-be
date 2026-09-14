@@ -17,7 +17,9 @@ class UnitRepository:
         self._repo = BaseRepository(
             session,
             Unit,
-            allowed_sort_fields=frozenset({"created_at", "updated_at", "code", "name"}),
+            allowed_sort_fields=frozenset(
+                {"created_at", "updated_at", "code", "name", "is_active"}
+            ),
             allowed_filter_fields=frozenset({"is_active"}),
             search_fields=frozenset({"code", "name"}),
         )

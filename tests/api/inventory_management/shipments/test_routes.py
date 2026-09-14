@@ -69,3 +69,22 @@ async def test_shipment_groups_posted_notes_without_moving_stock(client: AsyncCl
         json={"reason": "Already shipped"},
     )
     assert blocked.status_code == 409, blocked.text
+
+
+@pytest.mark.asyncio
+async def test_dispatch_requires_a_delivery_note(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    created = await client.post(
+        "/api/v1/shipments",
+        headers=headers,
+        json={"shipment_type": "DOMESTIC", "transport_mode": "ROAD"},
+    )
+    assert created.status_code == 201, created.text
+    shipment = created.json()["data"]
+    dispatched = await client.post(
+        f"/api/v1/shipments/{shipment['id']}/dispatch",
+        headers=_if_match(headers, shipment["version"]),
+    )
+    assert dispatched.status_code == 422, dispatched.text
+    assert "delivery note" in dispatched.json()["error"]["message"].lower()

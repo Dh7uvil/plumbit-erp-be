@@ -33,6 +33,7 @@ from app.core.exceptions import (
     DocumentStaleError,
     InvalidStatusTransitionError,
     ResourceNotFoundError,
+    ValidationError,
 )
 from app.core.permissions import has_permission
 from app.crm.customers.service import CustomerService
@@ -398,6 +399,12 @@ class ShipmentService:
         async with transaction(self.session):
             row = await self._require(tenant_id, shipment_id, for_update=True)
             self._assert_version(row, expected_version)
+            if action == "dispatch":
+                notes = await self.delivery_notes.repo.list_for_shipment(tenant_id, row.id)
+                if not notes:
+                    raise ValidationError(
+                        "Attach at least one posted delivery note before dispatch"
+                    )
             target = next_status(ShipmentStatus(row.status), action)
             row.status = target.value
             row.version += 1
