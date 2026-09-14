@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import line_search, warehouse_search
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.inventory_management.stock_transfers.models import StockTransfer, StockTransferLine
@@ -28,7 +29,14 @@ class StockTransferRepository:
             allowed_filter_fields=frozenset(
                 {"status", "from_warehouse_id", "to_warehouse_id", "branch_id"}
             ),
-            search_fields=frozenset({"document_number", "reference", "reason", "notes"}),
+            search_fields=frozenset(
+                {"document_number", "reference", "reason", "notes", "cancel_reason"}
+            ),
+            related_searches=(
+                warehouse_search("from_warehouse_id"),
+                warehouse_search("to_warehouse_id"),
+                line_search(StockTransferLine, "stock_transfer_id", fields=frozenset()),
+            ),
         )
 
     def _with_lines(self) -> Any:

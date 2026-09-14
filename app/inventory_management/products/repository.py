@@ -3,10 +3,16 @@
 from collections.abc import Mapping, Sequence
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    PRODUCT_FIELDS,
+    category_search,
+    search_clause,
+    unit_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.inventory_management.products.models import Product
@@ -22,7 +28,8 @@ class ProductRepository:
             allowed_filter_fields=frozenset(
                 {"item_type", "category_id", "unit_id", "tax_id", "is_active"}
             ),
-            search_fields=frozenset({"sku", "name", "sales_description"}),
+            search_fields=PRODUCT_FIELDS,
+            related_searches=(category_search(), unit_search()),
         )
 
     async def get(self, tenant_id: UUID, product_id: UUID) -> Product | None:
@@ -41,11 +48,16 @@ class ProductRepository:
         return result.scalars().all()
 
     async def search_ids(self, tenant_id: UUID, search: str) -> list[UUID]:
-        term = f"%{search}%"
         statement = select(Product.id).where(
             Product.tenant_id == tenant_id,
             Product.deleted_at.is_(None),
-            or_(Product.sku.ilike(term), Product.name.ilike(term)),
+            search_clause(
+                Product,
+                tenant_id=tenant_id,
+                search=search,
+                fields=PRODUCT_FIELDS,
+                related=(category_search(), unit_search()),
+            ),
         )
         result = await self.session.execute(statement)
         return list(result.scalars().all())

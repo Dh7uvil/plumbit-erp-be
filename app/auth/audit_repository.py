@@ -9,6 +9,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.auth.models import User
 from app.common.models.audit_log import AuditLog
+from app.common.repositories.search import column_ilike, ilike_pattern
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.core.enums import AuditAction, AuditStatus
@@ -50,15 +51,17 @@ class AuditLogRepository:
             if common_filter.date_to is not None:
                 criteria.append(AuditLog.created_at <= common_filter.date_to)
             if common_filter.search is not None:
-                search_term = f"%{common_filter.search}%"
+                pattern = ilike_pattern(common_filter.search)
                 criteria.append(
                     or_(
-                        AuditLog.action.ilike(search_term),
-                        AuditLog.module.ilike(search_term),
-                        AuditLog.entity_type.ilike(search_term),
-                        AuditLog.ip_address.ilike(search_term),
-                        User.name.ilike(search_term),
-                        User.email.ilike(search_term),
+                        column_ilike(AuditLog.action, pattern),
+                        column_ilike(AuditLog.module, pattern),
+                        column_ilike(AuditLog.entity_type, pattern),
+                        column_ilike(AuditLog.ip_address, pattern),
+                        column_ilike(AuditLog.user_agent, pattern),
+                        column_ilike(User.name, pattern),
+                        column_ilike(User.email, pattern),
+                        column_ilike(User.phone, pattern),
                     )
                 )
         return criteria

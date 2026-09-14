@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, delete, exists, func, or_, select
+from sqlalchemy import Select, delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
@@ -23,6 +23,7 @@ from app.auth.models import (
     UserRole,
 )
 from app.auth.schemas import UserFilter
+from app.common.repositories.search import USER_FIELDS, RelatedSearch, search_clause
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.utils.datetime import utcnow
@@ -55,6 +56,7 @@ class AccessRepository:
         search_fields: frozenset[str] = frozenset(),
         allowed_filter_fields: frozenset[str] = frozenset(),
         extra_criteria: Sequence[ColumnElement[bool]] = (),
+        related_searches: Sequence[RelatedSearch] = (),
     ) -> list[ColumnElement[bool]]:
         criteria: list[ColumnElement[bool]] = [self._column(model, "tenant_id") == tenant_id]
 
@@ -72,12 +74,14 @@ class AccessRepository:
             if common_filter.date_to is not None:
                 criteria.append(self._column(model, "created_at") <= common_filter.date_to)
             if common_filter.search is not None:
-                if not search_fields:
-                    msg = "search is not supported by this repository"
-                    raise ValueError(msg)
-                search_term = f"%{common_filter.search}%"
                 criteria.append(
-                    or_(*(self._column(model, field).ilike(search_term) for field in search_fields))
+                    search_clause(
+                        model,
+                        tenant_id=tenant_id,
+                        search=common_filter.search,
+                        fields=search_fields,
+                        related=related_searches,
+                    )
                 )
 
         criteria.extend(extra_criteria)
@@ -112,6 +116,7 @@ class AccessRepository:
         allowed_filter_fields: frozenset[str],
         allowed_sort_fields: frozenset[str],
         extra_criteria: Sequence[ColumnElement[bool]] = (),
+        related_searches: Sequence[RelatedSearch] = (),
     ) -> tuple[Sequence[ModelT], int]:
         criteria = self._list_criteria(
             model,
@@ -121,6 +126,7 @@ class AccessRepository:
             search_fields=search_fields,
             allowed_filter_fields=allowed_filter_fields,
             extra_criteria=extra_criteria,
+            related_searches=related_searches,
         )
         statement = self._apply_sort(
             model,
@@ -268,12 +274,20 @@ class AccessRepository:
             page=page,
             common_filter=common_filter,
             filters=filters,
-            search_fields=frozenset({"name", "email"}),
+            search_fields=USER_FIELDS,
             allowed_filter_fields=frozenset({"status"}),
             allowed_sort_fields=frozenset(
                 {"created_at", "updated_at", "name", "email", "status", "last_login_at"}
             ),
             extra_criteria=self._user_list_extra_criteria(tenant_id, user_filter),
+            related_searches=(
+                RelatedSearch(
+                    Employee,
+                    local_key="id",
+                    remote_key="user_id",
+                    fields=frozenset({"employee_code", "designation"}),
+                ),
+            ),
         )
         return items, total
 

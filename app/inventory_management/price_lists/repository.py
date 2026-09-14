@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import currency_search, line_search
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.inventory_management.price_lists.models import PriceList, PriceListItem
@@ -21,6 +22,10 @@ class PriceListRepository:
             allowed_sort_fields=frozenset({"created_at", "updated_at", "name"}),
             allowed_filter_fields=frozenset({"currency_id", "list_type", "is_active"}),
             search_fields=frozenset({"name"}),
+            related_searches=(
+                currency_search(),
+                line_search(PriceListItem, "price_list_id", fields=frozenset()),
+            ),
         )
         self._items = BaseRepository(
             session,

@@ -223,9 +223,12 @@ class ExchangeRateService:
         *,
         page: PageParams,
         effective_date: date | None = None,
+        search: str | None = None,
     ) -> tuple[list[ExchangeRateResponse], int]:
         on_date = effective_date or await self._tenant_today(tenant_id)
-        rows, total = await self.repo.list(tenant_id, page=page, effective_date=on_date)
+        rows, total = await self.repo.list(
+            tenant_id, page=page, effective_date=on_date, search=search
+        )
         return [ExchangeRateResponse.model_validate(row) for row in rows], total
 
     async def upsert(

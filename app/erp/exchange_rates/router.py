@@ -115,9 +115,14 @@ async def list_exchange_rates(
     service: ExchangeRateServiceDependency,
     _: Annotated[CurrentUser, Depends(require_permission(EXCHANGE_RATE_READ))],
     effective_date: Annotated[date | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
 ) -> ApiResponse[list[ExchangeRateResponse]]:
+    term = search.strip() if search else None
     rows, total = await service.list_for_date(
-        tenant.tenant_id, page=page, effective_date=effective_date
+        tenant.tenant_id,
+        page=page,
+        effective_date=effective_date,
+        search=term or None,
     )
     return paginated_response(rows, params=page, total=total)
 

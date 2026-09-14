@@ -12,6 +12,14 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    contact_search,
+    employee_search,
+    line_search,
+    party_search,
+    quotation_search,
+    sales_order_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.core.enums import ProformaInvoiceStatus
@@ -59,7 +67,31 @@ class ProformaInvoiceRepository:
                     "source_sales_order_id",
                 }
             ),
-            search_fields=frozenset({"document_number", "notes"}),
+            search_fields=frozenset(
+                {
+                    "document_number",
+                    "notes",
+                    "customer_trn",
+                    "incoterm",
+                    "incoterm_place",
+                    "port_of_loading",
+                    "port_of_discharge",
+                    "bill_to_snapshot",
+                    "ship_to_snapshot",
+                }
+            ),
+            related_searches=(
+                party_search(),
+                contact_search(),
+                employee_search(),
+                quotation_search(),
+                sales_order_search("source_sales_order_id"),
+                line_search(
+                    ProformaInvoiceLine,
+                    "proforma_invoice_id",
+                    fields=frozenset({"description", "item_code", "hs_code"}),
+                ),
+            ),
         )
 
     def _with_children(self) -> tuple[Any, Any]:

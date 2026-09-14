@@ -15,6 +15,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.auth.catalog import COST_READ, INVENTORY_MODULE
 from app.auth.org_service import OrganizationService
+from app.common.repositories.search import column_ilike, ilike_pattern
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
@@ -172,13 +173,19 @@ class StockService:
         repo_filter = filters.model_copy(update={"search": None})
         if filters.search:
             product_ids = await self.products.search_ids(tenant_id, filters.search)
+            warehouse_ids = await self.warehouses.search_ids(tenant_id, filters.search)
             if category_product_ids is not None:
                 product_ids = [item for item in product_ids if item in set(category_product_ids)]
+            pattern = ilike_pattern(filters.search)
             search_clauses: list[ColumnElement[bool]] = [
-                StockMovement.notes.ilike(f"%{filters.search}%")
+                column_ilike(StockMovement.notes, pattern),
+                column_ilike(StockMovement.source_type, pattern),
+                column_ilike(StockMovement.movement_type, pattern),
             ]
             if product_ids:
                 search_clauses.append(StockMovement.product_id.in_(product_ids))
+            if warehouse_ids:
+                search_clauses.append(StockMovement.warehouse_id.in_(warehouse_ids))
             extra.append(or_(*search_clauses))
         repo_filters: dict[str, object] = {}
         if filters.warehouse_id is not None:

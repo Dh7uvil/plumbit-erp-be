@@ -8,6 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import Tenant
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    address_search,
+    employee_search,
+    extra_address_search,
+    party_contacts_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.utils.datetime import utcnow
@@ -54,7 +60,14 @@ class CustomerRepository:
                     "default_price_list_id",
                 }
             ),
-            search_fields=frozenset({"name", "code", "trn"}),
+            search_fields=frozenset({"name", "code", "trn", "notes"}),
+            related_searches=(
+                party_contacts_search(),
+                address_search("billing_address_id"),
+                address_search("shipping_address_id"),
+                extra_address_search(),
+                employee_search(),
+            ),
         )
         self._addresses = BaseRepository(
             session,

@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import line_search, warehouse_search
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.inventory_management.stock_adjustments.models import (
@@ -29,7 +30,13 @@ class StockAdjustmentRepository:
                 {"created_at", "updated_at", "document_number", "document_date", "status"}
             ),
             allowed_filter_fields=frozenset({"status", "warehouse_id", "reason", "branch_id"}),
-            search_fields=frozenset({"document_number", "reference", "notes"}),
+            search_fields=frozenset({"document_number", "reference", "notes", "cancel_reason"}),
+            related_searches=(
+                warehouse_search("warehouse_id"),
+                line_search(
+                    StockAdjustmentLine, "stock_adjustment_id", fields=frozenset({"notes"})
+                ),
+            ),
         )
 
     def _with_lines(self) -> Any:

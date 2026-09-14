@@ -8,6 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    customer_payment_allocation_search,
+    party_search,
+    proforma_search,
+    sales_order_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.core.enums import InvoiceDocumentStatus
@@ -41,6 +47,12 @@ class CustomerPaymentRepository:
                 }
             ),
             search_fields=frozenset({"document_number", "reference", "notes"}),
+            related_searches=(
+                party_search(),
+                proforma_search("proforma_invoice_id"),
+                sales_order_search(),
+                customer_payment_allocation_search(),
+            ),
         )
 
     async def get(

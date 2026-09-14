@@ -11,6 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    goods_receipt_search,
+    line_search,
+    party_search,
+    purchase_order_search,
+    warehouse_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.core.enums import StockDocumentStatus
@@ -37,7 +44,14 @@ class PurchaseReturnRepository:
                     "warehouse_id",
                 }
             ),
-            search_fields=frozenset({"document_number", "notes"}),
+            search_fields=frozenset({"document_number", "notes", "reason_code", "cancel_reason"}),
+            related_searches=(
+                party_search("supplier_id"),
+                warehouse_search("warehouse_id"),
+                purchase_order_search(),
+                goods_receipt_search(),
+                line_search(PurchaseReturnLine, "purchase_return_id", fields=frozenset({"notes"})),
+            ),
         )
 
     def _with_lines(self) -> Any:

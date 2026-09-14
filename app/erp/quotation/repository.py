@@ -12,6 +12,12 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    contact_search,
+    employee_search,
+    line_search,
+    party_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.core.enums import QuotationStatus
@@ -35,7 +41,27 @@ class QuotationRepository:
                 }
             ),
             allowed_filter_fields=frozenset({"status", "customer_id", "branch_id", "currency_id"}),
-            search_fields=frozenset({"quote_number", "notes"}),
+            search_fields=frozenset(
+                {
+                    "quote_number",
+                    "notes",
+                    "customer_trn",
+                    "incoterm",
+                    "incoterm_place",
+                    "bill_to_snapshot",
+                    "ship_to_snapshot",
+                }
+            ),
+            related_searches=(
+                party_search(),
+                contact_search(),
+                employee_search(),
+                line_search(
+                    QuotationLine,
+                    "quotation_id",
+                    fields=frozenset({"description", "item_code"}),
+                ),
+            ),
         )
 
     def _with_lines(self) -> Any:

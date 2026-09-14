@@ -3,10 +3,15 @@
 from collections.abc import Mapping, Sequence
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    WAREHOUSE_FIELDS,
+    address_search,
+    search_clause,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.inventory_management.warehouses.models import Warehouse
@@ -20,7 +25,8 @@ class WarehouseRepository:
             Warehouse,
             allowed_sort_fields=frozenset({"created_at", "updated_at", "code", "name"}),
             allowed_filter_fields=frozenset({"is_active", "is_default"}),
-            search_fields=frozenset({"code", "name"}),
+            search_fields=WAREHOUSE_FIELDS,
+            related_searches=(address_search("address_id"),),
         )
 
     async def get(self, tenant_id: UUID, warehouse_id: UUID) -> Warehouse | None:
@@ -39,11 +45,16 @@ class WarehouseRepository:
         return result.scalars().all()
 
     async def search_ids(self, tenant_id: UUID, search: str) -> list[UUID]:
-        term = f"%{search}%"
         statement = select(Warehouse.id).where(
             Warehouse.tenant_id == tenant_id,
             Warehouse.deleted_at.is_(None),
-            or_(Warehouse.code.ilike(term), Warehouse.name.ilike(term)),
+            search_clause(
+                Warehouse,
+                tenant_id=tenant_id,
+                search=search,
+                fields=WAREHOUSE_FIELDS,
+                related=(address_search("address_id"),),
+            ),
         )
         result = await self.session.execute(statement)
         return list(result.scalars().all())

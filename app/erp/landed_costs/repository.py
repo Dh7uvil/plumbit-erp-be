@@ -13,6 +13,12 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    RelatedSearch,
+    goods_receipt_search,
+    purchase_invoice_search,
+    shipment_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.core.enums import StockDocumentStatus
@@ -31,7 +37,23 @@ class LandedCostRepository:
                 {"created_at", "updated_at", "document_number", "document_date", "status"}
             ),
             allowed_filter_fields=frozenset({"status", "shipment_id", "branch_id"}),
-            search_fields=frozenset({"document_number", "notes"}),
+            search_fields=frozenset({"document_number", "notes", "cancel_reason"}),
+            related_searches=(
+                shipment_search(),
+                RelatedSearch(
+                    LandedCostCharge,
+                    local_key="id",
+                    remote_key="landed_cost_id",
+                    fields=frozenset({"bill_number"}),
+                    nested=(purchase_invoice_search(),),
+                ),
+                RelatedSearch(
+                    LandedCostAllocation,
+                    local_key="id",
+                    remote_key="landed_cost_id",
+                    nested=(goods_receipt_search(),),
+                ),
+            ),
         )
 
     def _with_children(self) -> tuple[Any, ...]:

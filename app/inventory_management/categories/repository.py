@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import category_search
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.inventory_management.categories.models import Category
@@ -21,6 +22,7 @@ class CategoryRepository:
             allowed_sort_fields=frozenset({"created_at", "updated_at", "code", "name"}),
             allowed_filter_fields=frozenset({"parent_id", "is_active"}),
             search_fields=frozenset({"code", "name"}),
+            related_searches=(category_search("parent_id"),),
         )
 
     async def get(self, tenant_id: UUID, category_id: UUID) -> Category | None:

@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import party_search
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.crm.contacts.models import Contact
@@ -23,6 +24,7 @@ class ContactRepository:
             ),
             allowed_filter_fields=frozenset({"customer_id", "is_primary", "is_active"}),
             search_fields=frozenset({"name", "email", "phone"}),
+            related_searches=(party_search(),),
         )
 
     async def get(self, tenant_id: UUID, contact_id: UUID) -> Contact | None:
