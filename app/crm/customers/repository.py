@@ -34,7 +34,17 @@ class CustomerRepository:
         self._repo = BaseRepository(
             session,
             Customer,
-            allowed_sort_fields=frozenset({"created_at", "updated_at", "name", "code"}),
+            allowed_sort_fields=frozenset(
+                {
+                    "created_at",
+                    "updated_at",
+                    "name",
+                    "code",
+                    "company_type",
+                    "tax_treatment",
+                    "is_active",
+                }
+            ),
             allowed_filter_fields=frozenset(
                 {
                     "tax_treatment",

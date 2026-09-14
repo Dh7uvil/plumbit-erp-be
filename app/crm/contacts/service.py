@@ -57,6 +57,14 @@ class ContactService:
             return None
         return ContactResponse.model_validate(row)
 
+    async def map_primaries(
+        self, tenant_id: UUID, customer_ids: list[UUID]
+    ) -> dict[UUID, ContactResponse]:
+        rows = await self.repo.map_primaries(tenant_id, customer_ids)
+        return {
+            customer_id: ContactResponse.model_validate(row) for customer_id, row in rows.items()
+        }
+
     async def create(
         self, tenant_id: UUID, payload: ContactCreate, *, actor_user_id: UUID
     ) -> ContactResponse:

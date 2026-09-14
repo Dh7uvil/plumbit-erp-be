@@ -18,7 +18,9 @@ class ContactRepository:
         self._repo = BaseRepository(
             session,
             Contact,
-            allowed_sort_fields=frozenset({"created_at", "updated_at", "name"}),
+            allowed_sort_fields=frozenset(
+                {"created_at", "updated_at", "name", "email", "is_primary", "is_active"}
+            ),
             allowed_filter_fields=frozenset({"customer_id", "is_primary", "is_active"}),
             search_fields=frozenset({"name", "email", "phone"}),
         )
@@ -62,6 +64,20 @@ class ContactRepository:
         )
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()
+
+    async def map_primaries(
+        self, tenant_id: UUID, customer_ids: Sequence[UUID]
+    ) -> dict[UUID, Contact]:
+        if not customer_ids:
+            return {}
+        statement = select(Contact).where(
+            Contact.tenant_id == tenant_id,
+            Contact.customer_id.in_(customer_ids),
+            Contact.is_primary.is_(True),
+            Contact.deleted_at.is_(None),
+        )
+        result = await self.session.execute(statement)
+        return {row.customer_id: row for row in result.scalars().all()}
 
     async def clear_other_primaries(
         self,

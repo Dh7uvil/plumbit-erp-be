@@ -26,6 +26,7 @@ from app.common.imex.service import export_response, preview_file, template_resp
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.core.enums import InvoiceDocumentStatus
+from app.crm.contacts.dependencies import ContactServiceDependency
 from app.crm.customers.dependencies import CustomerServiceDependency
 from app.crm.customers.schemas import (
     CustomerCreate,
@@ -122,6 +123,7 @@ async def customer_export(
     tenant: TenantContextDependency,
     page: PaginationDependency,
     service: CustomerServiceDependency,
+    contacts: ContactServiceDependency,
     filters: Annotated[CustomerFilter, Depends()],
     _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_EXPORT))],
 ):
@@ -134,10 +136,20 @@ async def customer_export(
         company_type=filters.company_type.value if filters.company_type else None,
         is_active=filters.is_active,
     )
+    primaries = await contacts.map_primaries(tenant.tenant_id, [row.id for row in rows])
     return export_response(
         "customer",
         ["name", "code", "trn", "email", "phone"],
-        [[row.name, row.code, row.trn or "", "", ""] for row in rows],
+        [
+            [
+                row.name,
+                row.code,
+                row.trn or "",
+                (primaries[row.id].email or "") if row.id in primaries else "",
+                (primaries[row.id].phone or "") if row.id in primaries else "",
+            ]
+            for row in rows
+        ],
     )
 
 
