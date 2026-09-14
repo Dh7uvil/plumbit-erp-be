@@ -10,6 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    line_search,
+    party_search,
+    sales_order_search,
+    warehouse_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.core.enums import PurchaseOrderStatus
@@ -47,7 +53,25 @@ class PurchaseOrderRepository:
             PurchaseOrder,
             allowed_sort_fields=_SORT_FIELDS,
             allowed_filter_fields=_FILTER_FIELDS,
-            search_fields=frozenset({"document_number", "reference_number", "notes"}),
+            search_fields=frozenset(
+                {
+                    "document_number",
+                    "reference_number",
+                    "notes",
+                    "supplier_trn",
+                    "cancel_reason",
+                }
+            ),
+            related_searches=(
+                party_search("supplier_id"),
+                warehouse_search("warehouse_id"),
+                sales_order_search("source_sales_order_id"),
+                line_search(
+                    PurchaseOrderLine,
+                    "purchase_order_id",
+                    fields=frozenset({"description", "supplier_sku"}),
+                ),
+            ),
         )
 
     def _with_lines(self) -> Any:

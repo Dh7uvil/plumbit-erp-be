@@ -8,6 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import Address, Branch, Department, Employee, Tenant, User
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    address_search,
+    branch_search,
+    column_ilike,
+    ilike_pattern,
+    user_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.utils.datetime import utcnow
@@ -45,7 +52,8 @@ class OrganizationRepository:
             Branch,
             allowed_sort_fields=frozenset({"created_at", "updated_at", "name", "code", "status"}),
             allowed_filter_fields=frozenset({"status"}),
-            search_fields=frozenset({"name", "code"}),
+            search_fields=frozenset({"name", "code", "phone"}),
+            related_searches=(address_search("address_id"),),
         )
         self.departments = BaseRepository(
             session,
@@ -53,6 +61,7 @@ class OrganizationRepository:
             allowed_sort_fields=frozenset({"created_at", "updated_at", "name", "code"}),
             allowed_filter_fields=frozenset({"branch_id"}),
             search_fields=frozenset({"name", "code"}),
+            related_searches=(branch_search(), user_search("manager_id")),
         )
         self.employees = BaseRepository(
             session,
@@ -181,12 +190,14 @@ class OrganizationRepository:
             .where(*conditions)
         )
         if search:
-            pattern = f"%{search}%"
+            pattern = ilike_pattern(search)
             statement = statement.where(
                 or_(
-                    Employee.employee_code.ilike(pattern),
-                    Employee.designation.ilike(pattern),
-                    User.name.ilike(pattern),
+                    column_ilike(Employee.employee_code, pattern),
+                    column_ilike(Employee.designation, pattern),
+                    column_ilike(User.name, pattern),
+                    column_ilike(User.email, pattern),
+                    column_ilike(User.phone, pattern),
                 )
             )
         count_statement = select(func.count()).select_from(statement.subquery())

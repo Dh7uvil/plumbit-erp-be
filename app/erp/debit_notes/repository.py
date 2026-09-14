@@ -11,6 +11,12 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    line_search,
+    party_search,
+    purchase_invoice_search,
+    purchase_return_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.core.enums import InvoiceDocumentStatus
@@ -42,7 +48,13 @@ class DebitNoteRepository:
                     "currency_id",
                 }
             ),
-            search_fields=frozenset({"document_number", "notes"}),
+            search_fields=frozenset({"document_number", "notes", "reason_code"}),
+            related_searches=(
+                party_search("supplier_id"),
+                purchase_invoice_search(),
+                purchase_return_search(),
+                line_search(DebitNoteLine, "debit_note_id", fields=frozenset({"description"})),
+            ),
         )
 
     def _with_children(self) -> tuple[Any, ...]:

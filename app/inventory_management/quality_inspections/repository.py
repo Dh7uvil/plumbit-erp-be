@@ -11,9 +11,17 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    RelatedSearch,
+    goods_receipt_search,
+    line_search,
+    product_search,
+    user_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.core.enums import QualityInspectionStatus
+from app.inventory_management.goods_receipts.models import GoodsReceiptLine
 from app.inventory_management.quality_inspections.models import (
     QualityInspection,
     QualityInspectionLine,
@@ -30,7 +38,25 @@ class QualityInspectionRepository:
                 {"created_at", "updated_at", "document_number", "inspection_date", "status"}
             ),
             allowed_filter_fields=frozenset({"status", "goods_receipt_id"}),
-            search_fields=frozenset({"document_number", "notes"}),
+            search_fields=frozenset({"document_number", "notes", "cancel_reason"}),
+            related_searches=(
+                goods_receipt_search(),
+                user_search("inspector_user_id"),
+                line_search(
+                    QualityInspectionLine,
+                    "quality_inspection_id",
+                    fields=frozenset({"notes"}),
+                    product_key=None,
+                    nested=(
+                        RelatedSearch(
+                            GoodsReceiptLine,
+                            local_key="goods_receipt_line_id",
+                            fields=frozenset({"description", "supplier_sku"}),
+                            nested=(product_search(),),
+                        ),
+                    ),
+                ),
+            ),
         )
 
     def _with_lines(self) -> Any:

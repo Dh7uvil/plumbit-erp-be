@@ -4,12 +4,13 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, func, select
 from sqlalchemy import false as sql_false
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.common.repositories.search import RelatedSearch, search_clause, validate_related_search
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.utils.datetime import utcnow
@@ -29,6 +30,7 @@ class BaseRepository[ModelT: SoftDeleteTenantModel]:
         allowed_sort_fields: frozenset[str],
         allowed_filter_fields: frozenset[str] = frozenset(),
         search_fields: frozenset[str] = frozenset(),
+        related_searches: Sequence[RelatedSearch] = (),
     ) -> None:
         """Configure the model and its public query allowlists."""
 
@@ -37,11 +39,14 @@ class BaseRepository[ModelT: SoftDeleteTenantModel]:
         self.allowed_sort_fields = allowed_sort_fields
         self.allowed_filter_fields = allowed_filter_fields
         self.search_fields = search_fields
+        self.related_searches = tuple(related_searches)
 
         for required_field in ("id", "tenant_id", "deleted_at"):
             self._column(required_field)
         for field in allowed_sort_fields | allowed_filter_fields | search_fields:
             self._column(field)
+        for spec in self.related_searches:
+            validate_related_search(spec, model)
 
     def _column(self, name: str) -> InstrumentedAttribute[Any]:
         column = getattr(self.model, name, None)
@@ -84,12 +89,14 @@ class BaseRepository[ModelT: SoftDeleteTenantModel]:
             if common_filter.date_to is not None:
                 criteria.append(self._column("created_at") <= common_filter.date_to)
             if common_filter.search is not None:
-                if not self.search_fields:
-                    msg = "search is not supported by this repository"
-                    raise ValueError(msg)
-                search_term = f"%{common_filter.search}%"
                 criteria.append(
-                    or_(*(self._column(field).ilike(search_term) for field in self.search_fields))
+                    search_clause(
+                        self.model,
+                        tenant_id=tenant_id,
+                        search=common_filter.search,
+                        fields=self.search_fields,
+                        related=self.related_searches,
+                    )
                 )
 
         return criteria

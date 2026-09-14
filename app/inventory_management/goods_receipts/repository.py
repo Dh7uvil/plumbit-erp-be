@@ -11,6 +11,12 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    line_search,
+    party_search,
+    purchase_order_search,
+    warehouse_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.inventory_management.goods_receipts.models import GoodsReceipt, GoodsReceiptLine
@@ -40,9 +46,22 @@ class GoodsReceiptRepository:
                     "document_number",
                     "notes",
                     "supplier_invoice_number",
+                    "delivery_challan_number",
+                    "bill_of_entry_number",
                     "container_number",
                     "bl_number",
+                    "cancel_reason",
                 }
+            ),
+            related_searches=(
+                party_search("supplier_id"),
+                warehouse_search("warehouse_id"),
+                purchase_order_search(),
+                line_search(
+                    GoodsReceiptLine,
+                    "goods_receipt_id",
+                    fields=frozenset({"description", "supplier_sku"}),
+                ),
             ),
         )
 

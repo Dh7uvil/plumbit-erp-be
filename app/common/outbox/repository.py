@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.outbox.models import OutboxEvent
+from app.common.repositories.search import search_clause
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.utils.datetime import utcnow
@@ -135,4 +136,22 @@ class OutboxRepository:
                 criteria.append(OutboxEvent.created_at >= common_filter.date_from)
             if common_filter.date_to is not None:
                 criteria.append(OutboxEvent.created_at <= common_filter.date_to)
+            if common_filter.search is not None:
+                criteria.append(
+                    search_clause(
+                        OutboxEvent,
+                        tenant_id=tenant_id,
+                        search=common_filter.search,
+                        fields=frozenset(
+                            {
+                                "event_type",
+                                "aggregate_type",
+                                "dedupe_key",
+                                "last_error",
+                                "request_id",
+                                "status",
+                            }
+                        ),
+                    )
+                )
         return criteria

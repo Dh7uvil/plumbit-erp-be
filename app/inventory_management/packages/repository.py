@@ -11,6 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    delivery_note_search,
+    line_search,
+    sales_order_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.core.enums import PackageStatus
@@ -31,6 +36,13 @@ class PackageRepository:
             allowed_filter_fields=frozenset({"status", "sales_order_id", "delivery_note_id"}),
             search_fields=frozenset(
                 {"document_number", "package_number", "notes", "shipping_marks"}
+            ),
+            related_searches=(
+                sales_order_search(),
+                delivery_note_search(),
+                line_search(
+                    PackageLine, "package_id", fields=frozenset({"item_code", "packing_unit"})
+                ),
             ),
         )
 

@@ -21,7 +21,7 @@ class TaxRepository:
             Tax,
             allowed_sort_fields=frozenset({"created_at", "updated_at", "name", "rate"}),
             allowed_filter_fields=frozenset({"tax_category", "is_default", "is_active"}),
-            search_fields=frozenset({"name"}),
+            search_fields=frozenset({"name", "tax_category"}),
         )
 
     async def get(self, tenant_id: UUID, tax_id: UUID) -> Tax | None:
@@ -99,7 +99,7 @@ class PaymentTermRepository:
             PaymentTerm,
             allowed_sort_fields=frozenset({"created_at", "updated_at", "name", "days"}),
             allowed_filter_fields=frozenset({"is_active"}),
-            search_fields=frozenset({"name"}),
+            search_fields=frozenset({"name", "description"}),
         )
 
     async def get(self, tenant_id: UUID, term_id: UUID) -> PaymentTerm | None:
@@ -204,7 +204,7 @@ class DocumentSequenceRepository:
             allowed_filter_fields=frozenset(
                 {"document_type", "series", "fiscal_year", "is_active"}
             ),
-            search_fields=frozenset({"series", "prefix"}),
+            search_fields=frozenset({"series", "prefix", "document_type"}),
         )
 
     async def get(self, tenant_id: UUID, sequence_id: UUID) -> DocumentSequence | None:

@@ -10,6 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    contact_search,
+    employee_search,
+    line_search,
+    party_search,
+    proforma_search,
+    quotation_search,
+    warehouse_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.erp.sales_orders.models import SalesOrder, SalesOrderLine
@@ -49,7 +58,25 @@ class SalesOrderRepository:
             allowed_sort_fields=_SORT_FIELDS,
             allowed_filter_fields=_FILTER_FIELDS,
             search_fields=frozenset(
-                {"document_number", "reference_number", "customer_po_number", "notes"}
+                {
+                    "document_number",
+                    "reference_number",
+                    "customer_po_number",
+                    "notes",
+                    "customer_trn",
+                    "bill_to_snapshot",
+                    "ship_to_snapshot",
+                    "cancel_reason",
+                }
+            ),
+            related_searches=(
+                party_search(),
+                contact_search(),
+                employee_search(),
+                warehouse_search("warehouse_id"),
+                quotation_search(),
+                proforma_search(),
+                line_search(SalesOrderLine, "sales_order_id", fields=frozenset({"description"})),
             ),
         )
 

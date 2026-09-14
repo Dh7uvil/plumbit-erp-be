@@ -11,6 +11,12 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    goods_receipt_search,
+    line_search,
+    party_search,
+    purchase_order_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.core.enums import InvoiceDocumentStatus
@@ -45,7 +51,19 @@ class PurchaseInvoiceRepository:
                     "payment_status",
                 }
             ),
-            search_fields=frozenset({"document_number", "notes", "supplier_invoice_number"}),
+            search_fields=frozenset(
+                {"document_number", "notes", "supplier_invoice_number", "supplier_trn"}
+            ),
+            related_searches=(
+                party_search("supplier_id"),
+                purchase_order_search(),
+                goods_receipt_search(),
+                line_search(
+                    PurchaseInvoiceLine,
+                    "purchase_invoice_id",
+                    fields=frozenset({"description", "supplier_sku"}),
+                ),
+            ),
         )
 
     def _with_children(self) -> tuple[Any, ...]:
@@ -151,20 +169,6 @@ class PurchaseInvoiceRepository:
             self._repo.base_query(tenant_id)
             .where(
                 PurchaseInvoice.purchase_order_id == purchase_order_id,
-                PurchaseInvoice.status != InvoiceDocumentStatus.CANCELLED.value,
-            )
-            .options(*self._with_children())
-            .order_by(PurchaseInvoice.invoice_date, PurchaseInvoice.created_at)
-        )
-        return list((await self.session.execute(statement)).scalars().all())
-
-    async def list_for_goods_receipt(
-        self, tenant_id: UUID, goods_receipt_id: UUID
-    ) -> builtins.list[PurchaseInvoice]:
-        statement = (
-            self._repo.base_query(tenant_id)
-            .where(
-                PurchaseInvoice.goods_receipt_id == goods_receipt_id,
                 PurchaseInvoice.status != InvoiceDocumentStatus.CANCELLED.value,
             )
             .options(*self._with_children())

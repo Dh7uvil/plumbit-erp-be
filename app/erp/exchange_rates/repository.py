@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import currency_search, search_clause
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.erp.exchange_rates.models import Currency, ExchangeRate
@@ -21,7 +22,7 @@ class CurrencyRepository:
             Currency,
             allowed_sort_fields=frozenset({"created_at", "updated_at", "code", "name"}),
             allowed_filter_fields=frozenset({"is_base", "is_active"}),
-            search_fields=frozenset({"code", "name"}),
+            search_fields=frozenset({"code", "name", "symbol"}),
         )
 
     async def get(self, tenant_id: UUID, currency_id: UUID) -> Currency | None:
@@ -150,10 +151,24 @@ class ExchangeRateRepository:
         *,
         page: PageParams,
         effective_date: date | None = None,
+        search: str | None = None,
     ) -> tuple[Sequence[ExchangeRate], int]:
         criteria = [ExchangeRate.tenant_id == tenant_id]
         if effective_date is not None:
             criteria.append(ExchangeRate.effective_date == effective_date)
+        if search:
+            criteria.append(
+                search_clause(
+                    ExchangeRate,
+                    tenant_id=tenant_id,
+                    search=search,
+                    fields=frozenset(),
+                    related=(
+                        currency_search("from_currency_id"),
+                        currency_search("to_currency_id"),
+                    ),
+                )
+            )
         count_statement = select(func.count()).select_from(ExchangeRate).where(*criteria)
         statement = (
             select(ExchangeRate)

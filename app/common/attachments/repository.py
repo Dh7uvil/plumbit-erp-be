@@ -23,7 +23,7 @@ class AttachmentRepository:
                 {"created_at", "updated_at", "original_filename", "size_bytes"}
             ),
             allowed_filter_fields=frozenset({"entity_type", "entity_id", "category"}),
-            search_fields=frozenset({"original_filename"}),
+            search_fields=frozenset({"original_filename", "content_type", "category"}),
         )
 
     async def get(self, tenant_id: UUID, attachment_id: UUID) -> Attachment | None:

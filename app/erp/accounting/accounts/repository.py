@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import account_search
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.erp.accounting.accounts.models import Account
@@ -26,7 +27,8 @@ class AccountRepository:
             allowed_filter_fields=frozenset(
                 {"account_type", "account_subtype", "is_group", "is_active", "parent_id"}
             ),
-            search_fields=frozenset({"code", "name", "description"}),
+            search_fields=frozenset({"code", "name", "description", "system_role"}),
+            related_searches=(account_search("parent_id"),),
         )
 
     async def get(self, tenant_id: UUID, account_id: UUID) -> Account | None:

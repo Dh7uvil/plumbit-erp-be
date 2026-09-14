@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import account_search, line_search, party_search
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
@@ -29,6 +30,15 @@ class JournalEntryRepository:
                 {"status", "journal_type", "branch_id", "currency_id"}
             ),
             search_fields=frozenset({"document_number", "narration", "reference"}),
+            related_searches=(
+                line_search(
+                    JournalEntryLine,
+                    "journal_entry_id",
+                    fields=frozenset({"description", "external_reference"}),
+                    product_key=None,
+                    nested=(account_search(), party_search("party_id")),
+                ),
+            ),
         )
 
     def _with_lines(self) -> Any:

@@ -11,6 +11,13 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import (
+    line_search,
+    party_search,
+    sales_order_search,
+    shipment_search,
+    warehouse_search,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.inventory_management.delivery_notes.models import DeliveryNote, DeliveryNoteLine
@@ -35,7 +42,25 @@ class DeliveryNoteRepository:
                     "branch_id",
                 }
             ),
-            search_fields=frozenset({"document_number", "notes", "vehicle_number", "driver_name"}),
+            search_fields=frozenset(
+                {
+                    "document_number",
+                    "notes",
+                    "vehicle_number",
+                    "driver_name",
+                    "driver_contact",
+                    "cancel_reason",
+                }
+            ),
+            related_searches=(
+                party_search(),
+                warehouse_search("warehouse_id"),
+                sales_order_search(),
+                shipment_search(),
+                line_search(
+                    DeliveryNoteLine, "delivery_note_id", fields=frozenset({"description"})
+                ),
+            ),
         )
 
     def _with_lines(self) -> Any:

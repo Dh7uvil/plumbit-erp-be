@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import party_search
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.logistics.shipments.models import Shipment
@@ -28,8 +29,15 @@ class ShipmentRepository:
                     "bl_awb_number",
                     "carrier_name",
                     "notes",
+                    "seal_number",
+                    "vessel_or_flight_no",
+                    "voyage_number",
+                    "port_of_loading",
+                    "port_of_discharge",
+                    "incoterm",
                 }
             ),
+            related_searches=(party_search("freight_forwarder_id"),),
         )
 
     async def get(

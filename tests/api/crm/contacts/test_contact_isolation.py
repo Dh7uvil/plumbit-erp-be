@@ -88,3 +88,37 @@ async def test_contact_unknown_customer_not_found(client: AsyncClient) -> None:
     )
     assert created.status_code == 404, created.text
     assert created.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_contact_search_matches_customer_name(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    suffix = uuid4().hex[:8]
+    customer_id = await _create_customer(client, headers, suffix)
+    created = await client.post(
+        "/api/v1/contacts",
+        headers=headers,
+        json={
+            "customer_id": customer_id,
+            "name": f"Pat {suffix}",
+            "email": f"pat.{suffix}@example.com",
+            "is_primary": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    contact_id = created.json()["data"]["id"]
+
+    by_company = await client.get(f"/api/v1/contacts?search=Acme%20{suffix}", headers=headers)
+    assert by_company.status_code == 200, by_company.text
+    assert any(item["id"] == contact_id for item in by_company.json()["data"])
+
+    by_email = await client.get(
+        f"/api/v1/contacts?search=pat.{suffix}@example.com", headers=headers
+    )
+    assert by_email.status_code == 200, by_email.text
+    assert any(item["id"] == contact_id for item in by_email.json()["data"])
+
+    miss = await client.get("/api/v1/contacts?search=does-not-match-this-contact", headers=headers)
+    assert miss.status_code == 200, miss.text
+    assert all(item["id"] != contact_id for item in miss.json()["data"])

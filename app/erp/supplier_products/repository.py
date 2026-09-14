@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
+from app.common.repositories.search import party_search, product_search
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.erp.supplier_products.models import SupplierProduct
@@ -34,6 +35,7 @@ class SupplierProductRepository:
             allowed_sort_fields=_SORT_FIELDS,
             allowed_filter_fields=_FILTER_FIELDS,
             search_fields=_SEARCH_FIELDS,
+            related_searches=(party_search("supplier_id"), product_search()),
         )
 
     async def get(self, tenant_id: UUID, supplier_product_id: UUID) -> SupplierProduct | None:
