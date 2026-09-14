@@ -557,15 +557,33 @@ class SalesInvoiceService:
             customer_ids = {note.customer_id for note in notes}
             if len(customer_ids) != 1:
                 raise ValidationError("Delivery notes must belong to the same customer")
-            order_ids = {note.sales_order_id for note in notes}
+            order_ids = {note.sales_order_id for note in notes if note.sales_order_id is not None}
             sales_order_id = next(iter(order_ids)) if len(order_ids) == 1 else None
             first = notes[0]
+            orders_by_id: dict[UUID, Any] = {}
+            so_lines_by_id: dict[UUID, Any] = {}
+            for order_id in order_ids:
+                loaded_order = await self.sales_orders.get(tenant_id, order_id)
+                if loaded_order is None:
+                    continue
+                orders_by_id[order_id] = loaded_order
+                for so_line in loaded_order.lines:
+                    so_lines_by_id[so_line.id] = so_line
+            order = orders_by_id.get(sales_order_id) if sales_order_id is not None else None
             lines: list[SalesInvoiceLineInput] = []
             for note in notes:
                 for line in note.lines:
                     outstanding = quantize_quantity(line.quantity - line.qty_invoiced)
                     if outstanding <= _ZERO:
                         continue
+                    source = so_lines_by_id.get(line.sales_order_line_id)
+                    discount_type = None
+                    if source is not None and source.discount_type:
+                        discount_type = (
+                            source.discount_type
+                            if isinstance(source.discount_type, DiscountType)
+                            else DiscountType(source.discount_type)
+                        )
                     lines.append(
                         SalesInvoiceLineInput(
                             product_id=line.product_id,
@@ -576,15 +594,13 @@ class SalesInvoiceService:
                             sales_order_line_id=line.sales_order_line_id,
                             delivery_note_id=note.id,
                             delivery_note_line_id=line.id,
+                            discount_type=discount_type,
+                            discount_value=source.discount_value if source is not None else None,
+                            tax_id=source.tax_id if source is not None else None,
                         )
                     )
             if not lines:
                 raise ValidationError("These delivery notes have no remaining quantity to invoice")
-            order = (
-                await self.sales_orders.get(tenant_id, sales_order_id)
-                if sales_order_id is not None
-                else None
-            )
             create_payload = SalesInvoiceCreate(
                 customer_id=first.customer_id,
                 contact_id=order.contact_id if order is not None else None,
@@ -592,6 +608,10 @@ class SalesInvoiceService:
                 invoice_date=payload.invoice_date,
                 salesperson_id=order.salesperson_id if order is not None else None,
                 sales_order_id=sales_order_id,
+                source_quotation_id=order.source_quotation_id if order is not None else None,
+                source_proforma_invoice_id=(
+                    order.source_proforma_invoice_id if order is not None else None
+                ),
                 payment_terms_id=order.payment_terms_id if order is not None else None,
                 currency_id=first.currency_id,
                 notes=payload.notes,
