@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.auth.schemas import AddressPayload, AddressResponse
 from app.common.schemas.filters import BaseFilter
-from app.common.utils.validators import normalize_required_text
+from app.common.utils.validators import blank_to_none, normalize_required_text
 from app.core.enums import CompanyType, TaxTreatment
 
 
@@ -25,7 +25,7 @@ class CustomerFilter(BaseFilter):
 
 class CustomerCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    code: str = Field(min_length=1, max_length=50)
+    code: str | None = Field(default=None, min_length=1, max_length=50)
     company_type: CompanyType = CompanyType.CUSTOMER
     trn: str | None = Field(default=None, max_length=50)
     tax_treatment: TaxTreatment
@@ -45,9 +45,16 @@ class CustomerCreate(BaseModel):
     def normalize_name(cls, value: str) -> str:
         return normalize_required_text(value, field_name="name")
 
+    @field_validator("code", mode="before")
+    @classmethod
+    def blank_code_to_none(cls, value: object) -> object:
+        return blank_to_none(value)
+
     @field_validator("code")
     @classmethod
-    def normalize_code(cls, value: str) -> str:
+    def normalize_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         return normalize_required_text(value, field_name="code").upper()
 
     @field_validator("trn")

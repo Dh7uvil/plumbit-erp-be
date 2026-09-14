@@ -22,6 +22,7 @@ from app.common.print.schemas import PrintDocumentResponse
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
+from app.erp.accounting.ledger.schemas import JournalEntryResponse
 from app.inventory_management.delivery_notes.dependencies import DeliveryNoteServiceDependency
 from app.inventory_management.delivery_notes.schemas import (
     DeliveryNoteCancelRequest,
@@ -215,6 +216,16 @@ async def cancel_delivery_note(
         endpoint=request.url.path,
     )
     return ApiResponse(data=row, message="Delivery note cancelled")
+
+
+@router.get("/{note_id}/journal", response_model=ApiResponse[JournalEntryResponse])
+async def get_delivery_note_journal(
+    note_id: UUID,
+    tenant: TenantContextDependency,
+    service: DeliveryNoteServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(DELIVERY_NOTE_READ))],
+) -> ApiResponse[JournalEntryResponse]:
+    return ApiResponse(data=await service.journal(tenant.tenant_id, note_id))
 
 
 @router.post("/{note_id}/packages", response_model=ApiResponse[PackageResponse])

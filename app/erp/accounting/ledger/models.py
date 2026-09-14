@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -119,6 +120,8 @@ class JournalEntryLine(TenantModel):
 
     __tablename__ = "journal_entry_lines"
     __table_args__ = (
+        CheckConstraint("debit >= 0", name="ck_journal_entry_lines_debit_non_negative"),
+        CheckConstraint("credit >= 0", name="ck_journal_entry_lines_credit_non_negative"),
         UniqueConstraint(
             "journal_entry_id",
             "line_number",

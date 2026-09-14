@@ -84,6 +84,7 @@ class InventoryReports:
                 )
             )
         return StockValuationResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             as_of=as_of_date,
             total_qty=quantize_quantity(total_qty),
             total_value=quantize_money(total_value),
@@ -119,6 +120,7 @@ class InventoryReports:
             debit, credit = closing.get(inventory.id, (_ZERO, _ZERO))
             gl_balance = self._signed(inventory.account_type, debit, credit)
         return StockValuationGlResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             as_of=valuation.as_of,
             inventory_account_id=account_id,
             valuation_total=valuation.total_value,
@@ -222,6 +224,7 @@ class InventoryReports:
                 )
             )
         return StockMovementReportResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             from_date=from_date,
             to_date=to_date,
             lines=lines,
@@ -285,7 +288,12 @@ class InventoryReports:
                     stock_value=value,
                 )
             )
-        return StockAgingResponse(as_of=as_of_date, lines=lines, totals=totals)
+        return StockAgingResponse(
+            currency_code=await self._report_currency_code(tenant_id),
+            as_of=as_of_date,
+            lines=lines,
+            totals=totals,
+        )
 
     async def purchase_suggestions(
         self,

@@ -20,6 +20,7 @@ from app.common.idempotency.service import hash_request, require_idempotency_key
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
+from app.erp.accounting.ledger.schemas import JournalEntryResponse
 from app.inventory_management.stock_adjustments.dependencies import (
     StockAdjustmentServiceDependency,
 )
@@ -162,6 +163,16 @@ async def cancel_stock_adjustment(
         reason=body.reason,
     )
     return ApiResponse(data=row, message="Stock adjustment cancelled")
+
+
+@router.get("/{adjustment_id}/journal", response_model=ApiResponse[JournalEntryResponse])
+async def get_stock_adjustment_journal(
+    adjustment_id: UUID,
+    tenant: TenantContextDependency,
+    service: StockAdjustmentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(STOCK_ADJUSTMENT_READ))],
+) -> ApiResponse[JournalEntryResponse]:
+    return ApiResponse(data=await service.journal(tenant.tenant_id, adjustment_id))
 
 
 @router.post("/{adjustment_id}/clone", response_model=ApiResponse[StockAdjustmentResponse])

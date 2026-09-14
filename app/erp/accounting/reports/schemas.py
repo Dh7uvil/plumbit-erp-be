@@ -7,6 +7,13 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+class ReportCurrencyMixin(BaseModel):
+    currency_code: str | None = Field(
+        default=None,
+        description="ISO currency code for monetary amounts (tenant base currency).",
+    )
+
+
 class TrialBalanceLine(BaseModel):
     account_id: UUID
     account_code: str
@@ -21,7 +28,7 @@ class TrialBalanceLine(BaseModel):
     closing_credit: Decimal
 
 
-class TrialBalanceResponse(BaseModel):
+class TrialBalanceResponse(ReportCurrencyMixin):
     from_date: date
     to_date: date
     is_balanced: bool
@@ -52,7 +59,7 @@ class GeneralLedgerLine(BaseModel):
     narration: str | None
 
 
-class GeneralLedgerResponse(BaseModel):
+class GeneralLedgerResponse(ReportCurrencyMixin):
     account_id: UUID
     account_code: str
     account_name: str
@@ -75,7 +82,7 @@ class AccountStatementLine(BaseModel):
     description: str | None
 
 
-class AccountStatementResponse(BaseModel):
+class AccountStatementResponse(ReportCurrencyMixin):
     party_type: str
     party_id: UUID
     from_date: date
@@ -137,7 +144,7 @@ class AgingPartyRow(AgingBucketTotals):
     currency_id: UUID | None = None
 
 
-class AgingResponse(BaseModel):
+class AgingResponse(ReportCurrencyMixin):
     as_of: date
     rows: list[AgingPartyRow] = Field(default_factory=list)
     totals: AgingBucketTotals
@@ -155,7 +162,7 @@ class PartyStatementLine(BaseModel):
     description: str | None = None
 
 
-class PartyStatementResponse(BaseModel):
+class PartyStatementResponse(ReportCurrencyMixin):
     party_type: str
     party_id: UUID
     party_name: str
@@ -166,7 +173,7 @@ class PartyStatementResponse(BaseModel):
     lines: list[PartyStatementLine] = Field(default_factory=list)
 
 
-class OutstandingSummary(BaseModel):
+class OutstandingSummary(ReportCurrencyMixin):
     party_id: UUID
     balance_due: Decimal
     overdue: Decimal
@@ -190,14 +197,14 @@ class StockValuationLine(BaseModel):
     layer_id: UUID
 
 
-class StockValuationResponse(BaseModel):
+class StockValuationResponse(ReportCurrencyMixin):
     as_of: date
     total_qty: Decimal
     total_value: Decimal
     lines: list[StockValuationLine] = Field(default_factory=list)
 
 
-class StockValuationGlResponse(BaseModel):
+class StockValuationGlResponse(ReportCurrencyMixin):
     as_of: date
     inventory_account_id: UUID | None = None
     valuation_total: Decimal
@@ -222,7 +229,7 @@ class StockMovementReportLine(BaseModel):
     closing_value: Decimal
 
 
-class StockMovementReportResponse(BaseModel):
+class StockMovementReportResponse(ReportCurrencyMixin):
     from_date: date
     to_date: date
     lines: list[StockMovementReportLine] = Field(default_factory=list)
@@ -255,7 +262,7 @@ class StockAgingBucketTotals(BaseModel):
     total: Decimal = Decimal("0")
 
 
-class StockAgingResponse(BaseModel):
+class StockAgingResponse(ReportCurrencyMixin):
     as_of: date
     lines: list[StockAgingLine] = Field(default_factory=list)
     totals: StockAgingBucketTotals
@@ -293,7 +300,7 @@ class ProfitAndLossLine(BaseModel):
     ytd_amount: Decimal | None = None
 
 
-class ProfitAndLossResponse(BaseModel):
+class ProfitAndLossResponse(ReportCurrencyMixin):
     from_date: date
     to_date: date
     comparative_from: date | None = None
@@ -317,7 +324,7 @@ class BalanceSheetLine(BaseModel):
     comparative_amount: Decimal | None = None
 
 
-class BalanceSheetResponse(BaseModel):
+class BalanceSheetResponse(ReportCurrencyMixin):
     as_of: date
     comparative_as_of: date | None = None
     total_assets: Decimal
@@ -339,7 +346,7 @@ class CashFlowLine(BaseModel):
     account_id: UUID | None = None
 
 
-class CashFlowResponse(BaseModel):
+class CashFlowResponse(ReportCurrencyMixin):
     from_date: date
     to_date: date
     comparative_from: date | None = None
@@ -371,7 +378,7 @@ class TaxRegisterLine(BaseModel):
     is_designated_zone: bool = False
 
 
-class TaxRegisterResponse(BaseModel):
+class TaxRegisterResponse(ReportCurrencyMixin):
     from_date: date
     to_date: date
     total_net: Decimal
@@ -387,7 +394,7 @@ class Vat201Box(BaseModel):
     tax_amount: Decimal
 
 
-class Vat201Response(BaseModel):
+class Vat201Response(ReportCurrencyMixin):
     from_date: date
     to_date: date
     boxes: list[Vat201Box] = Field(default_factory=list)
@@ -414,7 +421,7 @@ class ThreeWayMatchLine(BaseModel):
     status: str
 
 
-class ThreeWayMatchResponse(BaseModel):
+class ThreeWayMatchResponse(ReportCurrencyMixin):
     lines: list[ThreeWayMatchLine] = Field(default_factory=list)
 
 
@@ -433,7 +440,7 @@ class ReceivedNotBilledLine(BaseModel):
     amount: Decimal
 
 
-class ReceivedNotBilledResponse(BaseModel):
+class ReceivedNotBilledResponse(ReportCurrencyMixin):
     lines: list[ReceivedNotBilledLine] = Field(default_factory=list)
 
 
@@ -449,7 +456,7 @@ class DashboardCreditBreach(BaseModel):
     outstanding: Decimal
 
 
-class DashboardResponse(BaseModel):
+class DashboardResponse(ReportCurrencyMixin):
     as_of: date
     open_ar: Decimal
     open_ap: Decimal

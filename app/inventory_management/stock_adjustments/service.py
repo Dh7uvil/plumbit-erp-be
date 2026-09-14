@@ -43,6 +43,8 @@ from app.core.permissions import has_permission
 from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
+from app.erp.accounting.ledger.schemas import JournalEntryResponse
+from app.inventory_management.common.journal_lookup import journal_for_source
 from app.erp.accounting.service import DocumentSequenceService
 from app.inventory_management.products.service import ProductService
 from app.inventory_management.stock.service import SOURCE_STOCK_ADJUSTMENT, StockService
@@ -142,6 +144,17 @@ class StockAdjustmentService:
         row = await self._require(tenant_id, adjustment_id)
         await self._ensure_policy(tenant_id)
         return self._to_response(row)
+
+    async def journal(self, tenant_id: UUID, adjustment_id: UUID) -> JournalEntryResponse:
+        await self._require(tenant_id, adjustment_id)
+        return await journal_for_source(
+            self.session,
+            tenant_id,
+            source_type=SOURCE_STOCK_ADJUSTMENT,
+            source_id=adjustment_id,
+            label="Stock adjustment",
+            actor_permissions=self.actor_permissions,
+        )
 
     async def create(
         self, tenant_id: UUID, payload: StockAdjustmentCreate, *, actor_user_id: UUID

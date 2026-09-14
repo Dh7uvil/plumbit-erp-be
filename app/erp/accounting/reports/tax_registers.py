@@ -71,7 +71,7 @@ class TaxRegisters:
                     sign=Decimal("-1"),
                 )
             )
-        return self._register_response(from_date, to_date, lines)
+        return await self._register_response(tenant_id, from_date, to_date, lines)
 
     async def purchase_register(
         self,
@@ -116,7 +116,7 @@ class TaxRegisters:
                     sign=Decimal("-1"),
                 )
             )
-        return self._register_response(from_date, to_date, lines)
+        return await self._register_response(tenant_id, from_date, to_date, lines)
 
     async def vat_201(
         self,
@@ -219,6 +219,7 @@ class TaxRegisters:
             ),
         ]
         return Vat201Response(
+            currency_code=await self._report_currency_code(tenant_id),
             from_date=from_date,
             to_date=to_date,
             boxes=boxes,
@@ -227,10 +228,15 @@ class TaxRegisters:
             export_evidence_exceptions=len(exceptions.lines),
         )
 
-    def _register_response(
-        self, from_date: date, to_date: date, lines: list[TaxRegisterLine]
+    async def _register_response(
+        self,
+        tenant_id: UUID,
+        from_date: date,
+        to_date: date,
+        lines: list[TaxRegisterLine],
     ) -> TaxRegisterResponse:
         return TaxRegisterResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             from_date=from_date,
             to_date=to_date,
             total_net=quantize_money(sum((line.net_amount for line in lines), _ZERO)),

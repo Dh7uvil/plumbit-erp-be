@@ -21,6 +21,7 @@ from app.common.idempotency.service import hash_request, require_idempotency_key
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
+from app.erp.accounting.ledger.schemas import JournalEntryResponse
 from app.inventory_management.purchase_returns.dependencies import PurchaseReturnServiceDependency
 from app.inventory_management.purchase_returns.schemas import (
     PurchaseReturnCancelRequest,
@@ -163,3 +164,13 @@ async def cancel_purchase_return(
         reason=body_payload.reason,
     )
     return ApiResponse(data=row, message="Purchase return cancelled")
+
+
+@router.get("/{return_id}/journal", response_model=ApiResponse[JournalEntryResponse])
+async def get_purchase_return_journal(
+    return_id: UUID,
+    tenant: TenantContextDependency,
+    service: PurchaseReturnServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(PURCHASE_RETURN_READ))],
+) -> ApiResponse[JournalEntryResponse]:
+    return ApiResponse(data=await service.journal(tenant.tenant_id, return_id))
