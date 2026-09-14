@@ -892,13 +892,17 @@ class PurchaseOrderService:
             line.qty_returned = quantize_quantity(line.qty_returned + qty)
             if line.qty_returned < _ZERO:
                 raise ValidationError("Returned quantity cannot be negative")
+        self._refresh_receipt_status(row)
         await self.session.flush()
 
     async def outstanding_by_line(
         self, tenant_id: UUID, purchase_order_id: UUID
     ) -> dict[UUID, Decimal]:
         row = await self._require(tenant_id, purchase_order_id)
-        return {line.id: quantize_quantity(line.quantity - line.qty_received) for line in row.lines}
+        return {
+            line.id: quantize_quantity(line.quantity - line.qty_received + line.qty_returned)
+            for line in row.lines
+        }
 
     async def line_qty_billed_total(self, tenant_id: UUID, purchase_order_id: UUID) -> Decimal:
         row = await self._require(tenant_id, purchase_order_id)
@@ -910,9 +914,10 @@ class PurchaseOrderService:
             return
         states: list[str] = []
         for line in row.lines:
-            if line.qty_received <= _ZERO:
+            net_received = quantize_quantity(line.qty_received - line.qty_returned)
+            if net_received <= _ZERO:
                 states.append("none")
-            elif line.qty_received >= line.quantity:
+            elif net_received >= line.quantity:
                 states.append("full")
             else:
                 states.append("partial")
@@ -1290,6 +1295,15 @@ class PurchaseOrderService:
         for action in transition_actions(status):
             if action == "issue" and status == PurchaseOrderStatus.DRAFT and requires_approval:
                 continue
+            if (
+                action == "cancel"
+                and status == PurchaseOrderStatus.ISSUED
+                and (
+                    row.receipt_status != ReceiptStatus.NOT_RECEIVED.value
+                    or row.billing_status != BillingStatus.NOT_INVOICED.value
+                )
+            ):
+                continue
             required = _ACTION_PERMISSIONS[action]
             if has_permission(self.actor_permissions, required):
                 actions.append(action)
@@ -1368,12 +1382,14 @@ class PurchaseOrderService:
     def _quantity_progress(self, row: PurchaseOrder) -> QuantityProgress:
         ordered = sum((line.quantity for line in row.lines), _ZERO)
         received = sum((line.qty_received for line in row.lines), _ZERO)
+        returned = sum((line.qty_returned for line in row.lines), _ZERO)
         billed = sum((line.qty_billed for line in row.lines), _ZERO)
+        net_received = quantize_quantity(max(received - returned, _ZERO))
         return QuantityProgress(
             ordered=ordered,
-            fulfilled=received,
+            fulfilled=net_received,
             invoiced=billed,
-            remaining_to_fulfill=remaining_qty(ordered, received),
+            remaining_to_fulfill=remaining_qty(ordered, net_received),
             remaining_to_invoice=remaining_qty(ordered, billed),
         )
 

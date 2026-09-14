@@ -55,6 +55,8 @@ async def test_partial_purchase_return_reduces_on_hand(client: AsyncClient) -> N
     stock = await client.get(f"/api/v1/stock?product_id={ctx['product_id']}", headers=headers)
     row = stock.json()["data"][0]
     assert Decimal(row["qty_on_hand"]) == Decimal("4")
+    po = await client.get(f"/api/v1/purchase-orders/{ctx['order']['id']}", headers=headers)
+    assert po.json()["data"]["receipt_status"] == "PARTIALLY_RECEIVED"
 
     overflow = await client.post(
         "/api/v1/purchase-returns",

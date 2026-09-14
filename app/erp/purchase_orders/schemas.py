@@ -88,6 +88,7 @@ class PurchaseOrderLineResponse(BaseModel):
     tax_amount: Decimal
     amount: Decimal
     qty_received: Decimal
+    qty_returned: Decimal = Decimal("0")
     qty_billed: Decimal
     qty_remaining_to_receive: Decimal = Decimal("0")
     qty_remaining_to_bill: Decimal = Decimal("0")
@@ -95,7 +96,7 @@ class PurchaseOrderLineResponse(BaseModel):
 
     @model_validator(mode="after")
     def compute_remaining(self) -> "PurchaseOrderLineResponse":
-        leftover_receive = self.quantity - self.qty_received
+        leftover_receive = self.quantity - self.qty_received + self.qty_returned
         leftover_bill = self.quantity - self.qty_billed
         self.qty_remaining_to_receive = leftover_receive if leftover_receive > 0 else Decimal("0")
         self.qty_remaining_to_bill = leftover_bill if leftover_bill > 0 else Decimal("0")

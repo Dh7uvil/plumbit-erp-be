@@ -75,6 +75,7 @@ class GoodsReceiptLineResponse(BaseModel):
     qty_accepted: Decimal
     qty_rejected: Decimal
     qty_on_hold: Decimal
+    qty_returned: Decimal = Decimal("0")
     qty_billed: Decimal = Decimal("0")
 
 
