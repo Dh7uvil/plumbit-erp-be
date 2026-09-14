@@ -9,6 +9,10 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
+from tests.api.erp.sales_orders.test_routes import (
+    _create_customer,
+    _if_match,
+)
 from tests.api.inventory_management.delivery_notes.test_routes import (
     _confirm_sales_order,
     _create_and_post_delivery_note,
@@ -150,6 +154,54 @@ async def test_from_delivery_note_stamps_cogs_and_blocks_second_invoice(
         json={"reason": "Already billed"},
     )
     assert cancel_dn.status_code == 409, cancel_dn.text
+
+
+@pytest.mark.asyncio
+async def test_from_delivery_note_copies_sales_order_line_discount(
+    client: AsyncClient,
+) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    ctx = await _receive_stock(client, headers, quantity="10")
+    product_id = str(ctx["product_id"])
+    customer_id = await _create_customer(client, headers)
+    created = await client.post(
+        "/api/v1/sales-orders",
+        headers=headers,
+        json={
+            "customer_id": customer_id,
+            "lines": [
+                {
+                    "product_id": product_id,
+                    "quantity": "10",
+                    "discount_type": "PERCENTAGE",
+                    "discount_value": "5",
+                }
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    order = created.json()["data"]
+    confirmed = await client.post(
+        f"/api/v1/sales-orders/{order['id']}/confirm",
+        headers=_if_match(headers, order["version"]),
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    note = await _create_and_post_delivery_note(client, headers, order["id"])
+    invoice = await client.post(
+        "/api/v1/sales-invoices/from-delivery-notes",
+        headers={**headers, "Idempotency-Key": uuid4().hex},
+        json={"delivery_note_ids": [note["id"]]},
+    )
+    assert invoice.status_code == 201, invoice.text
+    data = invoice.json()["data"]
+    line = data["lines"][0]
+    assert line["discount_type"] == "PERCENTAGE"
+    assert Decimal(line["discount_value"]) == Decimal("5.0000")
+    assert Decimal(data["subtotal"]) == Decimal("950.0000")
+    assert Decimal(data["tax_amount"]) == Decimal("47.5000")
+    assert Decimal(data["grand_total"]) == Decimal("997.5000")
 
 
 @pytest.mark.asyncio

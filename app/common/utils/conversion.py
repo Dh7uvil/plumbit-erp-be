@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from decimal import Decimal
 from uuid import UUID
 
-from app.common.utils.currency import quantize_money, quantize_quantity
+from app.common.utils.currency import format_quantity_display, quantize_money, quantize_quantity
 from app.core.exceptions import ValidationError
 
 _ZERO = Decimal("0")
@@ -92,4 +92,4 @@ def copy_source_commercial_header(
 
 def quantity_summary(quantities: Sequence[Decimal]) -> str:
     total = sum(quantities, _ZERO)
-    return f"{len(quantities)} lines · qty {total}"
+    return f"{len(quantities)} lines · qty {format_quantity_display(total)}"
