@@ -371,7 +371,15 @@ class QualityInspectionService:
                         line.goods_receipt_line_id,
                         line.qty_accepted,
                         line.qty_rejected,
-                        rework_released,
+                        quantize_quantity(
+                            line.qty_accepted
+                            + rework_released
+                            + (
+                                _ZERO
+                                if disposition == QcDisposition.RETURN_TO_SUPPLIER
+                                else line.qty_rejected
+                            )
+                        ),
                     )
                 )
             await self.receipts.apply_inspection_quantities(tenant_id, row.goods_receipt_id, deltas)

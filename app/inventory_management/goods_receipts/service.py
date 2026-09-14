@@ -610,16 +610,18 @@ class GoodsReceiptService:
     ) -> GoodsReceipt:
         """Caller owns the transaction.
 
-        Tuple is (grn_line_id, accepted, rejected, rework_released).
+        Tuple is (grn_line_id, accepted, rejected, hold_release).
+        Rejected qty kept on quality hold for RETURN_TO_SUPPLIER is omitted from
+        hold_release so a purchase return can still take it.
         """
 
         row = await self._require(tenant_id, receipt_id, for_update=True)
         by_id = {line.id: line for line in row.lines}
-        for line_id, accepted, rejected, rework_released in deltas:
+        for line_id, accepted, rejected, hold_release in deltas:
             line = by_id.get(line_id)
             if line is None:
                 raise ValidationError("Goods receipt line not found on this receipt")
-            released = quantize_quantity(accepted + rejected + rework_released)
+            released = quantize_quantity(hold_release)
             if released > line.qty_on_hold:
                 raise ValidationError("Inspection quantities exceed remaining hold")
             line.qty_accepted = quantize_quantity(line.qty_accepted + accepted)

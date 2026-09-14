@@ -426,7 +426,9 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
     async def received_not_billed(self, tenant_id: UUID) -> ReceivedNotBilledResponse:
         from app.inventory_management.goods_receipts.models import GoodsReceipt, GoodsReceiptLine
 
-        outstanding = GoodsReceiptLine.quantity - GoodsReceiptLine.qty_billed
+        outstanding = (
+            GoodsReceiptLine.quantity - GoodsReceiptLine.qty_billed - GoodsReceiptLine.qty_returned
+        )
         statement = (
             select(
                 GoodsReceipt.id,
@@ -474,7 +476,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                     quantity=row[8],
                     qty_billed=row[9],
                     outstanding_qty=row[10],
-                    amount=quantize_money(row[8] * row[11]),
+                    amount=quantize_money(row[10] * row[11]),
                 )
                 for row in rows
             ],
@@ -524,6 +526,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                 PurchaseOrderLine.description,
                 PurchaseOrderLine.quantity,
                 PurchaseOrderLine.qty_received,
+                PurchaseOrderLine.qty_returned,
                 billed_qty,
                 PurchaseOrderLine.amount,
                 PurchaseOrderLine.rate,
@@ -554,11 +557,11 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
         lines: list[ThreeWayMatchLine] = []
         for row in rows:
             ordered_qty = row[8]
-            received_qty = row[9]
-            billed = row[10]
-            ordered_value = row[11]
-            rate = row[12]
-            billed_amt = row[13]
+            received_qty = max(row[9] - row[10], _ZERO)
+            billed = row[11]
+            ordered_value = row[12]
+            rate = row[13]
+            billed_amt = row[14]
             received_value = quantize_money(received_qty * rate)
             status = self._three_way_status(
                 ordered_qty=ordered_qty,
