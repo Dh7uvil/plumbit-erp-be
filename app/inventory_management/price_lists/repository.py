@@ -19,7 +19,9 @@ class PriceListRepository:
         self._repo = BaseRepository(
             session,
             PriceList,
-            allowed_sort_fields=frozenset({"created_at", "updated_at", "name"}),
+            allowed_sort_fields=frozenset(
+                {"created_at", "updated_at", "name", "list_type", "is_active"}
+            ),
             allowed_filter_fields=frozenset({"currency_id", "list_type", "is_active"}),
             search_fields=frozenset({"name"}),
             related_searches=(

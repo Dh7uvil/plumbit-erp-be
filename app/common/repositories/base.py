@@ -14,6 +14,7 @@ from app.common.repositories.search import RelatedSearch, search_clause, validat
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.utils.datetime import utcnow
+from app.core.exceptions import ValidationError
 from app.db.base import SoftDeleteTenantModel
 
 
@@ -141,8 +142,8 @@ class BaseRepository[ModelT: SoftDeleteTenantModel]:
         sort_by = common_filter.sort_by if common_filter else "created_at"
         sort_order = common_filter.sort_order if common_filter else "desc"
         if sort_by not in self.allowed_sort_fields:
-            msg = f"sort field is not allowed: {sort_by}"
-            raise ValueError(msg)
+            allowed = ", ".join(sorted(self.allowed_sort_fields))
+            raise ValidationError(f"sort_by must be one of: {allowed}")
 
         sort_column = self._column(sort_by)
         ordering = sort_column.desc() if sort_order == "desc" else sort_column.asc()

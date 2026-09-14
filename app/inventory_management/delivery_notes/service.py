@@ -771,6 +771,12 @@ class DeliveryNoteService:
             so_line = so_lines.get(line.sales_order_line_id)
             if so_line is None:
                 raise ValidationError("Sales order line not found on this order")
+            quantity = quantize_quantity(line.quantity)
+            outstanding = self.sales_orders.outstanding_delivery(so_line)
+            if quantity > outstanding:
+                raise ValidationError(
+                    "Delivery quantity exceeds outstanding quantity on the sales order line"
+                )
             description = line.description or so_line.description
             product_id = line.product_id if line.product_id is not None else so_line.product_id
             unit_id = line.unit_id if line.unit_id is not None else so_line.unit_id
@@ -786,7 +792,7 @@ class DeliveryNoteService:
                     "sales_order_line_id": line.sales_order_line_id,
                     "product_id": product_id,
                     "description": description,
-                    "quantity": quantize_quantity(line.quantity),
+                    "quantity": quantity,
                     "unit_id": unit_id,
                     "rate": quantize_money(line.rate if line.rate else so_line.rate),
                 }

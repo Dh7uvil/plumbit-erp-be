@@ -12,6 +12,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.core.exceptions import ValidationError
 from app.inventory_management.stock.models import StockBalance, StockMovement
 
 _ZERO = Decimal("0")
@@ -106,7 +107,8 @@ class StockBalanceRepository:
         sort_by = common_filter.sort_by if common_filter else "created_at"
         sort_order = common_filter.sort_order if common_filter else "desc"
         if sort_by not in _BALANCE_SORT:
-            raise ValueError(f"sort field is not allowed: {sort_by}")
+            allowed = ", ".join(sorted(_BALANCE_SORT))
+            raise ValidationError(f"sort_by must be one of: {allowed}")
         sort_column: Any
         if sort_by == "qty_available":
             sort_column = self._available_expr()
@@ -220,7 +222,8 @@ class StockMovementRepository:
         sort_by = common_filter.sort_by if common_filter else "occurred_at"
         sort_order = common_filter.sort_order if common_filter else "desc"
         if sort_by not in _MOVEMENT_SORT:
-            raise ValueError(f"sort field is not allowed: {sort_by}")
+            allowed = ", ".join(sorted(_MOVEMENT_SORT))
+            raise ValidationError(f"sort_by must be one of: {allowed}")
         sort_column = self._column(sort_by)
         ordering = sort_column.desc() if sort_order == "desc" else sort_column.asc()
         statement: Select[tuple[StockMovement]] = (

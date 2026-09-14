@@ -13,7 +13,9 @@ from app.core.enums import PriceListType
 
 
 class PriceListFilter(BaseFilter):
-    allowed_sort_fields: ClassVar[frozenset[str]] = frozenset({"created_at", "updated_at", "name"})
+    allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
+        {"created_at", "updated_at", "name", "list_type", "is_active"}
+    )
     currency_id: UUID | None = None
     list_type: PriceListType | None = None
     is_active: bool | None = None

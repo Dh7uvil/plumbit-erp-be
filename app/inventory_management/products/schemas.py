@@ -14,7 +14,7 @@ from app.core.enums import ItemType
 
 class ProductFilter(BaseFilter):
     allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
-        {"created_at", "updated_at", "sku", "name"}
+        {"created_at", "updated_at", "sku", "name", "item_type", "selling_rate", "is_active"}
     )
     item_type: ItemType | None = None
     category_id: UUID | None = None

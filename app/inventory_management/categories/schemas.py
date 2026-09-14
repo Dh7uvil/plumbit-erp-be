@@ -12,7 +12,7 @@ from app.common.utils.validators import normalize_required_text
 
 class CategoryFilter(BaseFilter):
     allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
-        {"created_at", "updated_at", "code", "name"}
+        {"created_at", "updated_at", "code", "name", "is_active"}
     )
     parent_id: UUID | None = None
     is_active: bool | None = None

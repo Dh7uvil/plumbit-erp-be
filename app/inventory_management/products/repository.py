@@ -24,7 +24,17 @@ class ProductRepository:
         self._repo = BaseRepository(
             session,
             Product,
-            allowed_sort_fields=frozenset({"created_at", "updated_at", "sku", "name"}),
+            allowed_sort_fields=frozenset(
+                {
+                    "created_at",
+                    "updated_at",
+                    "sku",
+                    "name",
+                    "item_type",
+                    "selling_rate",
+                    "is_active",
+                }
+            ),
             allowed_filter_fields=frozenset(
                 {"item_type", "category_id", "unit_id", "tax_id", "is_active"}
             ),

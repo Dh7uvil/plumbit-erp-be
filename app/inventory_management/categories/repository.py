@@ -19,7 +19,9 @@ class CategoryRepository:
         self._repo = BaseRepository(
             session,
             Category,
-            allowed_sort_fields=frozenset({"created_at", "updated_at", "code", "name"}),
+            allowed_sort_fields=frozenset(
+                {"created_at", "updated_at", "code", "name", "is_active"}
+            ),
             allowed_filter_fields=frozenset({"parent_id", "is_active"}),
             search_fields=frozenset({"code", "name"}),
             related_searches=(category_search("parent_id"),),
