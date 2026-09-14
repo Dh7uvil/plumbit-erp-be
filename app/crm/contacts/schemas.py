@@ -11,7 +11,9 @@ from app.common.utils.validators import normalize_required_text
 
 
 class ContactFilter(BaseFilter):
-    allowed_sort_fields: ClassVar[frozenset[str]] = frozenset({"created_at", "updated_at", "name"})
+    allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
+        {"created_at", "updated_at", "name", "email", "is_primary", "is_active"}
+    )
     customer_id: UUID | None = None
     is_primary: bool | None = None
     is_active: bool | None = None
