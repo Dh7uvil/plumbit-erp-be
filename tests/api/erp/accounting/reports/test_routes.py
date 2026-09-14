@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
@@ -250,6 +252,11 @@ async def test_stock_valuation_matches_remaining_layers_and_gl(client: AsyncClie
     )
     assert csv_body.status_code == 200, csv_body.text
     assert "text/csv" in csv_body.headers["content-type"]
+    csv_rows = list(csv.DictReader(io.StringIO(csv_body.text)))
+    assert csv_rows
+    assert csv_rows[0]["qty_remaining"] == "4.00"
+    assert csv_rows[0]["stock_value"] == "320.00"
+    assert csv_rows[0]["landed_unit_cost"] == "80.00"
     recon = await client.get(
         "/api/v1/reports/stock-valuation-gl",
         headers=headers,
