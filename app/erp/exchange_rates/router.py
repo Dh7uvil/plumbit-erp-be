@@ -12,7 +12,9 @@ from app.auth.catalog import (
     CURRENCY_READ,
     CURRENCY_UPDATE,
     EXCHANGE_RATE_CREATE,
+    EXCHANGE_RATE_DELETE,
     EXCHANGE_RATE_READ,
+    EXCHANGE_RATE_UPDATE,
 )
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
@@ -31,6 +33,7 @@ from app.erp.exchange_rates.schemas import (
     CurrencyUpdate,
     ExchangeRateResolveResponse,
     ExchangeRateResponse,
+    ExchangeRateUpdate,
     ExchangeRateUpsert,
 )
 
@@ -108,12 +111,15 @@ async def delete_currency(
 @exchange_rates_router.get("", response_model=ApiResponse[list[ExchangeRateResponse]])
 async def list_exchange_rates(
     tenant: TenantContextDependency,
+    page: PaginationDependency,
     service: ExchangeRateServiceDependency,
     _: Annotated[CurrentUser, Depends(require_permission(EXCHANGE_RATE_READ))],
     effective_date: Annotated[date | None, Query()] = None,
 ) -> ApiResponse[list[ExchangeRateResponse]]:
-    rows = await service.list_for_date(tenant.tenant_id, effective_date=effective_date)
-    return ApiResponse(data=rows)
+    rows, total = await service.list_for_date(
+        tenant.tenant_id, page=page, effective_date=effective_date
+    )
+    return paginated_response(rows, params=page, total=total)
 
 
 @exchange_rates_router.get("/resolve", response_model=ApiResponse[ExchangeRateResolveResponse])
@@ -141,6 +147,29 @@ async def upsert_exchange_rate(
 ) -> ApiResponse[ExchangeRateResponse]:
     row = await service.upsert(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Exchange rate saved successfully")
+
+
+@exchange_rates_router.patch("/{rate_id}", response_model=ApiResponse[ExchangeRateResponse])
+async def update_exchange_rate(
+    rate_id: UUID,
+    payload: ExchangeRateUpdate,
+    tenant: TenantContextDependency,
+    service: ExchangeRateServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(EXCHANGE_RATE_UPDATE))],
+) -> ApiResponse[ExchangeRateResponse]:
+    row = await service.update(tenant.tenant_id, rate_id, payload, actor_user_id=tenant.user_id)
+    return ApiResponse(data=row, message="Exchange rate updated successfully")
+
+
+@exchange_rates_router.delete("/{rate_id}", response_model=ApiResponse[ExchangeRateResponse])
+async def delete_exchange_rate(
+    rate_id: UUID,
+    tenant: TenantContextDependency,
+    service: ExchangeRateServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(EXCHANGE_RATE_DELETE))],
+) -> ApiResponse[ExchangeRateResponse]:
+    row = await service.delete(tenant.tenant_id, rate_id, actor_user_id=tenant.user_id)
+    return ApiResponse(data=row, message="Exchange rate deleted successfully")
 
 
 router.include_router(currencies_router)

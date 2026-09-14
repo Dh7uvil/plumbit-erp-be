@@ -11,8 +11,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
-    PURCHASE_MODULE,
     PERIOD_OVERRIDE,
+    PURCHASE_MODULE,
     SUPPLIER_PAYMENT_CANCEL,
     SUPPLIER_PAYMENT_DELETE,
     SUPPLIER_PAYMENT_POST,
@@ -57,6 +57,7 @@ from app.erp.accounting.accounts.service import (
     PartyAccountResolver,
 )
 from app.erp.accounting.fiscal import year_for
+from app.erp.accounting.ledger.cash_guard import assert_cash_available
 from app.erp.accounting.ledger.posting import LedgerPostingService
 from app.erp.accounting.ledger.schemas import JournalEntryResponse, JournalLineInput
 from app.erp.accounting.ledger.service import JournalEntryService
@@ -64,7 +65,6 @@ from app.erp.accounting.open_items.repository import PaymentAllocationRepository
 from app.erp.accounting.open_items.schemas import PaymentAllocationInput
 from app.erp.accounting.open_items.service import OpenItemsService
 from app.erp.accounting.service import DocumentSequenceService
-from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 from app.erp.accounting.supplier_payments.models import SupplierPayment
 from app.erp.accounting.supplier_payments.repository import SupplierPaymentRepository
 from app.erp.accounting.supplier_payments.schemas import (
@@ -73,7 +73,12 @@ from app.erp.accounting.supplier_payments.schemas import (
     SupplierPaymentResponse,
     SupplierPaymentUpdate,
 )
-from app.erp.accounting.supplier_payments.workflow import assert_editable, next_status, transition_actions
+from app.erp.accounting.supplier_payments.workflow import (
+    assert_editable,
+    next_status,
+    transition_actions,
+)
+from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 
 _ZERO = Decimal("0")
 _SERIES = "PAY"
@@ -303,6 +308,16 @@ class SupplierPaymentService:
             policy.assert_open(row.payment_date, can_override=self._can_override)
             old_values = await self._snapshot(tenant_id, row)
             await self._apply_rate(tenant_id, row)
+            settings = await self.org.get_money_movement_settings(tenant_id)
+            outflow = quantize_money((row.amount_paid + row.bank_charges) * row.exchange_rate)
+            await assert_cash_available(
+                self.session,
+                tenant_id,
+                account_id=row.payment_account_id,
+                outflow_base=outflow,
+                allow_negative_cash=settings.allow_negative_cash,
+                as_of=row.payment_date,
+            )
             lines = await self._post_journal_lines(tenant_id, row)
             journal = await self.posting.post_for_document(
                 tenant_id,

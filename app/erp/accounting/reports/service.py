@@ -29,7 +29,6 @@ from app.core.enums import (
 from app.core.exceptions import ValidationError
 from app.crm.customers.models import Customer
 from app.erp.accounting.accounts.service import AccountService
-from app.erp.exchange_rates.service import CurrencyService
 from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
 from app.erp.accounting.reports.financials import FinancialReports
 from app.erp.accounting.reports.inventory import InventoryReports
@@ -59,11 +58,19 @@ from app.erp.accounting.reports.schemas import (
     TrialBalanceResponse,
 )
 from app.erp.accounting.reports.tax_registers import TaxRegisters
+from app.erp.exchange_rates.service import CurrencyService
 from app.erp.sales_invoices.models import SalesInvoice, SalesInvoiceLine
 
 _ZERO = Decimal("0")
 _DEBIT_NORMAL = frozenset({AccountType.ASSET.value, AccountType.EXPENSE.value})
 EXPORT_EVIDENCE_WINDOW_DAYS = 90
+
+
+def _net_sides(debit: Decimal, credit: Decimal) -> tuple[Decimal, Decimal]:
+    net = quantize_money(debit - credit)
+    if net >= _ZERO:
+        return net, _ZERO
+    return _ZERO, quantize_money(-net)
 
 
 def _posted_join():
@@ -101,7 +108,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             tenant_id, start=from_date, end=to_date, branch_id=branch_id
         )
         lines: list[TrialBalanceLine] = []
-        tot_od = tot_oc = tot_pd = tot_pc = tot_cd = tot_cc = _ZERO
+        tot_od = tot_oc = tot_pd = tot_pc = tot_cd = tot_cc = tot_nd = tot_nc = _ZERO
         for account in accounts:
             if account.is_group and not include_zero:
                 continue
@@ -109,6 +116,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             period = period_map.get(account.id, (_ZERO, _ZERO))
             closing_d = quantize_money(opening[0] + period[0])
             closing_c = quantize_money(opening[1] + period[1])
+            net_d, net_c = _net_sides(closing_d, closing_c)
             if not include_zero and opening == (_ZERO, _ZERO) and period == (_ZERO, _ZERO):
                 continue
             lines.append(
@@ -124,6 +132,8 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                     period_credit=period[1],
                     closing_debit=closing_d,
                     closing_credit=closing_c,
+                    closing_net_debit=net_d,
+                    closing_net_credit=net_c,
                 )
             )
             tot_od += opening[0]
@@ -132,13 +142,17 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             tot_pc += period[1]
             tot_cd += closing_d
             tot_cc += closing_c
-        tot_od, tot_oc, tot_pd, tot_pc, tot_cd, tot_cc = (
+            tot_nd += net_d
+            tot_nc += net_c
+        tot_od, tot_oc, tot_pd, tot_pc, tot_cd, tot_cc, tot_nd, tot_nc = (
             quantize_money(tot_od),
             quantize_money(tot_oc),
             quantize_money(tot_pd),
             quantize_money(tot_pc),
             quantize_money(tot_cd),
             quantize_money(tot_cc),
+            quantize_money(tot_nd),
+            quantize_money(tot_nc),
         )
         return TrialBalanceResponse(
             currency_code=await self._report_currency_code(tenant_id),
@@ -151,6 +165,8 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             total_period_credit=tot_pc,
             total_closing_debit=tot_cd,
             total_closing_credit=tot_cc,
+            total_closing_net_debit=tot_nd,
+            total_closing_net_credit=tot_nc,
             lines=lines,
         )
 
@@ -349,6 +365,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                 )
             )
         return ExportEvidenceExceptionResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             as_of=as_of_date,
             window_days=EXPORT_EVIDENCE_WINDOW_DAYS,
             lines=lines,
@@ -387,6 +404,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
         )
         rows = (await self.session.execute(statement)).all()
         return InvoicedNotDispatchedResponse(
+            currency_code=await self._report_currency_code(tenant_id),
             lines=[
                 InvoicedNotDispatchedLine(
                     sales_invoice_id=row[0],
@@ -402,7 +420,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                     cogs_status=str(row[10]),
                 )
                 for row in rows
-            ]
+            ],
         )
 
     async def received_not_billed(self, tenant_id: UUID) -> ReceivedNotBilledResponse:
@@ -459,7 +477,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                     amount=quantize_money(row[8] * row[11]),
                 )
                 for row in rows
-            ]
+            ],
         )
 
     async def three_way_match(self, tenant_id: UUID) -> ThreeWayMatchResponse:
@@ -601,6 +619,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
         as_of_date = as_of or utcnow().date()
         ar = await self.ar_aging(tenant_id, as_of=as_of_date)
         ap = await self.ap_aging(tenant_id, as_of=as_of_date)
+
         def _overdue(row: AgingPartyRow) -> Decimal:
             return row.days_1_30 + row.days_31_60 + row.days_61_90 + row.days_91_plus
 
@@ -636,14 +655,18 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
         )
         ar_by_party = {row.party_id: row.total for row in ar.rows}
         customers = (
-            await self.session.execute(
-                select(Customer).where(
-                    Customer.tenant_id == tenant_id,
-                    Customer.deleted_at.is_(None),
-                    Customer.credit_limit.is_not(None),
+            (
+                await self.session.execute(
+                    select(Customer).where(
+                        Customer.tenant_id == tenant_id,
+                        Customer.deleted_at.is_(None),
+                        Customer.credit_limit.is_not(None),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         breaches: list[DashboardCreditBreach] = []
         for customer in customers:
             outstanding = ar_by_party.get(customer.id, _ZERO)
@@ -834,34 +857,55 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
         open_items = OpenItemsService(self.session)
         rows: list[AgingPartyRow] = []
         totals = AgingBucketTotals()
+        base_totals = AgingBucketTotals()
+        currency_codes = await self.currencies.codes_by_ids(
+            tenant_id,
+            [party.currency_id for party in parties if party.currency_id is not None],
+        )
         for party in parties:
             if party_type == PartyType.CUSTOMER:
                 items = await open_items.list_ar_open_items(tenant_id, party.id)
             else:
                 items = await open_items.list_ap_open_items(tenant_id, party.id)
-            buckets = self._bucket_items(items, as_of=as_of, party_type=party_type)
-            if all(value == _ZERO for value in buckets.model_dump().values()):
+            buckets, base_buckets = self._bucket_items(items, as_of=as_of, party_type=party_type)
+            if all(value == _ZERO for value in buckets.model_dump().values()) and all(
+                value == _ZERO for value in base_buckets.model_dump().values()
+            ):
                 continue
+            item_codes = {item.currency_code for item in items if item.currency_code}
+            party_code = None
+            if len(item_codes) == 1:
+                party_code = next(iter(item_codes))
+            elif party.currency_id is not None:
+                party_code = currency_codes.get(party.currency_id)
             rows.append(
                 AgingPartyRow(
                     party_id=party.id,
                     party_name=party.name,
                     currency_id=party.currency_id,
+                    currency_code=party_code,
+                    base=base_buckets,
                     **buckets.model_dump(),
                 )
             )
             for name, value in buckets.model_dump().items():
                 setattr(totals, name, quantize_money(getattr(totals, name) + value))
+            for name, value in base_buckets.model_dump().items():
+                setattr(base_totals, name, quantize_money(getattr(base_totals, name) + value))
         rows.sort(key=lambda row: row.party_name)
         return AgingResponse(
             currency_code=await self._report_currency_code(tenant_id),
             as_of=as_of,
             rows=rows,
             totals=totals,
+            base_totals=base_totals,
         )
 
-    def _bucket_items(self, items, *, as_of: date, party_type: PartyType) -> AgingBucketTotals:
+    def _bucket_items(
+        self, items, *, as_of: date, party_type: PartyType
+    ) -> tuple[AgingBucketTotals, AgingBucketTotals]:
         buckets = AgingBucketTotals()
+        base_buckets = AgingBucketTotals()
         outstanding_types = (
             {OpenItemType.SALES_INVOICE, OpenItemType.OPENING_AR}
             if party_type == PartyType.CUSTOMER
@@ -872,36 +916,44 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             if party_type == PartyType.CUSTOMER
             else {OpenItemType.DEBIT_NOTE, OpenItemType.SUPPLIER_PAYMENT}
         )
+
+        def _add(target: AgingBucketTotals, field: str, amount: Decimal) -> None:
+            setattr(target, field, quantize_money(getattr(target, field) + amount))
+
         for item in items:
             if item.document_date > as_of:
                 continue
+            base_amount = item.base_balance if item.base_balance is not None else item.balance
             if item.item_type in credit_types:
-                buckets.unapplied_credits = quantize_money(buckets.unapplied_credits + item.balance)
+                _add(buckets, "unapplied_credits", item.balance)
+                _add(base_buckets, "unapplied_credits", base_amount)
                 continue
             if item.item_type not in outstanding_types:
                 continue
             due = item.due_date or item.document_date
             days = (as_of - due).days
-            amount = item.balance
             if days <= 0:
-                buckets.current = quantize_money(buckets.current + amount)
+                field = "current"
             elif days <= 30:
-                buckets.days_1_30 = quantize_money(buckets.days_1_30 + amount)
+                field = "days_1_30"
             elif days <= 60:
-                buckets.days_31_60 = quantize_money(buckets.days_31_60 + amount)
+                field = "days_31_60"
             elif days <= 90:
-                buckets.days_61_90 = quantize_money(buckets.days_61_90 + amount)
+                field = "days_61_90"
             else:
-                buckets.days_91_plus = quantize_money(buckets.days_91_plus + amount)
-        buckets.total = quantize_money(
-            buckets.current
-            + buckets.days_1_30
-            + buckets.days_31_60
-            + buckets.days_61_90
-            + buckets.days_91_plus
-            - buckets.unapplied_credits
-        )
-        return buckets
+                field = "days_91_plus"
+            _add(buckets, field, item.balance)
+            _add(base_buckets, field, base_amount)
+        for target in (buckets, base_buckets):
+            target.total = quantize_money(
+                target.current
+                + target.days_1_30
+                + target.days_31_60
+                + target.days_61_90
+                + target.days_91_plus
+                - target.unapplied_credits
+            )
+        return buckets, base_buckets
 
     def _outstanding_from_items(
         self,

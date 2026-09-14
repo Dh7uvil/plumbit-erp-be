@@ -11,6 +11,19 @@ from app.erp.accounting.ledger.schemas import JournalEntryResponse
 from app.erp.accounting.ledger.service import JournalEntryService
 
 
+async def posted_journal_id_for_source(
+    session: AsyncSession,
+    tenant_id: UUID,
+    *,
+    source_type: str,
+    source_id: UUID,
+    actor_permissions: frozenset[str] = frozenset(),
+) -> UUID | None:
+    journals = JournalEntryService(session, actor_permissions=actor_permissions)
+    entry = await journals.repo.get_posted_for_source(tenant_id, source_type, source_id)
+    return None if entry is None else entry.id
+
+
 async def journal_for_source(
     session: AsyncSession,
     tenant_id: UUID,

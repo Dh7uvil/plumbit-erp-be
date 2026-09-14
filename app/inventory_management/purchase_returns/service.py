@@ -17,7 +17,6 @@ from app.auth.catalog import (
     PURCHASE_RETURN_CANCEL,
     PURCHASE_RETURN_DELETE,
     PURCHASE_RETURN_POST,
-    PURCHASE_RETURN_UPDATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
@@ -43,8 +42,8 @@ from app.core.enums import (
 from app.core.exceptions import (
     DocumentStaleError,
     InvalidStatusTransitionError,
-    ResourceNotFoundError,
     PurchaseReturnCannotCancelError,
+    ResourceNotFoundError,
     ValidationError,
 )
 from app.core.permissions import has_permission
@@ -52,9 +51,12 @@ from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
-from app.inventory_management.common.journal_lookup import journal_for_source
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.purchase_orders.service import PurchaseOrderService
+from app.inventory_management.common.journal_lookup import (
+    journal_for_source,
+    posted_journal_id_for_source,
+)
 from app.inventory_management.goods_receipts.service import GoodsReceiptService
 from app.inventory_management.products.service import ProductService
 from app.inventory_management.purchase_returns.models import PurchaseReturn
@@ -159,6 +161,13 @@ class PurchaseReturnService:
         await self._ensure_policy(tenant_id)
         response = self._to_response(row)
         response.related_documents = await self._related_documents(tenant_id, row)
+        response.journal_entry_id = await posted_journal_id_for_source(
+            self.session,
+            tenant_id,
+            source_type=SOURCE_PURCHASE_RETURN,
+            source_id=return_id,
+            actor_permissions=self.actor_permissions,
+        )
         return response
 
     async def journal(self, tenant_id: UUID, return_id: UUID) -> JournalEntryResponse:
@@ -361,7 +370,9 @@ class PurchaseReturnService:
                     po_returns[dn_line.purchase_order_line_id] = (
                         po_returns.get(dn_line.purchase_order_line_id, _ZERO) + line.quantity
                     )
-            await self.goods_receipts.apply_line_returns(tenant_id, row.goods_receipt_id, grn_returns)
+            await self.goods_receipts.apply_line_returns(
+                tenant_id, row.goods_receipt_id, grn_returns
+            )
             if row.purchase_order_id is not None and po_returns:
                 await self.purchase_orders.apply_line_returns(
                     tenant_id, row.purchase_order_id, po_returns
@@ -692,7 +703,9 @@ class PurchaseReturnService:
                 )
             )
         if row.purchase_order_id is not None:
-            order = await PurchaseOrderRepository(self.session).get(tenant_id, row.purchase_order_id)
+            order = await PurchaseOrderRepository(self.session).get(
+                tenant_id, row.purchase_order_id
+            )
             if order is not None:
                 related.append(
                     RelatedDocumentRef(

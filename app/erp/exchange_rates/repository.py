@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.repositories.base import BaseRepository
@@ -52,6 +52,17 @@ class CurrencyRepository:
         )
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()
+
+    async def codes_by_ids(self, tenant_id: UUID, currency_ids: Sequence[UUID]) -> dict[UUID, str]:
+        if not currency_ids:
+            return {}
+        statement = select(Currency.id, Currency.code).where(
+            Currency.tenant_id == tenant_id,
+            Currency.id.in_(list(currency_ids)),
+            Currency.deleted_at.is_(None),
+        )
+        result = await self.session.execute(statement)
+        return {row.id: row.code for row in result.all()}
 
     async def list(
         self,
@@ -132,6 +143,44 @@ class ExchangeRateRepository:
         )
         result = await self.session.execute(statement)
         return result.scalars().all()
+
+    async def list(
+        self,
+        tenant_id: UUID,
+        *,
+        page: PageParams,
+        effective_date: date | None = None,
+    ) -> tuple[Sequence[ExchangeRate], int]:
+        criteria = [ExchangeRate.tenant_id == tenant_id]
+        if effective_date is not None:
+            criteria.append(ExchangeRate.effective_date == effective_date)
+        count_statement = select(func.count()).select_from(ExchangeRate).where(*criteria)
+        statement = (
+            select(ExchangeRate)
+            .where(*criteria)
+            .order_by(ExchangeRate.effective_date.desc(), ExchangeRate.created_at.desc())
+            .offset(page.offset)
+            .limit(page.page_size)
+        )
+        result = await self.session.execute(statement)
+        total = await self.session.scalar(count_statement)
+        return result.scalars().all(), int(total or 0)
+
+    async def get(self, tenant_id: UUID, rate_id: UUID) -> ExchangeRate | None:
+        statement = select(ExchangeRate).where(
+            ExchangeRate.tenant_id == tenant_id,
+            ExchangeRate.id == rate_id,
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def delete(self, tenant_id: UUID, rate_id: UUID) -> ExchangeRate | None:
+        row = await self.get(tenant_id, rate_id)
+        if row is None:
+            return None
+        await self.session.delete(row)
+        await self.session.flush()
+        return row
 
     async def create(self, tenant_id: UUID, values: Mapping[str, object]) -> ExchangeRate:
         row = ExchangeRate(tenant_id=tenant_id)

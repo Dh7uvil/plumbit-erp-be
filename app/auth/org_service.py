@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import IDENTITY_MODULE
-from app.auth.models import Address, Branch, Department, Employee, Tenant, User
+from app.auth.models import Address, Branch, Department, Tenant, User
 from app.auth.org_repository import OrganizationRepository
 from app.auth.repository import AccessRepository
 from app.auth.schemas import (
@@ -86,6 +86,7 @@ class MoneyMovementSettings:
     auto_apply_advances_on_invoice: bool
     credit_limit_policy: CreditLimitPolicy
     credit_limit_include_open_orders: bool
+    allow_negative_cash: bool
 
 
 def _address_values(payload: AddressPayload) -> dict[str, object]:
@@ -164,6 +165,8 @@ class OrganizationService:
                 and values["credit_limit_include_open_orders"] is not None
             ):
                 tenant.credit_limit_include_open_orders = values["credit_limit_include_open_orders"]
+            if "allow_negative_cash" in values and values["allow_negative_cash"] is not None:
+                tenant.allow_negative_cash = values["allow_negative_cash"]
             new_month = values.get("fiscal_year_start_month", tenant.fiscal_year_start_month)
             new_day = values.get("fiscal_year_start_day", tenant.fiscal_year_start_day)
             if "fiscal_year_start_month" in values or "fiscal_year_start_day" in values:
@@ -636,6 +639,7 @@ class OrganizationService:
             auto_apply_advances_on_invoice=tenant.auto_apply_advances_on_invoice,
             credit_limit_policy=CreditLimitPolicy(tenant.credit_limit_policy),
             credit_limit_include_open_orders=tenant.credit_limit_include_open_orders,
+            allow_negative_cash=tenant.allow_negative_cash,
             lock_date=tenant.lock_date,
             hard_lock_date=tenant.hard_lock_date,
             headquarters=settings.headquarters,
@@ -661,6 +665,7 @@ class OrganizationService:
             "auto_apply_advances_on_invoice": tenant.auto_apply_advances_on_invoice,
             "credit_limit_policy": tenant.credit_limit_policy,
             "credit_limit_include_open_orders": tenant.credit_limit_include_open_orders,
+            "allow_negative_cash": tenant.allow_negative_cash,
             "fiscal_year_start_month": tenant.fiscal_year_start_month,
             "fiscal_year_start_day": tenant.fiscal_year_start_day,
             "books_start_date": tenant.books_start_date,
@@ -857,6 +862,7 @@ class OrganizationService:
             auto_apply_advances_on_invoice=tenant.auto_apply_advances_on_invoice,
             credit_limit_policy=CreditLimitPolicy(tenant.credit_limit_policy),
             credit_limit_include_open_orders=tenant.credit_limit_include_open_orders,
+            allow_negative_cash=tenant.allow_negative_cash,
         )
 
     async def set_period_lock(

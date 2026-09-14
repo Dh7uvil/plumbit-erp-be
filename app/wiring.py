@@ -1004,6 +1004,7 @@ def _register_outbox_handlers() -> None:
         "purchase.supplier_payment.allocated",
         "purchase.landed_cost.posted",
         "purchase.landed_cost.cancelled",
+        "identity.password_reset.requested",
     ):
         register_outbox(event_type, _log_outbox_event)
 

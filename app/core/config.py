@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
     jwt_access_token_ttl_minutes: int = Field(default=30, ge=1)
     jwt_refresh_token_ttl_minutes: int = Field(default=10_080, ge=1)
+    password_reset_ttl_minutes: int = Field(default=60, ge=5, le=1_440)
 
     # CORS
     cors_origins: Annotated[list[AnyHttpUrl], NoDecode] = Field(default_factory=list)

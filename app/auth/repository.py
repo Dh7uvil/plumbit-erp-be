@@ -13,6 +13,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.auth.models import (
     Department,
     Employee,
+    PasswordResetToken,
     Permission,
     RefreshToken,
     Role,
@@ -493,6 +494,46 @@ class AccessRepository:
         if token.revoked_at is None:
             token.revoked_at = utcnow()
             await self.session.flush()
+
+    async def create_password_reset_token(
+        self,
+        tenant_id: UUID,
+        *,
+        user_id: UUID,
+        token_hash: str,
+        expires_at: datetime,
+    ) -> PasswordResetToken:
+        await self.invalidate_password_reset_tokens(tenant_id, user_id)
+        row = PasswordResetToken(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+        )
+        self.session.add(row)
+        await self.session.flush()
+        return row
+
+    async def invalidate_password_reset_tokens(self, tenant_id: UUID, user_id: UUID) -> None:
+        statement = select(PasswordResetToken).where(
+            PasswordResetToken.tenant_id == tenant_id,
+            PasswordResetToken.user_id == user_id,
+            PasswordResetToken.used_at.is_(None),
+        )
+        result = await self.session.execute(statement)
+        used_at = utcnow()
+        for row in result.scalars().all():
+            row.used_at = used_at
+        await self.session.flush()
+
+    async def get_password_reset_token(
+        self, token_hash: str, *, for_update: bool = False
+    ) -> PasswordResetToken | None:
+        statement = select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
 
     async def revoke_user_refresh_tokens(self, tenant_id: UUID, user_id: UUID) -> None:
         statement = select(RefreshToken).where(

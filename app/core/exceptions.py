@@ -59,6 +59,7 @@ class ErrorCode(StrEnum):
     PAYMENT_ACCOUNT_INVALID = "PAYMENT_ACCOUNT_INVALID"
     PAYMENT_NOTHING_TO_APPLY = "PAYMENT_NOTHING_TO_APPLY"
     CREDIT_LIMIT_EXCEEDED = "CREDIT_LIMIT_EXCEEDED"
+    INSUFFICIENT_CASH = "INSUFFICIENT_CASH"
     LANDED_COST_WEIGHT_REQUIRED = "LANDED_COST_WEIGHT_REQUIRED"
     LANDED_COST_LINE_OVER_ALLOCATED = "LANDED_COST_LINE_OVER_ALLOCATED"
     LANDED_COST_CANNOT_CANCEL = "LANDED_COST_CANNOT_CANCEL"
@@ -408,6 +409,12 @@ class CreditLimitExceededError(AppError):
     default_code = ErrorCode.CREDIT_LIMIT_EXCEEDED
     default_status = HTTPStatus.CONFLICT
     default_message = "This document exceeds the customer credit limit"
+
+
+class InsufficientCashError(AppError):
+    default_code = ErrorCode.INSUFFICIENT_CASH
+    default_status = HTTPStatus.CONFLICT
+    default_message = "This payment would overdraw the cash or bank account."
 
 
 class LandedCostWeightRequiredError(AppError):

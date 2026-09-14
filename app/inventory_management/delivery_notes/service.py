@@ -55,10 +55,10 @@ from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
-from app.inventory_management.common.journal_lookup import journal_for_source
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 from app.erp.sales_orders.service import SalesOrderService
+from app.inventory_management.common.journal_lookup import journal_for_source
 from app.inventory_management.delivery_notes.models import DeliveryNote
 from app.inventory_management.delivery_notes.repository import DeliveryNoteRepository
 from app.inventory_management.delivery_notes.schemas import (
@@ -487,7 +487,7 @@ class DeliveryNoteService:
                         unit_id=line.unit_id,
                     )
                     if result.movement.value is not None:
-                        cogs_value += result.movement.value
+                        cogs_value += abs(result.movement.value)
                 deliveries[line.sales_order_line_id] = (
                     deliveries.get(line.sales_order_line_id, _ZERO) + line.quantity
                 )

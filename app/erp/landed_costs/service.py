@@ -11,11 +11,11 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
-    PURCHASE_MODULE,
     LANDED_COST_CANCEL,
+    LANDED_COST_DELETE,
     LANDED_COST_POST,
-    LANDED_COST_UPDATE,
     PERIOD_OVERRIDE,
+    PURCHASE_MODULE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
@@ -1040,7 +1040,7 @@ class LandedCostService:
             if has_permission(self.actor_permissions, required):
                 actions.append(action)
         if status == StockDocumentStatus.DRAFT and has_permission(
-            self.actor_permissions, LANDED_COST_UPDATE
+            self.actor_permissions, LANDED_COST_DELETE
         ):
             actions.append("delete")
         return actions

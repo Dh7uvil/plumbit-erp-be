@@ -41,6 +41,11 @@ def test_regional_form_payload_is_valid() -> None:
     assert payload.allow_negative_stock is False
 
 
+def test_cash_control_payload_is_valid() -> None:
+    payload = TenantCurrentUpdate.model_validate({"allow_negative_cash": True})
+    assert payload.allow_negative_cash is True
+
+
 def test_inbound_settings_payload_is_valid() -> None:
     payload = TenantCurrentUpdate.model_validate(
         {

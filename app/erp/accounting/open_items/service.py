@@ -10,16 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.utils.currency import quantize_money
 from app.core.enums import InvoiceDocumentStatus, JournalEntryStatus, OpenItemType, PartyType
+from app.erp.accounting.customer_payments.models import CustomerPayment
 from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
 from app.erp.accounting.ledger.posting import SOURCE_OPENING_BALANCE
 from app.erp.accounting.open_items.repository import PaymentAllocationRepository
 from app.erp.accounting.open_items.schemas import OpenItemRow
+from app.erp.accounting.supplier_payments.models import SupplierPayment
 from app.erp.credit_notes.models import CreditNote
-from app.erp.accounting.customer_payments.models import CustomerPayment
 from app.erp.debit_notes.models import DebitNote
+from app.erp.exchange_rates.service import CurrencyService
 from app.erp.purchase_invoices.models import PurchaseInvoice
 from app.erp.sales_invoices.models import SalesInvoice
-from app.erp.accounting.supplier_payments.models import SupplierPayment
 
 _ZERO = Decimal("0")
 
@@ -28,6 +29,7 @@ class OpenItemsService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.allocations = PaymentAllocationRepository(session)
+        self.currencies = CurrencyService(session)
 
     async def list_ar_open_items(self, tenant_id: UUID, customer_id: UUID) -> list[OpenItemRow]:
         rows: list[OpenItemRow] = []
@@ -36,7 +38,7 @@ class OpenItemsService:
         rows.extend(await self._customer_advances(tenant_id, customer_id))
         rows.extend(await self._unapplied_credit_notes(tenant_id, customer_id))
         rows.sort(key=lambda item: (item.document_date, item.document_number))
-        return rows
+        return await self._with_currency_codes(tenant_id, rows)
 
     async def list_ap_open_items(self, tenant_id: UUID, supplier_id: UUID) -> list[OpenItemRow]:
         rows: list[OpenItemRow] = []
@@ -45,6 +47,14 @@ class OpenItemsService:
         rows.extend(await self._supplier_advances(tenant_id, supplier_id))
         rows.extend(await self._unapplied_debit_notes(tenant_id, supplier_id))
         rows.sort(key=lambda item: (item.document_date, item.document_number))
+        return await self._with_currency_codes(tenant_id, rows)
+
+    async def _with_currency_codes(
+        self, tenant_id: UUID, rows: list[OpenItemRow]
+    ) -> list[OpenItemRow]:
+        codes = await self.currencies.codes_by_ids(tenant_id, [row.currency_id for row in rows])
+        for row in rows:
+            row.currency_code = codes.get(row.currency_id)
         return rows
 
     async def _sales_invoices(self, tenant_id: UUID, customer_id: UUID) -> list[OpenItemRow]:
@@ -223,9 +233,7 @@ class OpenItemsService:
             for row in notes
         ]
 
-    async def _unapplied_debit_notes(
-        self, tenant_id: UUID, supplier_id: UUID
-    ) -> list[OpenItemRow]:
+    async def _unapplied_debit_notes(self, tenant_id: UUID, supplier_id: UUID) -> list[OpenItemRow]:
         statement = select(DebitNote).where(
             DebitNote.tenant_id == tenant_id,
             DebitNote.supplier_id == supplier_id,

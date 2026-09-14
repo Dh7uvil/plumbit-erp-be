@@ -9,6 +9,7 @@ from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
@@ -275,7 +276,7 @@ class SalesInvoiceService:
         )
         created_ids: builtins.list[UUID] = []
         errors: builtins.list[ImportRowError] = []
-        for (_key, items) in group_fill_forward(rows, ("customer_name", "document_date")).items():
+        for _key, items in group_fill_forward(rows, ("customer_name", "document_date")).items():
             first_row_number, header = items[0]
             try:
                 customer = await self.customers.find_by_name_or_code(
@@ -305,8 +306,7 @@ class SalesInvoiceService:
                         currency_id=currency_id,
                         notes=(header.get("notes") or "").strip() or None,
                         bl_number=(header.get("bl_number") or "").strip() or None,
-                        container_number=(header.get("container_number") or "").strip()
-                        or None,
+                        container_number=(header.get("container_number") or "").strip() or None,
                         shipping_amount=shipping,
                         lines=lines,
                     ),
@@ -356,9 +356,7 @@ class SalesInvoiceService:
             )
             for row in rows:
                 for line in row.lines:
-                    exported.append(
-                        commercial_export_row(row, line, party_id=row.customer_id)
-                    )
+                    exported.append(commercial_export_row(row, line, party_id=row.customer_id))
             if len(rows) < MAX_PAGE_SIZE or page * MAX_PAGE_SIZE >= total:
                 break
             page += 1
@@ -430,11 +428,24 @@ class SalesInvoiceService:
                 if payload.lines is not None
                 else None
             )
-            allocations = allocate_conversion_qty(
-                lines=[(line.id, line.quantity, line.qty_invoiced) for line in order.lines],
-                requested=requested,
-                empty_message="This sales order has no remaining quantity to invoice",
-            )
+            draft_qty = await self._draft_invoiced_qty_by_so_line(tenant_id, order.id)
+            try:
+                allocations = allocate_conversion_qty(
+                    lines=[
+                        (
+                            line.id,
+                            line.quantity,
+                            line.qty_invoiced + draft_qty.get(line.id, _ZERO),
+                        )
+                        for line in order.lines
+                    ],
+                    requested=requested,
+                    empty_message="This sales order has no remaining quantity to invoice",
+                )
+            except ValidationError as exc:
+                if "remaining quantity" in exc.message.lower():
+                    raise InvoiceQtyExceededError(exc.message) from exc
+                raise
             by_id = {line.id: line for line in order.lines}
             lines = [
                 SalesInvoiceLineInput(
@@ -537,8 +548,12 @@ class SalesInvoiceService:
             notes = []
             for note_id in payload.delivery_note_ids:
                 notes.append(await self.delivery_notes._require(tenant_id, note_id))
-            if any(StockDocumentStatus(note.status) != StockDocumentStatus.POSTED for note in notes):
-                raise ValidationError("Sales invoices can only be created from posted delivery notes")
+            if any(
+                StockDocumentStatus(note.status) != StockDocumentStatus.POSTED for note in notes
+            ):
+                raise ValidationError(
+                    "Sales invoices can only be created from posted delivery notes"
+                )
             customer_ids = {note.customer_id for note in notes}
             if len(customer_ids) != 1:
                 raise ValidationError("Delivery notes must belong to the same customer")
@@ -660,9 +675,7 @@ class SalesInvoiceService:
                 else None
             )
             allocations = allocate_conversion_qty(
-                lines=[
-                    (line.id, line.quantity, line.qty_converted) for line in quotation.lines
-                ],
+                lines=[(line.id, line.quantity, line.qty_converted) for line in quotation.lines],
                 requested=requested,
                 empty_message="This quotation has no remaining quantity to convert",
             )
@@ -1048,7 +1061,11 @@ class SalesInvoiceService:
             evidence_ok = True
             if row.is_export:
                 dn_ids = list(
-                    {line.delivery_note_id for line in row.lines if line.delivery_note_id is not None}
+                    {
+                        line.delivery_note_id
+                        for line in row.lines
+                        if line.delivery_note_id is not None
+                    }
                 )
                 evidence_ok = bool(dn_ids) and await has_export_evidence(
                     self.session, tenant_id, dn_ids
@@ -1277,7 +1294,8 @@ class SalesInvoiceService:
         if row.sales_order_id is not None:
             order = await self.sales_orders._require(tenant_id, row.sales_order_id, for_update=True)
             so_remaining = {
-                line.id: quantize_quantity(line.quantity - line.qty_invoiced) for line in order.lines
+                line.id: quantize_quantity(line.quantity - line.qty_invoiced)
+                for line in order.lines
             }
         dn_remaining: dict[UUID, Decimal] = {}
         dn_ids = {line.delivery_note_id for line in row.lines if line.delivery_note_id is not None}
@@ -1316,12 +1334,16 @@ class SalesInvoiceService:
             delta = quantize_quantity(line.quantity * sign)
             if line.sales_order_line_id is not None and row.sales_order_id is not None:
                 bucket = so_qty.setdefault(row.sales_order_id, {})
-                bucket[line.sales_order_line_id] = bucket.get(line.sales_order_line_id, _ZERO) + delta
+                bucket[line.sales_order_line_id] = (
+                    bucket.get(line.sales_order_line_id, _ZERO) + delta
+                )
             elif line.sales_order_line_id is not None:
                 # Line linked to an SO without a header sales_order_id — still bill the line.
                 order_id = await self._sales_order_id_for_line(tenant_id, line.sales_order_line_id)
                 bucket = so_qty.setdefault(order_id, {})
-                bucket[line.sales_order_line_id] = bucket.get(line.sales_order_line_id, _ZERO) + delta
+                bucket[line.sales_order_line_id] = (
+                    bucket.get(line.sales_order_line_id, _ZERO) + delta
+                )
             if line.delivery_note_id is not None and line.delivery_note_line_id is not None:
                 bucket = dn_qty.setdefault(line.delivery_note_id, {})
                 bucket[line.delivery_note_line_id] = (
@@ -1331,6 +1353,31 @@ class SalesInvoiceService:
             await self.sales_orders.apply_line_invoices(tenant_id, order_id, invoices)
         for note_id, invoices in dn_qty.items():
             await self.delivery_notes.apply_line_invoices(tenant_id, note_id, invoices)
+
+    async def _draft_invoiced_qty_by_so_line(
+        self, tenant_id: UUID, sales_order_id: UUID
+    ) -> dict[UUID, Decimal]:
+        statement = (
+            select(
+                SalesInvoiceLine.sales_order_line_id,
+                func.coalesce(func.sum(SalesInvoiceLine.quantity), 0),
+            )
+            .join(SalesInvoice, SalesInvoiceLine.sales_invoice_id == SalesInvoice.id)
+            .where(
+                SalesInvoice.tenant_id == tenant_id,
+                SalesInvoice.sales_order_id == sales_order_id,
+                SalesInvoice.deleted_at.is_(None),
+                SalesInvoice.status == InvoiceDocumentStatus.DRAFT.value,
+                SalesInvoiceLine.sales_order_line_id.is_not(None),
+            )
+            .group_by(SalesInvoiceLine.sales_order_line_id)
+        )
+        result: dict[UUID, Decimal] = {}
+        for line_id, quantity in (await self.session.execute(statement)).all():
+            if line_id is None:
+                continue
+            result[line_id] = quantize_quantity(Decimal(quantity))
+        return result
 
     async def _sales_order_id_for_line(self, tenant_id: UUID, sales_order_line_id: UUID) -> UUID:
         from app.erp.sales_orders.models import SalesOrderLine
@@ -1376,7 +1423,9 @@ class SalesInvoiceService:
                 else:
                     line.cogs_amount = quantize_money(_ZERO)
                 line.cogs_status = (
-                    CogsStatus.POSTED.value if line.cogs_amount > _ZERO or not stockable else CogsStatus.PENDING.value
+                    CogsStatus.POSTED.value
+                    if line.cogs_amount > _ZERO or not stockable
+                    else CogsStatus.PENDING.value
                 )
                 if not stockable:
                     line.cogs_status = CogsStatus.NOT_APPLICABLE.value
@@ -1392,9 +1441,7 @@ class SalesInvoiceService:
         row.cogs_amount = quantize_money(total)
         row.cogs_status = _header_cogs_status(statuses)
 
-    async def _journal_lines(
-        self, tenant_id: UUID, row: SalesInvoice
-    ) -> list[JournalLineInput]:
+    async def _journal_lines(self, tenant_id: UUID, row: SalesInvoice) -> list[JournalLineInput]:
         ar = await self.accounts.party_resolver.resolve_receivable(tenant_id, row.customer_id)
         vat = await self.resolver.require(tenant_id, AccountSystemRole.VAT_OUTPUT)
         shipping = await self.resolver.require(tenant_id, AccountSystemRole.SHIPPING_INCOME)
@@ -1435,18 +1482,26 @@ class SalesInvoiceService:
             )
         if row.shipping_amount != _ZERO:
             lines.append(
-                _signed_line(shipping.id, row.shipping_amount, credit_positive=True, description="Shipping")
+                _signed_line(
+                    shipping.id, row.shipping_amount, credit_positive=True, description="Shipping"
+                )
             )
         if row.adjustment_amount != _ZERO:
             lines.append(
                 _signed_line(
-                    other.id, row.adjustment_amount, credit_positive=True, description="Other charges"
+                    other.id,
+                    row.adjustment_amount,
+                    credit_positive=True,
+                    description="Other charges",
                 )
             )
         if row.round_off_amount != _ZERO:
             lines.append(
                 _signed_line(
-                    round_off.id, row.round_off_amount, credit_positive=True, description="Round off"
+                    round_off.id,
+                    row.round_off_amount,
+                    credit_positive=True,
+                    description="Round off",
                 )
             )
         if row.grand_total != _ZERO:
@@ -1506,7 +1561,10 @@ class SalesInvoiceService:
             default_terms = await self.terms.get_default(tenant_id)
             terms_body = default_terms.body if default_terms else None
         tax_treatment = TaxTreatment(customer.tax_treatment)
-        is_export = tax_treatment in {TaxTreatment.EXPORT, TaxTreatment.GCC} or place == PlaceOfSupply.OUTSIDE_UAE
+        is_export = (
+            tax_treatment in {TaxTreatment.EXPORT, TaxTreatment.GCC}
+            or place == PlaceOfSupply.OUTSIDE_UAE
+        )
         line_rows, line_nets, line_taxes = await self._build_lines(
             tenant_id,
             payload.lines,
@@ -1783,7 +1841,11 @@ class SalesInvoiceService:
     ) -> builtins.list[str]:
         actions: builtins.list[str] = []
         for action in transition_actions(status):
-            if action in {"post", "cancel"} and period_locked and status != InvoiceDocumentStatus.DRAFT:
+            if (
+                action in {"post", "cancel"}
+                and period_locked
+                and status != InvoiceDocumentStatus.DRAFT
+            ):
                 continue
             if action == "post" and period_locked:
                 continue

@@ -68,6 +68,7 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
             "read",
             "create",
             "update",
+            "delete",
             "post",
             "cancel",
         ),
@@ -386,6 +387,7 @@ SUPPLIER_PAYMENT_EXPORT = build_permission(PURCHASE_MODULE, "supplier_payment", 
 LANDED_COST_READ = build_permission(PURCHASE_MODULE, "landed_cost", "read")
 LANDED_COST_CREATE = build_permission(PURCHASE_MODULE, "landed_cost", "create")
 LANDED_COST_UPDATE = build_permission(PURCHASE_MODULE, "landed_cost", "update")
+LANDED_COST_DELETE = build_permission(PURCHASE_MODULE, "landed_cost", "delete")
 LANDED_COST_POST = build_permission(PURCHASE_MODULE, "landed_cost", "post")
 LANDED_COST_CANCEL = build_permission(PURCHASE_MODULE, "landed_cost", "cancel")
 PURCHASE_RETURN_CREATE = build_permission(PURCHASE_MODULE, "purchase_return", "create")

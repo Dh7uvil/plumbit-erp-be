@@ -650,10 +650,92 @@
           }
         }
       }
+    },
+    "/api/v1/sales-returns/{return_id}/journal": {
+      "get": {
+        "tags": [
+          "Sales Returns"
+        ],
+        "summary": "Get Sales Return Journal",
+        "operationId": "get_sales_return_journal_api_v1_sales_returns__return_id__journal_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "return_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Return Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_JournalEntryResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "ApiResponse_JournalEntryResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/JournalEntryResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[JournalEntryResponse]"
+      },
       "ApiResponse_SalesReturnResponse_": {
         "properties": {
           "success": {
@@ -738,6 +820,406 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "JournalEntryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tenant Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "entry_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Entry Date"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JournalEntryStatus"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "is_posted": {
+            "type": "boolean",
+            "title": "Is Posted"
+          },
+          "journal_type": {
+            "$ref": "#/components/schemas/JournalType"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "reversal_of_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reversal Of Id"
+          },
+          "reversed_by_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reversed By Id"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "exchange_rate": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Exchange Rate"
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "narration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Narration"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "posted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted At"
+          },
+          "posted_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted By"
+          },
+          "total_debit_base": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Debit Base"
+          },
+          "total_credit_base": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Credit Base"
+          },
+          "available_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Actions"
+          },
+          "period_locked": {
+            "type": "boolean",
+            "title": "Period Locked",
+            "default": false
+          },
+          "related_documents": {
+            "items": {
+              "$ref": "#/components/schemas/RelatedDocumentRef"
+            },
+            "type": "array",
+            "title": "Related Documents"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/JournalLineResponse"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "document_number",
+          "entry_date",
+          "status",
+          "version",
+          "is_posted",
+          "journal_type",
+          "source_type",
+          "source_id",
+          "reversal_of_id",
+          "reversed_by_id",
+          "currency_id",
+          "exchange_rate",
+          "branch_id",
+          "narration",
+          "reference",
+          "posted_at",
+          "posted_by",
+          "total_debit_base",
+          "total_credit_base",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "JournalEntryResponse"
+      },
+      "JournalEntryStatus": {
+        "type": "string",
+        "enum": [
+          "DRAFT",
+          "POSTED",
+          "CANCELLED"
+        ],
+        "title": "JournalEntryStatus"
+      },
+      "JournalLineResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "line_number": {
+            "type": "integer",
+            "title": "Line Number"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "debit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Debit"
+          },
+          "credit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Credit"
+          },
+          "debit_base": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Debit Base"
+          },
+          "credit_base": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Credit Base"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "exchange_rate": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Exchange Rate"
+          },
+          "party_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PartyType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "party_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Id"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "external_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Reference"
+          },
+          "tax_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Id"
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "line_number",
+          "account_id",
+          "debit",
+          "credit",
+          "debit_base",
+          "credit_base",
+          "currency_id",
+          "exchange_rate",
+          "party_type",
+          "party_id",
+          "due_date",
+          "external_reference",
+          "tax_id",
+          "branch_id",
+          "description"
+        ],
+        "title": "JournalLineResponse"
+      },
+      "JournalType": {
+        "type": "string",
+        "enum": [
+          "MANUAL",
+          "OPENING_BALANCE",
+          "SYSTEM",
+          "REVERSAL"
+        ],
+        "title": "JournalType"
+      },
+      "PartyType": {
+        "type": "string",
+        "enum": [
+          "CUSTOMER",
+          "SUPPLIER"
+        ],
+        "title": "PartyType"
       },
       "RelatedDocumentRef": {
         "properties": {
