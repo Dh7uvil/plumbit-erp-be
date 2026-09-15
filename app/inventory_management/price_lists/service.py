@@ -12,9 +12,10 @@ from app.auth.catalog import INVENTORY_MODULE
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
+from app.common.services.master_usage import assert_master_not_referenced
 from app.common.utils.currency import quantize_money
 from app.core.enums import AuditAction, PriceListType
-from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError
+from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
 from app.db.session import transaction
 from app.erp.exchange_rates.service import CurrencyService
 from app.inventory_management.price_lists.models import PriceList, PriceListItem
@@ -65,7 +66,9 @@ class PriceListService:
         return await self._to_response(tenant_id, row)
 
     async def require_id(self, tenant_id: UUID, price_list_id: UUID) -> UUID:
-        await self._require(tenant_id, price_list_id)
+        row = await self._require(tenant_id, price_list_id)
+        if not row.is_active:
+            raise ValidationError("Price list is inactive")
         return price_list_id
 
     async def create(
@@ -106,6 +109,16 @@ class PriceListService:
         async with transaction(self.session):
             existing = await self._require(tenant_id, price_list_id)
             old_values = await self._price_list_snapshot(tenant_id, existing)
+            if values.get("is_active") is False and existing.is_active:
+                await assert_master_not_referenced(
+                    self.session,
+                    tenant_id=tenant_id,
+                    table_name=PriceList.__tablename__,
+                    record_id=price_list_id,
+                    label="price list",
+                    action="deactivate",
+                    exclude_tables=frozenset({"price_list_items"}),
+                )
             try:
                 row = await self.repo.update(tenant_id, price_list_id, values)
             except IntegrityError as exc:
@@ -129,6 +142,14 @@ class PriceListService:
     ) -> PriceListResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, price_list_id)
+            await assert_master_not_referenced(
+                self.session,
+                tenant_id=tenant_id,
+                table_name=PriceList.__tablename__,
+                record_id=price_list_id,
+                label="price list",
+                exclude_tables=frozenset({"price_list_items"}),
+            )
             response = await self._to_response(tenant_id, row)
             await self.repo.soft_delete(tenant_id, price_list_id)
             await self.audit.write(
@@ -209,6 +230,7 @@ class PriceListService:
         selling_rate: Decimal,
         price_list_id: UUID | None,
         line_override: Decimal | None,
+        currency_id: UUID | None = None,
     ) -> Decimal:
         """line override → customer price list → product selling rate."""
 
@@ -217,6 +239,8 @@ class PriceListService:
         if price_list_id is None:
             return quantize_money(selling_rate)
         price_list = await self._require(tenant_id, price_list_id)
+        if currency_id is not None and price_list.currency_id != currency_id:
+            raise ValidationError("Price list currency does not match the document currency")
         if price_list.list_type == PriceListType.CUSTOM_RATES.value:
             item = await self.repo.get_item(tenant_id, price_list_id, product_id)
             if item is not None:

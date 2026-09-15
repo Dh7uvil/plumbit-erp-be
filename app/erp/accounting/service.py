@@ -11,8 +11,9 @@ from app.auth.catalog import MASTERS_MODULE
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
+from app.common.services.master_usage import assert_master_not_referenced
 from app.core.enums import AuditAction, DocumentType, TaxCategory
-from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError
+from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
 from app.db.session import transaction
 from app.erp.accounting.models import DocumentSequence, PaymentTerm, Tax, TermsTemplate
 from app.erp.accounting.repository import (
@@ -120,6 +121,16 @@ class TaxService:
             raise ResourceNotFoundError(f"{tax_category.value} tax not found")
         return TaxResponse.model_validate(row)
 
+    async def require_id(self, tenant_id: UUID, tax_id: UUID) -> UUID:
+        await self.require_active(tenant_id, tax_id)
+        return tax_id
+
+    async def require_active(self, tenant_id: UUID, tax_id: UUID) -> TaxResponse:
+        row = await self._require(tenant_id, tax_id)
+        if not row.is_active:
+            raise ValidationError("Tax is inactive")
+        return TaxResponse.model_validate(row)
+
     async def create(
         self, tenant_id: UUID, payload: TaxCreate, *, actor_user_id: UUID
     ) -> TaxResponse:
@@ -153,6 +164,15 @@ class TaxService:
         async with transaction(self.session):
             existing = await self._require(tenant_id, tax_id)
             old_values = _tax_snapshot(existing)
+            if values.get("is_active") is False and existing.is_active:
+                await assert_master_not_referenced(
+                    self.session,
+                    tenant_id=tenant_id,
+                    table_name=Tax.__tablename__,
+                    record_id=tax_id,
+                    label="tax",
+                    action="deactivate",
+                )
             try:
                 row = await self.repo.update(tenant_id, tax_id, values)
             except IntegrityError as exc:
@@ -174,6 +194,13 @@ class TaxService:
     async def delete(self, tenant_id: UUID, tax_id: UUID, *, actor_user_id: UUID) -> TaxResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, tax_id)
+            await assert_master_not_referenced(
+                self.session,
+                tenant_id=tenant_id,
+                table_name=Tax.__tablename__,
+                record_id=tax_id,
+                label="tax",
+            )
             response = TaxResponse.model_validate(row)
             await self.repo.soft_delete(tenant_id, tax_id)
             await self._audit(
@@ -237,7 +264,9 @@ class PaymentTermService:
         return PaymentTermResponse.model_validate(await self._require(tenant_id, term_id))
 
     async def require_id(self, tenant_id: UUID, term_id: UUID) -> UUID:
-        await self._require(tenant_id, term_id)
+        row = await self._require(tenant_id, term_id)
+        if not row.is_active:
+            raise ValidationError("Payment term is inactive")
         return term_id
 
     async def create(
@@ -276,6 +305,15 @@ class PaymentTermService:
         async with transaction(self.session):
             existing = await self._require(tenant_id, term_id)
             old_values = _payment_term_snapshot(existing)
+            if values.get("is_active") is False and existing.is_active:
+                await assert_master_not_referenced(
+                    self.session,
+                    tenant_id=tenant_id,
+                    table_name=PaymentTerm.__tablename__,
+                    record_id=term_id,
+                    label="payment term",
+                    action="deactivate",
+                )
             try:
                 row = await self.repo.update(tenant_id, term_id, values)
             except IntegrityError as exc:
@@ -301,6 +339,13 @@ class PaymentTermService:
     ) -> PaymentTermResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, term_id)
+            await assert_master_not_referenced(
+                self.session,
+                tenant_id=tenant_id,
+                table_name=PaymentTerm.__tablename__,
+                record_id=term_id,
+                label="payment term",
+            )
             response = PaymentTermResponse.model_validate(row)
             await self.repo.soft_delete(tenant_id, term_id)
             await self.audit.write(
@@ -398,6 +443,15 @@ class TermsTemplateService:
         async with transaction(self.session):
             existing = await self._require(tenant_id, template_id)
             old_values = _terms_template_snapshot(existing)
+            if values.get("is_active") is False and existing.is_active:
+                await assert_master_not_referenced(
+                    self.session,
+                    tenant_id=tenant_id,
+                    table_name=TermsTemplate.__tablename__,
+                    record_id=template_id,
+                    label="terms template",
+                    action="deactivate",
+                )
             try:
                 row = await self.repo.update(tenant_id, template_id, values)
             except IntegrityError as exc:
@@ -425,6 +479,13 @@ class TermsTemplateService:
     ) -> TermsTemplateResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, template_id)
+            await assert_master_not_referenced(
+                self.session,
+                tenant_id=tenant_id,
+                table_name=TermsTemplate.__tablename__,
+                record_id=template_id,
+                label="terms template",
+            )
             response = TermsTemplateResponse.model_validate(row)
             await self.repo.soft_delete(tenant_id, template_id)
             await self.audit.write(
@@ -517,6 +578,17 @@ class DocumentSequenceService:
         async with transaction(self.session):
             existing = await self._require(tenant_id, sequence_id)
             old_values = _document_sequence_snapshot(existing)
+            if values.get("is_active") is False and existing.is_active:
+                await assert_master_not_referenced(
+                    self.session,
+                    tenant_id=tenant_id,
+                    table_name=DocumentSequence.__tablename__,
+                    record_id=sequence_id,
+                    label="document sequence",
+                    action="deactivate",
+                )
+            if "next_number" in values and values["next_number"] < existing.next_number:
+                raise ValidationError("Document sequence next number cannot be lowered")
             row = await self.repo.update(tenant_id, sequence_id, values)
             if row is None:
                 raise ResourceNotFoundError("Document sequence not found")
@@ -537,6 +609,13 @@ class DocumentSequenceService:
     ) -> DocumentSequenceResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, sequence_id)
+            await assert_master_not_referenced(
+                self.session,
+                tenant_id=tenant_id,
+                table_name=DocumentSequence.__tablename__,
+                record_id=sequence_id,
+                label="document sequence",
+            )
             response = DocumentSequenceResponse.model_validate(row)
             await self.repo.soft_delete(tenant_id, sequence_id)
             await self.audit.write(
@@ -568,6 +647,8 @@ class DocumentSequenceService:
             fiscal_year=fiscal_year,
             prefix=prefix or series,
         )
+        if not row.is_active:
+            raise ValidationError("Document sequence is inactive")
         number = row.next_number
         row.next_number = number + 1
         await self.session.flush()

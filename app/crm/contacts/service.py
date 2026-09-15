@@ -10,6 +10,7 @@ from app.auth.catalog import CRM_MODULE
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
+from app.common.services.master_usage import assert_master_not_referenced
 from app.core.enums import AuditAction
 from app.core.exceptions import ResourceNotFoundError
 from app.crm.contacts.models import Contact
@@ -99,6 +100,15 @@ class ContactService:
         async with transaction(self.session):
             existing = await self._require(tenant_id, contact_id)
             old_values = await self._contact_snapshot(tenant_id, existing)
+            if values.get("is_active") is False and existing.is_active:
+                await assert_master_not_referenced(
+                    self.session,
+                    tenant_id=tenant_id,
+                    table_name=Contact.__tablename__,
+                    record_id=contact_id,
+                    label="contact",
+                    action="deactivate",
+                )
             if values.get("is_primary") is True:
                 await self.repo.clear_other_primaries(
                     tenant_id, existing.customer_id, keep_id=contact_id
@@ -123,6 +133,13 @@ class ContactService:
     ) -> ContactResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, contact_id)
+            await assert_master_not_referenced(
+                self.session,
+                tenant_id=tenant_id,
+                table_name=Contact.__tablename__,
+                record_id=contact_id,
+                label="contact",
+            )
             response = ContactResponse.model_validate(row)
             await self.repo.soft_delete(tenant_id, contact_id)
             await self.audit.write(

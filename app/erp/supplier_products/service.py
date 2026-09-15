@@ -14,6 +14,7 @@ from app.auth.catalog import PURCHASE_MODULE
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
+from app.common.services.master_usage import assert_master_not_referenced
 from app.common.utils.datetime import utcnow
 from app.core.enums import AuditAction
 from app.core.exceptions import ResourceNotFoundError, ValidationError
@@ -172,6 +173,15 @@ class SupplierProductService:
         async with transaction(self.session):
             existing = await self._require(tenant_id, supplier_product_id)
             old_values = await self._snapshot(tenant_id, existing)
+            if values.get("is_active") is False and existing.is_active:
+                await assert_master_not_referenced(
+                    self.session,
+                    tenant_id=tenant_id,
+                    table_name=SupplierProduct.__tablename__,
+                    record_id=supplier_product_id,
+                    label="supplier product",
+                    action="deactivate",
+                )
             if "currency_id" in values and values["currency_id"] is not None:
                 await self.currencies.require_id(tenant_id, values["currency_id"])
             if "supplier_sku" in values and values["supplier_sku"] is not None:
@@ -228,6 +238,13 @@ class SupplierProductService:
             row = await self._require(tenant_id, supplier_product_id)
             response = await self._to_response(tenant_id, row)
             old_values = await self._snapshot(tenant_id, row)
+            await assert_master_not_referenced(
+                self.session,
+                tenant_id=tenant_id,
+                table_name=SupplierProduct.__tablename__,
+                record_id=supplier_product_id,
+                label="supplier product",
+            )
             await self.repo.soft_delete(tenant_id, supplier_product_id)
             await self.audit.write(
                 tenant_id=tenant_id,

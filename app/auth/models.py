@@ -42,7 +42,7 @@ class Tenant(TimestampedModel):
     timezone: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
-        server_default=text("'UTC'"),
+        server_default=text("'Asia/Dubai'"),
     )
     default_currency_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),

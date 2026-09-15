@@ -14,6 +14,7 @@ from app.auth.schemas import AddressPayload, AddressResponse, format_address_lab
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
+from app.common.services.master_usage import assert_master_not_referenced
 from app.core.enums import AddressType, AuditAction, CompanyType, TaxTreatment
 from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
 from app.crm.customers.models import Customer, CustomerAddress
@@ -29,6 +30,8 @@ from app.db.session import transaction
 from app.erp.accounting.service import PaymentTermService
 from app.erp.exchange_rates.service import CurrencyService
 from app.inventory_management.price_lists.service import PriceListService
+
+_TRN_CONSTRAINT = "uq_customers_tenant_id_trn_registered_active"
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +245,10 @@ class CustomerService:
                     },
                 )
             except IntegrityError as exc:
+                if _TRN_CONSTRAINT in str(exc.orig):
+                    raise DuplicateResourceError(
+                        "A registered party with this TRN already exists"
+                    ) from exc
                 raise DuplicateResourceError(self.role.duplicate_code_message) from exc
             await self.audit.write(
                 tenant_id=tenant_id,
@@ -272,6 +279,16 @@ class CustomerService:
         async with transaction(self.session):
             row = await self._require(tenant_id, customer_id)
             old_values = await self._customer_snapshot(tenant_id, row)
+            if values.get("is_active") is False and row.is_active:
+                await assert_master_not_referenced(
+                    self.session,
+                    tenant_id=tenant_id,
+                    table_name=Customer.__tablename__,
+                    record_id=customer_id,
+                    label=self.role.audit_entity_type,
+                    action="deactivate",
+                    exclude_tables=frozenset({"contacts", "customer_addresses"}),
+                )
             treatment = TaxTreatment(values.get("tax_treatment", row.tax_treatment))
             trn = values.get("trn", row.trn)
             if treatment == TaxTreatment.REGISTERED and not trn:
@@ -308,6 +325,10 @@ class CustomerService:
             try:
                 updated = await self.repo.update(tenant_id, customer_id, values)
             except IntegrityError as exc:
+                if _TRN_CONSTRAINT in str(exc.orig):
+                    raise DuplicateResourceError(
+                        "A registered party with this TRN already exists"
+                    ) from exc
                 raise DuplicateResourceError(self.role.duplicate_code_message) from exc
             if updated is None:
                 raise ResourceNotFoundError(self.role.not_found_message)
@@ -328,6 +349,14 @@ class CustomerService:
     ) -> CustomerResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, customer_id)
+            await assert_master_not_referenced(
+                self.session,
+                tenant_id=tenant_id,
+                table_name=Customer.__tablename__,
+                record_id=customer_id,
+                label=self.role.audit_entity_type,
+                exclude_tables=frozenset({"contacts", "customer_addresses"}),
+            )
             response = await self._to_response(tenant_id, row)
             await self.repo.soft_delete(tenant_id, customer_id)
             await self.audit.write(
@@ -582,6 +611,8 @@ class CustomerService:
         row = await self.repo.get(tenant_id, party_id)
         if row is None:
             raise ResourceNotFoundError("Customer not found")
+        if not row.is_active:
+            raise ValidationError("Customer is inactive")
         return row
 
     async def _require(self, tenant_id: UUID, customer_id: UUID) -> Customer:

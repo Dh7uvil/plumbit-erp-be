@@ -15,6 +15,7 @@ from app.auth.org_service import OrganizationService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
+from app.common.services.master_usage import assert_master_not_referenced
 from app.core.enums import AuditAction, ItemType
 from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
 from app.db.session import transaction
@@ -141,11 +142,17 @@ class ProductService:
         return await self.repo.ids_by_category(tenant_id, category_id)
 
     async def require_stockable(self, tenant_id: UUID, product_id: UUID) -> ProductResponse:
-        product = await self.get(tenant_id, product_id)
+        product = await self.require_active(tenant_id, product_id)
         if product.item_type == ItemType.SERVICE:
             raise ValidationError("Service products cannot be stocked")
         if not product.track_inventory:
             raise ValidationError("Inventory tracking is disabled for this product")
+        return product
+
+    async def require_active(self, tenant_id: UUID, product_id: UUID) -> ProductResponse:
+        product = await self.get(tenant_id, product_id)
+        if not product.is_active:
+            raise ValidationError("Product is inactive")
         return product
 
     async def create(
@@ -191,6 +198,15 @@ class ProductService:
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
             existing = await self._require(tenant_id, product_id)
+            if values.get("is_active") is False and existing.is_active:
+                await assert_master_not_referenced(
+                    self.session,
+                    tenant_id=tenant_id,
+                    table_name=Product.__tablename__,
+                    record_id=product_id,
+                    label="product",
+                    action="deactivate",
+                )
             if values.get("track_inventory") is False and existing.track_inventory:
                 from app.inventory_management.stock.service import StockService
 
@@ -230,6 +246,13 @@ class ProductService:
     ) -> ProductResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, product_id)
+            await assert_master_not_referenced(
+                self.session,
+                tenant_id=tenant_id,
+                table_name=Product.__tablename__,
+                record_id=product_id,
+                label="product",
+            )
             response = ProductResponse.model_validate(row)
             await self.repo.soft_delete(tenant_id, product_id)
             await self.audit.write(
@@ -284,7 +307,7 @@ class ProductService:
         if category_id is not None:
             await self.categories.require_id(tenant_id, category_id)
         if tax_id is not None:
-            await self.taxes.get(tenant_id, tax_id)
+            await self.taxes.require_id(tenant_id, tax_id)
         if income_account_id is not None or purchase_account_id is not None:
             from app.erp.accounting.accounts.service import AccountService
 

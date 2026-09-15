@@ -14,7 +14,7 @@ from app.core.enums import DocumentType, TaxCategory
 
 class TaxFilter(BaseFilter):
     allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
-        {"created_at", "updated_at", "name", "rate"}
+        {"created_at", "updated_at", "name", "tax_category", "rate", "is_default", "is_active"}
     )
     tax_category: TaxCategory | None = None
     is_default: bool | None = None
@@ -64,7 +64,7 @@ class TaxResponse(BaseModel):
 
 class PaymentTermFilter(BaseFilter):
     allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
-        {"created_at", "updated_at", "name", "days"}
+        {"created_at", "updated_at", "name", "days", "is_active"}
     )
     is_active: bool | None = None
 
@@ -108,7 +108,9 @@ class PaymentTermResponse(BaseModel):
 
 
 class TermsTemplateFilter(BaseFilter):
-    allowed_sort_fields: ClassVar[frozenset[str]] = frozenset({"created_at", "updated_at", "name"})
+    allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
+        {"created_at", "updated_at", "name", "is_default", "is_active"}
+    )
     is_default: bool | None = None
     is_active: bool | None = None
 
@@ -153,7 +155,15 @@ class TermsTemplateResponse(BaseModel):
 
 class DocumentSequenceFilter(BaseFilter):
     allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
-        {"created_at", "updated_at", "document_type", "series", "fiscal_year"}
+        {
+            "created_at",
+            "updated_at",
+            "document_type",
+            "series",
+            "fiscal_year",
+            "next_number",
+            "is_active",
+        }
     )
     document_type: DocumentType | None = None
     series: str | None = None

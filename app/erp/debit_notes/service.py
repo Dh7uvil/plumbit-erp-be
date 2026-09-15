@@ -1029,7 +1029,7 @@ class DebitNoteService:
         for index, line in enumerate(lines, start=1):
             product = None
             if line.product_id is not None:
-                product = await self.products.get(tenant_id, line.product_id)
+                product = await self.products.require_active(tenant_id, line.product_id)
             description = (
                 line.description
                 or (product.purchase_description if product else None)
@@ -1052,7 +1052,7 @@ class DebitNoteService:
             chosen_tax = default_tax
             source_tax_id = line.tax_id or (product.tax_id if product else None)
             if source_tax_id is not None:
-                chosen_tax = await self.taxes.get(tenant_id, source_tax_id)
+                chosen_tax = await self.taxes.require_active(tenant_id, source_tax_id)
                 item_category = chosen_tax.tax_category
             resolved_category = resolve_line_tax_category(
                 item_category=item_category,

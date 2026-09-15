@@ -11,8 +11,9 @@ from app.auth.catalog import INVENTORY_MODULE
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
+from app.common.services.master_usage import assert_master_not_referenced
 from app.core.enums import AuditAction
-from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError
+from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
 from app.db.session import transaction
 from app.inventory_management.units.models import Unit
 from app.inventory_management.units.repository import UnitRepository
@@ -51,7 +52,9 @@ class UnitService:
         return UnitResponse.model_validate(await self._require(tenant_id, unit_id))
 
     async def require_id(self, tenant_id: UUID, unit_id: UUID) -> UUID:
-        await self._require(tenant_id, unit_id)
+        row = await self._require(tenant_id, unit_id)
+        if not row.is_active:
+            raise ValidationError("Unit is inactive")
         return unit_id
 
     async def create(
@@ -88,6 +91,15 @@ class UnitService:
         async with transaction(self.session):
             existing = await self._require(tenant_id, unit_id)
             old_values = _unit_snapshot(existing)
+            if values.get("is_active") is False and existing.is_active:
+                await assert_master_not_referenced(
+                    self.session,
+                    tenant_id=tenant_id,
+                    table_name=Unit.__tablename__,
+                    record_id=unit_id,
+                    label="unit",
+                    action="deactivate",
+                )
             row = await self.repo.update(tenant_id, unit_id, values)
             if row is None:
                 raise ResourceNotFoundError("Unit not found")
@@ -106,6 +118,13 @@ class UnitService:
     async def delete(self, tenant_id: UUID, unit_id: UUID, *, actor_user_id: UUID) -> UnitResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, unit_id)
+            await assert_master_not_referenced(
+                self.session,
+                tenant_id=tenant_id,
+                table_name=Unit.__tablename__,
+                record_id=unit_id,
+                label="unit",
+            )
             response = UnitResponse.model_validate(row)
             await self.repo.soft_delete(tenant_id, unit_id)
             await self.audit.write(

@@ -15,8 +15,9 @@ from app.auth.schemas import AddressPayload, format_address_label
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
+from app.common.services.master_usage import assert_master_not_referenced
 from app.core.enums import AddressType, AuditAction
-from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError
+from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
 from app.db.session import transaction
 from app.inventory_management.warehouses.models import Warehouse
 from app.inventory_management.warehouses.repository import WarehouseRepository
@@ -64,7 +65,9 @@ class WarehouseService:
         return {item.id: item for item in await self._to_responses(tenant_id, rows)}
 
     async def require_id(self, tenant_id: UUID, warehouse_id: UUID) -> UUID:
-        await self._require(tenant_id, warehouse_id)
+        row = await self._require(tenant_id, warehouse_id)
+        if not row.is_active:
+            raise ValidationError("Warehouse is inactive")
         return warehouse_id
 
     async def search_ids(self, tenant_id: UUID, search: str) -> builtins.list[UUID]:
@@ -72,7 +75,7 @@ class WarehouseService:
 
     async def get_default(self, tenant_id: UUID) -> WarehouseResponse | None:
         row = await self.repo.get_default(tenant_id)
-        if row is None:
+        if row is None or not row.is_active:
             return None
         return await self._to_response(tenant_id, row)
 
@@ -130,6 +133,15 @@ class WarehouseService:
         async with transaction(self.session):
             row = await self._require(tenant_id, warehouse_id)
             old_values = await self._warehouse_snapshot(tenant_id, row)
+            if values.get("is_active") is False and row.is_active:
+                await assert_master_not_referenced(
+                    self.session,
+                    tenant_id=tenant_id,
+                    table_name=Warehouse.__tablename__,
+                    record_id=warehouse_id,
+                    label="warehouse",
+                    action="deactivate",
+                )
             if address_payload is not None:
                 values["address_id"] = await self.org.upsert_address(
                     tenant_id,
@@ -162,6 +174,13 @@ class WarehouseService:
     ) -> WarehouseResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, warehouse_id)
+            await assert_master_not_referenced(
+                self.session,
+                tenant_id=tenant_id,
+                table_name=Warehouse.__tablename__,
+                record_id=warehouse_id,
+                label="warehouse",
+            )
             response = await self._to_response(tenant_id, row)
             await self.repo.soft_delete(tenant_id, warehouse_id)
             await self.audit.write(

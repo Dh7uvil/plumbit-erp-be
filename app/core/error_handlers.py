@@ -10,6 +10,7 @@ from typing import cast
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError as PydanticValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
@@ -56,7 +57,7 @@ async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
 
 async def validation_error_handler(
     request: Request,
-    exc: RequestValidationError,
+    exc: RequestValidationError | PydanticValidationError,
 ) -> JSONResponse:
     errors: list[dict[str, object]] = []
     field_errors: dict[str, str] = {}
@@ -147,6 +148,10 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(AppError, cast(ExceptionHandler, app_error_handler))
     app.add_exception_handler(
         RequestValidationError,
+        cast(ExceptionHandler, validation_error_handler),
+    )
+    app.add_exception_handler(
+        PydanticValidationError,
         cast(ExceptionHandler, validation_error_handler),
     )
     app.add_exception_handler(

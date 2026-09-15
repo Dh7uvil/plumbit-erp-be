@@ -20,7 +20,9 @@ class CurrencyRepository:
         self._repo = BaseRepository(
             session,
             Currency,
-            allowed_sort_fields=frozenset({"created_at", "updated_at", "code", "name"}),
+            allowed_sort_fields=frozenset(
+                {"created_at", "updated_at", "code", "name", "is_base", "is_active"}
+            ),
             allowed_filter_fields=frozenset({"is_base", "is_active"}),
             search_fields=frozenset({"code", "name", "symbol"}),
         )
@@ -124,6 +126,28 @@ class ExchangeRateRepository:
             ExchangeRate.from_currency_id == from_currency_id,
             ExchangeRate.to_currency_id == to_currency_id,
             ExchangeRate.effective_date == effective_date,
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def get_latest_for_pair_on_or_before(
+        self,
+        tenant_id: UUID,
+        *,
+        from_currency_id: UUID,
+        to_currency_id: UUID,
+        effective_date: date,
+    ) -> ExchangeRate | None:
+        statement = (
+            select(ExchangeRate)
+            .where(
+                ExchangeRate.tenant_id == tenant_id,
+                ExchangeRate.from_currency_id == from_currency_id,
+                ExchangeRate.to_currency_id == to_currency_id,
+                ExchangeRate.effective_date <= effective_date,
+            )
+            .order_by(ExchangeRate.effective_date.desc(), ExchangeRate.created_at.desc())
+            .limit(1)
         )
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()

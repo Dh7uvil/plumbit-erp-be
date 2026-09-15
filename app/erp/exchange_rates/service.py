@@ -15,6 +15,7 @@ from app.auth.org_service import OrganizationService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
+from app.common.services.master_usage import assert_master_not_referenced
 from app.common.utils.datetime import today_in_timezone
 from app.core.enums import AuditAction
 from app.core.exceptions import (
@@ -106,7 +107,9 @@ class CurrencyService:
         return await self.repo.codes_by_ids(tenant_id, currency_ids)
 
     async def require_id(self, tenant_id: UUID, currency_id: UUID) -> UUID:
-        await self._require(tenant_id, currency_id)
+        row = await self._require(tenant_id, currency_id)
+        if not row.is_active:
+            raise ValidationError("Currency is inactive")
         return currency_id
 
     async def create(
@@ -156,6 +159,15 @@ class CurrencyService:
             old_values = _currency_snapshot(row)
             if values.get("is_base") is False and row.is_base:
                 raise ValidationError("Cannot unset the tenant base currency")
+            if values.get("is_active") is False and row.is_active:
+                await assert_master_not_referenced(
+                    self.session,
+                    tenant_id=tenant_id,
+                    table_name=Currency.__tablename__,
+                    record_id=currency_id,
+                    label="currency",
+                    action="deactivate",
+                )
             try:
                 updated = await self.repo.update(tenant_id, currency_id, values)
             except IntegrityError as exc:
@@ -187,6 +199,13 @@ class CurrencyService:
             row = await self._require(tenant_id, currency_id)
             if row.is_base:
                 raise ValidationError("Cannot delete the tenant base currency")
+            await assert_master_not_referenced(
+                self.session,
+                tenant_id=tenant_id,
+                table_name=Currency.__tablename__,
+                record_id=currency_id,
+                label="currency",
+            )
             response = CurrencyResponse.model_validate(row)
             await self.repo.soft_delete(tenant_id, currency_id)
             await self.audit.write(
@@ -363,7 +382,7 @@ class ExchangeRateService:
         to_currency_id: UUID | None = None,
         on_date: date | None = None,
     ) -> ExchangeRateResolveResponse:
-        """Return the org rate for a pair on a calendar date. Never falls back."""
+        """Return the latest tenant rate effective on or before the requested date."""
 
         effective = on_date or await self._tenant_today(tenant_id)
         await self.currencies.require_id(tenant_id, from_currency_id)
@@ -381,7 +400,7 @@ class ExchangeRateService:
                 rate=Decimal("1"),
             )
 
-        row = await self.repo.get_for_pair_on_date(
+        row = await self.repo.get_latest_for_pair_on_or_before(
             tenant_id,
             from_currency_id=from_currency_id,
             to_currency_id=target_id,

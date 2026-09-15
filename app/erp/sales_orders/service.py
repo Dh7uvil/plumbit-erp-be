@@ -981,7 +981,7 @@ class SalesOrderService:
         for line in row.lines:
             if line.product_id is None:
                 continue
-            product = await self.products.get(tenant_id, line.product_id)
+            product = await self.products.require_active(tenant_id, line.product_id)
             if product.item_type == ItemType.SERVICE or not product.track_inventory:
                 if line.qty_reserved > _ZERO and warehouse_id is not None:
                     locked = await self.stock.lock_balance(
@@ -1703,6 +1703,7 @@ class SalesOrderService:
             tax_treatment=customer.tax_treatment,
             place_of_supply=place,
             price_list_id=price_list_id,
+            currency_id=currency_id,
         )
         subtotal, doc_discount, tax_total, grand = compute_header_totals(
             line_nets=line_nets,
@@ -1758,6 +1759,7 @@ class SalesOrderService:
         tax_treatment: TaxTreatment,
         place_of_supply: PlaceOfSupply,
         price_list_id: UUID | None,
+        currency_id: UUID,
     ) -> tuple[builtins.list[dict[str, object]], builtins.list[Decimal], builtins.list[Decimal]]:
         built: builtins.list[dict[str, object]] = []
         nets: builtins.list[Decimal] = []
@@ -1766,7 +1768,7 @@ class SalesOrderService:
         for index, line in enumerate(lines, start=1):
             product = None
             if line.product_id is not None:
-                product = await self.products.get(tenant_id, line.product_id)
+                product = await self.products.require_active(tenant_id, line.product_id)
             description = (
                 line.description
                 or (product.sales_description if product else None)
@@ -1788,13 +1790,14 @@ class SalesOrderService:
                     selling_rate=product.selling_rate,
                     price_list_id=price_list_id,
                     line_override=line.rate,
+                    currency_id=currency_id,
                 )
 
             item_category: TaxCategory | None = None
             chosen_tax = default_tax
             source_tax_id = line.tax_id or (product.tax_id if product else None)
             if source_tax_id is not None:
-                chosen_tax = await self.taxes.get(tenant_id, source_tax_id)
+                chosen_tax = await self.taxes.require_active(tenant_id, source_tax_id)
                 item_category = chosen_tax.tax_category
             resolved_category = resolve_line_tax_category(
                 item_category=item_category,
