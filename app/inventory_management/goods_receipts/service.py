@@ -449,7 +449,7 @@ class GoodsReceiptService:
                     raise ValidationError("Stock-moving goods receipt lines require a product")
                 if not stockable or line.product_id is None:
                     continue
-                product = await self.products.get(tenant_id, line.product_id)
+                product = await self.products.require_active(tenant_id, line.product_id)
                 unit_cost = quantize_money(line.rate * row.exchange_rate)
                 hold_delta = line.quantity if product.requires_qc else _ZERO
                 if product.requires_qc:
@@ -833,7 +833,7 @@ class GoodsReceiptService:
             description = line.description
             unit_id = line.unit_id
             if line.product_id is not None:
-                product = await self.products.get(tenant_id, line.product_id)
+                product = await self.products.require_active(tenant_id, line.product_id)
                 description = description or product.name
                 unit_id = unit_id if unit_id is not None else product.unit_id
             if not description:
@@ -948,7 +948,7 @@ class GoodsReceiptService:
     async def _is_stockable(self, tenant_id: UUID, product_id: UUID | None) -> bool:
         if product_id is None:
             return False
-        product = await self.products.get(tenant_id, product_id)
+        product = await self.products.require_active(tenant_id, product_id)
         return product.item_type != ItemType.SERVICE and product.track_inventory
 
     def _movement_type(self, row: GoodsReceipt) -> StockMovementType:

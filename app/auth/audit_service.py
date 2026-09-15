@@ -1,5 +1,8 @@
 """Read APIs for the append-only audit trail."""
 
+import csv
+import io
+import json
 from typing import Any
 from uuid import UUID
 
@@ -87,6 +90,69 @@ class AuditLogService:
         users = await self.org.get_users_by_ids(tenant_id, user_ids)
         return self._to_detail_response(row, users)
 
+    async def export_csv(
+        self,
+        tenant_id: UUID,
+        *,
+        common_filter: BaseFilter | None = None,
+        module: str | None = None,
+        action: str | None = None,
+        user_id: UUID | None = None,
+        entity_type: str | None = None,
+        entity_id: UUID | None = None,
+    ) -> str:
+        rows = await self.repo.export_logs(
+            tenant_id,
+            common_filter=common_filter,
+            module=module,
+            action=action,
+            user_id=user_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+        )
+        users = await self.org.get_users_by_ids(
+            tenant_id,
+            [row.user_id for row in rows if row.user_id is not None],
+        )
+        buffer = io.StringIO()
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=[
+                "timestamp",
+                "user",
+                "email",
+                "action",
+                "module",
+                "entity_type",
+                "entity_id",
+                "status",
+                "ip_address",
+                "user_agent",
+                "old_values",
+                "new_values",
+            ],
+        )
+        writer.writeheader()
+        for row in rows:
+            user = users.get(row.user_id) if row.user_id is not None else None
+            writer.writerow(
+                {
+                    "timestamp": row.created_at.isoformat(),
+                    "user": user.name if user else "",
+                    "email": user.email if user else "",
+                    "action": row.action,
+                    "module": row.module,
+                    "entity_type": row.entity_type,
+                    "entity_id": str(row.entity_id) if row.entity_id else "",
+                    "status": row.status,
+                    "ip_address": row.ip_address or "",
+                    "user_agent": row.user_agent or "",
+                    "old_values": _json_cell(row.old_values),
+                    "new_values": _json_cell(row.new_values),
+                }
+            )
+        return buffer.getvalue()
+
     @staticmethod
     def _to_response(row: AuditLog, users: dict[UUID, User]) -> AuditLogResponse:
         user = users.get(row.user_id) if row.user_id is not None else None
@@ -128,3 +194,9 @@ def _json_object(value: object) -> dict[str, Any] | None:
     if isinstance(value, dict):
         return value
     return None
+
+
+def _json_cell(value: object) -> str:
+    if value is None:
+        return ""
+    return json.dumps(value, default=str, sort_keys=True)

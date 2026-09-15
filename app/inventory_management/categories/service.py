@@ -11,6 +11,7 @@ from app.auth.catalog import INVENTORY_MODULE
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
+from app.common.services.master_usage import assert_master_not_referenced
 from app.core.enums import AuditAction
 from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
 from app.db.session import transaction
@@ -52,7 +53,9 @@ class CategoryService:
         return CategoryResponse.model_validate(await self._require(tenant_id, category_id))
 
     async def require_id(self, tenant_id: UUID, category_id: UUID) -> UUID:
-        await self._require(tenant_id, category_id)
+        row = await self._require(tenant_id, category_id)
+        if not row.is_active:
+            raise ValidationError("Category is inactive")
         return category_id
 
     async def create(
@@ -98,6 +101,17 @@ class CategoryService:
                 if values["parent_id"] == category_id:
                     raise ValidationError("A category cannot be its own parent")
                 await self._require(tenant_id, values["parent_id"])
+                await self._ensure_no_parent_cycle(tenant_id, category_id, values["parent_id"])
+            if values.get("is_active") is False and existing.is_active:
+                await assert_master_not_referenced(
+                    self.session,
+                    tenant_id=tenant_id,
+                    table_name=Category.__tablename__,
+                    record_id=category_id,
+                    label="category",
+                    action="deactivate",
+                    exclude_tables=frozenset({Category.__tablename__}),
+                )
             await self._validate_account_refs(
                 tenant_id,
                 values.get("income_account_id"),
@@ -128,6 +142,14 @@ class CategoryService:
             row = await self._require(tenant_id, category_id)
             if await self.repo.count_children(tenant_id, category_id) > 0:
                 raise ValidationError("Cannot delete a category that still has children")
+            await assert_master_not_referenced(
+                self.session,
+                tenant_id=tenant_id,
+                table_name=Category.__tablename__,
+                record_id=category_id,
+                label="category",
+                exclude_tables=frozenset({Category.__tablename__}),
+            )
             response = CategoryResponse.model_validate(row)
             await self.repo.soft_delete(tenant_id, category_id)
             await self.audit.write(
@@ -169,6 +191,18 @@ class CategoryService:
             await accounts.require_postable(tenant_id, income_account_id)
         if purchase_account_id is not None:
             await accounts.require_postable(tenant_id, purchase_account_id)
+
+    async def _ensure_no_parent_cycle(
+        self, tenant_id: UUID, category_id: UUID, parent_id: UUID
+    ) -> None:
+        seen: set[UUID] = {category_id}
+        current_id: UUID | None = parent_id
+        while current_id is not None:
+            if current_id in seen:
+                raise ValidationError("Category parent hierarchy cannot contain a cycle")
+            seen.add(current_id)
+            current = await self.repo.get(tenant_id, current_id)
+            current_id = current.parent_id if current is not None else None
 
     async def _require(self, tenant_id: UUID, category_id: UUID) -> Category:
         row = await self.repo.get(tenant_id, category_id)

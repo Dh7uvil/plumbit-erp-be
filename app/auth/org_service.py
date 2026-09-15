@@ -52,7 +52,7 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.db.session import transaction
-from app.integrations.storage.client import S3Storage, build_org_logo_key, presign_logo_url
+from app.integrations.storage.client import S3Storage, build_org_logo_key
 
 LOGO_MAX_SIZE_MB = 2
 LOGO_ALLOWED_MIME_TYPES = (MIME_JPEG, MIME_PNG, MIME_WEBP)
@@ -103,6 +103,12 @@ def _address_response(address: Address | None) -> AddressResponse | None:
     return AddressResponse.model_validate(address)
 
 
+def _current_logo_url(logo_storage_key: str | None) -> str | None:
+    if not logo_storage_key:
+        return None
+    return "/api/v1/tenants/current/logo"
+
+
 class OrganizationService:
     """Tenant, branch, and department use cases."""
 
@@ -116,6 +122,13 @@ class OrganizationService:
     async def get_current_tenant(self, tenant_id: UUID) -> TenantCurrentResponse:
         tenant = await self._require_tenant(tenant_id)
         return await self._tenant_response(tenant)
+
+    async def get_current_logo(self, tenant_id: UUID) -> tuple[bytes, str]:
+        tenant = await self._require_tenant(tenant_id)
+        if tenant.logo_storage_key is None:
+            raise ResourceNotFoundError("Organization logo not found")
+        storage = self._require_storage()
+        return await storage.download(key=tenant.logo_storage_key)
 
     async def update_current_tenant(
         self,
@@ -643,7 +656,7 @@ class OrganizationService:
             lock_date=tenant.lock_date,
             hard_lock_date=tenant.hard_lock_date,
             headquarters=settings.headquarters,
-            logo_url=await presign_logo_url(self.storage, tenant.logo_storage_key),
+            logo_url=_current_logo_url(tenant.logo_storage_key),
             users_count=await self.org.count_users(tenant.id),
             departments_count=await self.org.count_departments(tenant.id),
             branches_count=await self.org.count_branches(tenant.id),

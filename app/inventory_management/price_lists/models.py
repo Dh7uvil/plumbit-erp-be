@@ -3,7 +3,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Numeric, String, UniqueConstraint, text
+from sqlalchemy import ForeignKey, Index, Numeric, String, text
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -45,11 +45,13 @@ class PriceListItem(SoftDeleteTenantModel):
 
     __tablename__ = "price_list_items"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_price_list_items_tenant_list_product_active",
             "tenant_id",
             "price_list_id",
             "product_id",
-            name="uq_price_list_items_tenant_list_product",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
         ),
     )
 

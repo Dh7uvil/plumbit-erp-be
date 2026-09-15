@@ -974,7 +974,7 @@ class PurchaseOrderService:
         for line in row.lines:
             if line.product_id is None:
                 continue
-            product = await self.products.get(tenant_id, line.product_id)
+            product = await self.products.require_active(tenant_id, line.product_id)
             if product.item_type == ItemType.SERVICE or not product.track_inventory:
                 continue
             outstanding = quantize_quantity(line.quantity - line.qty_received)
@@ -1165,7 +1165,7 @@ class PurchaseOrderService:
             product = None
             product_id = line.product_id or (catalog.product_id if catalog is not None else None)
             if product_id is not None:
-                product = await self.products.get(tenant_id, product_id)
+                product = await self.products.require_active(tenant_id, product_id)
             description = (
                 line.description
                 or (catalog.supplier_item_name if catalog is not None else None)
@@ -1194,7 +1194,7 @@ class PurchaseOrderService:
             chosen_tax = default_tax
             source_tax_id = line.tax_id or (product.tax_id if product else None)
             if source_tax_id is not None:
-                chosen_tax = await self.taxes.get(tenant_id, source_tax_id)
+                chosen_tax = await self.taxes.require_active(tenant_id, source_tax_id)
                 item_category = chosen_tax.tax_category
             resolved_category = resolve_line_tax_category(
                 item_category=item_category,

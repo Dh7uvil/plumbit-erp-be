@@ -21,6 +21,7 @@ from app.auth.models import Employee, Permission, Role, User
 from app.auth.org_repository import OrganizationRepository
 from app.auth.repository import AccessRepository
 from app.auth.schemas import (
+    AdminResetUserPasswordRequest,
     AssignRolesRequest,
     BranchSummary,
     ChangePasswordRequest,
@@ -60,6 +61,7 @@ from app.core.config import get_settings
 from app.core.enums import AuditAction, AuditStatus, EmployeeStatus, TenantStatus, UserStatus
 from app.core.exceptions import (
     DuplicateResourceError,
+    IntegrationError,
     InvalidCredentialsError,
     InvalidStatusTransitionError,
     InvalidTokenError,
@@ -80,7 +82,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db.session import transaction
-from app.integrations.storage.client import S3Storage, presign_logo_url
+from app.integrations.storage.client import S3Storage
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +93,12 @@ def _role_names(roles: Sequence[Role]) -> list[str]:
 
 def _permission_codes(permissions: Sequence[Permission]) -> list[str]:
     return sorted(build_permission(item.module, item.resource, item.action) for item in permissions)
+
+
+def _tenant_logo_url(tenant_id: UUID, logo_storage_key: str | None) -> str | None:
+    if not logo_storage_key:
+        return None
+    return f"/api/v1/tenants/{tenant_id}/logo"
 
 
 def _role_snapshot(role: Role) -> dict[str, object]:
@@ -120,10 +128,21 @@ class AuthService:
                 TenantPublicResponse(
                     tenant_id=tenant_id,
                     name=name,
-                    logo_url=await presign_logo_url(self.storage, logo_storage_key),
+                    logo_url=_tenant_logo_url(tenant_id, logo_storage_key),
                 )
             )
         return tenants
+
+    async def get_public_tenant_logo(self, tenant_id: UUID) -> tuple[bytes, str]:
+        tenant = await self.repo.get_tenant(tenant_id)
+        if (
+            tenant is None
+            or tenant.status != TenantStatus.ACTIVE
+            or tenant.logo_storage_key is None
+        ):
+            raise ResourceNotFoundError("Organization logo not found")
+        storage = self._require_storage()
+        return await storage.download(key=tenant.logo_storage_key)
 
     async def login(self, payload: LoginRequest) -> TokenPairResponse:
         failed_user_id: UUID | None = None
@@ -425,6 +444,13 @@ class AuthService:
                 )
             except IntegrityError as exc:
                 raise DuplicateResourceError("A user with this email already exists") from exc
+            await self._validate_role_assignment(
+                tenant_id,
+                user,
+                payload.role_ids,
+                actor_user_id=actor_user_id,
+                old_roles=(),
+            )
             await self._replace_user_roles(tenant_id, user.id, payload.role_ids)
             if payload.employee is not None:
                 await self._upsert_employee(tenant_id, user, payload.employee)
@@ -462,6 +488,8 @@ class AuthService:
 
         async with transaction(self.session):
             user = await self._require_user(tenant_id, user_id)
+            if status == UserStatus.DISABLED:
+                await self._ensure_not_last_active_superadmin(tenant_id, user)
             old_values = await self._user_snapshot(tenant_id, user)
             for name, value in values.items():
                 setattr(user, name, value)
@@ -500,6 +528,7 @@ class AuthService:
             raise ValidationError("You cannot deactivate your own account")
         async with transaction(self.session):
             user = await self._require_user(tenant_id, user_id)
+            await self._ensure_not_last_active_superadmin(tenant_id, user)
             old_status = user.status
             user.status = UserStatus.DISABLED
             await self.repo.revoke_user_refresh_tokens(tenant_id, user_id)
@@ -542,6 +571,33 @@ class AuthService:
             )
             return await self._user_detail(tenant_id, user)
 
+    async def admin_reset_user_password(
+        self,
+        tenant_id: UUID,
+        user_id: UUID,
+        payload: AdminResetUserPasswordRequest,
+        *,
+        actor_user_id: UUID,
+    ) -> UserDetailResponse:
+        if user_id == actor_user_id:
+            raise ValidationError("Use change password to reset your own password")
+        new_hash = self._hash_password(payload.new_password)
+        async with transaction(self.session):
+            user = await self._require_user(tenant_id, user_id)
+            user.password_hash = new_hash
+            await self.repo.revoke_user_refresh_tokens(tenant_id, user_id)
+            await self.session.flush()
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=IDENTITY_MODULE,
+                entity_type="user",
+                entity_id=user.id,
+                new_values={"password_reset_by_admin": True},
+            )
+            return await self._user_detail(tenant_id, user)
+
     async def assign_roles(
         self,
         tenant_id: UUID,
@@ -553,6 +609,13 @@ class AuthService:
         async with transaction(self.session):
             user = await self._require_user(tenant_id, user_id)
             old_roles = await self.repo.list_user_roles(tenant_id, user.id)
+            await self._validate_role_assignment(
+                tenant_id,
+                user,
+                payload.role_ids,
+                actor_user_id=actor_user_id,
+                old_roles=old_roles,
+            )
             await self._replace_user_roles(tenant_id, user.id, payload.role_ids)
             new_roles = await self.repo.list_user_roles(tenant_id, user.id)
             old_values: dict[str, object] = {"roles": _role_names(old_roles)}
@@ -671,6 +734,8 @@ class AuthService:
             if role.is_system_role:
                 raise ValidationError("System roles cannot be deleted")
             counts = await self.repo.count_users_by_role_ids(tenant_id, [role.id])
+            if counts.get(role.id, 0) > 0:
+                raise ValidationError("Cannot delete a role that is assigned to users")
             response = RoleResponse.model_validate(role).model_copy(
                 update={"user_count": counts.get(role.id, 0)}
             )
@@ -696,6 +761,10 @@ class AuthService:
     ) -> RoleDetailResponse:
         async with transaction(self.session):
             role = await self._require_role(tenant_id, role_id)
+            if self._is_system_admin_role(role):
+                raise ValidationError(
+                    "Superadmin permissions cannot be edited manually; reset them to the catalog"
+                )
             old_permissions = await self.repo.list_role_permissions(tenant_id, role.id)
             await self._replace_role_permissions(tenant_id, role.id, payload.permission_ids)
             new_permissions = await self.repo.list_role_permissions(tenant_id, role.id)
@@ -725,6 +794,8 @@ class AuthService:
             role = await self._require_role(tenant_id, role_id)
             if not role.is_system_role or role.name != SYSTEM_ADMIN_ROLE_NAME:
                 raise ValidationError("Only the system Superadmin role can be reset to the catalog")
+            if not await self._actor_is_system_admin(tenant_id, actor_user_id):
+                raise ValidationError("Only a Superadmin can reset Superadmin permissions")
             permissions = await seed_tenant_permissions(self.session, tenant_id)
             await self.repo.replace_role_permissions(
                 tenant_id,
@@ -989,6 +1060,50 @@ class AuthService:
             raise ResourceNotFoundError("Role not found")
         await self.repo.replace_user_roles(tenant_id, user_id, unique_ids)
 
+    def _is_system_admin_role(self, role: Role) -> bool:
+        return role.is_system_role and role.name == SYSTEM_ADMIN_ROLE_NAME
+
+    async def _actor_is_system_admin(self, tenant_id: UUID, actor_user_id: UUID) -> bool:
+        roles = await self.repo.list_user_roles(tenant_id, actor_user_id)
+        return any(self._is_system_admin_role(role) for role in roles)
+
+    async def _ensure_not_last_active_superadmin(self, tenant_id: UUID, user: User) -> None:
+        if user.status != UserStatus.ACTIVE:
+            return
+        roles = await self.repo.list_user_roles(tenant_id, user.id)
+        if not any(self._is_system_admin_role(role) for role in roles):
+            return
+        if await self.repo.count_active_system_admins(tenant_id) <= 1:
+            raise ValidationError("Cannot remove or disable the last active Superadmin")
+
+    async def _validate_role_assignment(
+        self,
+        tenant_id: UUID,
+        user: User,
+        role_ids: Sequence[UUID],
+        *,
+        actor_user_id: UUID,
+        old_roles: Sequence[Role],
+    ) -> None:
+        if user.id == actor_user_id:
+            raise ValidationError("You cannot change your own role assignments")
+        unique_ids = list(dict.fromkeys(role_ids))
+        new_roles = await self.repo.get_roles_by_ids(tenant_id, unique_ids)
+        if len(new_roles) != len(unique_ids):
+            raise ResourceNotFoundError("Role not found")
+        new_has_admin = any(self._is_system_admin_role(role) for role in new_roles)
+        old_has_admin = any(self._is_system_admin_role(role) for role in old_roles)
+        actor_is_admin = await self._actor_is_system_admin(tenant_id, actor_user_id)
+        if new_has_admin and not actor_is_admin:
+            raise ValidationError("Only a Superadmin can assign the Superadmin role")
+        if (
+            old_has_admin
+            and not new_has_admin
+            and user.status == UserStatus.ACTIVE
+            and await self.repo.count_active_system_admins(tenant_id) <= 1
+        ):
+            raise ValidationError("Cannot remove or disable the last active Superadmin")
+
     async def _ensure_tenant_catalog(self, tenant_id: UUID) -> None:
         """Insert new catalog permissions and grant them to Superadmin.
 
@@ -1027,6 +1142,11 @@ class AuthService:
             return hash_password(password)
         except PasswordTooLongError as exc:
             raise ValidationError("Password exceeds bcrypt's 72-byte UTF-8 limit") from exc
+
+    def _require_storage(self) -> S3Storage:
+        if self.storage is None:
+            raise IntegrationError("Object storage is not configured")
+        return self.storage
 
     async def _issue_token_pair(self, user: User) -> TokenPairResponse:
         settings = get_settings()

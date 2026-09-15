@@ -27,7 +27,7 @@ from app.common.repositories.search import USER_FIELDS, RelatedSearch, search_cl
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.utils.datetime import utcnow
-from app.core.enums import TenantStatus
+from app.core.enums import TenantStatus, UserStatus
 from app.core.permissions import build_permission
 from app.db.base import Base
 
@@ -600,6 +600,23 @@ class AccessRepository:
         )
         result = await self.session.execute(statement)
         return {row.role_id: int(row[1]) for row in result.all()}
+
+    async def count_active_system_admins(self, tenant_id: UUID) -> int:
+        statement = (
+            select(func.count())
+            .select_from(User)
+            .join(UserRole, UserRole.user_id == User.id)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(
+                User.tenant_id == tenant_id,
+                User.status == UserStatus.ACTIVE.value,
+                UserRole.tenant_id == tenant_id,
+                Role.tenant_id == tenant_id,
+                Role.name == "Superadmin",
+                Role.is_system_role.is_(True),
+            )
+        )
+        return int(await self.session.scalar(statement) or 0)
 
     async def list_all_permissions(self, tenant_id: UUID) -> Sequence[Permission]:
         statement = (

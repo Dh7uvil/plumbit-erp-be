@@ -151,6 +151,29 @@ class AuditLogRepository:
         total = await self.session.scalar(count_statement)
         return result.scalars().all(), int(total or 0)
 
+    async def export_logs(
+        self,
+        tenant_id: UUID,
+        *,
+        common_filter: BaseFilter | None = None,
+        module: str | None = None,
+        action: str | None = None,
+        user_id: UUID | None = None,
+        entity_type: str | None = None,
+        entity_id: UUID | None = None,
+    ) -> Sequence[AuditLog]:
+        statement = self._statement(
+            tenant_id,
+            common_filter=common_filter,
+            module=module,
+            action=action,
+            user_id=user_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+        ).order_by(AuditLog.created_at.desc())
+        result = await self.session.execute(statement)
+        return result.scalars().all()
+
     async def summarize(
         self,
         tenant_id: UUID,

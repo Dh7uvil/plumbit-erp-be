@@ -19,7 +19,9 @@ class TaxRepository:
         self._repo = BaseRepository(
             session,
             Tax,
-            allowed_sort_fields=frozenset({"created_at", "updated_at", "name", "rate"}),
+            allowed_sort_fields=frozenset(
+                {"created_at", "updated_at", "name", "tax_category", "rate", "is_default", "is_active"}
+            ),
             allowed_filter_fields=frozenset({"tax_category", "is_default", "is_active"}),
             search_fields=frozenset({"name", "tax_category"}),
         )
@@ -97,7 +99,7 @@ class PaymentTermRepository:
         self._repo = BaseRepository(
             session,
             PaymentTerm,
-            allowed_sort_fields=frozenset({"created_at", "updated_at", "name", "days"}),
+            allowed_sort_fields=frozenset({"created_at", "updated_at", "name", "days", "is_active"}),
             allowed_filter_fields=frozenset({"is_active"}),
             search_fields=frozenset({"name", "description"}),
         )
@@ -135,7 +137,9 @@ class TermsTemplateRepository:
         self._repo = BaseRepository(
             session,
             TermsTemplate,
-            allowed_sort_fields=frozenset({"created_at", "updated_at", "name"}),
+            allowed_sort_fields=frozenset(
+                {"created_at", "updated_at", "name", "is_default", "is_active"}
+            ),
             allowed_filter_fields=frozenset({"is_default", "is_active"}),
             search_fields=frozenset({"name"}),
         )
@@ -199,7 +203,15 @@ class DocumentSequenceRepository:
             session,
             DocumentSequence,
             allowed_sort_fields=frozenset(
-                {"created_at", "updated_at", "document_type", "series", "fiscal_year"}
+                {
+                    "created_at",
+                    "updated_at",
+                    "document_type",
+                    "series",
+                    "fiscal_year",
+                    "next_number",
+                    "is_active",
+                }
             ),
             allowed_filter_fields=frozenset(
                 {"document_type", "series", "fiscal_year", "is_active"}

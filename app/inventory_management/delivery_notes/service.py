@@ -781,7 +781,7 @@ class DeliveryNoteService:
             product_id = line.product_id if line.product_id is not None else so_line.product_id
             unit_id = line.unit_id if line.unit_id is not None else so_line.unit_id
             if product_id is not None:
-                product = await self.products.get(tenant_id, product_id)
+                product = await self.products.require_active(tenant_id, product_id)
                 description = description or product.name
                 unit_id = unit_id if unit_id is not None else product.unit_id
             if not description:
@@ -833,7 +833,7 @@ class DeliveryNoteService:
     async def _is_stockable(self, tenant_id: UUID, product_id: UUID | None) -> bool:
         if product_id is None:
             return False
-        product = await self.products.get(tenant_id, product_id)
+        product = await self.products.require_active(tenant_id, product_id)
         return product.item_type != ItemType.SERVICE and product.track_inventory
 
     def _movement_type(self, row: DeliveryNote) -> StockMovementType:

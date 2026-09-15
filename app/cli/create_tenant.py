@@ -86,7 +86,7 @@ async def provision_tenant(
                         name=tenant_name,
                         code=derive_tenant_code(tenant_name),
                         settings={},
-                        timezone="UTC",
+                        timezone="Asia/Dubai",
                         status=TenantStatus.ACTIVE,
                     )
                     session.add(candidate)

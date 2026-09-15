@@ -23,6 +23,8 @@ class S3ClientProtocol(Protocol):
 
     def delete_object(self, **kwargs: Any) -> Any: ...
 
+    def get_object(self, **kwargs: Any) -> Any: ...
+
     def generate_presigned_url(self, *args: Any, **kwargs: Any) -> str: ...
 
 
@@ -84,6 +86,11 @@ class S3Storage:
 
         await asyncio.to_thread(self._delete_sync, key)
 
+    async def download(self, *, key: str) -> tuple[bytes, str]:
+        """Read an object body and content type. Runs boto3 off the event loop."""
+
+        return await asyncio.to_thread(self._download_sync, key)
+
     async def presigned_get_url(self, *, key: str, expires_in: int | None = None) -> str:
         """Return a short-lived GET URL for a private object."""
 
@@ -106,6 +113,15 @@ class S3Storage:
             self._client.delete_object(Bucket=self._bucket, Key=key)
         except (BotoCoreError, ClientError) as exc:
             raise IntegrationError("Failed to delete stored file") from exc
+
+    def _download_sync(self, key: str) -> tuple[bytes, str]:
+        try:
+            response = self._client.get_object(Bucket=self._bucket, Key=key)
+            body = response["Body"].read()
+            content_type = response.get("ContentType") or "application/octet-stream"
+            return body, str(content_type)
+        except (BotoCoreError, ClientError) as exc:
+            raise IntegrationError("Failed to read stored file") from exc
 
     def _presign_sync(self, key: str, expires_in: int) -> str:
         try:

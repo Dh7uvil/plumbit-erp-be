@@ -4,6 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
+from fastapi.responses import Response
 
 from app.auth.catalog import (
     AUDIT_LOG_READ,
@@ -35,6 +36,7 @@ from app.auth.dependencies import (
 )
 from app.auth.org_service import LOGO_MAX_SIZE_MB
 from app.auth.schemas import (
+    AdminResetUserPasswordRequest,
     AssignRolesRequest,
     AuditLogDetailResponse,
     AuditLogFilter,
@@ -124,6 +126,35 @@ async def get_current_tenant(
 ) -> ApiResponse[TenantCurrentResponse]:
     data = await service.get_current_tenant(tenant.tenant_id)
     return ApiResponse(data=data)
+
+
+@tenants_router.get(
+    "/current/logo",
+    response_class=Response,
+    summary="Get current organization logo",
+    description="Requires `identity.organization.read`. Streams the logo through the API.",
+)
+async def get_current_tenant_logo(
+    tenant: TenantContextDependency,
+    service: OrganizationServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(ORGANIZATION_READ))],
+) -> Response:
+    body, content_type = await service.get_current_logo(tenant.tenant_id)
+    return Response(content=body, media_type=content_type)
+
+
+@tenants_router.get(
+    "/{tenant_id}/logo",
+    response_class=Response,
+    summary="Get public tenant logo",
+    description="Returns a public login-screen logo through the application proxy.",
+)
+async def get_public_tenant_logo(
+    tenant_id: UUID,
+    service: AuthServiceDependency,
+) -> Response:
+    body, content_type = await service.get_public_tenant_logo(tenant_id)
+    return Response(content=body, media_type=content_type)
 
 
 @tenants_router.patch(
@@ -444,6 +475,30 @@ async def activate_user(
         actor_user_id=tenant.user_id,
     )
     return ApiResponse(data=user, message="User activated successfully")
+
+
+@users_router.post(
+    "/{user_id}/password-reset",
+    response_model=ApiResponse[UserDetailResponse],
+    summary="Reset user password",
+    description=(
+        "Requires `identity.user.update`. Resets another user's password and revokes sessions."
+    ),
+)
+async def admin_reset_user_password(
+    user_id: UUID,
+    payload: AdminResetUserPasswordRequest,
+    tenant: TenantContextDependency,
+    service: AuthServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(USER_UPDATE))],
+) -> ApiResponse[UserDetailResponse]:
+    user = await service.admin_reset_user_password(
+        tenant.tenant_id,
+        user_id,
+        payload,
+        actor_user_id=tenant.user_id,
+    )
+    return ApiResponse(data=user, message="User password reset successfully")
 
 
 @users_router.put(
@@ -926,6 +981,34 @@ async def list_audit_logs(
         entity_id=filters.entity_id,
     )
     return paginated_response(rows, params=page, total=total)
+
+
+@audit_logs_router.get(
+    "/export.csv",
+    response_class=Response,
+    summary="Export audit logs",
+    description="Requires `identity.audit_log.read`. Exports the filtered audit trail as CSV.",
+)
+async def export_audit_logs(
+    tenant: TenantContextDependency,
+    service: AuditLogServiceDependency,
+    filters: Annotated[AuditLogFilter, Depends()],
+    _: Annotated[CurrentUser, Depends(require_permission(AUDIT_LOG_READ))],
+) -> Response:
+    csv_body = await service.export_csv(
+        tenant.tenant_id,
+        common_filter=filters,
+        module=filters.module,
+        action=filters.action,
+        user_id=filters.user_id,
+        entity_type=filters.entity_type,
+        entity_id=filters.entity_id,
+    )
+    return Response(
+        content=csv_body,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="audit-logs.csv"'},
+    )
 
 
 @audit_logs_router.get(

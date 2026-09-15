@@ -24,6 +24,15 @@ class Customer(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
             unique=True,
             postgresql_where=text("deleted_at IS NULL"),
         ),
+        Index(
+            "uq_customers_tenant_id_trn_registered_active",
+            "tenant_id",
+            "trn",
+            unique=True,
+            postgresql_where=text(
+                "deleted_at IS NULL AND trn IS NOT NULL AND tax_treatment = 'REGISTERED'"
+            ),
+        ),
     )
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
