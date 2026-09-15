@@ -44,7 +44,6 @@ class PartyRole:
     extra_address_not_found_message: str
     audit_module: str
     audit_entity_type: str
-    code_prefix: str
 
 
 CUSTOMER_PARTY_ROLE = PartyRole(
@@ -56,7 +55,6 @@ CUSTOMER_PARTY_ROLE = PartyRole(
     extra_address_not_found_message="Customer address not found",
     audit_module=CRM_MODULE,
     audit_entity_type="customer",
-    code_prefix="CUS",
 )
 
 
@@ -69,7 +67,6 @@ SUPPLIER_PARTY_ROLE = PartyRole(
     extra_address_not_found_message="Supplier address not found",
     audit_module=PURCHASE_MODULE,
     audit_entity_type="supplier",
-    code_prefix="SUP",
 )
 
 
@@ -218,9 +215,7 @@ class CustomerService:
                 payload.shipping_address,
                 address_type=AddressType.SHIPPING,
             )
-            code = payload.code or await self.repo.next_code(
-                tenant_id, prefix=self.role.code_prefix
-            )
+            code = payload.code or await self.repo.next_code(tenant_id, name=payload.name)
             try:
                 row = await self.repo.create(
                     tenant_id,
@@ -592,6 +587,8 @@ class CustomerService:
             is_active=row.is_active,
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
+            updated_by=row.updated_by,
         )
 
     def _visible_company_type_filter(self, company_type: str | None) -> object:

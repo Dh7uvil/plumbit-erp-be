@@ -25,7 +25,6 @@ async def test_customer_tenant_isolation(client: AsyncClient) -> None:
         headers=headers_a,
         json={
             "name": f"Acme {suffix}",
-            "code": f"C-{suffix}",
             "tax_treatment": "UNREGISTERED",
             "currency_id": currency_id,
         },

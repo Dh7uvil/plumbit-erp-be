@@ -63,7 +63,6 @@ async def _create_customer(
     suffix = uuid4().hex[:8]
     payload: dict[str, object] = {
         "name": f"Customer {suffix}",
-        "code": f"C-{suffix}",
         "tax_treatment": tax_treatment,
         "trn": trn,
         "currency_id": currency_id,
@@ -241,7 +240,6 @@ async def test_registered_party_trn_is_unique(client: AsyncClient) -> None:
         headers=headers,
         json={
             "name": f"Dup {uuid4().hex[:8]}",
-            "code": f"C-{uuid4().hex[:8]}",
             "tax_treatment": "REGISTERED",
             "trn": trn,
             "currency_id": ids["aed"],

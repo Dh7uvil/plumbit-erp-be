@@ -394,6 +394,7 @@ class QuotationService:
                 series=_QUOTE_SERIES,
                 fiscal_year=await year_for(self.session, tenant_id, quote_date),
                 prefix=_QUOTE_SERIES,
+                party_id=cast(UUID, header["customer_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -683,6 +684,7 @@ class QuotationService:
                 series=_QUOTE_SERIES,
                 fiscal_year=await year_for(self.session, tenant_id, quote_date),
                 prefix=_QUOTE_SERIES,
+                party_id=cast(UUID, header["customer_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -1233,6 +1235,8 @@ class QuotationService:
             lines=[QuotationLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
+            updated_by=row.updated_by,
         )
 
     async def _response_context(self, tenant_id: UUID) -> tuple[date, bool]:
@@ -1427,7 +1431,7 @@ class QuotationService:
 def _display_number(quote_number: str, revision_number: int) -> str:
     if revision_number == 0:
         return quote_number
-    return f"{quote_number}-R{revision_number}"
+    return f"{quote_number}R{revision_number}"
 
 
 def _jsonable(value: object) -> Any:

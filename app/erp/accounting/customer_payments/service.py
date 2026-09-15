@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -190,6 +190,7 @@ class CustomerPaymentService:
                 series=_SERIES,
                 fiscal_year=await year_for(self.session, tenant_id, values["payment_date"]),
                 prefix=_SERIES,
+                party_id=cast(UUID, values["customer_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -1432,6 +1433,8 @@ class CustomerPaymentService:
             ],
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
+            updated_by=row.updated_by,
         )
 
     async def _snapshot(self, tenant_id: UUID, row: CustomerPayment) -> dict[str, object]:

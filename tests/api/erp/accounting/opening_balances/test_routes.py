@@ -137,7 +137,6 @@ async def test_document_numbering_unchanged_at_january_default(client: AsyncClie
         headers=headers,
         json={
             "name": "Numbering customer",
-            "code": f"C-{uuid4().hex[:8]}",
             "tax_treatment": "UNREGISTERED",
         },
     )
@@ -164,4 +163,7 @@ async def test_document_numbering_unchanged_at_january_default(client: AsyncClie
     assert quote.status_code == 201, quote.text
     timezone = org.json()["data"]["timezone"]
     year = datetime.now(ZoneInfo(timezone)).year
-    assert quote.json()["data"]["quote_number"].startswith(f"QUO-{year}-")
+    assert quote.json()["data"]["quote_number"].startswith(f"QUO")
+    yy = str(year % 100).zfill(2)
+    assert quote.json()["data"]["quote_number"][3:6].isalnum()
+    assert quote.json()["data"]["quote_number"][6:8] == yy

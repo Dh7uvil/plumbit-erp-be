@@ -429,14 +429,16 @@ Never allow arbitrary status changes from client input. Never let the client sup
 ERP documents carry human-readable numbers:
 
 ```text
-QUO-2026-000001  SO-2026-000001  DN-2026-000001  INV-2026-000001
-CN-2026-000001   PO-2026-000001  GRN-2026-000001 BILL-2026-000001
-SDN-2026-000001
+QUOAGM26000001  SOAGM26000001  DNAGM26000001  INVAGM26000001
+CNAGM26000001   POGPI26000001  GRNGPI26000001 BILLGPI26000001
+SDNGPI26000001  JV26000001     STR26000001    STA26000001
 ```
 
 Prefixes: `QUO`, `SO`, `DN` (delivery notes), `INV`, `CN` (credit notes), `PO`, `GRN`, `BILL`
 (purchase invoices), `SDN` (debit notes), `STR`, `STA`, `PFI`, `QCR`, `PKG`, `SHP`, `SR`
-(sales returns), `JV` (journal entries). URL resources are unique even if a prefix is shared
+(sales returns), `JV` (journal entries). Customer and supplier documents embed the party's
+3-letter code after the prefix; internal documents (`JV`, `STR`, `STA`, `SHP`) omit it.
+The year is two digits and there are no hyphens or spaces. URL resources are unique even if a prefix is shared
 (`/credit-notes`, `/debit-notes`, `/delivery-notes`, `/customer-payments`, `/supplier-payments`).
 
 Do not generate these with application-level counters alone. Use a database-safe mechanism

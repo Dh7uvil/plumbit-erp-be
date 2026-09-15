@@ -260,6 +260,7 @@ class PurchaseOrderService:
                 series=_ORDER_SERIES,
                 fiscal_year=await year_for(self.session, tenant_id, order_date),
                 prefix=_ORDER_SERIES,
+                party_id=cast(UUID, header["supplier_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -508,6 +509,7 @@ class PurchaseOrderService:
                 series=_ORDER_SERIES,
                 fiscal_year=await year_for(self.session, tenant_id, order_date),
                 prefix=_ORDER_SERIES,
+                party_id=cast(UUID, header["supplier_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -731,6 +733,7 @@ class PurchaseOrderService:
                     series=_ORDER_SERIES,
                     fiscal_year=await year_for(self.session, tenant_id, order_date),
                     prefix=_ORDER_SERIES,
+                    party_id=cast(UUID, header["supplier_id"]),
                 )
                 row = await self.repo.create(
                     tenant_id,
@@ -1377,6 +1380,8 @@ class PurchaseOrderService:
             lines=[PurchaseOrderLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
+            updated_by=row.updated_by,
         )
 
     def _quantity_progress(self, row: PurchaseOrder) -> QuantityProgress:

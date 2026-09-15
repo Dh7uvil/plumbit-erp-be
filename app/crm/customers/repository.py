@@ -16,22 +16,8 @@ from app.common.repositories.search import (
 )
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
-from app.common.utils.datetime import utcnow
+from app.crm.customers.codes import unique_party_code
 from app.crm.customers.models import Customer, CustomerAddress
-
-
-def next_party_code_from_existing(existing_codes: Sequence[str], *, prefix: str, year: int) -> str:
-    """Return the next ``{prefix}{year}{seq}`` code from existing codes for that year."""
-
-    token = f"{prefix}{year}"
-    highest = 0
-    for code in existing_codes:
-        if not code.startswith(token):
-            continue
-        suffix = code[len(token) :]
-        if suffix.isdigit():
-            highest = max(highest, int(suffix))
-    return f"{token}{highest + 1:02d}"
 
 
 class CustomerRepository:
@@ -103,20 +89,15 @@ class CustomerRepository:
             tenant_id, page=page, common_filter=common_filter, filters=filters
         )
 
-    async def next_code(self, tenant_id: UUID, *, prefix: str) -> str:
-        """Allocate the next tenant-scoped ``{prefix}{year}{seq}`` party code."""
+    async def next_code(self, tenant_id: UUID, *, name: str) -> str:
+        """Allocate the next tenant-scoped 3-letter party code from ``name``."""
 
-        year = utcnow().year
-        token = f"{prefix}{year}"
         await self.session.execute(
             select(Tenant.id).where(Tenant.id == tenant_id).with_for_update()
         )
-        statement = select(Customer.code).where(
-            Customer.tenant_id == tenant_id,
-            Customer.code.like(f"{token}%"),
-        )
+        statement = select(Customer.code).where(Customer.tenant_id == tenant_id)
         result = await self.session.execute(statement)
-        return next_party_code_from_existing(list(result.scalars().all()), prefix=prefix, year=year)
+        return unique_party_code(name, result.scalars().all())
 
     async def create(self, tenant_id: UUID, values: Mapping[str, object]) -> Customer:
         return await self._repo.create(tenant_id, values)

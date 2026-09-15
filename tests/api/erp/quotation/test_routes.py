@@ -55,7 +55,6 @@ async def _create_customer(
     suffix = uuid4().hex[:8]
     payload: dict[str, object] = {
         "name": f"Customer {suffix}",
-        "code": f"C-{suffix}",
         "tax_treatment": tax_treatment,
         "trn": trn,
         "shipping_address": {

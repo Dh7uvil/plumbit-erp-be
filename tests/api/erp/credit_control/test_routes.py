@@ -56,7 +56,6 @@ async def test_block_policy_refuses_confirm_without_override(client: AsyncClient
         headers=headers,
         json={
             "name": f"Limited {suffix}",
-            "code": f"C-{suffix}",
             "tax_treatment": "REGISTERED",
             "trn": "100000000000003",
             "credit_limit": "50.0000",
@@ -112,7 +111,6 @@ async def test_warn_policy_confirms_with_warning(client: AsyncClient) -> None:
         headers=headers,
         json={
             "name": f"Warned {suffix}",
-            "code": f"C-{suffix}",
             "tax_treatment": "REGISTERED",
             "trn": "100000000000003",
             "credit_limit": "10.0000",

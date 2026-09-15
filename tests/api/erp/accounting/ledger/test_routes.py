@@ -32,7 +32,6 @@ async def _customer(client: AsyncClient, headers: dict[str, str]) -> str:
         headers=headers,
         json={
             "name": f"Customer {suffix}",
-            "code": f"C-{suffix}",
             "tax_treatment": "UNREGISTERED",
         },
     )

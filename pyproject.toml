@@ -30,6 +30,7 @@ generate-jwt-secret = "app.cli.generate_jwt_secret:main"
 export-openapi = "app.cli.export_openapi:main"
 outbox = "app.cli.outbox:main"
 rebuild-inventory-gl = "app.cli.rebuild_inventory_gl:main"
+renumber-documents = "app.cli.renumber_documents:main"
 
 [build-system]
 requires = ["hatchling"]

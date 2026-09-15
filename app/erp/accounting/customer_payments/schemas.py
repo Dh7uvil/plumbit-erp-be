@@ -143,3 +143,5 @@ class CustomerPaymentResponse(BaseModel):
     allocations: list[CustomerPaymentAllocationResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+    created_by: UUID | None = None
+    updated_by: UUID | None = None

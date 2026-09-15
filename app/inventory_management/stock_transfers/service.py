@@ -546,6 +546,8 @@ class StockTransferService:
             lines=[StockTransferLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
+            updated_by=row.updated_by,
         )
 
     async def _ensure_policy(self, tenant_id: UUID) -> PeriodLockPolicy:

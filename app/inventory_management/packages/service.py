@@ -257,12 +257,14 @@ class PackageService:
         async with transaction(self.session):
             header, line_rows = await self._build_draft(tenant_id, payload)
             fiscal_year = cast(int, header.pop("_fiscal_year"))
+            party_id = cast(UUID, header.pop("_party_id"))
             number = await self.sequences.allocate(
                 tenant_id,
                 document_type=DocumentType.PACKAGE,
                 series=_SERIES,
                 fiscal_year=fiscal_year,
                 prefix=_SERIES,
+                party_id=party_id,
             )
             row = await self.repo.create(
                 tenant_id,
@@ -306,6 +308,7 @@ class PackageService:
                 tenant_id, create_payload, exclude_package_id=package_id
             )
             header.pop("_fiscal_year", None)
+            header.pop("_party_id", None)
             header["updated_by"] = actor_user_id
             header["version"] = existing.version + 1
             await self.repo.update(tenant_id, package_id, header)
@@ -540,6 +543,7 @@ class PackageService:
             "shipping_marks": payload.shipping_marks,
             "notes": payload.notes,
             "_fiscal_year": fiscal_year,
+            "_party_id": order.customer_id,
         }
         return header, line_rows
 
@@ -597,6 +601,8 @@ class PackageService:
             lines=[PackageLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
+            updated_by=row.updated_by,
         )
 
     async def _related_documents(

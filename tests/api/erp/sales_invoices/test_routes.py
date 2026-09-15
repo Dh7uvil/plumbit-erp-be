@@ -255,7 +255,7 @@ async def test_export_invoice_posts_without_vat_and_records_evidence_gap(
         headers=headers,
         json={
             "name": "Export Buyer",
-            "code": f"EX-{uuid4().hex[:8]}",
+            "code": uuid4().hex[:3].upper(),
             "tax_treatment": "EXPORT",
             "shipping_address": {
                 "address_line_1": "Port",

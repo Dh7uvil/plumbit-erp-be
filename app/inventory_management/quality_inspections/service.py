@@ -5,7 +5,7 @@ from __future__ import annotations
 import builtins
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -198,6 +198,7 @@ class QualityInspectionService:
             header, line_rows = await self._build_draft(
                 tenant_id, create_payload, exclude_inspection_id=inspection_id
             )
+            header.pop("_party_id", None)
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(header["inspection_date"], can_override=self._can_override)
             header["updated_by"] = actor_user_id
@@ -482,12 +483,14 @@ class QualityInspectionService:
         header, line_rows = await self._build_draft(tenant_id, payload)
         policy = await self._ensure_policy(tenant_id)
         policy.assert_open(header["inspection_date"], can_override=self._can_override)
+        party_id = cast(UUID, header.pop("_party_id"))
         number = await self.sequences.allocate(
             tenant_id,
             document_type=DocumentType.QUALITY_INSPECTION,
             series=_SERIES,
             fiscal_year=await year_for(self.session, tenant_id, header["inspection_date"]),
             prefix=_SERIES,
+            party_id=party_id,
         )
         row = await self.repo.create(
             tenant_id,
@@ -571,6 +574,7 @@ class QualityInspectionService:
             "inspection_date": inspection_date,
             "inspector_user_id": payload.inspector_user_id,
             "notes": payload.notes,
+            "_party_id": receipt.supplier_id,
         }
         return header, built
 
@@ -658,6 +662,8 @@ class QualityInspectionService:
             ],
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
+            updated_by=row.updated_by,
         )
 
     async def _related_documents(

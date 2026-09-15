@@ -60,13 +60,13 @@ from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
-from app.inventory_management.common.journal_lookup import journal_for_source
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 from app.erp.purchase_orders.service import PurchaseOrderService
 from app.erp.supplier_products.schemas import SupplierSkuResolveStatus
 from app.erp.supplier_products.service import SupplierProductService
 from app.erp.suppliers.service import SupplierService
+from app.inventory_management.common.journal_lookup import journal_for_source
 from app.inventory_management.goods_receipts.models import GoodsReceipt, GoodsReceiptLine
 from app.inventory_management.goods_receipts.repository import GoodsReceiptRepository
 from app.inventory_management.goods_receipts.schemas import (
@@ -234,6 +234,7 @@ class GoodsReceiptService:
             series=_SERIES,
             fiscal_year=await year_for(self.session, tenant_id, document_date),
             prefix=_SERIES,
+            party_id=cast(UUID, header["supplier_id"]),
         )
         row = await self.repo.create(
             tenant_id,
@@ -1039,6 +1040,8 @@ class GoodsReceiptService:
             lines=[GoodsReceiptLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
+            updated_by=row.updated_by,
         )
 
     async def _related_documents(

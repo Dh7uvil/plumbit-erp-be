@@ -37,7 +37,8 @@ class AttachmentResponse(BaseModel):
     image_width: int | None
     image_height: int | None
     thumbnail_url: str | None = None
-    created_by: UUID | None
+    created_by: UUID | None = None
+    updated_by: UUID | None = None
     created_at: datetime
     updated_at: datetime
 

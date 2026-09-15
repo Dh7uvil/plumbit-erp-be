@@ -46,7 +46,7 @@ async def test_revise_from_sent_snapshots_and_rewinds(client: AsyncClient) -> No
     assert data["status"] == "DRAFT"
     assert data["revision_number"] == 1
     assert data["revision_count"] == 1
-    assert data["display_number"] == f"{quote['quote_number']}-R1"
+    assert data["display_number"] == f"{quote['quote_number']}R1"
     assert data["quote_number"] == quote["quote_number"]
 
     listed = await client.get(f"/api/v1/quotations/{quote['id']}/revisions", headers=headers)
