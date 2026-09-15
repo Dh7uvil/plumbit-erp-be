@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -24,6 +25,7 @@ from app.db.session import transaction
 from app.erp.accounting.accounts.models import Account
 from app.erp.accounting.accounts.repository import AccountRepository
 from app.erp.accounting.accounts.schemas import (
+    AccountBalanceResponse,
     AccountCreate,
     AccountResponse,
     AccountTreeNode,
@@ -35,6 +37,37 @@ from app.erp.exchange_rates.service import CurrencyService
 _CONTROL_SUBTYPES = frozenset(
     {AccountSubtype.ACCOUNTS_RECEIVABLE.value, AccountSubtype.ACCOUNTS_PAYABLE.value}
 )
+_SUBTYPES_BY_TYPE: dict[str, frozenset[str]] = {
+    AccountType.ASSET.value: frozenset(
+        {
+            AccountSubtype.BANK.value,
+            AccountSubtype.CASH.value,
+            AccountSubtype.ACCOUNTS_RECEIVABLE.value,
+            AccountSubtype.STOCK.value,
+            AccountSubtype.FIXED_ASSET.value,
+            AccountSubtype.OTHER_CURRENT_ASSET.value,
+            AccountSubtype.TAX_RECEIVABLE.value,
+        }
+    ),
+    AccountType.LIABILITY.value: frozenset(
+        {
+            AccountSubtype.ACCOUNTS_PAYABLE.value,
+            AccountSubtype.OTHER_CURRENT_LIABILITY.value,
+            AccountSubtype.TAX_PAYABLE.value,
+        }
+    ),
+    AccountType.EQUITY.value: frozenset({AccountSubtype.EQUITY.value}),
+    AccountType.INCOME.value: frozenset(
+        {AccountSubtype.INCOME.value, AccountSubtype.OTHER_INCOME.value}
+    ),
+    AccountType.EXPENSE.value: frozenset(
+        {
+            AccountSubtype.COGS.value,
+            AccountSubtype.EXPENSE.value,
+            AccountSubtype.OTHER_EXPENSE.value,
+        }
+    ),
+}
 
 
 class AccountResolver:
@@ -149,7 +182,14 @@ class AccountService:
         return roots
 
     async def get(self, tenant_id: UUID, account_id: UUID) -> AccountResponse:
-        return AccountResponse.model_validate(await self._require(tenant_id, account_id))
+        row = await self._require(tenant_id, account_id)
+        response = AccountResponse.model_validate(row)
+        return response.model_copy(
+            update={
+                "has_children": await self.repo.count_children(tenant_id, account_id) > 0,
+                "has_journal_lines": await self._has_gl_lines(tenant_id, account_id),
+            }
+        )
 
     async def require_postable(self, tenant_id: UUID, account_id: UUID) -> Account:
         row = await self._require(tenant_id, account_id)
@@ -205,10 +245,21 @@ class AccountService:
     def is_control_account(self, row: Account) -> bool:
         return row.account_subtype in _CONTROL_SUBTYPES
 
+    def _assert_subtype_for_type(self, account_type: str, account_subtype: str) -> None:
+        allowed = _SUBTYPES_BY_TYPE.get(account_type)
+        if allowed is None or account_subtype not in allowed:
+            raise ValidationError(
+                "Account subtype is not valid for this account type",
+                details={"account_type": account_type, "account_subtype": account_subtype},
+            )
+
     async def create(
         self, tenant_id: UUID, payload: AccountCreate, *, actor_user_id: UUID
     ) -> AccountResponse:
         async with transaction(self.session):
+            self._assert_subtype_for_type(
+                payload.account_type.value, payload.account_subtype.value
+            )
             depth = await self._validate_parent(
                 tenant_id, payload.parent_id, payload.account_type.value
             )
@@ -278,6 +329,24 @@ class AccountService:
                 )
             parent_id = values.get("parent_id", existing.parent_id)
             account_type = values.get("account_type", existing.account_type)
+            account_subtype = values.get("account_subtype", existing.account_subtype)
+            self._assert_subtype_for_type(str(account_type), str(account_subtype))
+            if "is_group" in values and values["is_group"] is not None:
+                next_is_group = bool(values["is_group"])
+                if next_is_group and not existing.is_group:
+                    if await self._has_gl_lines(tenant_id, account_id):
+                        raise ValidationError(
+                            "Cannot convert an account with journal lines into a group"
+                        )
+                    if await self.repo.count_children(tenant_id, account_id) > 0:
+                        raise ValidationError(
+                            "Cannot convert an account with children into a group"
+                        )
+                if not next_is_group and existing.is_group:
+                    if await self.repo.count_children(tenant_id, account_id) > 0:
+                        raise ValidationError(
+                            "Cannot convert a group with children into a postable account"
+                        )
             if "parent_id" in values or "account_type" in values:
                 if parent_id == account_id:
                     raise ValidationError("An account cannot be its own parent")
@@ -302,7 +371,53 @@ class AccountService:
                 old_values=old_values,
                 new_values=_account_snapshot(row),
             )
-            return AccountResponse.model_validate(row)
+            return await self.get(tenant_id, row.id)
+
+    async def get_balance(
+        self, tenant_id: UUID, account_id: UUID, *, as_of: date | None = None
+    ) -> AccountBalanceResponse:
+        from app.common.utils.currency import quantize_money
+        from app.core.enums import JournalEntryStatus
+        from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
+        from app.erp.exchange_rates.service import CurrencyService
+
+        row = await self._require(tenant_id, account_id)
+        as_of_date = as_of or date.today()
+        statement = (
+            select(
+                func.coalesce(func.sum(JournalEntryLine.debit_base), 0),
+                func.coalesce(func.sum(JournalEntryLine.credit_base), 0),
+            )
+            .select_from(JournalEntryLine)
+            .join(
+                JournalEntry,
+                (JournalEntry.id == JournalEntryLine.journal_entry_id)
+                & (JournalEntry.tenant_id == tenant_id)
+                & (JournalEntry.deleted_at.is_(None))
+                & (JournalEntry.status == JournalEntryStatus.POSTED.value),
+            )
+            .where(
+                JournalEntryLine.tenant_id == tenant_id,
+                JournalEntryLine.account_id == account_id,
+                JournalEntry.entry_date <= as_of_date,
+            )
+        )
+        debit, credit = (await self.session.execute(statement)).one()
+        debit = quantize_money(debit)
+        credit = quantize_money(credit)
+        if row.account_type in {AccountType.ASSET.value, AccountType.EXPENSE.value}:
+            signed = quantize_money(debit - credit)
+        else:
+            signed = quantize_money(credit - debit)
+        currency_code = (await CurrencyService(self.session).get_base(tenant_id)).code
+        return AccountBalanceResponse(
+            account_id=row.id,
+            as_of=as_of_date,
+            debit=debit,
+            credit=credit,
+            signed_balance=signed,
+            currency_code=currency_code,
+        )
 
     async def delete(
         self, tenant_id: UUID, account_id: UUID, *, actor_user_id: UUID

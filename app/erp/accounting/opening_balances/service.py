@@ -32,7 +32,18 @@ from app.core.permissions import has_permission
 from app.db.session import transaction
 from app.erp.accounting.accounts.service import AccountService
 from app.erp.accounting.ledger.models import JournalEntry
-from app.erp.accounting.ledger.posting import SOURCE_OPENING_BALANCE, LedgerPostingService
+from app.erp.accounting.ledger.posting import (
+    SOURCE_INVENTORY_CATCH_UP,
+    SOURCE_OPENING_BALANCE,
+    LedgerPostingService,
+)
+from app.erp.accounting.opening_balances.schemas import (
+    InventoryCatchUpResponse,
+    OpeningBalancePayload,
+    OpeningBalancePreviewLine,
+    OpeningBalancePreviewResponse,
+    OpeningBalanceStateResponse,
+)
 from app.erp.accounting.ledger.repository import JournalEntryRepository
 from app.erp.accounting.ledger.schemas import JournalLineInput
 from app.erp.accounting.opening_balances.schemas import (
@@ -71,6 +82,8 @@ class OpeningBalanceService:
         opening = await self.journals.get_posted_for_source(
             tenant_id, SOURCE_OPENING_BALANCE, tenant_id
         )
+        posted_journal_count = await self._posted_activity_count(tenant_id)
+        stock_movement_count = await self._stock_movement_count(tenant_id)
         can_reset = False
         if opening is not None and tenant.books_start_date is not None:
             can_reset = not await self._has_activity_after_golive(tenant_id, opening.id)
@@ -82,6 +95,9 @@ class OpeningBalanceService:
             document_number=opening.document_number if opening else None,
             committed_at=opening.posted_at if opening else None,
             can_reset=can_reset,
+            posted_journal_count=posted_journal_count,
+            has_posted_activity=posted_journal_count > 0,
+            stock_movement_count=stock_movement_count,
         )
 
     async def preview(
@@ -115,6 +131,7 @@ class OpeningBalanceService:
                     tenant_id, idempotency_key, state.model_dump(mode="json")
                 )
                 return state
+            await self._assert_commit_allowed(tenant_id, payload)
             built = await self._build_lines(tenant_id, payload)
             currency_id = (await self.currencies.get_base(tenant_id)).id
             journal = await self.posting.post_for_document(
@@ -257,6 +274,144 @@ class OpeningBalanceService:
                 old_values={"journal_entry_id": str(opening.id)},
             )
             return await self.get_state(tenant_id)
+
+    async def catch_up_inventory(
+        self,
+        tenant_id: UUID,
+        *,
+        actor_user_id: UUID,
+        as_of: date | None = None,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> InventoryCatchUpResponse:
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return InventoryCatchUpResponse.model_validate(replay)
+            from app.erp.accounting.reports.service import ReportService
+
+            as_of_date = as_of or date.today()
+            reports = ReportService(self.session)
+            recon = await reports.stock_valuation_gl(tenant_id, as_of=as_of_date)
+            existing = await self.journals.get_posted_for_source(
+                tenant_id, SOURCE_INVENTORY_CATCH_UP, tenant_id
+            )
+            if recon.difference == _ZERO:
+                result = InventoryCatchUpResponse(
+                    as_of=recon.as_of,
+                    valuation_total=recon.valuation_total,
+                    gl_balance=recon.gl_balance,
+                    difference=recon.difference,
+                    posted=False,
+                    journal_entry_id=existing.id if existing else None,
+                    document_number=existing.document_number if existing else None,
+                )
+                await self.idempotency.store(
+                    tenant_id, idempotency_key, result.model_dump(mode="json")
+                )
+                return result
+            inventory = await self.accounts.resolver.require(
+                tenant_id, AccountSystemRole.INVENTORY
+            )
+            equity = await self.accounts.resolver.require(
+                tenant_id, AccountSystemRole.OPENING_BALANCE_EQUITY
+            )
+            if existing is not None:
+                reversal = await self.posting.reverse(
+                    tenant_id,
+                    existing.id,
+                    reversal_date=as_of_date,
+                    reason="Inventory GL catch-up rematch",
+                    actor_id=actor_user_id,
+                )
+                await self.journals.soft_delete(tenant_id, existing.id)
+                await self.journals.soft_delete(tenant_id, reversal.id)
+                await self.session.flush()
+                recon = await reports.stock_valuation_gl(tenant_id, as_of=as_of_date)
+                if recon.difference == _ZERO:
+                    result = InventoryCatchUpResponse(
+                        as_of=recon.as_of,
+                        valuation_total=recon.valuation_total,
+                        gl_balance=recon.gl_balance,
+                        difference=recon.difference,
+                        posted=False,
+                        journal_entry_id=None,
+                        document_number=None,
+                    )
+                    await self.idempotency.store(
+                        tenant_id, idempotency_key, result.model_dump(mode="json")
+                    )
+                    return result
+            difference = recon.difference
+            if difference > _ZERO:
+                lines = [
+                    JournalLineInput(
+                        account_id=inventory.id,
+                        debit=difference,
+                        description="Inventory catch-up to FIFO layers",
+                    ),
+                    JournalLineInput(
+                        account_id=equity.id,
+                        credit=difference,
+                        description="Opening equity for inventory catch-up",
+                    ),
+                ]
+            else:
+                amount = abs(difference)
+                lines = [
+                    JournalLineInput(
+                        account_id=equity.id,
+                        debit=amount,
+                        description="Opening equity for inventory catch-up",
+                    ),
+                    JournalLineInput(
+                        account_id=inventory.id,
+                        credit=amount,
+                        description="Inventory catch-up to FIFO layers",
+                    ),
+                ]
+            currency_id = (await self.currencies.get_base(tenant_id)).id
+            journal = await self.posting.post_for_document(
+                tenant_id,
+                source_type=SOURCE_INVENTORY_CATCH_UP,
+                source_id=tenant_id,
+                entry_date=as_of_date,
+                lines=lines,
+                currency_id=currency_id,
+                exchange_rate=Decimal("1"),
+                narration="Inventory GL catch-up to stock layers",
+                branch_id=None,
+                actor_id=actor_user_id,
+                journal_type=JournalType.OPENING_BALANCE,
+            )
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.POST,
+                module=ACCOUNTING_MODULE,
+                entity_type="inventory_catch_up",
+                entity_id=journal.id,
+                new_values={
+                    "difference": str(difference),
+                    "as_of": as_of_date.isoformat(),
+                },
+            )
+            result = InventoryCatchUpResponse(
+                as_of=as_of_date,
+                valuation_total=recon.valuation_total,
+                gl_balance=recon.gl_balance,
+                difference=_ZERO,
+                posted=True,
+                journal_entry_id=journal.id,
+                document_number=journal.document_number,
+            )
+            await self.idempotency.store(
+                tenant_id, idempotency_key, result.model_dump(mode="json")
+            )
+            return result
 
     async def _build_lines(
         self, tenant_id: UUID, payload: OpeningBalancePayload
@@ -405,6 +560,51 @@ class OpeningBalanceService:
             )
         )
         return int(await self.session.scalar(statement) or 0) > 0
+
+    async def _assert_commit_allowed(
+        self, tenant_id: UUID, payload: OpeningBalancePayload
+    ) -> None:
+        count = await self._posted_activity_count(tenant_id)
+        if count == 0:
+            return
+        if payload.acknowledge_existing_activity and self._can_override:
+            return
+        raise ValidationError(
+            "Posted journals already exist. Acknowledge existing activity with period override, "
+            "or post an inventory GL catch-up instead of opening balances.",
+            details={"posted_journal_count": count, "reason": "existing_activity"},
+        )
+
+    async def _posted_activity_count(self, tenant_id: UUID) -> int:
+        statement = (
+            select(func.count())
+            .select_from(JournalEntry)
+            .where(
+                JournalEntry.tenant_id == tenant_id,
+                JournalEntry.deleted_at.is_(None),
+                JournalEntry.status == JournalEntryStatus.POSTED.value,
+                JournalEntry.journal_type.notin_(
+                    (JournalType.OPENING_BALANCE.value, JournalType.REVERSAL.value)
+                ),
+                JournalEntry.source_type.notin_(
+                    (SOURCE_OPENING_BALANCE, SOURCE_INVENTORY_CATCH_UP)
+                ),
+            )
+        )
+        return int(await self.session.scalar(statement) or 0)
+
+    async def _stock_movement_count(self, tenant_id: UUID) -> int:
+        from app.inventory_management.stock.models import StockMovement
+
+        statement = (
+            select(func.count())
+            .select_from(StockMovement)
+            .where(
+                StockMovement.tenant_id == tenant_id,
+                StockMovement.source_type != SOURCE_OPENING_BALANCE,
+            )
+        )
+        return int(await self.session.scalar(statement) or 0)
 
     async def _require_tenant(self, tenant_id: UUID) -> Tenant:
         tenant = await self.session.get(Tenant, tenant_id)

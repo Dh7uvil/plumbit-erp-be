@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.common.utils.currency import quantize_money
-from app.core.enums import InvoiceDocumentStatus, TaxCategory
+from app.core.enums import AccountSystemRole, InvoiceDocumentStatus, TaxCategory
 from app.core.exceptions import ValidationError
 from app.crm.customers.models import Customer
 from app.erp.accounting.models import Tax
@@ -19,6 +19,8 @@ from app.erp.accounting.reports.schemas import (
     TaxRegisterResponse,
     Vat201Box,
     Vat201Response,
+    VatGlReconLine,
+    VatGlReconResponse,
 )
 from app.erp.credit_notes.models import CreditNote
 from app.erp.debit_notes.models import DebitNote
@@ -38,6 +40,7 @@ class TaxRegisters:
         *,
         from_date: date,
         to_date: date,
+        box: str | None = None,
     ) -> TaxRegisterResponse:
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
@@ -71,6 +74,8 @@ class TaxRegisters:
                     sign=Decimal("-1"),
                 )
             )
+        if box:
+            lines = [line for line in lines if self._line_matches_box(line, box)]
         return await self._register_response(tenant_id, from_date, to_date, lines)
 
     async def purchase_register(
@@ -79,6 +84,7 @@ class TaxRegisters:
         *,
         from_date: date,
         to_date: date,
+        box: str | None = None,
     ) -> TaxRegisterResponse:
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
@@ -116,6 +122,8 @@ class TaxRegisters:
                     sign=Decimal("-1"),
                 )
             )
+        if box:
+            lines = [line for line in lines if self._line_matches_box(line, box)]
         return await self._register_response(tenant_id, from_date, to_date, lines)
 
     async def vat_201(
@@ -227,6 +235,87 @@ class TaxRegisters:
             net_vat=net_vat,
             export_evidence_exceptions=len(exceptions.lines),
         )
+
+    async def vat_gl_recon(
+        self,
+        tenant_id: UUID,
+        *,
+        from_date: date,
+        to_date: date,
+    ) -> VatGlReconResponse:
+        vat = await self.vat_201(tenant_id, from_date=from_date, to_date=to_date)
+        boxes = {box.code: box for box in vat.boxes}
+        output_201 = quantize_money(
+            (boxes.get("1b").tax_amount if boxes.get("1b") else _ZERO)
+            + (boxes.get("6").tax_amount if boxes.get("6") else _ZERO)
+        )
+        input_201 = boxes.get("8").tax_amount if boxes.get("8") else _ZERO
+        net_201 = boxes.get("9").tax_amount if boxes.get("9") else vat.net_vat
+        output_account = await self.accounts.resolver.require(
+            tenant_id, AccountSystemRole.VAT_OUTPUT
+        )
+        input_account = await self.accounts.resolver.require(
+            tenant_id, AccountSystemRole.VAT_INPUT
+        )
+        output_map = await self._sum_by_account(
+            tenant_id, start=from_date, end=to_date, account_id=output_account.id
+        )
+        input_map = await self._sum_by_account(
+            tenant_id, start=from_date, end=to_date, account_id=input_account.id
+        )
+        output_d, output_c = output_map.get(output_account.id, (_ZERO, _ZERO))
+        input_d, input_c = input_map.get(input_account.id, (_ZERO, _ZERO))
+        gl_output = self._signed(output_account.account_type, output_d, output_c)
+        gl_input = self._signed(input_account.account_type, input_d, input_c)
+        gl_net = quantize_money(gl_output - gl_input)
+        return VatGlReconResponse(
+            currency_code=await self._report_currency_code(tenant_id),
+            from_date=from_date,
+            to_date=to_date,
+            lines=[
+                VatGlReconLine(
+                    key="vat_output",
+                    label="VAT output (boxes 1b + 6 vs VAT_OUTPUT GL)",
+                    vat_201_amount=output_201,
+                    gl_amount=gl_output,
+                    difference=quantize_money(output_201 - gl_output),
+                    account_id=output_account.id,
+                ),
+                VatGlReconLine(
+                    key="vat_input",
+                    label="Recoverable input VAT (box 8 vs VAT_INPUT GL)",
+                    vat_201_amount=input_201,
+                    gl_amount=gl_input,
+                    difference=quantize_money(input_201 - gl_input),
+                    account_id=input_account.id,
+                ),
+                VatGlReconLine(
+                    key="net_vat",
+                    label="Net VAT payable (box 9 vs output − input GL)",
+                    vat_201_amount=net_201,
+                    gl_amount=gl_net,
+                    difference=quantize_money(net_201 - gl_net),
+                ),
+            ],
+        )
+
+    def _line_matches_box(self, line: TaxRegisterLine, box: str) -> bool:
+        code = box.lower()
+        if "export" in code or "zero" in code or code == "2":
+            return line.is_export or line.tax_category == TaxCategory.ZERO_RATED.value
+        if "exempt" in code or code == "3":
+            return line.tax_category == TaxCategory.EXEMPT.value
+        if "designated" in code or "out of scope" in code or "out_of_scope" in code or code == "4":
+            return line.is_designated_zone or line.tax_category == TaxCategory.OUT_OF_SCOPE.value
+        if "reverse" in code or "rcm" in code or code in {"5", "6", "7"}:
+            return line.is_reverse_charge
+        if "standard" in code or code in {"1a", "1b"}:
+            return line.tax_category == TaxCategory.STANDARD.value or (
+                not line.is_export and not line.is_reverse_charge
+            )
+        if code in {"8", "9"}:
+            return True
+        return True
 
     async def _register_response(
         self,

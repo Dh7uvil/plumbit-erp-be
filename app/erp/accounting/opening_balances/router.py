@@ -1,5 +1,6 @@
 """Opening-balance go-live routes."""
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Request
@@ -12,6 +13,7 @@ from app.common.idempotency.service import hash_request, require_idempotency_key
 from app.common.schemas.response import ApiResponse
 from app.erp.accounting.opening_balances.dependencies import OpeningBalanceServiceDependency
 from app.erp.accounting.opening_balances.schemas import (
+    InventoryCatchUpResponse,
     OpeningBalancePayload,
     OpeningBalancePreviewResponse,
     OpeningBalanceStateResponse,
@@ -60,6 +62,30 @@ async def commit_opening_balances(
         endpoint=request.url.path,
     )
     return ApiResponse(data=row, message="Opening balances committed")
+
+
+@router.post("/inventory-catch-up", response_model=ApiResponse[InventoryCatchUpResponse])
+async def catch_up_inventory_gl(
+    request: Request,
+    tenant: TenantContextDependency,
+    service: OpeningBalanceServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(OPENING_BALANCE_MANAGE))],
+    as_of: date | None = None,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[InventoryCatchUpResponse]:
+    body = await request.body()
+    row = await service.catch_up_inventory(
+        tenant.tenant_id,
+        actor_user_id=tenant.user_id,
+        as_of=as_of,
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(
+        data=row,
+        message="Inventory GL catch-up posted" if row.posted else "Inventory already matches GL",
+    )
 
 
 @router.post("/reset", response_model=ApiResponse[OpeningBalanceStateResponse])

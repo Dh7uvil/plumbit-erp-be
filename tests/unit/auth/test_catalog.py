@@ -63,6 +63,7 @@ def test_catalog_includes_quote_ready_permissions() -> None:
     assert "reports.report.ar_ap" in CATALOG_PERMISSIONS
     assert "reports.report.inventory" in CATALOG_PERMISSIONS
     assert "reports.report.financial" in CATALOG_PERMISSIONS
+    assert "reports.report.export" in CATALOG_PERMISSIONS
     assert "purchase.landed_cost.create" in CATALOG_PERMISSIONS
     assert "purchase.landed_cost.read" in CATALOG_PERMISSIONS
     assert "purchase.landed_cost.update" in CATALOG_PERMISSIONS

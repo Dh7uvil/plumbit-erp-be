@@ -9,6 +9,7 @@ from uuid import UUID
 from app.common.utils.currency import quantize_money
 from app.core.enums import AccountSubtype, AccountSystemRole, AccountType
 from app.core.exceptions import ValidationError
+from app.erp.accounting.fiscal import FiscalYearConfig
 from app.erp.accounting.reports.schemas import (
     BalanceSheetLine,
     BalanceSheetResponse,
@@ -38,7 +39,10 @@ class FinancialReports:
         span = (to_date - from_date).days + 1
         comparative_to = from_date - timedelta(days=1)
         comparative_from = comparative_to - timedelta(days=span - 1)
-        ytd_from = date(to_date.year, 1, 1) if include_ytd else None
+        ytd_from = None
+        if include_ytd:
+            fiscal = await FiscalYearConfig.load(self.session, tenant_id)
+            ytd_from = fiscal.bounds(fiscal.year_for(to_date))[0]
         current_map = await self._sum_by_account(
             tenant_id, start=from_date, end=to_date, branch_id=branch_id
         )
@@ -53,10 +57,13 @@ class FinancialReports:
         accounts = await self.accounts.repo.list_all(tenant_id)
         lines: list[ProfitAndLossLine] = []
         total_income = _ZERO
+        total_cogs = _ZERO
         total_expense = _ZERO
         comparative_income = _ZERO
+        comparative_cogs = _ZERO
         comparative_expense = _ZERO
         ytd_income = _ZERO
+        ytd_cogs = _ZERO
         ytd_expense = _ZERO
         for account in accounts:
             if account.is_group or account.account_type not in _PL_TYPES:
@@ -79,6 +86,14 @@ class FinancialReports:
                 comparative_income += comparative
                 if ytd is not None:
                     ytd_income += ytd
+            elif account.account_subtype == AccountSubtype.COGS.value:
+                total_cogs += amount
+                total_expense += amount
+                comparative_cogs += comparative
+                comparative_expense += comparative
+                if ytd is not None:
+                    ytd_cogs += ytd
+                    ytd_expense += ytd
             else:
                 total_expense += amount
                 comparative_expense += comparative
@@ -97,6 +112,8 @@ class FinancialReports:
                 )
             )
         net_profit = quantize_money(total_income - total_expense)
+        gross_profit = quantize_money(total_income - total_cogs)
+        operating_expense = quantize_money(total_expense - total_cogs)
         return ProfitAndLossResponse(
             currency_code=await self._report_currency_code(tenant_id),
             from_date=from_date,
@@ -105,9 +122,14 @@ class FinancialReports:
             comparative_to=comparative_to,
             ytd_from=ytd_from,
             total_income=quantize_money(total_income),
+            total_cogs=quantize_money(total_cogs),
+            total_operating_expense=operating_expense,
             total_expense=quantize_money(total_expense),
+            gross_profit=gross_profit,
             net_profit=net_profit,
+            comparative_gross_profit=quantize_money(comparative_income - comparative_cogs),
             comparative_net_profit=quantize_money(comparative_income - comparative_expense),
+            ytd_gross_profit=quantize_money(ytd_income - ytd_cogs) if include_ytd else None,
             ytd_net_profit=quantize_money(ytd_income - ytd_expense) if include_ytd else None,
             lines=lines,
         )
@@ -339,7 +361,7 @@ class FinancialReports:
             ),
             CashFlowLine(
                 key="other",
-                label="Other operating / reconciling items",
+                label="Unallocated residual (cash change not explained above)",
                 amount=other,
             ),
             CashFlowLine(

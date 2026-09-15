@@ -43,6 +43,7 @@ class OpeningBalancePayload(BaseModel):
     ar_items: list[OpeningBalanceOpenItem] = Field(default_factory=list)
     ap_items: list[OpeningBalanceOpenItem] = Field(default_factory=list)
     stock_lines: list[OpeningBalanceStockLine] = Field(default_factory=list)
+    acknowledge_existing_activity: bool = False
 
 
 class OpeningBalancePreviewLine(BaseModel):
@@ -76,3 +77,16 @@ class OpeningBalanceStateResponse(BaseModel):
     document_number: str | None = None
     committed_at: datetime | None = None
     can_reset: bool = False
+    posted_journal_count: int = 0
+    has_posted_activity: bool = False
+    stock_movement_count: int = 0
+
+
+class InventoryCatchUpResponse(BaseModel):
+    as_of: date
+    valuation_total: Decimal
+    gl_balance: Decimal
+    difference: Decimal
+    posted: bool
+    journal_entry_id: UUID | None = None
+    document_number: str | None = None

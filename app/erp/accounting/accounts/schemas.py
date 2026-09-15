@@ -1,6 +1,7 @@
 """Chart of accounts request/response schemas."""
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import ClassVar
 from uuid import UUID
 
@@ -95,6 +96,17 @@ class AccountResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    has_children: bool = False
+    has_journal_lines: bool = False
+
+
+class AccountBalanceResponse(BaseModel):
+    account_id: UUID
+    as_of: date
+    debit: Decimal
+    credit: Decimal
+    signed_balance: Decimal
+    currency_code: str | None = None
 
 
 class AccountTreeNode(AccountResponse):

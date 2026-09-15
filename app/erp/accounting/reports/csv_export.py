@@ -79,8 +79,11 @@ _MONEY_FIELDS = frozenset(
         "recoverable_input_vat",
         "subtotal",
         "total",
+        "total_cogs",
+        "total_operating_expense",
         "total_expense",
         "total_income",
+        "gross_profit",
         "unapplied_credits",
         "value_in",
         "value_out",
@@ -119,10 +122,14 @@ _MONEY_SUFFIXES = (
 
 
 def wants_csv(request: Request, format: str | None) -> bool:
-    if format is not None and format.strip().lower() == "csv":
+    if format is not None and format.strip().lower() in {"csv", "xlsx", "xls"}:
         return True
     accept = (request.headers.get("accept") or "").lower()
-    return _CSV_ACCEPT in accept
+    return _CSV_ACCEPT in accept or "application/vnd.ms-excel" in accept
+
+
+def wants_excel(format: str | None) -> bool:
+    return format is not None and format.strip().lower() in {"xlsx", "xls"}
 
 
 def csv_field_class(field: str) -> CsvFieldClass:
@@ -170,16 +177,29 @@ def rows_from_models(items: list[BaseModel]) -> tuple[list[str], list[dict[str, 
     return fields, rows
 
 
-def csv_response(filename: str, fieldnames: list[str], rows: list[dict[str, Any]]) -> Response:
+def csv_response(
+    filename: str,
+    fieldnames: list[str],
+    rows: list[dict[str, Any]],
+    *,
+    excel: bool = False,
+) -> Response:
     buffer = io.StringIO()
+    if excel:
+        buffer.write("\ufeff")
     writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()
     for row in rows:
         writer.writerow({key: csv_cell(row.get(key), key) for key in fieldnames})
+    download_name = filename
+    media_type = _CSV_ACCEPT
+    if excel:
+        download_name = filename.rsplit(".", 1)[0] + ".xls"
+        media_type = "application/vnd.ms-excel"
     return Response(
         content=buffer.getvalue(),
-        media_type=_CSV_ACCEPT,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
     )
 
 

@@ -84,11 +84,12 @@ async def test_from_posted_invoice_post_reverses_ar_and_blocks_void(
     assert journal.status_code == 200, journal.text
     by_account = {line["account_id"]: line for line in journal.json()["data"]["lines"]}
     ar = by_account[mapped["ACCOUNTS_RECEIVABLE"]]
-    revenue = by_account[mapped["SALES_REVENUE"]]
+    returns = by_account[mapped["SALES_RETURNS"]]
     vat = by_account[mapped["VAT_OUTPUT"]]
     assert Decimal(ar["credit"]) == Decimal(str(invoice["grand_total"]))
-    assert Decimal(revenue["debit"]) == Decimal(str(invoice["subtotal"]))
+    assert Decimal(returns["debit"]) == Decimal(str(invoice["subtotal"]))
     assert Decimal(vat["debit"]) == Decimal(str(invoice["tax_amount"]))
+    assert mapped["SALES_REVENUE"] not in by_account
     assert mapped["COGS"] not in by_account
     assert mapped["INVENTORY"] not in by_account
 
