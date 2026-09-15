@@ -96,6 +96,8 @@ class AccountResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    created_by: UUID | None = None
+    updated_by: UUID | None = None
     has_children: bool = False
     has_journal_lines: bool = False
 

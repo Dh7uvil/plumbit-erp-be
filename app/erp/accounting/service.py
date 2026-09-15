@@ -16,6 +16,7 @@ from app.core.enums import AuditAction, DocumentType, TaxCategory
 from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
 from app.db.session import transaction
 from app.erp.accounting.models import DocumentSequence, PaymentTerm, Tax, TermsTemplate
+from app.erp.accounting.numbering import format_document_number, party_code_for
 from app.erp.accounting.repository import (
     DocumentSequenceRepository,
     PaymentTermRepository,
@@ -637,9 +638,13 @@ class DocumentSequenceService:
         series: str,
         fiscal_year: int,
         prefix: str | None = None,
+        party_id: UUID | None = None,
+        party_code: str | None = None,
     ) -> str:
         """Lock the counter row and return the next formatted document number."""
 
+        if party_code is None and party_id is not None:
+            party_code = await party_code_for(self.session, tenant_id, party_id)
         row = await self.repo.lock_for_allocate(
             tenant_id,
             document_type=document_type.value,
@@ -652,7 +657,13 @@ class DocumentSequenceService:
         number = row.next_number
         row.next_number = number + 1
         await self.session.flush()
-        return f"{row.prefix}-{fiscal_year}-{str(number).zfill(row.padding)}"
+        return format_document_number(
+            prefix=row.prefix,
+            party_code=party_code,
+            fiscal_year=fiscal_year,
+            number=number,
+            padding=row.padding,
+        )
 
     async def _require(self, tenant_id: UUID, sequence_id: UUID) -> DocumentSequence:
         row = await self.repo.get(tenant_id, sequence_id)

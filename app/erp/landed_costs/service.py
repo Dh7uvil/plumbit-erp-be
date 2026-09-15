@@ -451,12 +451,14 @@ class LandedCostService:
         document_date = cast(date, header["document_date"])
         policy = await self._ensure_policy(tenant_id)
         policy.assert_open(document_date, can_override=self._can_override)
+        party_id = await self._party_id_for_draft(tenant_id, charges, allocations)
         number = await self.sequences.allocate(
             tenant_id,
             document_type=DocumentType.LANDED_COST,
             series=_SERIES,
             fiscal_year=await year_for(self.session, tenant_id, document_date),
             prefix=_SERIES,
+            party_id=party_id,
         )
         row = await self.repo.create(
             tenant_id,
@@ -513,6 +515,29 @@ class LandedCostService:
             charge_rows,
             allocation_rows,
         )
+
+    async def _party_id_for_draft(
+        self,
+        tenant_id: UUID,
+        charges: list[dict[str, object]],
+        allocations: list[dict[str, object]],
+    ) -> UUID | None:
+        from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
+        from app.inventory_management.goods_receipts.repository import GoodsReceiptRepository
+
+        if allocations:
+            receipt = await GoodsReceiptRepository(self.session).get(
+                tenant_id, cast(UUID, allocations[0]["goods_receipt_id"])
+            )
+            if receipt is not None:
+                return receipt.supplier_id
+        if charges:
+            bill = await PurchaseInvoiceRepository(self.session).get(
+                tenant_id, cast(UUID, charges[0]["purchase_invoice_id"])
+            )
+            if bill is not None:
+                return bill.supplier_id
+        return None
 
     async def _charge_rows(
         self,
@@ -1027,6 +1052,8 @@ class LandedCostService:
             ],
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
+            updated_by=row.updated_by,
         )
 
     def _available_actions(

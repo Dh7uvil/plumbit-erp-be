@@ -43,7 +43,6 @@ async def _create_supplier(
     suffix = uuid4().hex[:8]
     payload: dict[str, object] = {
         "name": f"Supplier {suffix}",
-        "code": f"S-{suffix}",
         "tax_treatment": tax_treatment,
         "trn": trn,
         "shipping_address": {

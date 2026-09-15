@@ -628,6 +628,7 @@ class DebitNoteService:
             series=_SERIES,
             fiscal_year=await year_for(self.session, tenant_id, note_date),
             prefix=_SERIES,
+            party_id=cast(UUID, header["supplier_id"]),
         )
         row = await self.repo.create(
             tenant_id,
@@ -1271,6 +1272,8 @@ class DebitNoteService:
             ],
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
+            updated_by=row.updated_by,
         )
 
     async def _related_documents(

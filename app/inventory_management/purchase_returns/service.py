@@ -199,6 +199,7 @@ class PurchaseReturnService:
                     self.session, tenant_id, cast(date, header["document_date"])
                 ),
                 prefix=_SERIES,
+                party_id=cast(UUID, header["supplier_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -649,6 +650,8 @@ class PurchaseReturnService:
             lines=[PurchaseReturnLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
+            updated_by=row.updated_by,
         )
 
     def _available_actions(

@@ -92,7 +92,6 @@ async def test_account_statement_includes_party_open_item(client: AsyncClient) -
         headers=headers,
         json={
             "name": "Statement customer",
-            "code": f"C-{uuid4().hex[:8]}",
             "tax_treatment": "UNREGISTERED",
         },
     )

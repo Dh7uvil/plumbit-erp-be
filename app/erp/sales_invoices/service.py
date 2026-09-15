@@ -376,6 +376,7 @@ class SalesInvoiceService:
                 series=_SERIES,
                 fiscal_year=await year_for(self.session, tenant_id, invoice_date),
                 prefix=_SERIES,
+                party_id=cast(UUID, header["customer_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -499,6 +500,7 @@ class SalesInvoiceService:
                 series=_SERIES,
                 fiscal_year=await year_for(self.session, tenant_id, invoice_date),
                 prefix=_SERIES,
+                party_id=cast(UUID, header["customer_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -633,6 +635,7 @@ class SalesInvoiceService:
                 series=_SERIES,
                 fiscal_year=await year_for(self.session, tenant_id, invoice_date),
                 prefix=_SERIES,
+                party_id=cast(UUID, header["customer_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -752,6 +755,7 @@ class SalesInvoiceService:
                 series=_SERIES,
                 fiscal_year=await year_for(self.session, tenant_id, invoice_date_value),
                 prefix=_SERIES,
+                party_id=cast(UUID, header["customer_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -885,6 +889,7 @@ class SalesInvoiceService:
                 series=_SERIES,
                 fiscal_year=await year_for(self.session, tenant_id, invoice_date_value),
                 prefix=_SERIES,
+                party_id=cast(UUID, header["customer_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -2001,6 +2006,8 @@ class SalesInvoiceService:
             ],
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
+            updated_by=row.updated_by,
         )
 
     async def _related_documents(

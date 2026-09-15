@@ -1,28 +1,38 @@
+import pytest
+from pydantic import ValidationError
+
 from app.core.enums import TaxTreatment
-from app.crm.customers.repository import next_party_code_from_existing
+from app.crm.customers.codes import candidate_party_code, unique_party_code
 from app.crm.customers.schemas import CustomerCreate
 
 
-def test_first_customer_code_is_padded_01() -> None:
-    assert next_party_code_from_existing([], prefix="CUS", year=2026) == "CUS202601"
+def test_three_word_name_uses_initials() -> None:
+    assert candidate_party_code("Acme Global Motors") == "AGM"
 
 
-def test_sequence_increments_with_two_digit_padding() -> None:
-    assert next_party_code_from_existing(["CUS202601"], prefix="CUS", year=2026) == "CUS202602"
+def test_two_word_name_fills_from_longer_word() -> None:
+    assert candidate_party_code("Al Ghandi") == "AGH"
 
 
-def test_prior_year_codes_do_not_affect_current_year() -> None:
-    assert next_party_code_from_existing(["CUS202599"], prefix="CUS", year=2026) == "CUS202601"
+def test_one_word_uses_first_three_letters() -> None:
+    assert candidate_party_code("Acme") == "ACM"
 
 
-def test_sequence_grows_past_two_digits() -> None:
-    assert next_party_code_from_existing(["CUS202699"], prefix="CUS", year=2026) == "CUS2026100"
+def test_short_word_is_padded() -> None:
+    assert candidate_party_code("AB") == "ABX"
 
 
-def test_other_prefixes_are_ignored() -> None:
-    assert next_party_code_from_existing(["SUP202601", "C-1"], prefix="CUS", year=2026) == (
-        "CUS202601"
-    )
+def test_legal_suffixes_are_skipped() -> None:
+    assert candidate_party_code("Acme Global Motors LLC") == "AGM"
+    assert candidate_party_code("The Acme") == "ACM"
+
+
+def test_empty_name_falls_back_to_xxx() -> None:
+    assert candidate_party_code("   ") == "XXX"
+
+
+def test_collision_walks_last_character() -> None:
+    assert unique_party_code("Acme Global Motors", ["AGM"]) == "AGN"
 
 
 def test_customer_create_allows_omitted_and_blank_code() -> None:
@@ -30,5 +40,10 @@ def test_customer_create_allows_omitted_and_blank_code() -> None:
     assert omitted.code is None
     blank = CustomerCreate(name="Acme", tax_treatment=TaxTreatment.UNREGISTERED, code="  ")
     assert blank.code is None
-    explicit = CustomerCreate(name="Acme", tax_treatment=TaxTreatment.UNREGISTERED, code="c-1")
-    assert explicit.code == "C-1"
+    explicit = CustomerCreate(name="Acme", tax_treatment=TaxTreatment.UNREGISTERED, code="ag1")
+    assert explicit.code == "AG1"
+
+
+def test_customer_create_rejects_non_three_character_code() -> None:
+    with pytest.raises(ValidationError):
+        CustomerCreate(name="Acme", tax_treatment=TaxTreatment.UNREGISTERED, code="C-1")

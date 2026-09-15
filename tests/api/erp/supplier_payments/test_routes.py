@@ -143,7 +143,6 @@ async def test_cny_bill_paid_later_books_fx(client: AsyncClient) -> None:
         headers=headers,
         json={
             "name": "Shenzhen mill",
-            "code": f"S-{uuid4().hex[:8]}",
             "tax_treatment": "UNREGISTERED",
             "currency_id": cny_id,
             "shipping_address": {

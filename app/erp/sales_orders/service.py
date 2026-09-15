@@ -12,8 +12,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
-    SALES_MODULE,
     PROFORMA_INVOICE_CREATE,
+    SALES_MODULE,
     SALES_ORDER_ACKNOWLEDGE,
     SALES_ORDER_APPROVE,
     SALES_ORDER_CLOSE,
@@ -232,6 +232,7 @@ class SalesOrderService:
                 series=_ORDER_SERIES,
                 fiscal_year=await year_for(self.session, tenant_id, order_date),
                 prefix=_ORDER_SERIES,
+                party_id=cast(UUID, header["customer_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -354,6 +355,7 @@ class SalesOrderService:
                 series=_ORDER_SERIES,
                 fiscal_year=await year_for(self.session, tenant_id, order_date_value),
                 prefix=_ORDER_SERIES,
+                party_id=cast(UUID, header["customer_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -488,6 +490,7 @@ class SalesOrderService:
                 series=_ORDER_SERIES,
                 fiscal_year=await year_for(self.session, tenant_id, order_date_value),
                 prefix=_ORDER_SERIES,
+                party_id=cast(UUID, header["customer_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -768,6 +771,7 @@ class SalesOrderService:
                 series=_ORDER_SERIES,
                 fiscal_year=await year_for(self.session, tenant_id, order_date),
                 prefix=_ORDER_SERIES,
+                party_id=cast(UUID, header["customer_id"]),
             )
             row = await self.repo.create(
                 tenant_id,
@@ -1989,6 +1993,8 @@ class SalesOrderService:
             reservation_shortfalls=reservation_shortfalls or [],
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
+            updated_by=row.updated_by,
         )
 
     def _quantity_progress(self, row: SalesOrder) -> QuantityProgress:

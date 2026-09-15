@@ -19,7 +19,6 @@ async def _create_customer(client: AsyncClient, headers: dict[str, str], suffix:
         headers=headers,
         json={
             "name": f"Acme {suffix}",
-            "code": f"C-{suffix}",
             "tax_treatment": "UNREGISTERED",
             "currency_id": currency_id,
         },

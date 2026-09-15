@@ -22,7 +22,6 @@ async def _create_supplier(
     suffix = uuid4().hex[:8]
     payload: dict[str, object] = {
         "name": name or f"Vendor {suffix}",
-        "code": f"S-{suffix}",
         "tax_treatment": "UNREGISTERED",
     }
     if company_type is not None:

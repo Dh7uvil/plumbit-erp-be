@@ -7,7 +7,6 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
-from app.common.utils.datetime import utcnow
 from tests.conftest import login_headers, provision_admin
 
 
@@ -23,21 +22,27 @@ async def _create_party(
     path: str,
     *,
     name: str,
-    code: str,
     currency_id: str,
+    code: str | None = None,
     company_type: str | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "name": name,
-        "code": code,
         "tax_treatment": "UNREGISTERED",
         "currency_id": currency_id,
     }
+    if code is not None:
+        payload["code"] = code
     if company_type is not None:
         payload["company_type"] = company_type
     created = await client.post(f"/api/v1{path}", headers=headers, json=payload)
     assert created.status_code == 201, created.text
-    return created.json()["data"]
+    body = created.json()["data"]
+    code = str(body["code"])
+    assert len(code) == 3
+    assert code.isalnum()
+    assert code == code.upper()
+    return body
 
 
 @pytest.mark.asyncio
@@ -51,7 +56,6 @@ async def test_supplier_create_is_hidden_from_customers(client: AsyncClient) -> 
         headers,
         "/suppliers",
         name=f"Vendor {suffix}",
-        code=f"S-{suffix}",
         currency_id=currency_id,
     )
     assert supplier["company_type"] == "SUPPLIER"
@@ -78,7 +82,6 @@ async def test_customer_create_is_hidden_from_suppliers(client: AsyncClient) -> 
         headers,
         "/customers",
         name=f"Acme {suffix}",
-        code=f"C-{suffix}",
         currency_id=currency_id,
     )
     assert customer["company_type"] == "CUSTOMER"
@@ -102,7 +105,7 @@ async def test_both_visible_and_patchable_on_each_api(client: AsyncClient) -> No
         headers,
         "/customers",
         name=f"Both {suffix}",
-        code=f"B-{suffix}",
+        code=suffix[:3].upper(),
         currency_id=currency_id,
         company_type="BOTH",
     )
@@ -141,7 +144,6 @@ async def test_promote_supplier_to_both_appears_on_customers(client: AsyncClient
         headers,
         "/suppliers",
         name=f"Vendor {suffix}",
-        code=f"S-{suffix}",
         currency_id=currency_id,
     )
     supplier_id = supplier["id"]
@@ -170,7 +172,7 @@ async def test_delete_both_from_suppliers_hides_from_customers(client: AsyncClie
         headers,
         "/suppliers",
         name=f"Shared {suffix}",
-        code=f"SH-{suffix}",
+        code=suffix[:3].upper(),
         currency_id=currency_id,
         company_type="BOTH",
     )
@@ -193,7 +195,6 @@ async def test_contact_create_on_supplier_party(client: AsyncClient) -> None:
         headers,
         "/suppliers",
         name=f"Vendor {suffix}",
-        code=f"S-{suffix}",
         currency_id=currency_id,
     )
     created = await client.post(
@@ -253,8 +254,6 @@ async def test_customer_api_rejects_supplier_company_type(client: AsyncClient) -
         headers=headers,
         json={
             "name": f"Bad {suffix}",
-            "code": f"X-{suffix}",
-            "tax_treatment": "UNREGISTERED",
             "currency_id": currency_id,
             "company_type": "SUPPLIER",
         },
@@ -274,8 +273,6 @@ async def test_supplier_api_rejects_customer_company_type(client: AsyncClient) -
         headers=headers,
         json={
             "name": f"Bad {suffix}",
-            "code": f"X-{suffix}",
-            "tax_treatment": "UNREGISTERED",
             "currency_id": currency_id,
             "company_type": "CUSTOMER",
         },
@@ -289,15 +286,14 @@ async def test_supplier_code_is_auto_generated_when_omitted(client: AsyncClient)
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)
     currency_id = await _currency_id(client, headers)
-    year = utcnow().year
     created = await client.post(
         "/api/v1/suppliers",
         headers=headers,
         json={
-            "name": f"Vendor {uuid4().hex[:8]}",
+            "name": "Vendor Global Motors",
             "tax_treatment": "UNREGISTERED",
             "currency_id": currency_id,
         },
     )
     assert created.status_code == 201, created.text
-    assert created.json()["data"]["code"] == f"SUP{year}01"
+    assert created.json()["data"]["code"] == "VGM"

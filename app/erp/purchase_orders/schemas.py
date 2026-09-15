@@ -240,6 +240,8 @@ class PurchaseOrderResponse(BaseModel):
     lines: list[PurchaseOrderLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+    created_by: UUID | None = None
+    updated_by: UUID | None = None
 
 
 class PurchaseOrderComposeDefaults(BaseModel):

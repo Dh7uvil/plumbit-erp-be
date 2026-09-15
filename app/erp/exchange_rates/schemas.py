@@ -65,6 +65,8 @@ class CurrencyResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    created_by: UUID | None = None
+    updated_by: UUID | None = None
 
 
 class ExchangeRateUpsert(BaseModel):
@@ -89,6 +91,8 @@ class ExchangeRateResponse(BaseModel):
     rate: Decimal
     created_at: datetime
     updated_at: datetime
+    created_by: UUID | None = None
+    updated_by: UUID | None = None
 
 
 class ExchangeRateResolveResponse(BaseModel):

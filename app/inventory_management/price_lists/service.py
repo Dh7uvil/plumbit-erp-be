@@ -281,6 +281,8 @@ class PriceListService:
             items=[PriceListItemResponse.model_validate(item) for item in items],
             created_at=row.created_at,
             updated_at=row.updated_at,
+            created_by=row.created_by,
+            updated_by=row.updated_by,
         )
 
     async def _require(self, tenant_id: UUID, price_list_id: UUID) -> PriceList:

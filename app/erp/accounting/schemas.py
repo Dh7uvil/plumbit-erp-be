@@ -60,6 +60,8 @@ class TaxResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    created_by: UUID | None = None
+    updated_by: UUID | None = None
 
 
 class PaymentTermFilter(BaseFilter):
@@ -105,6 +107,8 @@ class PaymentTermResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    created_by: UUID | None = None
+    updated_by: UUID | None = None
 
 
 class TermsTemplateFilter(BaseFilter):
@@ -151,6 +155,8 @@ class TermsTemplateResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    created_by: UUID | None = None
+    updated_by: UUID | None = None
 
 
 class DocumentSequenceFilter(BaseFilter):
@@ -213,3 +219,5 @@ class DocumentSequenceResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    created_by: UUID | None = None
+    updated_by: UUID | None = None

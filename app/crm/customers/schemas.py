@@ -11,6 +11,7 @@ from app.auth.schemas import AddressPayload, AddressResponse
 from app.common.schemas.filters import BaseFilter
 from app.common.utils.validators import blank_to_none, normalize_required_text
 from app.core.enums import CompanyType, TaxTreatment
+from app.crm.customers.codes import is_valid_party_code
 
 
 class CustomerFilter(BaseFilter):
@@ -33,7 +34,7 @@ class CustomerFilter(BaseFilter):
 
 class CustomerCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    code: str | None = Field(default=None, min_length=1, max_length=50)
+    code: str | None = Field(default=None, min_length=3, max_length=3)
     company_type: CompanyType = CompanyType.CUSTOMER
     trn: str | None = Field(default=None, max_length=50)
     tax_treatment: TaxTreatment
@@ -63,7 +64,10 @@ class CustomerCreate(BaseModel):
     def normalize_code(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return normalize_required_text(value, field_name="code").upper()
+        normalized = normalize_required_text(value, field_name="code").upper()
+        if not is_valid_party_code(normalized):
+            raise ValueError("code must be exactly 3 letters or digits")
+        return normalized
 
     @field_validator("trn")
     @classmethod
@@ -152,3 +156,5 @@ class CustomerResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    created_by: UUID | None = None
+    updated_by: UUID | None = None

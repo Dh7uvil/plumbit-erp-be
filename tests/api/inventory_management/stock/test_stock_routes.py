@@ -230,7 +230,7 @@ async def test_draft_save_does_not_move_stock(client: AsyncClient) -> None:
     data = created["body"]["data"]
     assert data["status"] == "DRAFT"
     assert data["is_posted"] is False
-    assert data["document_number"].startswith("STA-")
+    assert data["document_number"].startswith("STA")
     assert {"post", "cancel", "delete", "clone"}.issubset(data["available_actions"])
     stock = await client.get(f"/api/v1/stock?product_id={product_id}", headers=headers)
     assert stock.status_code == 200
@@ -389,7 +389,7 @@ async def test_transfer_moves_source_and_dest_using_available_qty(client: AsyncC
     )
     assert transfer.status_code == 201, transfer.text
     doc = transfer.json()["data"]
-    assert doc["document_number"].startswith("STR-")
+    assert doc["document_number"].startswith("STR")
     assert doc["status"] == "DRAFT"
     stock_before = await client.get(f"/api/v1/stock?product_id={product_id}", headers=headers)
     assert Decimal(stock_before.json()["data"][0]["qty_on_hand"]) == Decimal("10")
