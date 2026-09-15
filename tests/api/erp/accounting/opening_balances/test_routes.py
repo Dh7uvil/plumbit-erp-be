@@ -56,6 +56,73 @@ async def test_opening_balances_commit_balances_trial_balance(client: AsyncClien
 
 
 @pytest.mark.asyncio
+async def test_opening_commit_requires_ack_when_journals_exist(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    accounts = await _accounts(client, headers)
+    created = await client.post(
+        "/api/v1/journals",
+        headers=headers,
+        json={
+            "narration": "Live activity",
+            "lines": [
+                {"account_id": accounts["BANK"], "debit": "10.0000", "credit": "0"},
+                {"account_id": accounts["CASH_ON_HAND"], "debit": "0", "credit": "10.0000"},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    row = created.json()["data"]
+    posted = await client.post(
+        f"/api/v1/journals/{row['id']}/post",
+        headers={**headers, "If-Match": str(row["version"]), "Idempotency-Key": uuid4().hex},
+    )
+    assert posted.status_code == 200, posted.text
+    state = await client.get("/api/v1/opening-balances", headers=headers)
+    assert state.status_code == 200, state.text
+    assert state.json()["data"]["has_posted_activity"] is True
+    assert state.json()["data"]["posted_journal_count"] >= 1
+    books_start = datetime.now(UTC).date() + timedelta(days=1)
+    payload = {
+        "books_start_date": books_start.isoformat(),
+        "gl_lines": [{"account_id": accounts["BANK"], "debit": "100.0000", "credit": "0"}],
+        "ar_items": [],
+        "ap_items": [],
+        "stock_lines": [],
+    }
+    blocked = await client.post(
+        "/api/v1/opening-balances/commit",
+        headers={**headers, "Idempotency-Key": uuid4().hex},
+        json=payload,
+    )
+    assert blocked.status_code == 422, blocked.text
+    payload["acknowledge_existing_activity"] = True
+    committed = await client.post(
+        "/api/v1/opening-balances/commit",
+        headers={**headers, "Idempotency-Key": uuid4().hex},
+        json=payload,
+    )
+    assert committed.status_code == 200, committed.text
+    assert committed.json()["data"]["committed"] is True
+
+
+@pytest.mark.asyncio
+async def test_inventory_catch_up_is_noop_when_tied_out(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    as_of = datetime.now(UTC).date().isoformat()
+    result = await client.post(
+        "/api/v1/opening-balances/inventory-catch-up",
+        headers={**headers, "Idempotency-Key": uuid4().hex},
+        params={"as_of": as_of},
+    )
+    assert result.status_code == 200, result.text
+    body = result.json()["data"]
+    assert body["posted"] is False
+    assert body["difference"] == "0.0000"
+
+
+@pytest.mark.asyncio
 async def test_document_numbering_unchanged_at_january_default(client: AsyncClient) -> None:
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)

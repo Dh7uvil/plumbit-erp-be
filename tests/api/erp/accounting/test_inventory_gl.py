@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -77,6 +78,15 @@ async def test_grn_post_after_books_start_debits_inventory(client: AsyncClient) 
     assert Decimal(grni["credit"]) == Decimal(inventory["debit"])
 
     today = datetime.now(UTC).date().isoformat()
+    catch_up = await client.post(
+        "/api/v1/opening-balances/inventory-catch-up",
+        headers={**headers, "Idempotency-Key": uuid4().hex},
+        params={"as_of": today},
+    )
+    assert catch_up.status_code == 200, catch_up.text
+    assert Decimal(catch_up.json()["data"]["difference"]) == Decimal("0.0000")
+
+    today = datetime.now(UTC).date().isoformat()
     recon = await client.get(
         "/api/v1/reports/stock-valuation-gl",
         headers=headers,
@@ -87,6 +97,14 @@ async def test_grn_post_after_books_start_debits_inventory(client: AsyncClient) 
     assert Decimal(body["valuation_total"]) == Decimal(inventory["debit"])
     assert Decimal(body["gl_balance"]) == Decimal(inventory["debit"])
     assert Decimal(body["difference"]) == Decimal("0.0000")
+
+    catch_up = await client.post(
+        "/api/v1/opening-balances/inventory-catch-up",
+        headers={**headers, "Idempotency-Key": uuid4().hex},
+        params={"as_of": today},
+    )
+    assert catch_up.status_code == 200, catch_up.text
+    assert Decimal(catch_up.json()["data"]["difference"]) == Decimal("0.0000")
 
     cancelled = await client.post(
         f"/api/v1/goods-receipts/{created['body']['data']['id']}/cancel",

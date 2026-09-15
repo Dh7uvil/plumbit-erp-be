@@ -71,6 +71,9 @@ class GeneralLedgerResponse(ReportCurrencyMixin):
     to_date: date
     opening_balance: Decimal
     closing_balance: Decimal
+    page: int = 1
+    page_size: int | None = None
+    total_lines: int = 0
     lines: list[GeneralLedgerLine] = Field(default_factory=list)
 
 
@@ -142,12 +145,29 @@ class AgingBucketTotals(BaseModel):
     total: Decimal = Decimal("0")
 
 
+class AgingDocument(BaseModel):
+    item_type: str
+    document_id: UUID
+    document_number: str
+    document_date: date
+    due_date: date | None = None
+    currency_code: str | None = None
+    balance: Decimal
+    base_balance: Decimal
+    bucket: str
+
+
 class AgingPartyRow(AgingBucketTotals):
     party_id: UUID
     party_name: str
     currency_id: UUID | None = None
     currency_code: str | None = None
     base: AgingBucketTotals | None = None
+    documents: list[AgingDocument] = Field(default_factory=list)
+
+
+class AgingCurrencyTotals(AgingBucketTotals):
+    currency_code: str
 
 
 class AgingResponse(ReportCurrencyMixin):
@@ -155,6 +175,7 @@ class AgingResponse(ReportCurrencyMixin):
     rows: list[AgingPartyRow] = Field(default_factory=list)
     totals: AgingBucketTotals
     base_totals: AgingBucketTotals | None = None
+    currency_totals: list[AgingCurrencyTotals] = Field(default_factory=list)
 
 
 class PartyStatementLine(BaseModel):
@@ -204,10 +225,19 @@ class StockValuationLine(BaseModel):
     layer_id: UUID
 
 
+class StockWarehouseTotal(BaseModel):
+    warehouse_id: UUID
+    warehouse_code: str
+    warehouse_name: str
+    total_qty: Decimal
+    total_value: Decimal
+
+
 class StockValuationResponse(ReportCurrencyMixin):
     as_of: date
     total_qty: Decimal
     total_value: Decimal
+    warehouse_totals: list[StockWarehouseTotal] = Field(default_factory=list)
     lines: list[StockValuationLine] = Field(default_factory=list)
 
 
@@ -314,9 +344,14 @@ class ProfitAndLossResponse(ReportCurrencyMixin):
     comparative_to: date | None = None
     ytd_from: date | None = None
     total_income: Decimal
+    total_cogs: Decimal = Decimal("0")
+    total_operating_expense: Decimal = Decimal("0")
     total_expense: Decimal
+    gross_profit: Decimal = Decimal("0")
     net_profit: Decimal
+    comparative_gross_profit: Decimal | None = None
     comparative_net_profit: Decimal | None = None
+    ytd_gross_profit: Decimal | None = None
     ytd_net_profit: Decimal | None = None
     lines: list[ProfitAndLossLine] = Field(default_factory=list)
 
@@ -474,3 +509,66 @@ class DashboardResponse(ReportCurrencyMixin):
     deliveries_today: int
     receipts_today: int
     credit_limit_breaches: list[DashboardCreditBreach] = Field(default_factory=list)
+
+
+class VatGlReconLine(BaseModel):
+    key: str
+    label: str
+    vat_201_amount: Decimal
+    gl_amount: Decimal
+    difference: Decimal
+    account_id: UUID | None = None
+
+
+class VatGlReconResponse(ReportCurrencyMixin):
+    from_date: date
+    to_date: date
+    lines: list[VatGlReconLine] = Field(default_factory=list)
+
+
+class OutstandingDocument(BaseModel):
+    item_type: str
+    document_id: UUID
+    document_number: str
+    document_date: date
+    due_date: date | None = None
+    party_id: UUID
+    party_name: str
+    currency_code: str | None = None
+    original_amount: Decimal
+    balance: Decimal
+    base_balance: Decimal
+    bucket: str
+    days_overdue: int = 0
+
+
+class OutstandingDocumentsResponse(ReportCurrencyMixin):
+    as_of: date
+    party_type: str
+    total_balance: Decimal
+    total_base_balance: Decimal
+    lines: list[OutstandingDocument] = Field(default_factory=list)
+
+
+class SalesPurchaseAnalysisLine(BaseModel):
+    group_key: str
+    group_label: str
+    document_count: int
+    net_amount: Decimal
+    tax_amount: Decimal
+    grand_total: Decimal
+    account_id: UUID | None = None
+    party_id: UUID | None = None
+    product_id: UUID | None = None
+    salesperson_id: UUID | None = None
+
+
+class SalesPurchaseAnalysisResponse(ReportCurrencyMixin):
+    from_date: date
+    to_date: date
+    group_by: str
+    document_count: int
+    total_net: Decimal
+    total_tax: Decimal
+    total_grand: Decimal
+    lines: list[SalesPurchaseAnalysisLine] = Field(default_factory=list)

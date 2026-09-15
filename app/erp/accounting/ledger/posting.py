@@ -8,6 +8,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import PERIOD_OVERRIDE
@@ -48,6 +49,8 @@ _CONTROL_SUBTYPES = frozenset(
 )
 SOURCE_OPENING_BALANCE = "OPENING_BALANCE"
 SOURCE_JOURNAL_ENTRY = "journal_entry"
+SOURCE_INVENTORY_CATCH_UP = "INVENTORY_CATCH_UP"
+_SOURCE_POSTED_CONSTRAINT = "uq_journal_entries_tenant_source_posted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,9 +127,13 @@ class LedgerPostingService:
         journal_type: JournalType = JournalType.SYSTEM,
         reference: str | None = None,
     ) -> JournalEntry:
-        existing = await self.repo.get_posted_for_source(tenant_id, source_type, source_id)
+        existing = await self.repo.get_posted_for_source(
+            tenant_id, source_type, source_id, for_update=True
+        )
         if existing is not None:
             return existing
+        if journal_type == JournalType.SYSTEM and source_type != SOURCE_INVENTORY_CATCH_UP:
+            await self._assert_books_started(tenant_id)
         _, policy = await self.org.get_inventory_controls(tenant_id)
         policy.assert_open(entry_date, can_override=self._can_override)
         prepared = await self._prepare_lines(
@@ -144,28 +151,37 @@ class LedgerPostingService:
             prefix=_SERIES,
         )
         debit_base, credit_base = _totals(prepared)
-        row = await self.repo.create(
-            tenant_id,
-            {
-                "document_number": number,
-                "entry_date": entry_date,
-                "status": JournalEntryStatus.DRAFT.value,
-                "version": 1,
-                "is_posted": False,
-                "journal_type": journal_type.value,
-                "source_type": source_type,
-                "source_id": source_id,
-                "currency_id": currency_id,
-                "exchange_rate": exchange_rate,
-                "branch_id": branch_id,
-                "narration": narration,
-                "reference": reference,
-                "created_by": actor_id,
-                "updated_by": actor_id,
-            },
-        )
-        await self._replace_prepared(tenant_id, row, prepared)
-        await self._mark_posted(tenant_id, row, actor_id=actor_id, totals=(debit_base, credit_base))
+        try:
+            async with self.session.begin_nested():
+                row = await self.repo.create(
+                    tenant_id,
+                    {
+                        "document_number": number,
+                        "entry_date": entry_date,
+                        "status": JournalEntryStatus.DRAFT.value,
+                        "version": 1,
+                        "is_posted": False,
+                        "journal_type": journal_type.value,
+                        "source_type": source_type,
+                        "source_id": source_id,
+                        "currency_id": currency_id,
+                        "exchange_rate": exchange_rate,
+                        "branch_id": branch_id,
+                        "narration": narration,
+                        "reference": reference,
+                        "created_by": actor_id,
+                        "updated_by": actor_id,
+                    },
+                )
+                await self._replace_prepared(tenant_id, row, prepared)
+                await self._mark_posted(
+                    tenant_id, row, actor_id=actor_id, totals=(debit_base, credit_base)
+                )
+        except IntegrityError:
+            existing = await self.repo.get_posted_for_source(tenant_id, source_type, source_id)
+            if existing is not None:
+                return existing
+            raise
         await self.outbox.enqueue(
             tenant_id,
             event_type="accounting.journal_entry.posted",
@@ -366,6 +382,19 @@ class LedgerPostingService:
             debit_base=debit_base,
             credit_base=credit_base,
         )
+
+    async def _assert_books_started(self, tenant_id: UUID) -> None:
+        from app.auth.models import Tenant
+
+        tenant = await self.session.get(Tenant, tenant_id)
+        if tenant is None:
+            raise ResourceNotFoundError("Tenant not found")
+        if tenant.books_start_date is None and not self._can_override:
+            raise ValidationError(
+                "Commit opening balances before posting operational documents, "
+                "or use period override.",
+                details={"reason": "books_not_started"},
+            )
 
     async def _resolve_rate(
         self,

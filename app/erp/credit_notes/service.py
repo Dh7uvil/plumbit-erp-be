@@ -832,6 +832,7 @@ class CreditNoteService:
         vat = await self.resolver.require(tenant_id, AccountSystemRole.VAT_OUTPUT)
         round_off = await self.resolver.require(tenant_id, AccountSystemRole.ROUND_OFF)
         default_income = await self.resolver.require(tenant_id, AccountSystemRole.SALES_REVENUE)
+        sales_returns = await self.resolver.require(tenant_id, AccountSystemRole.SALES_RETURNS)
         invoice_lines: dict[UUID, SalesInvoiceLine] = {}
         if row.sales_invoice_id is not None:
             invoice = await self.sales_invoices._require(tenant_id, row.sales_invoice_id)
@@ -853,7 +854,7 @@ class CreditNoteService:
             if net_revenue != _ZERO:
                 lines.append(
                     JournalLineInput(
-                        account_id=income_id,
+                        account_id=sales_returns.id,
                         debit=net_revenue if net_revenue > _ZERO else _ZERO,
                         credit=-net_revenue if net_revenue < _ZERO else _ZERO,
                         description=line.description,

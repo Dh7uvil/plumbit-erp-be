@@ -72,7 +72,12 @@ class JournalEntryRepository:
         return result.scalar_one_or_none()
 
     async def get_posted_for_source(
-        self, tenant_id: UUID, source_type: str, source_id: UUID
+        self,
+        tenant_id: UUID,
+        source_type: str,
+        source_id: UUID,
+        *,
+        for_update: bool = False,
     ) -> JournalEntry | None:
         statement = (
             select(JournalEntry)
@@ -85,6 +90,8 @@ class JournalEntryRepository:
             )
             .options(self._with_lines())
         )
+        if for_update:
+            statement = statement.with_for_update()
         return (await self.session.execute(statement)).scalar_one_or_none()
 
     async def list(

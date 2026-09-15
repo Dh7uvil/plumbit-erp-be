@@ -25,3 +25,10 @@ def test_february_29_clamps_on_non_leap_years() -> None:
     start, end = config.bounds(2025)
     assert start == date(2025, 2, 28)
     assert end == date(2026, 2, 27)
+
+
+def test_ytd_from_uses_fiscal_year_start() -> None:
+    config = FiscalYearConfig(start_month=4, start_day=1)
+    to_date = date(2026, 5, 15)
+    ytd_from = config.bounds(config.year_for(to_date))[0]
+    assert ytd_from == date(2026, 4, 1)

@@ -5,6 +5,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
+from datetime import date
+
 from app.auth.catalog import ACCOUNT_CREATE, ACCOUNT_DELETE, ACCOUNT_READ, ACCOUNT_UPDATE
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
@@ -15,6 +17,7 @@ from app.common.schemas.response import ApiResponse
 from app.core.enums import AccountSystemRole
 from app.erp.accounting.accounts.dependencies import AccountServiceDependency
 from app.erp.accounting.accounts.schemas import (
+    AccountBalanceResponse,
     AccountCreate,
     AccountFilter,
     AccountResponse,
@@ -88,6 +91,17 @@ async def create_account(
 ) -> ApiResponse[AccountResponse]:
     row = await service.create(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Account created successfully")
+
+
+@router.get("/{account_id}/balance", response_model=ApiResponse[AccountBalanceResponse])
+async def get_account_balance(
+    account_id: UUID,
+    tenant: TenantContextDependency,
+    service: AccountServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(ACCOUNT_READ))],
+    as_of: date | None = None,
+) -> ApiResponse[AccountBalanceResponse]:
+    return ApiResponse(data=await service.get_balance(tenant.tenant_id, account_id, as_of=as_of))
 
 
 @router.get("/{account_id}", response_model=ApiResponse[AccountResponse])

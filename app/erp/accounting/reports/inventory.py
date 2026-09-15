@@ -25,6 +25,7 @@ from app.erp.accounting.reports.schemas import (
     StockValuationGlResponse,
     StockValuationLine,
     StockValuationResponse,
+    StockWarehouseTotal,
 )
 from app.erp.supplier_products.models import SupplierProduct
 from app.inventory_management.costing.models import StockCostLayer
@@ -58,6 +59,9 @@ class InventoryReports:
         lines: list[StockValuationLine] = []
         total_qty = _ZERO
         total_value = _ZERO
+        warehouse_totals_map: dict[UUID, list] = defaultdict(
+            lambda: [_ZERO, _ZERO, "", ""]
+        )
         for layer in layers:
             if layer.qty_remaining == _ZERO:
                 continue
@@ -67,6 +71,11 @@ class InventoryReports:
             qty = quantize_quantity(layer.qty_remaining)
             total_qty += qty
             total_value += value
+            warehouse_row = warehouse_totals_map[layer.warehouse_id]
+            warehouse_row[0] = quantize_quantity(warehouse_row[0] + qty)
+            warehouse_row[1] = quantize_money(warehouse_row[1] + value)
+            warehouse_row[2] = warehouse.code if warehouse else ""
+            warehouse_row[3] = warehouse.name if warehouse else ""
             lines.append(
                 StockValuationLine(
                     warehouse_id=layer.warehouse_id,
@@ -83,11 +92,24 @@ class InventoryReports:
                     layer_id=layer.id,
                 )
             )
+        warehouse_totals = [
+            StockWarehouseTotal(
+                warehouse_id=warehouse_id,
+                warehouse_code=values[2],
+                warehouse_name=values[3],
+                total_qty=values[0],
+                total_value=values[1],
+            )
+            for warehouse_id, values in sorted(
+                warehouse_totals_map.items(), key=lambda item: item[1][2]
+            )
+        ]
         return StockValuationResponse(
             currency_code=await self._report_currency_code(tenant_id),
             as_of=as_of_date,
             total_qty=quantize_quantity(total_qty),
             total_value=quantize_money(total_value),
+            warehouse_totals=warehouse_totals,
             lines=lines,
         )
 

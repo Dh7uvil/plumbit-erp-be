@@ -30,12 +30,15 @@ from app.core.exceptions import ValidationError
 from app.crm.customers.models import Customer
 from app.erp.accounting.accounts.service import AccountService
 from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
+from app.erp.accounting.reports.analytical import AnalyticalReports
 from app.erp.accounting.reports.financials import FinancialReports
 from app.erp.accounting.reports.inventory import InventoryReports
 from app.erp.accounting.reports.schemas import (
     AccountStatementLine,
     AccountStatementResponse,
     AgingBucketTotals,
+    AgingCurrencyTotals,
+    AgingDocument,
     AgingPartyRow,
     AgingResponse,
     DashboardCreditBreach,
@@ -47,6 +50,8 @@ from app.erp.accounting.reports.schemas import (
     GeneralLedgerResponse,
     InvoicedNotDispatchedLine,
     InvoicedNotDispatchedResponse,
+    OutstandingDocument,
+    OutstandingDocumentsResponse,
     OutstandingSummary,
     PartyStatementLine,
     PartyStatementResponse,
@@ -82,7 +87,7 @@ def _posted_join():
     )
 
 
-class ReportService(InventoryReports, FinancialReports, TaxRegisters):
+class ReportService(InventoryReports, FinancialReports, TaxRegisters, AnalyticalReports):
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.accounts = AccountService(session)
@@ -179,6 +184,10 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
         to_date: date,
         party_id: UUID | None = None,
         branch_id: UUID | None = None,
+        source_type: str | None = None,
+        side: str | None = None,
+        page: int = 1,
+        page_size: int | None = None,
     ) -> GeneralLedgerResponse:
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
@@ -209,9 +218,15 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             statement = statement.where(
                 (JournalEntryLine.branch_id == branch_id) | (JournalEntry.branch_id == branch_id)
             )
+        if source_type:
+            statement = statement.where(JournalEntry.source_type == source_type)
         rows = (await self.session.execute(statement)).all()
         lines: list[GeneralLedgerLine] = []
         for line, header in rows:
+            if side == "debit" and line.debit_base == _ZERO:
+                continue
+            if side == "credit" and line.credit_base == _ZERO:
+                continue
             running = quantize_money(
                 running + self._delta(account.account_type, line.debit_base, line.credit_base)
             )
@@ -234,6 +249,11 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                     narration=header.narration,
                 )
             )
+        total_lines = len(lines)
+        page_size_value = page_size
+        if page_size is not None:
+            start = (max(page, 1) - 1) * page_size
+            lines = lines[start : start + page_size]
         return GeneralLedgerResponse(
             currency_code=await self._report_currency_code(tenant_id),
             account_id=account.id,
@@ -243,6 +263,9 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             to_date=to_date,
             opening_balance=self._signed(account.account_type, opening_d, opening_c),
             closing_balance=running,
+            page=page,
+            page_size=page_size_value,
+            total_lines=total_lines,
             lines=lines,
         )
 
@@ -656,7 +679,9 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                 GoodsReceipt.document_date == as_of_date,
             )
         )
-        ar_by_party = {row.party_id: row.total for row in ar.rows}
+        ar_by_party = {
+            row.party_id: row.base.total if row.base is not None else row.total for row in ar.rows
+        }
         customers = (
             (
                 await self.session.execute(
@@ -682,11 +707,13 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                         outstanding=outstanding,
                     )
                 )
+        ar_open = ar.base_totals.total if ar.base_totals is not None else ar.totals.total
+        ap_open = ap.base_totals.total if ap.base_totals is not None else ap.totals.total
         return DashboardResponse(
             currency_code=await self._report_currency_code(tenant_id),
             as_of=as_of_date,
-            open_ar=ar.totals.total,
-            open_ap=ap.totals.total,
+            open_ar=ar_open,
+            open_ap=ap_open,
             overdue_ar_count=overdue_ar,
             overdue_ap_count=overdue_ap,
             stock_valuation=valuation.total_value,
@@ -859,8 +886,9 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
         )
         open_items = OpenItemsService(self.session)
         rows: list[AgingPartyRow] = []
-        totals = AgingBucketTotals()
         base_totals = AgingBucketTotals()
+        by_currency: dict[str, AgingBucketTotals] = {}
+        report_currency = await self._report_currency_code(tenant_id)
         currency_codes = await self.currencies.codes_by_ids(
             tenant_id,
             [party.currency_id for party in parties if party.currency_id is not None],
@@ -876,11 +904,20 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
             ):
                 continue
             item_codes = {item.currency_code for item in items if item.currency_code}
-            party_code = None
-            if len(item_codes) == 1:
+            mixed_currency = len(item_codes) > 1
+            if mixed_currency:
+                # Never show mixed document-currency buckets as one party total.
+                party_code = report_currency
+                display_buckets = base_buckets
+            elif len(item_codes) == 1:
                 party_code = next(iter(item_codes))
-            elif party.currency_id is not None:
-                party_code = currency_codes.get(party.currency_id)
+                display_buckets = buckets
+            else:
+                party_code = (
+                    currency_codes.get(party.currency_id) if party.currency_id is not None else None
+                )
+                display_buckets = buckets
+            documents = self._aging_documents(items, as_of=as_of, party_type=party_type)
             rows.append(
                 AgingPartyRow(
                     party_id=party.id,
@@ -888,21 +925,133 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                     currency_id=party.currency_id,
                     currency_code=party_code,
                     base=base_buckets,
-                    **buckets.model_dump(),
+                    documents=documents,
+                    **display_buckets.model_dump(),
                 )
             )
-            for name, value in buckets.model_dump().items():
-                setattr(totals, name, quantize_money(getattr(totals, name) + value))
             for name, value in base_buckets.model_dump().items():
                 setattr(base_totals, name, quantize_money(getattr(base_totals, name) + value))
+            if not mixed_currency and party_code:
+                currency_row = by_currency.setdefault(party_code, AgingBucketTotals())
+                for name, value in buckets.model_dump().items():
+                    setattr(
+                        currency_row,
+                        name,
+                        quantize_money(getattr(currency_row, name) + value),
+                    )
         rows.sort(key=lambda row: row.party_name)
+        currency_totals = [
+            AgingCurrencyTotals(currency_code=code, **buckets.model_dump())
+            for code, buckets in sorted(by_currency.items())
+        ]
         return AgingResponse(
-            currency_code=await self._report_currency_code(tenant_id),
+            currency_code=report_currency,
             as_of=as_of,
             rows=rows,
-            totals=totals,
+            # Primary totals are always base currency to prevent mixed-FX misuse.
+            totals=base_totals,
             base_totals=base_totals,
+            currency_totals=currency_totals,
         )
+
+    async def outstanding_documents(
+        self,
+        tenant_id: UUID,
+        *,
+        party_type: PartyType,
+        as_of: date | None = None,
+    ) -> OutstandingDocumentsResponse:
+        aging = await self._aging(
+            tenant_id, as_of=as_of or utcnow().date(), party_type=party_type
+        )
+        lines: list[OutstandingDocument] = []
+        total_balance = _ZERO
+        total_base = _ZERO
+        for row in aging.rows:
+            for document in row.documents:
+                due = document.due_date or document.document_date
+                days = max((aging.as_of - due).days, 0)
+                lines.append(
+                    OutstandingDocument(
+                        item_type=document.item_type,
+                        document_id=document.document_id,
+                        document_number=document.document_number,
+                        document_date=document.document_date,
+                        due_date=document.due_date,
+                        party_id=row.party_id,
+                        party_name=row.party_name,
+                        currency_code=document.currency_code,
+                        original_amount=document.balance,
+                        balance=document.balance,
+                        base_balance=document.base_balance,
+                        bucket=document.bucket,
+                        days_overdue=days,
+                    )
+                )
+                total_balance = quantize_money(total_balance + document.balance)
+                total_base = quantize_money(total_base + document.base_balance)
+        lines.sort(key=lambda item: (item.party_name, item.document_date, item.document_number))
+        return OutstandingDocumentsResponse(
+            currency_code=aging.currency_code,
+            as_of=aging.as_of,
+            party_type=party_type.value,
+            total_balance=total_balance,
+            total_base_balance=total_base,
+            lines=lines,
+        )
+
+    def _aging_documents(
+        self, items, *, as_of: date, party_type: PartyType
+    ) -> list[AgingDocument]:
+        outstanding_types = (
+            {OpenItemType.SALES_INVOICE, OpenItemType.OPENING_AR}
+            if party_type == PartyType.CUSTOMER
+            else {OpenItemType.PURCHASE_INVOICE, OpenItemType.OPENING_AP}
+        )
+        credit_types = (
+            {OpenItemType.CREDIT_NOTE, OpenItemType.CUSTOMER_PAYMENT}
+            if party_type == PartyType.CUSTOMER
+            else {OpenItemType.DEBIT_NOTE, OpenItemType.SUPPLIER_PAYMENT}
+        )
+        documents: list[AgingDocument] = []
+        for item in items:
+            if item.document_date > as_of:
+                continue
+            base_amount = item.base_balance if item.base_balance is not None else item.balance
+            if item.item_type in credit_types:
+                bucket = "unapplied_credits"
+            elif item.item_type in outstanding_types:
+                bucket = self._aging_bucket(as_of, item.due_date or item.document_date)
+            else:
+                continue
+            documents.append(
+                AgingDocument(
+                    item_type=item.item_type.value
+                    if hasattr(item.item_type, "value")
+                    else str(item.item_type),
+                    document_id=item.document_id,
+                    document_number=item.document_number,
+                    document_date=item.document_date,
+                    due_date=item.due_date,
+                    currency_code=item.currency_code,
+                    balance=item.balance,
+                    base_balance=base_amount,
+                    bucket=bucket,
+                )
+            )
+        return documents
+
+    def _aging_bucket(self, as_of: date, due: date) -> str:
+        days = (as_of - due).days
+        if days <= 0:
+            return "current"
+        if days <= 30:
+            return "days_1_30"
+        if days <= 60:
+            return "days_31_60"
+        if days <= 90:
+            return "days_61_90"
+        return "days_91_plus"
 
     def _bucket_items(
         self, items, *, as_of: date, party_type: PartyType
@@ -933,18 +1082,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
                 continue
             if item.item_type not in outstanding_types:
                 continue
-            due = item.due_date or item.document_date
-            days = (as_of - due).days
-            if days <= 0:
-                field = "current"
-            elif days <= 30:
-                field = "days_1_30"
-            elif days <= 60:
-                field = "days_31_60"
-            elif days <= 90:
-                field = "days_61_90"
-            else:
-                field = "days_91_plus"
+            field = self._aging_bucket(as_of, item.due_date or item.document_date)
             _add(buckets, field, item.balance)
             _add(base_buckets, field, base_amount)
         for target in (buckets, base_buckets):
@@ -980,15 +1118,16 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters):
         )
         balance_due = overdue = unapplied = _ZERO
         for item in items:
+            amount = item.base_balance if item.base_balance is not None else item.balance
             if item.item_type in credit_types:
-                unapplied = quantize_money(unapplied + item.balance)
+                unapplied = quantize_money(unapplied + amount)
                 continue
             if item.item_type not in outstanding_types:
                 continue
-            balance_due = quantize_money(balance_due + item.balance)
+            balance_due = quantize_money(balance_due + amount)
             due = item.due_date or item.document_date
             if due < as_of:
-                overdue = quantize_money(overdue + item.balance)
+                overdue = quantize_money(overdue + amount)
         available = None
         if credit_limit is not None:
             available = quantize_money(credit_limit - (balance_due - unapplied))

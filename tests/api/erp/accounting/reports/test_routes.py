@@ -370,6 +370,8 @@ async def test_profit_and_loss_balance_sheet_and_cash_flow(client: AsyncClient) 
     assert pnl.status_code == 200, pnl.text
     profit = pnl.json()["data"]
     assert Decimal(profit["net_profit"]) == Decimal("50.0000")
+    assert Decimal(profit["gross_profit"]) == Decimal("50.0000")
+    assert Decimal(profit["total_cogs"]) == Decimal("0.0000")
     assert profit["lines"][0]["account_id"]
     sheet = await client.get(
         "/api/v1/reports/balance-sheet",
