@@ -85,6 +85,38 @@ async def test_product_and_customer_sales_history_use_posted_notes(
     assert Decimal(customer_sales.json()["data"][0]["invoiced_quantity"]) == invoiced_qty
     assert Decimal(customer_sales.json()["data"][0]["revenue"]) == revenue
 
+    named = await client.get(
+        f"/api/v1/products/{product_id}/sales-history",
+        headers=headers,
+        params={"search": note["document_number"], "sort_by": "quantity", "sort_order": "desc"},
+    )
+    assert named.status_code == 200, named.text
+    assert named.json()["meta"]["total"] == 1
+
+    missing = await client.get(
+        f"/api/v1/products/{product_id}/sales-history",
+        headers=headers,
+        params={"search": "no-such-document"},
+    )
+    assert missing.status_code == 200, missing.text
+    assert missing.json()["data"] == []
+    assert missing.json()["meta"]["total"] == 0
+
+    parties = await client.get(
+        f"/api/v1/products/{product_id}/customers",
+        headers=headers,
+        params={"search": customers.json()["data"][0]["party_name"], "sort_by": "party_name"},
+    )
+    assert parties.status_code == 200, parties.text
+    assert parties.json()["meta"]["total"] == 1
+
+    invalid_sort = await client.get(
+        f"/api/v1/products/{product_id}/sales-history",
+        headers=headers,
+        params={"sort_by": "not_a_field"},
+    )
+    assert invalid_sort.status_code == 422
+
     purchases = await client.get(f"/api/v1/products/{product_id}/purchase-history", headers=headers)
     assert purchases.status_code == 200, purchases.text
     assert Decimal(purchases.json()["data"][0]["quantity"]) == Decimal("4")

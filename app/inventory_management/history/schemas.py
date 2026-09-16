@@ -2,9 +2,12 @@
 
 from datetime import date
 from decimal import Decimal
+from typing import ClassVar
 from uuid import UUID
 
 from pydantic import BaseModel, model_validator
+
+from app.common.schemas.filters import BaseFilter
 
 
 class TradingPartyAggregate(BaseModel):
@@ -57,7 +60,20 @@ class TradingHistoryLine(BaseModel):
     billed_cost: Decimal | None = None
 
 
-class TradingHistoryFilter(BaseModel):
+class TradingHistoryFilter(BaseFilter):
+    allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
+        {
+            "document_date",
+            "document_number",
+            "quantity",
+            "rate",
+            "revenue",
+            "party_name",
+            "product_name",
+            "sku",
+        }
+    )
+    sort_by: str = "document_date"
     party_id: UUID | None = None
     product_id: UUID | None = None
     warehouse_id: UUID | None = None
@@ -73,3 +89,18 @@ class TradingHistoryFilter(BaseModel):
         ):
             raise ValueError("document_date_from must be before or equal to document_date_to")
         return self
+
+
+class TradingAggregateFilter(BaseFilter):
+    allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
+        {
+            "party_name",
+            "sku",
+            "product_name",
+            "total_quantity",
+            "revenue",
+            "last_date",
+            "dispatch_count",
+        }
+    )
+    sort_by: str = "last_date"

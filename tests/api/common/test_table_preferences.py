@@ -170,3 +170,22 @@ async def test_cross_tenant_preferences_are_isolated(client: AsyncClient) -> Non
     other = await client.get(_PATH, headers=headers_b)
     assert other.status_code == 200
     assert other.json()["data"]["is_default"] is True
+
+
+@pytest.mark.asyncio
+async def test_put_nested_trading_history_key(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    path = "/api/v1/users/me/table-preferences/inventory.trading_history"
+    saved = await client.put(
+        path,
+        headers=headers,
+        json={"visible_columns": ["qty", "rate"], "column_order": ["qty", "rate"]},
+    )
+    assert saved.status_code == 200, saved.text
+    data = saved.json()["data"]
+    assert data["table_key"] == "inventory.trading_history"
+    assert data["is_default"] is False
+    assert data["visible_columns"][:2] == ["document", "date"]
+    assert "qty" in data["visible_columns"]
+    assert "rate" in data["visible_columns"]

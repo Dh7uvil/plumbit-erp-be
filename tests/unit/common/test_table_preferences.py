@@ -42,6 +42,10 @@ def test_catalog_covers_list_tables() -> None:
         "inventory.price_lists",
         "inventory.stock",
         "inventory.stock_movements",
+        "inventory.trading_history",
+        "inventory.trading_party_aggregates",
+        "inventory.trading_product_aggregates",
+        "inventory.price_list_items",
         "inventory.packages",
         "logistics.shipments",
         "inventory.delivery_notes",
@@ -70,6 +74,28 @@ def test_cost_columns_require_permission() -> None:
     assert "value" not in without_cost
     assert "unit_cost" in with_cost
     assert "value" in with_cost
+
+
+def test_trading_history_cost_columns_require_permission() -> None:
+    entry = TABLE_CATALOG["inventory.trading_history"]
+    without_cost = entry.allowed_keys(frozenset())
+    with_cost = entry.allowed_keys(frozenset({COST_READ}))
+    assert "unit_cost" not in without_cost
+    assert "billed_cost" not in without_cost
+    assert "margin" not in without_cost
+    assert "unit_cost" in with_cost
+    assert "billed_cost" in with_cost
+    assert "margin" in with_cost
+    assert entry.default_visible(frozenset()) == [
+        "document",
+        "date",
+        "party",
+        "product",
+        "qty",
+        "invoiced",
+        "rate",
+        "revenue",
+    ]
 
 
 def test_validate_update_strips_actions_and_completes_order() -> None:

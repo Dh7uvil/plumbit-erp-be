@@ -46,6 +46,7 @@ from app.erp.credit_control.dependencies import CreditControlServiceDependency
 from app.erp.credit_control.schemas import CreditExposure
 from app.inventory_management.history.dependencies import HistoryServiceDependency
 from app.inventory_management.history.schemas import (
+    TradingAggregateFilter,
     TradingHistoryFilter,
     TradingHistoryLine,
     TradingProductAggregate,
@@ -236,11 +237,15 @@ async def delete_customer_address(
 async def list_customer_products(
     customer_id: UUID,
     tenant: TenantContextDependency,
+    page: PaginationDependency,
     history: HistoryServiceDependency,
+    filters: Annotated[TradingAggregateFilter, Depends()],
     _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_HISTORY))],
 ) -> ApiResponse[list[TradingProductAggregate]]:
-    rows = await history.customer_products(tenant.tenant_id, customer_id)
-    return ApiResponse(data=rows)
+    rows, total = await history.customer_products(
+        tenant.tenant_id, customer_id, page=page, filters=filters
+    )
+    return paginated_response(rows, params=page, total=total)
 
 
 @router.get(
@@ -259,10 +264,7 @@ async def list_customer_sales_history(
         tenant.tenant_id,
         customer_id,
         page=page,
-        product_id=filters.product_id,
-        warehouse_id=filters.warehouse_id,
-        document_date_from=filters.document_date_from,
-        document_date_to=filters.document_date_to,
+        filters=filters,
     )
     return paginated_response(rows, params=page, total=total)
 

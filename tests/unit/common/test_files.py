@@ -95,3 +95,10 @@ def test_validate_upload_rejects_disallowed_or_unknown_type() -> None:
             max_upload_size_mb=1,
             allowed_mime_types=_ALLOWED,
         )
+    with pytest.raises(ValidationError, match="HEIC/HEIF"):
+        validate_upload(
+            b"\x00\x00\x00\x18ftypheic" + b"\x00" * 8,
+            filename="photo.heic",
+            max_upload_size_mb=1,
+            allowed_mime_types=_ALLOWED,
+        )

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -17,6 +16,8 @@ from app.crm.customers.service import CustomerService
 from app.erp.suppliers.service import SupplierService
 from app.inventory_management.history.repository import HistoryRepository
 from app.inventory_management.history.schemas import (
+    TradingAggregateFilter,
+    TradingHistoryFilter,
     TradingHistoryLine,
     TradingPartyAggregate,
     TradingProductAggregate,
@@ -42,10 +43,22 @@ class HistoryService:
         self._can_read_cost = has_permission(actor_permissions, COST_READ)
 
     async def product_customers(
-        self, tenant_id: UUID, product_id: UUID
-    ) -> list[TradingPartyAggregate]:
+        self,
+        tenant_id: UUID,
+        product_id: UUID,
+        *,
+        page: PageParams,
+        filters: TradingAggregateFilter | None = None,
+    ) -> tuple[list[TradingPartyAggregate], int]:
         await self.products.get(tenant_id, product_id)
-        rows = await self.repo.product_customers(tenant_id, product_id)
+        rows, total = await self.repo.product_customers(
+            tenant_id,
+            product_id,
+            page=page,
+            search=filters.search if filters else None,
+            sort_by=filters.sort_by if filters else "last_date",
+            sort_order=filters.sort_order if filters else "desc",
+        )
         return [
             TradingPartyAggregate(
                 party_id=row[0],
@@ -62,7 +75,7 @@ class HistoryService:
             )
             for row in rows
             if row[4] is not None
-        ]
+        ], total
 
     async def product_sales_history(
         self,
@@ -70,20 +83,20 @@ class HistoryService:
         product_id: UUID,
         *,
         page: PageParams,
-        party_id: UUID | None = None,
-        warehouse_id: UUID | None = None,
-        document_date_from: date | None = None,
-        document_date_to: date | None = None,
+        filters: TradingHistoryFilter,
     ) -> tuple[list[TradingHistoryLine], int]:
         await self.products.get(tenant_id, product_id)
         rows, total = await self.repo.product_sales_lines(
             tenant_id,
             product_id,
             page=page,
-            party_id=party_id,
-            warehouse_id=warehouse_id,
-            document_date_from=document_date_from,
-            document_date_to=document_date_to,
+            party_id=filters.party_id,
+            warehouse_id=filters.warehouse_id,
+            document_date_from=filters.document_date_from,
+            document_date_to=filters.document_date_to,
+            search=filters.search,
+            sort_by=filters.sort_by,
+            sort_order=filters.sort_order,
         )
         return [self._sales_line(row) for row in rows], total
 
@@ -93,28 +106,40 @@ class HistoryService:
         product_id: UUID,
         *,
         page: PageParams,
-        party_id: UUID | None = None,
-        warehouse_id: UUID | None = None,
-        document_date_from: date | None = None,
-        document_date_to: date | None = None,
+        filters: TradingHistoryFilter,
     ) -> tuple[list[TradingHistoryLine], int]:
         await self.products.get(tenant_id, product_id)
         rows, total = await self.repo.product_purchase_lines(
             tenant_id,
             product_id,
             page=page,
-            party_id=party_id,
-            warehouse_id=warehouse_id,
-            document_date_from=document_date_from,
-            document_date_to=document_date_to,
+            party_id=filters.party_id,
+            warehouse_id=filters.warehouse_id,
+            document_date_from=filters.document_date_from,
+            document_date_to=filters.document_date_to,
+            search=filters.search,
+            sort_by=filters.sort_by,
+            sort_order=filters.sort_order,
         )
         return [self._purchase_line(row) for row in rows], total
 
     async def customer_products(
-        self, tenant_id: UUID, customer_id: UUID
-    ) -> list[TradingProductAggregate]:
+        self,
+        tenant_id: UUID,
+        customer_id: UUID,
+        *,
+        page: PageParams,
+        filters: TradingAggregateFilter | None = None,
+    ) -> tuple[list[TradingProductAggregate], int]:
         await self.customers.get(tenant_id, customer_id)
-        rows = await self.repo.customer_products(tenant_id, customer_id)
+        rows, total = await self.repo.customer_products(
+            tenant_id,
+            customer_id,
+            page=page,
+            search=filters.search if filters else None,
+            sort_by=filters.sort_by if filters else "last_date",
+            sort_order=filters.sort_order if filters else "desc",
+        )
         return [
             TradingProductAggregate(
                 product_id=row[0],
@@ -132,7 +157,7 @@ class HistoryService:
             )
             for row in rows
             if row[5] is not None
-        ]
+        ], total
 
     async def customer_sales_history(
         self,
@@ -140,20 +165,20 @@ class HistoryService:
         customer_id: UUID,
         *,
         page: PageParams,
-        product_id: UUID | None = None,
-        warehouse_id: UUID | None = None,
-        document_date_from: date | None = None,
-        document_date_to: date | None = None,
+        filters: TradingHistoryFilter,
     ) -> tuple[list[TradingHistoryLine], int]:
         await self.customers.get(tenant_id, customer_id)
         rows, total = await self.repo.customer_sales_lines(
             tenant_id,
             customer_id,
             page=page,
-            product_id=product_id,
-            warehouse_id=warehouse_id,
-            document_date_from=document_date_from,
-            document_date_to=document_date_to,
+            product_id=filters.product_id,
+            warehouse_id=filters.warehouse_id,
+            document_date_from=filters.document_date_from,
+            document_date_to=filters.document_date_to,
+            search=filters.search,
+            sort_by=filters.sort_by,
+            sort_order=filters.sort_order,
         )
         return [self._sales_line(row) for row in rows], total
 
@@ -163,20 +188,20 @@ class HistoryService:
         supplier_id: UUID,
         *,
         page: PageParams,
-        product_id: UUID | None = None,
-        warehouse_id: UUID | None = None,
-        document_date_from: date | None = None,
-        document_date_to: date | None = None,
+        filters: TradingHistoryFilter,
     ) -> tuple[list[TradingHistoryLine], int]:
         await self.suppliers.get(tenant_id, supplier_id)
         rows, total = await self.repo.supplier_purchase_lines(
             tenant_id,
             supplier_id,
             page=page,
-            product_id=product_id,
-            warehouse_id=warehouse_id,
-            document_date_from=document_date_from,
-            document_date_to=document_date_to,
+            product_id=filters.product_id,
+            warehouse_id=filters.warehouse_id,
+            document_date_from=filters.document_date_from,
+            document_date_to=filters.document_date_to,
+            search=filters.search,
+            sort_by=filters.sort_by,
+            sort_order=filters.sort_order,
         )
         return [self._purchase_line(row) for row in rows], total
 

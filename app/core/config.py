@@ -8,6 +8,31 @@ from urllib.parse import quote
 from pydantic import AnyHttpUrl, Field, PostgresDsn, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+DEFAULT_ALLOWED_UPLOAD_MIME_TYPES = (
+    "text/csv",
+    "application/json",
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "application/msword",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+)
+
+
+def parse_allowed_upload_mime_types(value: Any) -> Any:
+    """Parse a comma-separated allowlist; blank env values keep the built-in defaults."""
+
+    if not isinstance(value, str):
+        return value
+    items = [item.strip() for item in value.split(",") if item.strip()]
+    return items or list(DEFAULT_ALLOWED_UPLOAD_MIME_TYPES)
+
 
 def _settings_env_file() -> str:
     """Prefer `.env.test` when the process is already marked as testing."""
@@ -68,21 +93,7 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = Field(default=25, ge=1)
     attachment_retention_years: int = Field(default=5, ge=1)
     allowed_upload_mime_types: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: [
-            "text/csv",
-            "application/json",
-            "application/pdf",
-            "image/jpeg",
-            "image/png",
-            "image/gif",
-            "image/webp",
-            "application/msword",
-            "application/vnd.ms-excel",
-            "application/vnd.ms-powerpoint",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        ]
+        default_factory=lambda: list(DEFAULT_ALLOWED_UPLOAD_MIME_TYPES)
     )
 
     # Redis
@@ -130,13 +141,19 @@ class Settings(BaseSettings):
             path=self.database_name,
         )
 
-    @field_validator("cors_origins", "allowed_upload_mime_types", mode="before")
+    @field_validator("cors_origins", mode="before")
     @classmethod
-    def parse_list_setting(cls, value: Any) -> Any:
+    def parse_cors_origins(cls, value: Any) -> Any:
         """Accept comma-separated environment values while preserving native list inputs."""
         if not isinstance(value, str):
             return value
         return [item.strip() for item in value.split(",") if item.strip()]
+
+    @field_validator("allowed_upload_mime_types", mode="before")
+    @classmethod
+    def parse_upload_mime_types(cls, value: Any) -> Any:
+        """Accept comma-separated MIME types; a blank value keeps the default allowlist."""
+        return parse_allowed_upload_mime_types(value)
 
 
 @lru_cache

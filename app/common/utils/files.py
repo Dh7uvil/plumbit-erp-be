@@ -144,6 +144,10 @@ def validate_upload(
     ensure_within_size_limit(len(content), max_upload_size_mb=max_upload_size_mb)
     detected = detect_content_type(content)
     if detected is None:
+        if _looks_like_heic(content):
+            raise ValidationError(
+                "HEIC/HEIF photos are not supported. Save as JPEG or PNG and try again."
+            )
         raise ValidationError("File type could not be determined")
     ensure_allowed_content_type(detected, allowed=allowed_mime_types)
     safe_name = sanitize_filename(filename)
@@ -189,6 +193,15 @@ def _looks_like_json(data: bytes) -> bool:
     except (UnicodeDecodeError, json.JSONDecodeError):
         return False
     return True
+
+
+def _looks_like_heic(data: bytes) -> bool:
+    """True for ISO-BMFF HEIC/HEIF still images (common iPhone/macOS photos)."""
+
+    if len(data) < 12 or data[4:8] != b"ftyp":
+        return False
+    brand = data[8:12].lower()
+    return brand in {b"heic", b"heif", b"mif1", b"msf1"}
 
 
 def _looks_like_csv(data: bytes) -> bool:

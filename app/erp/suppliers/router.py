@@ -227,10 +227,7 @@ async def list_supplier_purchase_history(
         tenant.tenant_id,
         supplier_id,
         page=page,
-        product_id=filters.product_id,
-        warehouse_id=filters.warehouse_id,
-        document_date_from=filters.document_date_from,
-        document_date_to=filters.document_date_to,
+        filters=filters,
     )
     return paginated_response(rows, params=page, total=total)
 

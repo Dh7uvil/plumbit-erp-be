@@ -219,6 +219,33 @@ async def test_attachment_category_filter_and_thumbnail(
 
 
 @pytest.mark.asyncio
+async def test_product_image_upload_as_other_category(
+    client: AsyncClient, fake_s3: FakeS3Client
+) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded(client, headers)
+    product_id = await _create_product(client, headers, ids)
+    created = await _upload(
+        client,
+        headers,
+        entity_type="PRODUCT",
+        entity_id=product_id,
+        filename="photo.png",
+        content=_PNG,
+        content_type="image/png",
+        category="OTHER",
+    )
+    assert created.status_code == 201, created.text
+    payload = created.json()["data"]
+    assert payload["category"] == "OTHER"
+    assert payload["content_type"] == "image/png"
+    assert payload["thumbnail_url"] is not None
+    assert payload["image_width"] == 1
+    assert payload["image_height"] == 1
+
+
+@pytest.mark.asyncio
 async def test_attachment_unregistered_entity_type(
     client: AsyncClient, fake_s3: FakeS3Client
 ) -> None:
