@@ -32,6 +32,7 @@ from app.auth.schemas import (
     ForgotPasswordResponse,
     LoginRequest,
     MeResponse,
+    MeUpdate,
     PermissionMatrixAction,
     PermissionMatrixModule,
     PermissionMatrixResource,
@@ -257,6 +258,28 @@ class AuthService:
         detail = await self._user_detail(tenant_id, user)
         permissions = await self.repo.list_user_permission_strings(tenant_id, user_id)
         return MeResponse(**detail.model_dump(), permissions=sorted(permissions))
+
+    async def update_me(self, *, tenant_id: UUID, user_id: UUID, payload: MeUpdate) -> MeResponse:
+        values = payload.model_dump(exclude_unset=True)
+        async with transaction(self.session):
+            user = await self._require_user(tenant_id, user_id)
+            old_values = await self._user_snapshot(tenant_id, user)
+            for name, value in values.items():
+                setattr(user, name, value)
+            await self.session.flush()
+            new_values = await self._user_snapshot(tenant_id, user)
+            if audit_field_changes(old_values, new_values):
+                await self.audit.write(
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    action=AuditAction.UPDATE,
+                    module=IDENTITY_MODULE,
+                    entity_type="user",
+                    entity_id=user.id,
+                    old_values=old_values,
+                    new_values=new_values,
+                )
+        return await self.me(tenant_id=tenant_id, user_id=user_id)
 
     async def change_password(
         self,

@@ -255,6 +255,25 @@ class MeResponse(UserDetailResponse):
     permissions: list[str] = Field(default_factory=list)
 
 
+class MeUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    phone: str | None = Field(default=None, max_length=50)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_required_text(value, field_name="name")
+
+    @field_validator("phone")
+    @classmethod
+    def normalize_phone(cls, value: str | None) -> str | None:
+        return _normalize_optional_phone(value)
+
+
 class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     email: str = Field(min_length=3, max_length=255)

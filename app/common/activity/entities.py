@@ -10,8 +10,8 @@ from app.auth.catalog import (
     CONTACT_READ,
     CREDIT_NOTE_READ,
     CRM_MODULE,
-    CUSTOMER_READ,
     CUSTOMER_PAYMENT_READ,
+    CUSTOMER_READ,
     DEBIT_NOTE_READ,
     DELIVERY_NOTE_READ,
     GOODS_RECEIPT_READ,
@@ -25,6 +25,7 @@ from app.auth.catalog import (
     PURCHASE_INVOICE_READ,
     PURCHASE_MODULE,
     PURCHASE_ORDER_READ,
+    PURCHASE_RETURN_READ,
     QUALITY_INSPECTION_READ,
     QUOTATION_READ,
     SALES_INVOICE_READ,
@@ -60,6 +61,8 @@ _DOCUMENT_MONEY_FIELDS: frozenset[str] = frozenset(
         "branch",
         "version",
         "status",
+        "reason",
+        "rejection_reason",
     }
 )
 
@@ -310,6 +313,21 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
             }
         ),
     ),
+    "purchase_return": ActivityEntitySpec(
+        module=PURCHASE_MODULE,
+        entity_type="purchase_return",
+        read_permission=PURCHASE_RETURN_READ,
+        changed_fields=_STOCK_FIELDS
+        | frozenset(
+            {
+                "supplier",
+                "warehouse",
+                "goods_receipt",
+                "purchase_order",
+                "reason_code",
+            }
+        ),
+    ),
     "package": ActivityEntitySpec(
         module=LOGISTICS_MODULE,
         entity_type="package",
@@ -407,7 +425,15 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         entity_type="journal_entry",
         read_permission=JOURNAL_ENTRY_READ,
         changed_fields=_STOCK_FIELDS
-        | frozenset({"entry_date", "narration", "journal_type", "total_debit_base", "total_credit_base"}),
+        | frozenset(
+            {
+                "entry_date",
+                "narration",
+                "journal_type",
+                "total_debit_base",
+                "total_credit_base",
+            }
+        ),
     ),
     "customer_payment": ActivityEntitySpec(
         module=SALES_MODULE,

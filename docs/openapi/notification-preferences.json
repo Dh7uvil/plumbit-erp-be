@@ -1,0 +1,252 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Plumbit ERP API \u2014 Notification Preferences",
+    "description": "Notification Preferences",
+    "version": "0.1.0"
+  },
+  "tags": [
+    {
+      "name": "Notification Preferences",
+      "description": "Notification Preferences"
+    }
+  ],
+  "paths": {
+    "/api/v1/users/me/notification-preferences": {
+      "get": {
+        "tags": [
+          "Notification Preferences"
+        ],
+        "summary": "Get notification preferences",
+        "description": "Return the authenticated user's notification channel toggles. Falls back to defaults when no preference is saved.",
+        "operationId": "get_notification_preference_api_v1_users_me_notification_preferences_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_NotificationPreferenceResponse_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Notification Preferences"
+        ],
+        "summary": "Update notification preferences",
+        "operationId": "patch_notification_preference_api_v1_users_me_notification_preferences_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationPreferenceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_NotificationPreferenceResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiResponse_NotificationPreferenceResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/NotificationPreferenceResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[NotificationPreferenceResponse]"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "NotificationPreferenceResponse": {
+        "properties": {
+          "email_enabled": {
+            "type": "boolean",
+            "title": "Email Enabled"
+          },
+          "in_app_enabled": {
+            "type": "boolean",
+            "title": "In App Enabled"
+          },
+          "whatsapp_enabled": {
+            "type": "boolean",
+            "title": "Whatsapp Enabled"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email_enabled",
+          "in_app_enabled",
+          "whatsapp_enabled",
+          "is_default"
+        ],
+        "title": "NotificationPreferenceResponse"
+      },
+      "NotificationPreferenceUpdate": {
+        "properties": {
+          "email_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Enabled"
+          },
+          "in_app_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In App Enabled"
+          },
+          "whatsapp_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Whatsapp Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "NotificationPreferenceUpdate"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

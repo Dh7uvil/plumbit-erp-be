@@ -196,6 +196,18 @@
             "type": "string",
             "title": "Action"
           },
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
           "actor_name": {
             "anyOf": [
               {
@@ -206,6 +218,17 @@
               }
             ],
             "title": "Actor Name"
+          },
+          "actor_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Email"
           },
           "occurred_at": {
             "type": "string",
@@ -222,15 +245,38 @@
           "status": {
             "type": "string",
             "title": "Status"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "approval",
+              "edit",
+              "attachment"
+            ],
+            "title": "Kind"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
           }
         },
         "type": "object",
         "required": [
           "action",
+          "actor_id",
           "actor_name",
+          "actor_email",
           "occurred_at",
           "changed_fields",
-          "status"
+          "status",
+          "kind"
         ],
         "title": "ActivityEntry"
       },

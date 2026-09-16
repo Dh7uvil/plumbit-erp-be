@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import IDENTITY_MODULE
+from app.common.activity.entities import get_activity_spec
 from app.common.attachments.entities import EntityRef, require_spec
 from app.common.attachments.models import Attachment
 from app.common.attachments.repository import AttachmentRepository
@@ -45,10 +46,26 @@ def build_thumbnail_key(
 def _attachment_snapshot(row: Attachment) -> dict[str, object]:
     return {
         "entity_type": row.entity_type,
+        "entity_id": row.entity_id,
         "original_filename": row.original_filename,
         "content_type": row.content_type,
         "size_bytes": row.size_bytes,
         "category": row.category,
+    }
+
+
+def _parent_attachment_snapshot(row: Attachment) -> dict[str, object]:
+    return {
+        "event_kind": "attachment",
+        "original_filename": row.original_filename,
+    }
+
+
+def _parent_attachment_snapshot_from(values: dict[str, object]) -> dict[str, object]:
+    filename = values.get("original_filename")
+    return {
+        "event_kind": "attachment",
+        "original_filename": filename if isinstance(filename, str) else "",
     }
 
 
@@ -163,6 +180,13 @@ class AttachmentService:
                 entity_id=row.id,
                 new_values=_attachment_snapshot(row),
             )
+            await self._write_parent_attachment_audit(
+                tenant_id,
+                actor_user_id=actor_user_id,
+                action=AuditAction.CREATE,
+                row=row,
+                new_values=_parent_attachment_snapshot(row),
+            )
             return await self._to_response(row)
 
     async def update(
@@ -196,6 +220,14 @@ class AttachmentService:
                 old_values=old_values,
                 new_values=_attachment_snapshot(row),
             )
+            await self._write_parent_attachment_audit(
+                tenant_id,
+                actor_user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                row=row,
+                old_values=_parent_attachment_snapshot_from(old_values),
+                new_values=_parent_attachment_snapshot(row),
+            )
             return await self._to_response(row)
 
     async def delete(
@@ -222,7 +254,38 @@ class AttachmentService:
                 entity_id=attachment_id,
                 old_values=_attachment_snapshot(row),
             )
+            await self._write_parent_attachment_audit(
+                tenant_id,
+                actor_user_id=actor_user_id,
+                action=AuditAction.DELETE,
+                row=row,
+                old_values=_parent_attachment_snapshot(row),
+            )
             return response
+
+    async def _write_parent_attachment_audit(
+        self,
+        tenant_id: UUID,
+        *,
+        actor_user_id: UUID,
+        action: AuditAction,
+        row: Attachment,
+        old_values: dict[str, object] | None = None,
+        new_values: dict[str, object] | None = None,
+    ) -> None:
+        spec = get_activity_spec(row.entity_type.lower())
+        if spec is None:
+            return
+        await self.audit.write(
+            tenant_id=tenant_id,
+            user_id=actor_user_id,
+            action=action,
+            module=spec.module,
+            entity_type=spec.entity_type,
+            entity_id=row.entity_id,
+            old_values=old_values,
+            new_values=new_values,
+        )
 
     async def _resolve(
         self,
