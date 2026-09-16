@@ -6,11 +6,12 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, asc, desc, func, or_, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.common.repositories.search import column_ilike, ilike_pattern
 from app.common.schemas.pagination import PageParams
 from app.core.enums import InvoiceDocumentStatus, StockDocumentStatus
 from app.crm.customers.models import Customer
@@ -28,9 +29,19 @@ from app.inventory_management.stock.service import SOURCE_DELIVERY_NOTE
 _ZERO = Decimal("0")
 
 
+def _ordered(expr: ColumnElement[Any], sort_order: str):
+    return desc(expr) if sort_order == "desc" else asc(expr)
+
+
 class HistoryRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+
+    @staticmethod
+    def _search_pattern(search: str | None) -> str | None:
+        if not search:
+            return None
+        return ilike_pattern(search)
 
     def _posted_return_qty(self, tenant_id: UUID) -> ColumnElement[Decimal]:
         return func.coalesce(
@@ -171,17 +182,29 @@ class HistoryRepository:
             .subquery()
         )
 
-    async def product_customers(self, tenant_id: UUID, product_id: UUID) -> Sequence[Any]:
+    async def product_customers(
+        self,
+        tenant_id: UUID,
+        product_id: UUID,
+        *,
+        page: PageParams,
+        search: str | None = None,
+        sort_by: str = "last_date",
+        sort_order: str = "desc",
+    ) -> tuple[Sequence[Any], int]:
         net_qty = DeliveryNoteLine.quantity - self._posted_return_qty(tenant_id)
         invoice_stats = self._invoice_stats_by_customer(tenant_id, product_id)
+        last_date = func.max(DeliveryNote.document_date)
+        total_quantity = func.sum(net_qty)
+        dispatch_count = func.count(func.distinct(DeliveryNote.id))
         statement = (
             select(
                 Customer.id,
                 Customer.name,
-                func.sum(net_qty),
-                func.count(func.distinct(DeliveryNote.id)),
+                total_quantity,
+                dispatch_count,
                 func.min(DeliveryNote.document_date),
-                func.max(DeliveryNote.document_date),
+                last_date,
                 func.array_agg(
                     aggregate_order_by(
                         DeliveryNoteLine.rate,
@@ -225,10 +248,27 @@ class HistoryRepository:
                 invoice_stats.c.revenue,
             )
             .having(func.sum(net_qty) > 0)
-            .order_by(func.max(DeliveryNote.document_date).desc())
         )
-        result = await self.session.execute(statement)
-        return result.all()
+        pattern = self._search_pattern(search)
+        if pattern is not None:
+            statement = statement.where(column_ilike(Customer.name, pattern))
+        count_statement = select(func.count()).select_from(statement.subquery())
+        sort_map = {
+            "party_name": Customer.name,
+            "total_quantity": total_quantity,
+            "revenue": func.coalesce(invoice_stats.c.revenue, _ZERO),
+            "last_date": last_date,
+            "dispatch_count": dispatch_count,
+        }
+        order_expr = sort_map.get(sort_by, last_date)
+        statement = (
+            statement.order_by(_ordered(order_expr, sort_order), Customer.name.asc())
+            .offset(page.offset)
+            .limit(page.page_size)
+        )
+        rows = (await self.session.execute(statement)).all()
+        total = await self.session.scalar(count_statement)
+        return rows, int(total or 0)
 
     async def product_sales_lines(
         self,
@@ -240,6 +280,9 @@ class HistoryRepository:
         warehouse_id: UUID | None = None,
         document_date_from: date | None = None,
         document_date_to: date | None = None,
+        search: str | None = None,
+        sort_by: str = "document_date",
+        sort_order: str = "desc",
     ) -> tuple[Sequence[Any], int]:
         return await self._sales_lines(
             tenant_id,
@@ -249,20 +292,35 @@ class HistoryRepository:
             warehouse_id=warehouse_id,
             document_date_from=document_date_from,
             document_date_to=document_date_to,
+            search=search,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
 
-    async def customer_products(self, tenant_id: UUID, customer_id: UUID) -> Sequence[Any]:
+    async def customer_products(
+        self,
+        tenant_id: UUID,
+        customer_id: UUID,
+        *,
+        page: PageParams,
+        search: str | None = None,
+        sort_by: str = "last_date",
+        sort_order: str = "desc",
+    ) -> tuple[Sequence[Any], int]:
         net_qty = DeliveryNoteLine.quantity - self._posted_return_qty(tenant_id)
         invoice_stats = self._invoice_stats_by_product(tenant_id, customer_id)
+        last_date = func.max(DeliveryNote.document_date)
+        total_quantity = func.sum(net_qty)
+        dispatch_count = func.count(func.distinct(DeliveryNote.id))
         statement = (
             select(
                 Product.id,
                 Product.name,
                 Product.sku,
-                func.sum(net_qty),
-                func.count(func.distinct(DeliveryNote.id)),
+                total_quantity,
+                dispatch_count,
                 func.min(DeliveryNote.document_date),
-                func.max(DeliveryNote.document_date),
+                last_date,
                 func.array_agg(
                     aggregate_order_by(
                         DeliveryNoteLine.rate,
@@ -308,10 +366,30 @@ class HistoryRepository:
                 invoice_stats.c.revenue,
             )
             .having(func.sum(net_qty) > 0)
-            .order_by(func.max(DeliveryNote.document_date).desc())
         )
-        result = await self.session.execute(statement)
-        return result.all()
+        pattern = self._search_pattern(search)
+        if pattern is not None:
+            statement = statement.where(
+                or_(column_ilike(Product.sku, pattern), column_ilike(Product.name, pattern))
+            )
+        count_statement = select(func.count()).select_from(statement.subquery())
+        sort_map = {
+            "sku": Product.sku,
+            "product_name": Product.name,
+            "total_quantity": total_quantity,
+            "revenue": func.coalesce(invoice_stats.c.revenue, _ZERO),
+            "last_date": last_date,
+            "dispatch_count": dispatch_count,
+        }
+        order_expr = sort_map.get(sort_by, last_date)
+        statement = (
+            statement.order_by(_ordered(order_expr, sort_order), Product.sku.asc())
+            .offset(page.offset)
+            .limit(page.page_size)
+        )
+        rows = (await self.session.execute(statement)).all()
+        total = await self.session.scalar(count_statement)
+        return rows, int(total or 0)
 
     async def customer_sales_lines(
         self,
@@ -323,6 +401,9 @@ class HistoryRepository:
         warehouse_id: UUID | None = None,
         document_date_from: date | None = None,
         document_date_to: date | None = None,
+        search: str | None = None,
+        sort_by: str = "document_date",
+        sort_order: str = "desc",
     ) -> tuple[Sequence[Any], int]:
         return await self._sales_lines(
             tenant_id,
@@ -332,6 +413,9 @@ class HistoryRepository:
             warehouse_id=warehouse_id,
             document_date_from=document_date_from,
             document_date_to=document_date_to,
+            search=search,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
 
     async def _sales_lines(
@@ -344,8 +428,12 @@ class HistoryRepository:
         warehouse_id: UUID | None,
         document_date_from: date | None,
         document_date_to: date | None,
+        search: str | None = None,
+        sort_by: str = "document_date",
+        sort_order: str = "desc",
     ) -> tuple[Sequence[Any], int]:
         net_qty = DeliveryNoteLine.quantity - self._posted_return_qty(tenant_id)
+        invoiced_amount = self._posted_invoice_amount_for_dn_line(tenant_id)
         criteria: list[ColumnElement[bool]] = [
             DeliveryNote.tenant_id == tenant_id,
             DeliveryNote.deleted_at.is_(None),
@@ -364,6 +452,16 @@ class HistoryRepository:
             criteria.append(DeliveryNote.document_date >= document_date_from)
         if document_date_to is not None:
             criteria.append(DeliveryNote.document_date <= document_date_to)
+        pattern = self._search_pattern(search)
+        if pattern is not None:
+            criteria.append(
+                or_(
+                    column_ilike(DeliveryNote.document_number, pattern),
+                    column_ilike(Customer.name, pattern),
+                    column_ilike(Product.name, pattern),
+                    column_ilike(Product.sku, pattern),
+                )
+            )
         base: Select[tuple[object, ...]] = (
             select(
                 DeliveryNote.id,
@@ -381,7 +479,7 @@ class HistoryRepository:
                 DeliveryNote.posted_by,
                 SalesOrder.salesperson_id,
                 self._posted_invoice_qty_for_dn_line(tenant_id),
-                self._posted_invoice_amount_for_dn_line(tenant_id),
+                invoiced_amount,
             )
             .select_from(DeliveryNoteLine)
             .join(DeliveryNote, DeliveryNote.id == DeliveryNoteLine.delivery_note_id)
@@ -391,8 +489,19 @@ class HistoryRepository:
             .where(*criteria)
         )
         count_statement = select(func.count()).select_from(base.subquery())
+        sort_map = {
+            "document_date": DeliveryNote.document_date,
+            "document_number": DeliveryNote.document_number,
+            "quantity": net_qty,
+            "rate": DeliveryNoteLine.rate,
+            "revenue": invoiced_amount,
+            "party_name": Customer.name,
+            "product_name": Product.name,
+            "sku": Product.sku,
+        }
+        order_expr = sort_map.get(sort_by, DeliveryNote.document_date)
         statement = (
-            base.order_by(DeliveryNote.document_date.desc(), DeliveryNote.created_at.desc())
+            base.order_by(_ordered(order_expr, sort_order), DeliveryNote.created_at.desc())
             .offset(page.offset)
             .limit(page.page_size)
         )
@@ -410,6 +519,9 @@ class HistoryRepository:
         warehouse_id: UUID | None = None,
         document_date_from: date | None = None,
         document_date_to: date | None = None,
+        search: str | None = None,
+        sort_by: str = "document_date",
+        sort_order: str = "desc",
     ) -> tuple[Sequence[Any], int]:
         return await self._purchase_lines(
             tenant_id,
@@ -419,6 +531,9 @@ class HistoryRepository:
             warehouse_id=warehouse_id,
             document_date_from=document_date_from,
             document_date_to=document_date_to,
+            search=search,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
 
     async def supplier_purchase_lines(
@@ -431,6 +546,9 @@ class HistoryRepository:
         warehouse_id: UUID | None = None,
         document_date_from: date | None = None,
         document_date_to: date | None = None,
+        search: str | None = None,
+        sort_by: str = "document_date",
+        sort_order: str = "desc",
     ) -> tuple[Sequence[Any], int]:
         return await self._purchase_lines(
             tenant_id,
@@ -440,6 +558,9 @@ class HistoryRepository:
             warehouse_id=warehouse_id,
             document_date_from=document_date_from,
             document_date_to=document_date_to,
+            search=search,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
 
     async def _purchase_lines(
@@ -452,7 +573,12 @@ class HistoryRepository:
         warehouse_id: UUID | None,
         document_date_from: date | None,
         document_date_to: date | None,
+        search: str | None = None,
+        sort_by: str = "document_date",
+        sort_order: str = "desc",
     ) -> tuple[Sequence[Any], int]:
+        quantity = GoodsReceiptLine.quantity - self._posted_purchase_return_qty(tenant_id)
+        billed_amount = self._posted_bill_amount_for_grn_line(tenant_id)
         criteria: list[ColumnElement[bool]] = [
             GoodsReceipt.tenant_id == tenant_id,
             GoodsReceipt.deleted_at.is_(None),
@@ -470,6 +596,16 @@ class HistoryRepository:
             criteria.append(GoodsReceipt.document_date >= document_date_from)
         if document_date_to is not None:
             criteria.append(GoodsReceipt.document_date <= document_date_to)
+        pattern = self._search_pattern(search)
+        if pattern is not None:
+            criteria.append(
+                or_(
+                    column_ilike(GoodsReceipt.document_number, pattern),
+                    column_ilike(Customer.name, pattern),
+                    column_ilike(Product.name, pattern),
+                    column_ilike(Product.sku, pattern),
+                )
+            )
         base: Select[tuple[object, ...]] = (
             select(
                 GoodsReceipt.id,
@@ -481,10 +617,10 @@ class HistoryRepository:
                 Customer.id,
                 Customer.name,
                 GoodsReceipt.warehouse_id,
-                GoodsReceiptLine.quantity - self._posted_purchase_return_qty(tenant_id),
+                quantity,
                 GoodsReceiptLine.rate,
                 GoodsReceipt.posted_by,
-                self._posted_bill_amount_for_grn_line(tenant_id),
+                billed_amount,
             )
             .select_from(GoodsReceiptLine)
             .join(GoodsReceipt, GoodsReceipt.id == GoodsReceiptLine.goods_receipt_id)
@@ -493,8 +629,19 @@ class HistoryRepository:
             .where(*criteria)
         )
         count_statement = select(func.count()).select_from(base.subquery())
+        sort_map = {
+            "document_date": GoodsReceipt.document_date,
+            "document_number": GoodsReceipt.document_number,
+            "quantity": quantity,
+            "rate": GoodsReceiptLine.rate,
+            "revenue": billed_amount,
+            "party_name": Customer.name,
+            "product_name": Product.name,
+            "sku": Product.sku,
+        }
+        order_expr = sort_map.get(sort_by, GoodsReceipt.document_date)
         statement = (
-            base.order_by(GoodsReceipt.document_date.desc(), GoodsReceipt.created_at.desc())
+            base.order_by(_ordered(order_expr, sort_order), GoodsReceipt.created_at.desc())
             .offset(page.offset)
             .limit(page.page_size)
         )

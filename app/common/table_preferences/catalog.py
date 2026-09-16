@@ -459,6 +459,25 @@ TABLE_CATALOG: dict[str, TableCatalogEntry] = {
             ),
         ),
         _entry(
+            "inventory.trading_history",
+            ("document", "date", "party", "product", "qty", "invoiced", "rate", "revenue"),
+            TableColumnSpec("unit_cost", required_permission=COST_READ),
+            TableColumnSpec("billed_cost", required_permission=COST_READ),
+            TableColumnSpec("margin", required_permission=COST_READ),
+        ),
+        _entry(
+            "inventory.trading_party_aggregates",
+            ("party", "qty", "invoiced", "revenue", "dispatches", "first", "last", "last_rate"),
+        ),
+        _entry(
+            "inventory.trading_product_aggregates",
+            ("sku", "product", "qty", "invoiced", "revenue", "dispatches", "first", "last", "last_rate"),
+        ),
+        _entry(
+            "inventory.price_list_items",
+            ("sku", "product", "rate"),
+        ),
+        _entry(
             "inventory.packages",
             ("document_number", "carton", "status"),
             *_hidden(

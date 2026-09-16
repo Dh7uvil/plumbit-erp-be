@@ -26,6 +26,7 @@ from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.inventory_management.history.dependencies import HistoryServiceDependency
 from app.inventory_management.history.schemas import (
+    TradingAggregateFilter,
     TradingHistoryFilter,
     TradingHistoryLine,
     TradingPartyAggregate,
@@ -179,11 +180,15 @@ async def delete_product(
 async def list_product_customers(
     product_id: UUID,
     tenant: TenantContextDependency,
+    page: PaginationDependency,
     history: HistoryServiceDependency,
+    filters: Annotated[TradingAggregateFilter, Depends()],
     _: Annotated[CurrentUser, Depends(require_permission(PRODUCT_HISTORY))],
 ) -> ApiResponse[list[TradingPartyAggregate]]:
-    rows = await history.product_customers(tenant.tenant_id, product_id)
-    return ApiResponse(data=rows)
+    rows, total = await history.product_customers(
+        tenant.tenant_id, product_id, page=page, filters=filters
+    )
+    return paginated_response(rows, params=page, total=total)
 
 
 @router.get(
@@ -202,10 +207,7 @@ async def list_product_sales_history(
         tenant.tenant_id,
         product_id,
         page=page,
-        party_id=filters.party_id,
-        warehouse_id=filters.warehouse_id,
-        document_date_from=filters.document_date_from,
-        document_date_to=filters.document_date_to,
+        filters=filters,
     )
     return paginated_response(rows, params=page, total=total)
 
@@ -226,9 +228,6 @@ async def list_product_purchase_history(
         tenant.tenant_id,
         product_id,
         page=page,
-        party_id=filters.party_id,
-        warehouse_id=filters.warehouse_id,
-        document_date_from=filters.document_date_from,
-        document_date_to=filters.document_date_to,
+        filters=filters,
     )
     return paginated_response(rows, params=page, total=total)
