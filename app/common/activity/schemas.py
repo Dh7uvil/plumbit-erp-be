@@ -1,12 +1,14 @@
 """Activity feed request and response schemas."""
 
 from datetime import datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.common.schemas.filters import BaseFilter
+
+ActivityKind = Literal["approval", "edit", "attachment"]
 
 
 class ActivityFilter(BaseFilter):
@@ -24,7 +26,11 @@ class ActivityChangedField(BaseModel):
 
 class ActivityEntry(BaseModel):
     action: str
+    actor_id: UUID | None
     actor_name: str | None
+    actor_email: str | None
     occurred_at: datetime
     changed_fields: list[ActivityChangedField]
     status: str
+    kind: ActivityKind
+    summary: str | None = None

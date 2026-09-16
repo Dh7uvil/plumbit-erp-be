@@ -58,6 +58,7 @@ from app.auth.schemas import (
     LoginRequest,
     LogoutRequest,
     MeResponse,
+    MeUpdate,
     PermissionFilter,
     PermissionMatrixResponse,
     PermissionResponse,
@@ -280,6 +281,27 @@ async def me(
 ) -> ApiResponse[MeResponse]:
     data = await service.me(tenant_id=tenant.tenant_id, user_id=tenant.user_id)
     return ApiResponse(data=data)
+
+
+@auth_router.patch(
+    "/me",
+    response_model=ApiResponse[MeResponse],
+    summary="Update current user profile",
+    description=(
+        "Update the authenticated user's name and phone. Email, status, and roles are unchanged."
+    ),
+)
+async def update_me(
+    payload: MeUpdate,
+    tenant: TenantContextDependency,
+    service: AuthServiceDependency,
+) -> ApiResponse[MeResponse]:
+    data = await service.update_me(
+        tenant_id=tenant.tenant_id,
+        user_id=tenant.user_id,
+        payload=payload,
+    )
+    return ApiResponse(data=data, message="Profile updated")
 
 
 @auth_router.post(
