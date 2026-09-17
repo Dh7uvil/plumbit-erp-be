@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -465,3 +466,108 @@ async def test_dispatch_after_revalue_consumes_landed_cost(client: AsyncClient) 
     )
     assert Decimal(outbound["unit_cost"]) == Decimal("90.0000")
     assert Decimal(outbound["value"]) == Decimal("-360.0000")
+
+
+def _from_bills_headers(headers: dict[str, str]) -> dict[str, str]:
+    return {**headers, "Idempotency-Key": uuid4().hex}
+
+
+@pytest.mark.asyncio
+async def test_from_bills_creates_draft_from_remaining_expense(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ctx = await _issue_tracked_po(client, headers, quantity="4")
+    created = await _create_from_po(client, headers, ctx["order"]["id"])
+    posted_grn = await _post_grn(
+        client, headers, created["body"]["data"]["id"], created["body"]["data"]["version"]
+    )
+    grn = posted_grn.json()["data"]
+    freight = await _post_expense_bill(
+        client, headers, supplier_id=str(ctx["supplier_id"]), grn_id=grn["id"], rate="10.0000"
+    )
+    composed = await client.post(
+        "/api/v1/landed-costs/from-bills",
+        headers=_from_bills_headers(headers),
+        json={
+            "purchase_invoice_line_ids": [freight["lines"][0]["id"]],
+            "goods_receipt_ids": [grn["id"]],
+        },
+    )
+    assert composed.status_code == 201, composed.text
+    body = composed.json()["data"]
+    assert body["status"] == "DRAFT"
+    assert body["charges"][0]["purchase_invoice_line_id"] == freight["lines"][0]["id"]
+    assert Decimal(body["charges"][0]["amount"]) == Decimal("10.0000")
+
+
+@pytest.mark.asyncio
+async def test_from_bills_skips_fully_allocated_lines(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ctx = await _issue_tracked_po(client, headers, quantity="4")
+    created = await _create_from_po(client, headers, ctx["order"]["id"])
+    posted_grn = await _post_grn(
+        client, headers, created["body"]["data"]["id"], created["body"]["data"]["version"]
+    )
+    grn = posted_grn.json()["data"]
+    freight = await _post_expense_bill(
+        client, headers, supplier_id=str(ctx["supplier_id"]), grn_id=grn["id"], rate="10.0000"
+    )
+    duty = await _post_expense_bill(
+        client,
+        headers,
+        supplier_id=str(ctx["supplier_id"]),
+        grn_id=grn["id"],
+        rate="20.0000",
+        expense_category="CUSTOMS_DUTY",
+        description="Customs duty",
+    )
+    await _create_and_post_lc(
+        client,
+        headers,
+        charges=[{"purchase_invoice_line_id": freight["lines"][0]["id"]}],
+        allocations=[{"goods_receipt_line_id": grn["lines"][0]["id"]}],
+    )
+    composed = await client.post(
+        "/api/v1/landed-costs/from-bills",
+        headers=_from_bills_headers(headers),
+        json={
+            "purchase_invoice_line_ids": [freight["lines"][0]["id"], duty["lines"][0]["id"]],
+            "goods_receipt_ids": [grn["id"]],
+        },
+    )
+    assert composed.status_code == 201, composed.text
+    charge_ids = [item["purchase_invoice_line_id"] for item in composed.json()["data"]["charges"]]
+    assert duty["lines"][0]["id"] in charge_ids
+    assert freight["lines"][0]["id"] not in charge_ids
+
+
+@pytest.mark.asyncio
+async def test_from_bills_fully_allocated_lines_refused(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ctx = await _issue_tracked_po(client, headers, quantity="4")
+    created = await _create_from_po(client, headers, ctx["order"]["id"])
+    posted_grn = await _post_grn(
+        client, headers, created["body"]["data"]["id"], created["body"]["data"]["version"]
+    )
+    grn = posted_grn.json()["data"]
+    freight = await _post_expense_bill(
+        client, headers, supplier_id=str(ctx["supplier_id"]), grn_id=grn["id"], rate="10.0000"
+    )
+    await _create_and_post_lc(
+        client,
+        headers,
+        charges=[{"purchase_invoice_line_id": freight["lines"][0]["id"]}],
+        allocations=[{"goods_receipt_line_id": grn["lines"][0]["id"]}],
+    )
+    composed = await client.post(
+        "/api/v1/landed-costs/from-bills",
+        headers=_from_bills_headers(headers),
+        json={
+            "purchase_invoice_line_ids": [freight["lines"][0]["id"]],
+            "goods_receipt_ids": [grn["id"]],
+        },
+    )
+    assert composed.status_code == 422, composed.text
+    assert composed.json()["error"]["code"] == "VALIDATION_ERROR"

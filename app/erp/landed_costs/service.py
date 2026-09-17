@@ -175,6 +175,13 @@ class LandedCostService:
             allocations = await self._allocations_for_receipts(tenant_id, receipt_ids)
             if not allocations:
                 raise ValidationError("Select at least one posted goods receipt line to allocate")
+            line_ids = await self._usable_from_bills_line_ids(
+                tenant_id, list(payload.purchase_invoice_line_ids)
+            )
+            if not line_ids:
+                raise ValidationError(
+                    "These expense lines have already been allocated to landed cost"
+                )
             create = LandedCostCreate(
                 document_date=payload.document_date,
                 allocation_method=payload.allocation_method,
@@ -182,8 +189,7 @@ class LandedCostService:
                 branch_id=payload.branch_id,
                 notes=payload.notes,
                 charges=[
-                    LandedCostChargeInput(purchase_invoice_line_id=line_id)
-                    for line_id in payload.purchase_invoice_line_ids
+                    LandedCostChargeInput(purchase_invoice_line_id=line_id) for line_id in line_ids
                 ],
                 allocations=allocations,
             )
@@ -790,6 +796,21 @@ class LandedCostService:
         if category == ExpenseCategory.CUSTOMS_DUTY:
             return await self.resolver.require(tenant_id, AccountSystemRole.CUSTOMS_DUTY)
         return await self.resolver.require(tenant_id, AccountSystemRole.OTHER_CHARGES)
+
+    async def _usable_from_bills_line_ids(
+        self, tenant_id: UUID, line_ids: list[UUID]
+    ) -> list[UUID]:
+        from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
+
+        bill_repo = PurchaseInvoiceRepository(self.session)
+        allocated_map = await self.repo.posted_allocated_by_bill_line(tenant_id, line_ids)
+        usable: list[UUID] = []
+        for line_id in line_ids:
+            bill_line, _bill = await self._require_expense_line(tenant_id, bill_repo, line_id)
+            remaining = quantize_money(bill_line.amount - allocated_map.get(bill_line.id, _ZERO))
+            if remaining > _ZERO:
+                usable.append(line_id)
+        return usable
 
     async def _require_expense_line(
         self, tenant_id: UUID, bill_repo, line_id: UUID

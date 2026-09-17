@@ -76,7 +76,7 @@ async def _confirm_sales_order(
     product_id: str,
     quantity: str = "10",
 ) -> dict[str, object]:
-    customer_id = await _create_customer(client, headers)
+    customer_id = await _create_customer(client, headers, trn=f"200{uuid4().int % 10**12:012d}")
     created = await _create_sales_order(
         client, headers, customer_id=customer_id, product_id=product_id, quantity=quantity
     )
