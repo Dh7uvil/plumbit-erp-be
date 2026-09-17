@@ -98,10 +98,16 @@ class PackageRepository:
     async def list_for_delivery_note(
         self, tenant_id: UUID, delivery_note_id: UUID
     ) -> Sequence[Package]:
+        return await self.list_for_delivery_notes(tenant_id, [delivery_note_id])
+
+    async def list_for_delivery_notes(
+        self, tenant_id: UUID, delivery_note_ids: Sequence[UUID]
+    ) -> Sequence[Package]:
+        if not delivery_note_ids:
+            return []
         statement = (
             self._repo.base_query(tenant_id)
-            .where(Package.delivery_note_id == delivery_note_id)
-            .options(self._with_lines())
+            .where(Package.delivery_note_id.in_(list(delivery_note_ids)))
             .order_by(Package.created_at)
         )
         result = await self.session.execute(statement)

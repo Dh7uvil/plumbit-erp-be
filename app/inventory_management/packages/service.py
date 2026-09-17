@@ -49,6 +49,7 @@ from app.inventory_management.packages.workflow import (
     transition_actions,
 )
 from app.inventory_management.products.service import ProductService
+from app.logistics.shipments.totals import apply_shipment_package_totals
 
 _ZERO = Decimal("0")
 _SERIES = "PKG"
@@ -159,7 +160,7 @@ class PackageService:
         rows = load_mapped_rows("package", filename=filename, content=content, mapping=mapping)
         created_ids: builtins.list[UUID] = []
         errors: builtins.list[ImportRowError] = []
-        for (_key, items) in group_fill_forward(rows, ("sales_order_number",)).items():
+        for _key, items in group_fill_forward(rows, ("sales_order_number",)).items():
             first_row_number, header = items[0]
             try:
                 so_number = (header.get("sales_order_number") or "").strip()
@@ -243,9 +244,7 @@ class PackageService:
             )
             for row in rows:
                 for line in row.lines:
-                    exported.append(
-                        commercial_export_row(row, line, party_id=row.sales_order_id)
-                    )
+                    exported.append(commercial_export_row(row, line, party_id=row.sales_order_id))
             if len(rows) < MAX_PAGE_SIZE or page * MAX_PAGE_SIZE >= total:
                 break
             page += 1
@@ -279,6 +278,7 @@ class PackageService:
             )
             await self.repo.replace_lines(tenant_id, row.id, line_rows)
             loaded = await self._require(tenant_id, row.id)
+            await self._refresh_shipment_for_note(tenant_id, loaded.delivery_note_id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -303,6 +303,7 @@ class PackageService:
             existing = await self._require(tenant_id, package_id, for_update=True)
             assert_editable(PackageStatus(existing.status))
             self._assert_version(existing, expected_version)
+            previous_note_id = existing.delivery_note_id
             create_payload = await self._update_to_create(existing, payload)
             header, line_rows = await self._build_draft(
                 tenant_id, create_payload, exclude_package_id=package_id
@@ -314,6 +315,9 @@ class PackageService:
             await self.repo.update(tenant_id, package_id, header)
             await self.repo.replace_lines(tenant_id, package_id, line_rows)
             loaded = await self._require(tenant_id, package_id)
+            await self._refresh_shipment_for_note(tenant_id, previous_note_id)
+            if loaded.delivery_note_id != previous_note_id:
+                await self._refresh_shipment_for_note(tenant_id, loaded.delivery_note_id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -338,7 +342,9 @@ class PackageService:
                 raise InvalidStatusTransitionError("Only draft packages can be deleted")
             self._assert_version(row, expected_version)
             response = self._to_response(row)
+            note_id = row.delivery_note_id
             await self.repo.soft_delete(tenant_id, package_id)
+            await self._refresh_shipment_for_note(tenant_id, note_id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -393,6 +399,7 @@ class PackageService:
             row.updated_by = actor_user_id
             await self.session.flush()
             await self.session.refresh(row, attribute_names=["updated_at"])
+            await self._refresh_shipment_for_note(tenant_id, row.delivery_note_id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -425,6 +432,7 @@ class PackageService:
             row.version += 1
             await self.session.flush()
             await self.session.refresh(row, attribute_names=["updated_at"])
+            await self._refresh_shipment_for_note(tenant_id, delivery_note_id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -453,6 +461,7 @@ class PackageService:
             row.version += 1
             await self.session.flush()
             await self.session.refresh(row, attribute_names=["updated_at"])
+            await self._refresh_shipment_for_note(tenant_id, delivery_note_id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -651,6 +660,16 @@ class PackageService:
             raise DocumentStaleError(
                 details={"current_version": row.version, "provided_version": expected_version}
             )
+
+    async def _refresh_shipment_for_note(
+        self, tenant_id: UUID, delivery_note_id: UUID | None
+    ) -> None:
+        if delivery_note_id is None:
+            return
+        note = await self.delivery_notes.repo.get(tenant_id, delivery_note_id)
+        if note is None or note.shipment_id is None:
+            return
+        await apply_shipment_package_totals(self.session, tenant_id, note.shipment_id)
 
     async def _require(
         self, tenant_id: UUID, package_id: UUID, *, for_update: bool = False

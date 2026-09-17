@@ -36,10 +36,10 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.core.permissions import has_permission
-from app.crm.customers.service import CustomerService
 from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import DocumentSequenceService
+from app.erp.suppliers.service import SupplierService
 from app.inventory_management.delivery_notes.service import DeliveryNoteService
 from app.logistics.shipments.models import Shipment
 from app.logistics.shipments.repository import ShipmentRepository
@@ -49,6 +49,7 @@ from app.logistics.shipments.schemas import (
     ShipmentTrackingUpdate,
     ShipmentUpdate,
 )
+from app.logistics.shipments.totals import apply_shipment_package_totals
 from app.logistics.shipments.workflow import (
     assert_editable,
     assert_trackable,
@@ -87,7 +88,7 @@ class ShipmentService:
         self.actor_permissions = actor_permissions
         self.repo = ShipmentRepository(session)
         self.delivery_notes = DeliveryNoteService(session, actor_permissions=actor_permissions)
-        self.customers = CustomerService(session)
+        self.suppliers = SupplierService(session)
         self.org = OrganizationService(session)
         self.sequences = DocumentSequenceService(session)
         self.audit = AuditWriter(session)
@@ -229,6 +230,8 @@ class ShipmentService:
             updated = await self.repo.update(tenant_id, shipment_id, values)
             if updated is None:
                 raise ResourceNotFoundError("Shipment not found")
+            await apply_shipment_package_totals(self.session, tenant_id, shipment_id)
+            await self.session.refresh(updated)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -349,8 +352,9 @@ class ShipmentService:
             for note_id in delivery_note_ids:
                 await self.delivery_notes.attach_shipment(tenant_id, note_id, row.id)
             row.updated_by = actor_user_id
+            await apply_shipment_package_totals(self.session, tenant_id, shipment_id)
             await self.session.flush()
-            await self.session.refresh(row, attribute_names=["updated_at"])
+            await self.session.refresh(row)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -374,8 +378,9 @@ class ShipmentService:
             row = await self._require(tenant_id, shipment_id, for_update=True)
             await self.delivery_notes.detach_shipment(tenant_id, delivery_note_id, row.id)
             row.updated_by = actor_user_id
+            await apply_shipment_package_totals(self.session, tenant_id, shipment_id)
             await self.session.flush()
-            await self.session.refresh(row, attribute_names=["updated_at"])
+            await self.session.refresh(row)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -423,7 +428,7 @@ class ShipmentService:
 
     async def _header_values(self, tenant_id: UUID, payload: ShipmentCreate) -> dict[str, Any]:
         if payload.freight_forwarder_id is not None:
-            await self.customers.get(tenant_id, payload.freight_forwarder_id)
+            await self._require_freight_forwarder(tenant_id, payload.freight_forwarder_id)
         return {
             "shipment_type": payload.shipment_type.value,
             "transport_mode": payload.transport_mode.value,
@@ -440,11 +445,16 @@ class ShipmentService:
             "port_of_discharge": payload.port_of_discharge,
             "etd": payload.etd,
             "eta": payload.eta,
-            "gross_weight": payload.gross_weight,
-            "net_weight": payload.net_weight,
-            "total_packages": payload.total_packages,
             "notes": payload.notes,
         }
+
+    async def _require_freight_forwarder(self, tenant_id: UUID, party_id: UUID) -> None:
+        try:
+            party = await self.suppliers.get(tenant_id, party_id)
+        except ResourceNotFoundError as exc:
+            raise ValidationError("Freight forwarder must be an active supplier") from exc
+        if not party.is_active:
+            raise ValidationError("Freight forwarder must be an active supplier")
 
     def _to_response(self, row: Shipment) -> ShipmentResponse:
         status = ShipmentStatus(row.status)
