@@ -16,6 +16,8 @@ from app.auth.catalog import (
     SALES_INVOICE_POST,
     SALES_INVOICE_READ,
     SALES_INVOICE_UPDATE,
+    DUNNING_READ,
+    DUNNING_SEND,
     WRITE_OFF_CREATE,
     WRITE_OFF_REVERSE,
 )
@@ -35,6 +37,12 @@ from app.common.utils.concurrency import require_document_version
 from app.erp.accounting.customer_payments.dependencies import CustomerPaymentServiceDependency
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
 from app.erp.accounting.open_items.schemas import ApplyCreditsRequest
+from app.erp.accounting.dunning.dependencies import DunningServiceDependency
+from app.erp.accounting.dunning.schemas import (
+    DunningLogResponse,
+    SendPaymentReminderRequest,
+    SendPaymentReminderResponse,
+)
 from app.erp.accounting.write_offs.dependencies import InvoiceWriteOffServiceDependency
 from app.erp.accounting.write_offs.schemas import (
     InvoiceWriteOffRequest,
@@ -411,6 +419,41 @@ async def reverse_sales_invoice_write_off(
         endpoint=request.url.path,
     )
     return ApiResponse(data=row, message="Sales invoice write-off reversed")
+
+
+@router.get(
+    "/{invoice_id}/payment-reminders",
+    response_model=ApiResponse[list[DunningLogResponse]],
+)
+async def list_sales_invoice_payment_reminders(
+    invoice_id: UUID,
+    tenant: TenantContextDependency,
+    service: DunningServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(DUNNING_READ))],
+) -> ApiResponse[list[DunningLogResponse]]:
+    rows = await service.list_logs(tenant.tenant_id, invoice_id)
+    return ApiResponse(data=rows)
+
+
+@router.post(
+    "/{invoice_id}/send-reminder",
+    response_model=ApiResponse[SendPaymentReminderResponse],
+)
+async def send_sales_invoice_payment_reminder(
+    invoice_id: UUID,
+    tenant: TenantContextDependency,
+    service: DunningServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(DUNNING_SEND))],
+    payload: SendPaymentReminderRequest | None = Body(default=None),
+) -> ApiResponse[SendPaymentReminderResponse]:
+    body = payload or SendPaymentReminderRequest()
+    result = await service.send_manual_reminder(
+        tenant.tenant_id,
+        invoice_id,
+        dunning_rule_id=body.dunning_rule_id,
+        actor_user_id=tenant.user_id,
+    )
+    return ApiResponse(data=result, message="Payment reminder queued")
 
 
 @router.get("/{invoice_id}/journal", response_model=ApiResponse[JournalEntryResponse])

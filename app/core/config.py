@@ -111,6 +111,7 @@ class Settings(BaseSettings):
     ses_from_email: str | None = None
     ses_from_name: str | None = None
     ses_configuration_set: str | None = None
+    public_app_url: AnyHttpUrl | None = None
 
     # WhatsApp
     whatsapp_api_url: AnyHttpUrl | None = None

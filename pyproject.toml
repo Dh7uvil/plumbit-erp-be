@@ -29,6 +29,7 @@ grant-superadmin-permissions = "app.cli.grant_superadmin_permissions:main"
 generate-jwt-secret = "app.cli.generate_jwt_secret:main"
 export-openapi = "app.cli.export_openapi:main"
 outbox = "app.cli.outbox:main"
+dunning-scan = "app.cli.dunning_scan:main"
 rebuild-inventory-gl = "app.cli.rebuild_inventory_gl:main"
 renumber-documents = "app.cli.renumber_documents:main"
 

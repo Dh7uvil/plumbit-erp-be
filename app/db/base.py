@@ -46,6 +46,7 @@ import app.crm.contacts.models as _contacts  # noqa: E402, F401
 import app.crm.customers.models as _customers  # noqa: E402, F401
 import app.erp.accounting.accounts.models as _accounts  # noqa: E402, F401
 import app.erp.accounting.cost_centers.models as _cost_centers  # noqa: E402, F401
+import app.erp.accounting.dunning.models as _dunning  # noqa: E402, F401
 import app.erp.accounting.customer_payments.models as _customer_payments  # noqa: E402, F401
 import app.erp.accounting.ledger.models as _journal_entries  # noqa: E402, F401
 import app.erp.accounting.models as _accounting  # noqa: E402, F401

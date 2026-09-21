@@ -464,6 +464,12 @@ class NotificationChannel(StrEnum):
     PUSH = "PUSH"
 
 
+class DunningTemplateKey(StrEnum):
+    PAYMENT_DUE_SOON = "PAYMENT_DUE_SOON"
+    PAYMENT_OVERDUE = "PAYMENT_OVERDUE"
+    PAYMENT_ESCALATION = "PAYMENT_ESCALATION"
+
+
 class ChatType(StrEnum):
     DM = "DM"
     GROUP = "GROUP"

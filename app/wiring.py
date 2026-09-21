@@ -966,8 +966,15 @@ async def _landed_cost_get(session: AsyncSession, tenant_id: UUID, entity_id: UU
 
 
 def _register_outbox_handlers() -> None:
-    # Phases 34 and 35 replace these logging no-ops with real handlers.
     from app.common.outbox.handlers import register as register_outbox
+    from app.integrations.email.outbox_handlers import (
+        EMAIL_EVENT_TYPES,
+        handle_email_outbox_event,
+        handle_password_reset_requested,
+    )
+
+    register_outbox("identity.password_reset.requested", handle_password_reset_requested)
+    register_outbox("sales.payment_reminder.requested", handle_email_outbox_event)
 
     for event_type in (
         "sales.quotation.revised",
@@ -1006,6 +1013,8 @@ def _register_outbox_handlers() -> None:
         "purchase.landed_cost.cancelled",
         "identity.password_reset.requested",
     ):
+        if event_type in EMAIL_EVENT_TYPES:
+            continue
         register_outbox(event_type, _log_outbox_event)
 
 
