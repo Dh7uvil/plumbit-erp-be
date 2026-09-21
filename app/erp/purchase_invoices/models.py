@@ -133,6 +133,9 @@ class PurchaseInvoice(AuditUserMixin, SoftDeleteTenantModel):
     amount_debited: Mapped[Decimal] = mapped_column(
         _MONEY, nullable=False, server_default=text("0")
     )
+    amount_written_off: Mapped[Decimal] = mapped_column(
+        _MONEY, nullable=False, server_default=text("0")
+    )
     balance_due: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     payment_status: Mapped[str] = mapped_column(
         String(30), nullable=False, server_default=text("'UNPAID'")

@@ -250,6 +250,7 @@ class PurchaseInvoiceResponse(BaseModel):
     notes: str | None
     amount_paid: Decimal
     amount_debited: Decimal
+    amount_written_off: Decimal = Decimal("0")
     balance_due: Decimal
     payment_status: PaymentStatus
     journal_entry_id: UUID | None

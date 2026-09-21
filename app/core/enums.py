@@ -287,6 +287,7 @@ class AccountSystemRole(StrEnum):
     CASH_ON_HAND = "CASH_ON_HAND"
     BANK = "BANK"
     BANK_CHARGES = "BANK_CHARGES"
+    BAD_DEBT_EXPENSE = "BAD_DEBT_EXPENSE"
     SUSPENSE = "SUSPENSE"
 
 

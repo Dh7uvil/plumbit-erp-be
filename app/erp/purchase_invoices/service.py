@@ -19,6 +19,7 @@ from app.auth.catalog import (
     PURCHASE_INVOICE_POST,
     PURCHASE_MODULE,
     SUPPLIER_PAYMENT_CREATE,
+    WRITE_OFF_CREATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
@@ -732,13 +733,16 @@ class PurchaseInvoiceService:
         row.amount_paid = quantize_money(row.amount_paid + amount)
         if row.amount_paid < _ZERO:
             raise ValidationError("Paid amount cannot be negative")
-        settled = quantize_money(row.amount_paid + row.amount_debited)
+        settled = quantize_money(
+            row.amount_paid + row.amount_debited + row.amount_written_off
+        )
         if settled > row.grand_total:
             raise PaymentOverAllocatedError(
                 details={
                     "grand_total": str(row.grand_total),
                     "amount_paid": str(row.amount_paid),
                     "amount_debited": str(row.amount_debited),
+                    "amount_written_off": str(row.amount_written_off),
                 }
             )
         self._refresh_payment_status(row)
@@ -755,6 +759,8 @@ class PurchaseInvoiceService:
             raise InvoiceCannotVoidError("This invoice has payments and cannot be voided")
         if row.amount_debited > _ZERO:
             raise InvoiceCannotVoidError("This invoice has debit notes and cannot be voided")
+        if row.amount_written_off > _ZERO:
+            raise InvoiceCannotVoidError("This invoice has write-offs and cannot be voided")
         for probe in registered_probes():
             if await probe(self.session, tenant_id, row.id):
                 raise InvoiceCannotVoidError(
@@ -1234,6 +1240,7 @@ class PurchaseInvoiceService:
             "notes": payload.notes,
             "amount_paid": _ZERO,
             "amount_debited": _ZERO,
+            "amount_written_off": _ZERO,
             "balance_due": grand,
             "payment_status": PaymentStatus.UNPAID.value,
         }
@@ -1453,10 +1460,14 @@ class PurchaseInvoiceService:
         )
 
     def _refresh_payment_status(self, row: PurchaseInvoice) -> None:
-        row.balance_due = quantize_money(row.grand_total - row.amount_paid - row.amount_debited)
+        row.balance_due = quantize_money(
+            row.grand_total - row.amount_paid - row.amount_debited - row.amount_written_off
+        )
         if row.balance_due < _ZERO:
             row.balance_due = _ZERO
-        applied = quantize_money(row.amount_paid + row.amount_debited)
+        applied = quantize_money(
+            row.amount_paid + row.amount_debited + row.amount_written_off
+        )
         if applied <= _ZERO:
             row.payment_status = PaymentStatus.UNPAID.value
         elif row.balance_due <= _ZERO:
@@ -1491,6 +1502,12 @@ class PurchaseInvoiceService:
         ):
             actions.append("pay_bill")
             actions.append("apply_debits")
+        if (
+            status == InvoiceDocumentStatus.POSTED
+            and row.balance_due > _ZERO
+            and has_permission(self.actor_permissions, WRITE_OFF_CREATE)
+        ):
+            actions.append("write_off")
         if (
             status == InvoiceDocumentStatus.POSTED
             and any(line.line_type == PurchaseInvoiceLineType.EXPENSE.value for line in row.lines)
@@ -1557,6 +1574,7 @@ class PurchaseInvoiceService:
             notes=row.notes,
             amount_paid=row.amount_paid,
             amount_debited=row.amount_debited,
+            amount_written_off=row.amount_written_off,
             balance_due=row.balance_due,
             payment_status=PaymentStatus(row.payment_status),
             journal_entry_id=row.journal_entry_id,

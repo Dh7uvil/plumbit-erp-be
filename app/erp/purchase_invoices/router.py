@@ -13,6 +13,8 @@ from app.auth.catalog import (
     PURCHASE_INVOICE_READ,
     PURCHASE_INVOICE_UPDATE,
     SUPPLIER_PAYMENT_CREATE,
+    WRITE_OFF_CREATE,
+    WRITE_OFF_REVERSE,
 )
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
@@ -26,6 +28,11 @@ from app.common.utils.concurrency import require_document_version
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
 from app.erp.accounting.open_items.schemas import ApplyCreditsRequest
 from app.erp.accounting.supplier_payments.dependencies import SupplierPaymentServiceDependency
+from app.erp.accounting.write_offs.dependencies import InvoiceWriteOffServiceDependency
+from app.erp.accounting.write_offs.schemas import (
+    InvoiceWriteOffRequest,
+    InvoiceWriteOffReverseRequest,
+)
 from app.erp.purchase_invoices.dependencies import PurchaseInvoiceServiceDependency
 from app.erp.purchase_invoices.schemas import (
     PurchaseInvoiceCancelRequest,
@@ -263,6 +270,64 @@ async def apply_debits_to_purchase_invoice(
         ),
     )
     return ApiResponse(data=row, message="Debits applied to purchase invoice")
+
+
+@router.post("/{invoice_id}/write-off", response_model=ApiResponse[PurchaseInvoiceResponse])
+async def write_off_purchase_invoice(
+    invoice_id: UUID,
+    request: Request,
+    payload: InvoiceWriteOffRequest,
+    tenant: TenantContextDependency,
+    service: InvoiceWriteOffServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(WRITE_OFF_CREATE))],
+    if_match: IfMatch = None,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[PurchaseInvoiceResponse]:
+    body = await request.body()
+    row, write_off_id = await service.write_off_purchase_invoice(
+        tenant.tenant_id,
+        invoice_id,
+        payload,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(
+            if_match=if_match, body_version=payload.version
+        ),
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(
+        data=row,
+        message="Purchase invoice written off",
+        meta={"write_off_id": str(write_off_id)},
+    )
+
+
+@router.post("/{invoice_id}/write-off/reverse", response_model=ApiResponse[PurchaseInvoiceResponse])
+async def reverse_purchase_invoice_write_off(
+    invoice_id: UUID,
+    request: Request,
+    payload: InvoiceWriteOffReverseRequest,
+    tenant: TenantContextDependency,
+    service: InvoiceWriteOffServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(WRITE_OFF_REVERSE))],
+    if_match: IfMatch = None,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[PurchaseInvoiceResponse]:
+    body = await request.body()
+    row = await service.reverse_purchase_write_off(
+        tenant.tenant_id,
+        invoice_id,
+        payload,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(
+            if_match=if_match, body_version=payload.version
+        ),
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(data=row, message="Purchase invoice write-off reversed")
 
 
 @router.get("/{invoice_id}/journal", response_model=ApiResponse[JournalEntryResponse])

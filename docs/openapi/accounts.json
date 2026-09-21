@@ -906,6 +906,7 @@
           "CASH_ON_HAND",
           "BANK",
           "BANK_CHARGES",
+          "BAD_DEBT_EXPENSE",
           "SUSPENSE"
         ],
         "title": "AccountSystemRole"

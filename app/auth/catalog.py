@@ -114,6 +114,7 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "opening_balance": ('manage',),
         "period": ('lock', 'override'),
         "credit_control": ('override',),
+        "write_off": ('create', 'reverse'),
     },
     REPORTS_MODULE: {
         "report": (
@@ -470,6 +471,8 @@ JOURNAL_ENTRY_REVERSE = build_permission(ACCOUNTING_MODULE, "journal_entry", "re
 OPENING_BALANCE_MANAGE = build_permission(ACCOUNTING_MODULE, "opening_balance", "manage")
 PERIOD_LOCK = build_permission(ACCOUNTING_MODULE, "period", "lock")
 PERIOD_OVERRIDE = build_permission(ACCOUNTING_MODULE, "period", "override")
+WRITE_OFF_CREATE = build_permission(ACCOUNTING_MODULE, "write_off", "create")
+WRITE_OFF_REVERSE = build_permission(ACCOUNTING_MODULE, "write_off", "reverse")
 CREDIT_CONTROL_OVERRIDE = build_permission(ACCOUNTING_MODULE, "credit_control", "override")
 
 REPORT_LEDGER = build_permission(REPORTS_MODULE, "report", "ledger")
