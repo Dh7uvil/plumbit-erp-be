@@ -168,6 +168,10 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "description": "CRM reasons recorded when an opportunity is lost.",
     },
     {
+        "name": "Leads",
+        "description": "CRM sales leads with numbering, assignment, and qualification status.",
+    },
+    {
         "name": "Suppliers",
         "description": "Purchase-side party master sharing customer rows via company_type.",
     },

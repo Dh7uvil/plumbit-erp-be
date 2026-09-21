@@ -18,6 +18,7 @@ from app.auth.catalog import (
     INVENTORY_MODULE,
     JOURNAL_ENTRY_READ,
     LANDED_COST_READ,
+    LEAD_READ,
     LOGISTICS_MODULE,
     PACKAGE_READ,
     PRODUCT_READ,
@@ -402,6 +403,30 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         entity_type="contact",
         read_permission=CONTACT_READ,
         changed_fields=frozenset({"name", "email", "phone", "is_primary"}),
+    ),
+    "lead": ActivityEntitySpec(
+        module=CRM_MODULE,
+        entity_type="lead",
+        read_permission=LEAD_READ,
+        changed_fields=frozenset(
+            {
+                "lead_number",
+                "first_name",
+                "last_name",
+                "company_name",
+                "email",
+                "phone",
+                "title",
+                "status",
+                "rating",
+                "source",
+                "owner",
+                "estimated_value",
+                "currency",
+                "notes",
+                "version",
+            }
+        ),
     ),
     "account": ActivityEntitySpec(
         module=ACCOUNTING_MODULE,

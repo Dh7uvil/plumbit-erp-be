@@ -39,6 +39,8 @@ def test_catalog_includes_quote_ready_permissions() -> None:
     assert "crm.pipeline.read" in CATALOG_PERMISSIONS
     assert "crm.lead_source.create" in CATALOG_PERMISSIONS
     assert "crm.lost_reason.delete" in CATALOG_PERMISSIONS
+    assert "crm.lead.assign" in CATALOG_PERMISSIONS
+    assert "crm.lead.convert" in CATALOG_PERMISSIONS
     assert "inventory.product.create" in CATALOG_PERMISSIONS
     assert "inventory.price_list.update" in CATALOG_PERMISSIONS
     assert "inventory.warehouse.create" in CATALOG_PERMISSIONS
