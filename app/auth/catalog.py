@@ -133,6 +133,7 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
             "inventory",
             "financial",
             "export",
+            "crm",
         ),
     },
     MASTERS_MODULE: {
@@ -531,6 +532,7 @@ REPORT_AR_AP = build_permission(REPORTS_MODULE, "report", "ar_ap")
 REPORT_INVENTORY = build_permission(REPORTS_MODULE, "report", "inventory")
 REPORT_FINANCIAL = build_permission(REPORTS_MODULE, "report", "financial")
 REPORT_EXPORT = build_permission(REPORTS_MODULE, "report", "export")
+REPORT_CRM = build_permission(REPORTS_MODULE, "report", "crm")
 
 CURRENCY_CREATE = build_permission(MASTERS_MODULE, "currency", "create")
 CURRENCY_READ = build_permission(MASTERS_MODULE, "currency", "read")

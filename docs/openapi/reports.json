@@ -12,6 +12,436 @@
     }
   ],
   "paths": {
+    "/api/v1/reports/sales-pipeline": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Sales Pipeline",
+        "operationId": "get_sales_pipeline_api_v1_reports_sales_pipeline_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "stage",
+              "title": "Group By"
+            }
+          },
+          {
+            "name": "pipeline_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pipeline Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SalesPipelineResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/sales-funnel": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Sales Funnel",
+        "operationId": "get_sales_funnel_api_v1_reports_sales_funnel_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "pipeline_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pipeline Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SalesFunnelResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/win-loss": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Win Loss",
+        "operationId": "get_win_loss_api_v1_reports_win_loss_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "To"
+            }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "lost_reason",
+              "title": "Group By"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_WinLossResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/lead-conversion": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Lead Conversion",
+        "operationId": "get_lead_conversion_api_v1_reports_lead_conversion_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "To"
+            }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "status",
+              "title": "Group By"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeadConversionResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/sales-activity": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Sales Activity",
+        "operationId": "get_sales_activity_api_v1_reports_sales_activity_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "To"
+            }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "activity_type",
+              "title": "Group By"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SalesActivityResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/crm-dashboard": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Crm Dashboard",
+        "operationId": "get_crm_dashboard_api_v1_reports_crm_dashboard_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CrmDashboardResponse_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/reports/trial-balance": {
       "get": {
         "tags": [
@@ -3310,6 +3740,40 @@
         ],
         "title": "ApiResponse[CashFlowResponse]"
       },
+      "ApiResponse_CrmDashboardResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/CrmDashboardResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[CrmDashboardResponse]"
+      },
       "ApiResponse_DashboardResponse_": {
         "properties": {
           "success": {
@@ -3480,6 +3944,40 @@
         ],
         "title": "ApiResponse[InvoicedNotDispatchedResponse]"
       },
+      "ApiResponse_LeadConversionResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/LeadConversionResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[LeadConversionResponse]"
+      },
       "ApiResponse_OutstandingDocumentsResponse_": {
         "properties": {
           "success": {
@@ -3649,6 +4147,108 @@
           "data"
         ],
         "title": "ApiResponse[ReceivedNotBilledResponse]"
+      },
+      "ApiResponse_SalesActivityResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/SalesActivityResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[SalesActivityResponse]"
+      },
+      "ApiResponse_SalesFunnelResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/SalesFunnelResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[SalesFunnelResponse]"
+      },
+      "ApiResponse_SalesPipelineResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/SalesPipelineResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[SalesPipelineResponse]"
       },
       "ApiResponse_SalesPurchaseAnalysisResponse_": {
         "properties": {
@@ -3990,6 +4590,40 @@
         ],
         "title": "ApiResponse[VatGlReconResponse]"
       },
+      "ApiResponse_WinLossResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/WinLossResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[WinLossResponse]"
+      },
       "BalanceSheetLine": {
         "properties": {
           "account_id": {
@@ -4304,6 +4938,59 @@
           "net_change"
         ],
         "title": "CashFlowResponse"
+      },
+      "CrmDashboardResponse": {
+        "properties": {
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code",
+            "description": "ISO currency code for monetary amounts (tenant base currency)."
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "open_pipeline_count": {
+            "type": "integer",
+            "title": "Open Pipeline Count"
+          },
+          "open_pipeline_value": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Open Pipeline Value"
+          },
+          "closing_this_month_count": {
+            "type": "integer",
+            "title": "Closing This Month Count"
+          },
+          "closing_this_month_value": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Closing This Month Value"
+          },
+          "overdue_activity_count": {
+            "type": "integer",
+            "title": "Overdue Activity Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "as_of",
+          "open_pipeline_count",
+          "open_pipeline_value",
+          "closing_this_month_count",
+          "closing_this_month_value",
+          "overdue_activity_count"
+        ],
+        "title": "CrmDashboardResponse"
       },
       "DashboardCreditBreach": {
         "properties": {
@@ -5146,6 +5833,105 @@
         "type": "object",
         "title": "InvoicedNotDispatchedResponse"
       },
+      "LeadConversionLine": {
+        "properties": {
+          "group_key": {
+            "type": "string",
+            "title": "Group Key"
+          },
+          "group_label": {
+            "type": "string",
+            "title": "Group Label"
+          },
+          "lead_count": {
+            "type": "integer",
+            "title": "Lead Count"
+          },
+          "converted_count": {
+            "type": "integer",
+            "title": "Converted Count"
+          },
+          "conversion_percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversion Percent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group_key",
+          "group_label",
+          "lead_count",
+          "converted_count"
+        ],
+        "title": "LeadConversionLine"
+      },
+      "LeadConversionResponse": {
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "format": "date",
+            "title": "From Date"
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "title": "To Date"
+          },
+          "group_by": {
+            "type": "string",
+            "title": "Group By"
+          },
+          "lead_count": {
+            "type": "integer",
+            "title": "Lead Count"
+          },
+          "converted_count": {
+            "type": "integer",
+            "title": "Converted Count"
+          },
+          "conversion_percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversion Percent"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/LeadConversionLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from_date",
+          "to_date",
+          "group_by",
+          "lead_count",
+          "converted_count"
+        ],
+        "title": "LeadConversionResponse"
+      },
       "OutstandingDocument": {
         "properties": {
           "item_type": {
@@ -5903,6 +6689,315 @@
         },
         "type": "object",
         "title": "ReceivedNotBilledResponse"
+      },
+      "SalesActivityLine": {
+        "properties": {
+          "group_key": {
+            "type": "string",
+            "title": "Group Key"
+          },
+          "group_label": {
+            "type": "string",
+            "title": "Group Label"
+          },
+          "activity_count": {
+            "type": "integer",
+            "title": "Activity Count"
+          },
+          "open_count": {
+            "type": "integer",
+            "title": "Open Count"
+          },
+          "completed_count": {
+            "type": "integer",
+            "title": "Completed Count"
+          },
+          "overdue_count": {
+            "type": "integer",
+            "title": "Overdue Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group_key",
+          "group_label",
+          "activity_count",
+          "open_count",
+          "completed_count",
+          "overdue_count"
+        ],
+        "title": "SalesActivityLine"
+      },
+      "SalesActivityResponse": {
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "format": "date",
+            "title": "From Date"
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "title": "To Date"
+          },
+          "group_by": {
+            "type": "string",
+            "title": "Group By"
+          },
+          "activity_count": {
+            "type": "integer",
+            "title": "Activity Count"
+          },
+          "open_count": {
+            "type": "integer",
+            "title": "Open Count"
+          },
+          "completed_count": {
+            "type": "integer",
+            "title": "Completed Count"
+          },
+          "overdue_count": {
+            "type": "integer",
+            "title": "Overdue Count"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/SalesActivityLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from_date",
+          "to_date",
+          "group_by",
+          "activity_count",
+          "open_count",
+          "completed_count",
+          "overdue_count"
+        ],
+        "title": "SalesActivityResponse"
+      },
+      "SalesFunnelLine": {
+        "properties": {
+          "stage_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Stage Id"
+          },
+          "stage_name": {
+            "type": "string",
+            "title": "Stage Name"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "stage_kind": {
+            "type": "string",
+            "title": "Stage Kind"
+          },
+          "opportunity_count": {
+            "type": "integer",
+            "title": "Opportunity Count"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          },
+          "weighted_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Weighted Amount"
+          },
+          "conversion_percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversion Percent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stage_id",
+          "stage_name",
+          "sort_order",
+          "stage_kind",
+          "opportunity_count",
+          "amount",
+          "weighted_amount"
+        ],
+        "title": "SalesFunnelLine"
+      },
+      "SalesFunnelResponse": {
+        "properties": {
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code",
+            "description": "ISO currency code for monetary amounts (tenant base currency)."
+          },
+          "pipeline_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Pipeline Id"
+          },
+          "pipeline_name": {
+            "type": "string",
+            "title": "Pipeline Name"
+          },
+          "opportunity_count": {
+            "type": "integer",
+            "title": "Opportunity Count"
+          },
+          "total_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Amount"
+          },
+          "total_weighted_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Weighted Amount"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/SalesFunnelLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pipeline_id",
+          "pipeline_name",
+          "opportunity_count",
+          "total_amount",
+          "total_weighted_amount"
+        ],
+        "title": "SalesFunnelResponse"
+      },
+      "SalesPipelineLine": {
+        "properties": {
+          "group_key": {
+            "type": "string",
+            "title": "Group Key"
+          },
+          "group_label": {
+            "type": "string",
+            "title": "Group Label"
+          },
+          "opportunity_count": {
+            "type": "integer",
+            "title": "Opportunity Count"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          },
+          "weighted_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Weighted Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group_key",
+          "group_label",
+          "opportunity_count",
+          "amount",
+          "weighted_amount"
+        ],
+        "title": "SalesPipelineLine"
+      },
+      "SalesPipelineResponse": {
+        "properties": {
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code",
+            "description": "ISO currency code for monetary amounts (tenant base currency)."
+          },
+          "group_by": {
+            "type": "string",
+            "title": "Group By"
+          },
+          "pipeline_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pipeline Id"
+          },
+          "opportunity_count": {
+            "type": "integer",
+            "title": "Opportunity Count"
+          },
+          "total_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Amount"
+          },
+          "total_weighted_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Weighted Amount"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/SalesPipelineLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group_by",
+          "opportunity_count",
+          "total_amount",
+          "total_weighted_amount"
+        ],
+        "title": "SalesPipelineResponse"
       },
       "SalesPurchaseAnalysisLine": {
         "properties": {
@@ -7259,6 +8354,141 @@
           "to_date"
         ],
         "title": "VatGlReconResponse"
+      },
+      "WinLossLine": {
+        "properties": {
+          "group_key": {
+            "type": "string",
+            "title": "Group Key"
+          },
+          "group_label": {
+            "type": "string",
+            "title": "Group Label"
+          },
+          "won_count": {
+            "type": "integer",
+            "title": "Won Count"
+          },
+          "lost_count": {
+            "type": "integer",
+            "title": "Lost Count"
+          },
+          "won_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Won Amount"
+          },
+          "lost_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Lost Amount"
+          },
+          "win_percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Percent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group_key",
+          "group_label",
+          "won_count",
+          "lost_count",
+          "won_amount",
+          "lost_amount"
+        ],
+        "title": "WinLossLine"
+      },
+      "WinLossResponse": {
+        "properties": {
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code",
+            "description": "ISO currency code for monetary amounts (tenant base currency)."
+          },
+          "from_date": {
+            "type": "string",
+            "format": "date",
+            "title": "From Date"
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "title": "To Date"
+          },
+          "group_by": {
+            "type": "string",
+            "title": "Group By"
+          },
+          "won_count": {
+            "type": "integer",
+            "title": "Won Count"
+          },
+          "lost_count": {
+            "type": "integer",
+            "title": "Lost Count"
+          },
+          "won_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Won Amount"
+          },
+          "lost_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Lost Amount"
+          },
+          "win_percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Percent"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/WinLossLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from_date",
+          "to_date",
+          "group_by",
+          "won_count",
+          "lost_count",
+          "won_amount",
+          "lost_amount"
+        ],
+        "title": "WinLossResponse"
       }
     },
     "securitySchemes": {
