@@ -172,6 +172,12 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "description": "CRM sales leads with numbering, assignment, and qualification status.",
     },
     {
+        "name": "Opportunities",
+        "description": (
+            "CRM pipeline opportunities with stage history, win/lose workflow, and reopen."
+        ),
+    },
+    {
         "name": "Suppliers",
         "description": "Purchase-side party master sharing customer rows via company_type.",
     },

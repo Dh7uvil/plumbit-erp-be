@@ -48,6 +48,7 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "lead_source": ('create', 'read', 'update', 'delete'),
         "lost_reason": ('create', 'read', 'update', 'delete'),
         "lead": _with_imex('create', 'read', 'update', 'delete', 'assign', 'convert'),
+        "opportunity": _with_imex('create', 'read', 'update', 'delete'),
     },
     SALES_MODULE: {
         "quotation": _with_imex('create', 'read', 'update', 'delete', 'approve', 'send', 'revise'),
@@ -287,6 +288,12 @@ LEAD_ASSIGN = build_permission(CRM_MODULE, "lead", "assign")
 LEAD_CONVERT = build_permission(CRM_MODULE, "lead", "convert")
 LEAD_IMPORT = build_permission(CRM_MODULE, "lead", "import")
 LEAD_EXPORT = build_permission(CRM_MODULE, "lead", "export")
+OPPORTUNITY_CREATE = build_permission(CRM_MODULE, "opportunity", "create")
+OPPORTUNITY_READ = build_permission(CRM_MODULE, "opportunity", "read")
+OPPORTUNITY_UPDATE = build_permission(CRM_MODULE, "opportunity", "update")
+OPPORTUNITY_DELETE = build_permission(CRM_MODULE, "opportunity", "delete")
+OPPORTUNITY_IMPORT = build_permission(CRM_MODULE, "opportunity", "import")
+OPPORTUNITY_EXPORT = build_permission(CRM_MODULE, "opportunity", "export")
 
 QUOTATION_CREATE = build_permission(SALES_MODULE, "quotation", "create")
 QUOTATION_READ = build_permission(SALES_MODULE, "quotation", "read")
