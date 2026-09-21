@@ -12,6 +12,7 @@ from app.crm.lost_reasons.router import router as lost_reasons_router
 from app.crm.notes.router import router as notes_router
 from app.crm.opportunities.router import router as opportunities_router
 from app.crm.pipelines.router import router as pipelines_router
+from app.crm.reports.router import router as reports_router
 
 router = APIRouter()
 router.include_router(customers_router)
@@ -24,3 +25,4 @@ router.include_router(opportunities_router)
 router.include_router(activities_router)
 router.include_router(notes_router)
 router.include_router(campaigns_router)
+router.include_router(reports_router)
