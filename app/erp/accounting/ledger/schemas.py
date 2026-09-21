@@ -21,6 +21,7 @@ class JournalEntryFilter(BaseFilter):
     account_id: UUID | None = None
     party_id: UUID | None = None
     branch_id: UUID | None = None
+    cost_center_id: UUID | None = None
     entry_date_from: date | None = None
     entry_date_to: date | None = None
 
@@ -47,6 +48,7 @@ class JournalLineInput(BaseModel):
     external_reference: str | None = Field(default=None, max_length=100)
     tax_id: UUID | None = None
     branch_id: UUID | None = None
+    cost_center_id: UUID | None = None
     description: str | None = Field(default=None, max_length=500)
 
     @field_validator("external_reference", "description")
@@ -76,6 +78,7 @@ class JournalLineResponse(BaseModel):
     external_reference: str | None
     tax_id: UUID | None
     branch_id: UUID | None
+    cost_center_id: UUID | None
     description: str | None
 
 
@@ -84,6 +87,7 @@ class JournalEntryCreate(BaseModel):
     currency_id: UUID | None = None
     exchange_rate: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=6)
     branch_id: UUID | None = None
+    cost_center_id: UUID | None = None
     narration: str | None = None
     reference: str | None = Field(default=None, max_length=100)
     lines: list[JournalLineInput] = Field(min_length=1)
@@ -102,6 +106,7 @@ class JournalEntryUpdate(BaseModel):
     currency_id: UUID | None = None
     exchange_rate: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=6)
     branch_id: UUID | None = None
+    cost_center_id: UUID | None = None
     narration: str | None = None
     reference: str | None = Field(default=None, max_length=100)
     lines: list[JournalLineInput] | None = Field(default=None, min_length=1)
@@ -145,6 +150,7 @@ class JournalEntryResponse(BaseModel):
     currency_id: UUID
     exchange_rate: Decimal
     branch_id: UUID | None
+    cost_center_id: UUID | None
     narration: str | None
     reference: str | None
     posted_at: datetime | None

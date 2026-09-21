@@ -91,6 +91,10 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "description": "Named payment terms copied onto commercial documents.",
     },
     {
+        "name": "Cost Centers",
+        "description": "Reporting dimensions tagged on journal lines and report filters.",
+    },
+    {
         "name": "Terms Templates",
         "description": "Reusable terms-and-conditions bodies for quotations.",
     },

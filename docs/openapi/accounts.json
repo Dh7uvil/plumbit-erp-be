@@ -362,6 +362,71 @@
         }
       }
     },
+    "/api/v1/accounts/{account_id}/balance": {
+      "get": {
+        "tags": [
+          "Accounts"
+        ],
+        "summary": "Get Account Balance",
+        "operationId": "get_account_balance_api_v1_accounts__account_id__balance_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "as_of",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AccountBalanceResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/accounts/{account_id}": {
       "get": {
         "tags": [
@@ -515,6 +580,55 @@
   },
   "components": {
     "schemas": {
+      "AccountBalanceResponse": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "debit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Debit"
+          },
+          "credit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Credit"
+          },
+          "signed_balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Signed Balance"
+          },
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_id",
+          "as_of",
+          "debit",
+          "credit",
+          "signed_balance"
+        ],
+        "title": "AccountBalanceResponse"
+      },
       "AccountCreate": {
         "properties": {
           "code": {
@@ -681,6 +795,40 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "has_children": {
+            "type": "boolean",
+            "title": "Has Children",
+            "default": false
+          },
+          "has_journal_lines": {
+            "type": "boolean",
+            "title": "Has Journal Lines",
+            "default": false
           }
         },
         "type": "object",
@@ -859,6 +1007,40 @@
             "format": "date-time",
             "title": "Updated At"
           },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "has_children": {
+            "type": "boolean",
+            "title": "Has Children",
+            "default": false
+          },
+          "has_journal_lines": {
+            "type": "boolean",
+            "title": "Has Journal Lines",
+            "default": false
+          },
           "children": {
             "items": {
               "$ref": "#/components/schemas/AccountTreeNode"
@@ -1007,6 +1189,40 @@
         },
         "type": "object",
         "title": "AccountUpdate"
+      },
+      "ApiResponse_AccountBalanceResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/AccountBalanceResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[AccountBalanceResponse]"
       },
       "ApiResponse_AccountResponse_": {
         "properties": {

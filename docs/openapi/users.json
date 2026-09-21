@@ -675,6 +675,65 @@
         }
       }
     },
+    "/api/v1/users/{user_id}/password-reset": {
+      "post": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Reset user password",
+        "description": "Requires `identity.user.update`. Resets another user's password and revokes sessions.",
+        "operationId": "admin_reset_user_password_api_v1_users__user_id__password_reset_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminResetUserPasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UserDetailResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/users/{user_id}/roles": {
       "put": {
         "tags": [
@@ -737,6 +796,21 @@
   },
   "components": {
     "schemas": {
+      "AdminResetUserPasswordRequest": {
+        "properties": {
+          "new_password": {
+            "type": "string",
+            "maxLength": 72,
+            "minLength": 8,
+            "title": "New Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "new_password"
+        ],
+        "title": "AdminResetUserPasswordRequest"
+      },
       "ApiResponse_UserDetailResponse_": {
         "properties": {
           "success": {

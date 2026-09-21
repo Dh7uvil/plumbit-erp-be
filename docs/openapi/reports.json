@@ -63,6 +63,23 @@
             }
           },
           {
+            "name": "cost_center_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cost Center Id"
+            }
+          },
+          {
             "name": "include_zero",
             "in": "query",
             "required": false,
@@ -172,6 +189,84 @@
                 }
               ],
               "title": "Branch Id"
+            }
+          },
+          {
+            "name": "cost_center_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cost Center Id"
+            }
+          },
+          {
+            "name": "source_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Type"
+            }
+          },
+          {
+            "name": "side",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Side"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 200,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Page Size"
             }
           }
         ],
@@ -1398,6 +1493,23 @@
             }
           },
           {
+            "name": "cost_center_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cost Center Id"
+            }
+          },
+          {
             "name": "include_ytd",
             "in": "query",
             "required": false,
@@ -1486,6 +1598,23 @@
                 }
               ],
               "title": "Branch Id"
+            }
+          },
+          {
+            "name": "cost_center_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cost Center Id"
             }
           },
           {
@@ -1654,6 +1783,22 @@
             }
           },
           {
+            "name": "box",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Box"
+            }
+          },
+          {
             "name": "format",
             "in": "query",
             "required": false,
@@ -1725,6 +1870,22 @@
               "type": "string",
               "format": "date",
               "title": "To"
+            }
+          },
+          {
+            "name": "box",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Box"
             }
           },
           {
@@ -1825,6 +1986,390 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_Vat201Response_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/vat-gl-recon": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Vat Gl Recon",
+        "operationId": "get_vat_gl_recon_api_v1_reports_vat_gl_recon_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "To"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_VatGlReconResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/outstanding-invoices": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Outstanding Invoices",
+        "operationId": "get_outstanding_invoices_api_v1_reports_outstanding_invoices_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "as_of",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OutstandingDocumentsResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/outstanding-bills": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Outstanding Bills",
+        "operationId": "get_outstanding_bills_api_v1_reports_outstanding_bills_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "as_of",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OutstandingDocumentsResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/sales-analysis": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Sales Analysis",
+        "operationId": "get_sales_analysis_api_v1_reports_sales_analysis_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "To"
+            }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "summary",
+              "title": "Group By"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SalesPurchaseAnalysisResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/purchase-analysis": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Purchase Analysis",
+        "operationId": "get_purchase_analysis_api_v1_reports_purchase_analysis_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "To"
+            }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "summary",
+              "title": "Group By"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SalesPurchaseAnalysisResponse_"
                 }
               }
             }
@@ -2035,6 +2580,131 @@
         "type": "object",
         "title": "AgingBucketTotals"
       },
+      "AgingCurrencyTotals": {
+        "properties": {
+          "current": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Current",
+            "default": "0"
+          },
+          "days_1_30": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Days 1 30",
+            "default": "0"
+          },
+          "days_31_60": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Days 31 60",
+            "default": "0"
+          },
+          "days_61_90": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Days 61 90",
+            "default": "0"
+          },
+          "days_91_plus": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Days 91 Plus",
+            "default": "0"
+          },
+          "unapplied_credits": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Unapplied Credits",
+            "default": "0"
+          },
+          "total": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total",
+            "default": "0"
+          },
+          "currency_code": {
+            "type": "string",
+            "title": "Currency Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "currency_code"
+        ],
+        "title": "AgingCurrencyTotals"
+      },
+      "AgingDocument": {
+        "properties": {
+          "item_type": {
+            "type": "string",
+            "title": "Item Type"
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "document_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Document Date"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code"
+          },
+          "balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Balance"
+          },
+          "base_balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Balance"
+          },
+          "bucket": {
+            "type": "string",
+            "title": "Bucket"
+          }
+        },
+        "type": "object",
+        "required": [
+          "item_type",
+          "document_id",
+          "document_number",
+          "document_date",
+          "balance",
+          "base_balance",
+          "bucket"
+        ],
+        "title": "AgingDocument"
+      },
       "AgingPartyRow": {
         "properties": {
           "current": {
@@ -2120,6 +2790,13 @@
                 "type": "null"
               }
             ]
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/AgingDocument"
+            },
+            "type": "array",
+            "title": "Documents"
           }
         },
         "type": "object",
@@ -2167,6 +2844,13 @@
                 "type": "null"
               }
             ]
+          },
+          "currency_totals": {
+            "items": {
+              "$ref": "#/components/schemas/AgingCurrencyTotals"
+            },
+            "type": "array",
+            "title": "Currency Totals"
           }
         },
         "type": "object",
@@ -2448,6 +3132,40 @@
         ],
         "title": "ApiResponse[InvoicedNotDispatchedResponse]"
       },
+      "ApiResponse_OutstandingDocumentsResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/OutstandingDocumentsResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[OutstandingDocumentsResponse]"
+      },
       "ApiResponse_PartyStatementResponse_": {
         "properties": {
           "success": {
@@ -2583,6 +3301,40 @@
           "data"
         ],
         "title": "ApiResponse[ReceivedNotBilledResponse]"
+      },
+      "ApiResponse_SalesPurchaseAnalysisResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/SalesPurchaseAnalysisResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[SalesPurchaseAnalysisResponse]"
       },
       "ApiResponse_StockAgingResponse_": {
         "properties": {
@@ -2855,6 +3607,40 @@
           "data"
         ],
         "title": "ApiResponse[Vat201Response]"
+      },
+      "ApiResponse_VatGlReconResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/VatGlReconResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[VatGlReconResponse]"
       },
       "BalanceSheetLine": {
         "properties": {
@@ -3569,6 +4355,27 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Closing Balance"
           },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "default": 1
+          },
+          "page_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Size"
+          },
+          "total_lines": {
+            "type": "integer",
+            "title": "Total Lines",
+            "default": 0
+          },
           "lines": {
             "items": {
               "$ref": "#/components/schemas/GeneralLedgerLine"
@@ -3703,6 +4510,148 @@
         },
         "type": "object",
         "title": "InvoicedNotDispatchedResponse"
+      },
+      "OutstandingDocument": {
+        "properties": {
+          "item_type": {
+            "type": "string",
+            "title": "Item Type"
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "document_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Document Date"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "party_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Party Id"
+          },
+          "party_name": {
+            "type": "string",
+            "title": "Party Name"
+          },
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code"
+          },
+          "original_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Original Amount"
+          },
+          "balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Balance"
+          },
+          "base_balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Balance"
+          },
+          "bucket": {
+            "type": "string",
+            "title": "Bucket"
+          },
+          "days_overdue": {
+            "type": "integer",
+            "title": "Days Overdue",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "item_type",
+          "document_id",
+          "document_number",
+          "document_date",
+          "party_id",
+          "party_name",
+          "original_amount",
+          "balance",
+          "base_balance",
+          "bucket"
+        ],
+        "title": "OutstandingDocument"
+      },
+      "OutstandingDocumentsResponse": {
+        "properties": {
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code",
+            "description": "ISO currency code for monetary amounts (tenant base currency)."
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "party_type": {
+            "type": "string",
+            "title": "Party Type"
+          },
+          "total_balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Balance"
+          },
+          "total_base_balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Base Balance"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/OutstandingDocument"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "as_of",
+          "party_type",
+          "total_balance",
+          "total_base_balance"
+        ],
+        "title": "OutstandingDocumentsResponse"
       },
       "PartyStatementLine": {
         "properties": {
@@ -3979,15 +4928,45 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Income"
           },
+          "total_cogs": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Cogs",
+            "default": "0"
+          },
+          "total_operating_expense": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Operating Expense",
+            "default": "0"
+          },
           "total_expense": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Expense"
           },
+          "gross_profit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Gross Profit",
+            "default": "0"
+          },
           "net_profit": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Net Profit"
+          },
+          "comparative_gross_profit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparative Gross Profit"
           },
           "comparative_net_profit": {
             "anyOf": [
@@ -4000,6 +4979,18 @@
               }
             ],
             "title": "Comparative Net Profit"
+          },
+          "ytd_gross_profit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ytd Gross Profit"
           },
           "ytd_net_profit": {
             "anyOf": [
@@ -4277,6 +5268,162 @@
         },
         "type": "object",
         "title": "ReceivedNotBilledResponse"
+      },
+      "SalesPurchaseAnalysisLine": {
+        "properties": {
+          "group_key": {
+            "type": "string",
+            "title": "Group Key"
+          },
+          "group_label": {
+            "type": "string",
+            "title": "Group Label"
+          },
+          "document_count": {
+            "type": "integer",
+            "title": "Document Count"
+          },
+          "net_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Net Amount"
+          },
+          "tax_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Tax Amount"
+          },
+          "grand_total": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Grand Total"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "party_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Id"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          },
+          "salesperson_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Salesperson Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "group_key",
+          "group_label",
+          "document_count",
+          "net_amount",
+          "tax_amount",
+          "grand_total"
+        ],
+        "title": "SalesPurchaseAnalysisLine"
+      },
+      "SalesPurchaseAnalysisResponse": {
+        "properties": {
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code",
+            "description": "ISO currency code for monetary amounts (tenant base currency)."
+          },
+          "from_date": {
+            "type": "string",
+            "format": "date",
+            "title": "From Date"
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "title": "To Date"
+          },
+          "group_by": {
+            "type": "string",
+            "title": "Group By"
+          },
+          "document_count": {
+            "type": "integer",
+            "title": "Document Count"
+          },
+          "total_net": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Net"
+          },
+          "total_tax": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Tax"
+          },
+          "total_grand": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Grand"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/SalesPurchaseAnalysisLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from_date",
+          "to_date",
+          "group_by",
+          "document_count",
+          "total_net",
+          "total_tax",
+          "total_grand"
+        ],
+        "title": "SalesPurchaseAnalysisResponse"
       },
       "StockAgingBucketTotals": {
         "properties": {
@@ -4743,6 +5890,13 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Value"
           },
+          "warehouse_totals": {
+            "items": {
+              "$ref": "#/components/schemas/StockWarehouseTotal"
+            },
+            "type": "array",
+            "title": "Warehouse Totals"
+          },
           "lines": {
             "items": {
               "$ref": "#/components/schemas/StockValuationLine"
@@ -4758,6 +5912,42 @@
           "total_value"
         ],
         "title": "StockValuationResponse"
+      },
+      "StockWarehouseTotal": {
+        "properties": {
+          "warehouse_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Warehouse Id"
+          },
+          "warehouse_code": {
+            "type": "string",
+            "title": "Warehouse Code"
+          },
+          "warehouse_name": {
+            "type": "string",
+            "title": "Warehouse Name"
+          },
+          "total_qty": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Qty"
+          },
+          "total_value": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "warehouse_id",
+          "warehouse_code",
+          "warehouse_name",
+          "total_qty",
+          "total_value"
+        ],
+        "title": "StockWarehouseTotal"
       },
       "TaxRegisterLine": {
         "properties": {
@@ -5347,6 +6537,93 @@
           "export_evidence_exceptions"
         ],
         "title": "Vat201Response"
+      },
+      "VatGlReconLine": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "vat_201_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Vat 201 Amount"
+          },
+          "gl_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Gl Amount"
+          },
+          "difference": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Difference"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "vat_201_amount",
+          "gl_amount",
+          "difference"
+        ],
+        "title": "VatGlReconLine"
+      },
+      "VatGlReconResponse": {
+        "properties": {
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code",
+            "description": "ISO currency code for monetary amounts (tenant base currency)."
+          },
+          "from_date": {
+            "type": "string",
+            "format": "date",
+            "title": "From Date"
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "title": "To Date"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/VatGlReconLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from_date",
+          "to_date"
+        ],
+        "title": "VatGlReconResponse"
       }
     },
     "securitySchemes": {

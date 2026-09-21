@@ -1,24 +1,24 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Plumbit ERP API \u2014 Warehouses",
-    "description": "Inventory location master. One warehouse may be the tenant default.",
+    "title": "Plumbit ERP API \u2014 Cost Centers",
+    "description": "Reporting dimensions tagged on journal lines and report filters.",
     "version": "0.1.0"
   },
   "tags": [
     {
-      "name": "Warehouses",
-      "description": "Inventory location master. One warehouse may be the tenant default."
+      "name": "Cost Centers",
+      "description": "Reporting dimensions tagged on journal lines and report filters."
     }
   ],
   "paths": {
-    "/api/v1/warehouses": {
+    "/api/v1/cost-centers": {
       "get": {
         "tags": [
-          "Warehouses"
+          "Cost Centers"
         ],
-        "summary": "List Warehouses",
-        "operationId": "list_warehouses_api_v1_warehouses_get",
+        "summary": "List Cost Centers",
+        "operationId": "list_cost_centers_api_v1_cost_centers_get",
         "security": [
           {
             "HTTPBearer": []
@@ -136,22 +136,6 @@
               ],
               "title": "Is Active"
             }
-          },
-          {
-            "name": "is_default",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Is Default"
-            }
           }
         ],
         "responses": {
@@ -160,7 +144,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_list_WarehouseResponse__"
+                  "$ref": "#/components/schemas/ApiResponse_list_CostCenterResponse__"
                 }
               }
             }
@@ -179,10 +163,10 @@
       },
       "post": {
         "tags": [
-          "Warehouses"
+          "Cost Centers"
         ],
-        "summary": "Create Warehouse",
-        "operationId": "create_warehouse_api_v1_warehouses_post",
+        "summary": "Create Cost Center",
+        "operationId": "create_cost_center_api_v1_cost_centers_post",
         "security": [
           {
             "HTTPBearer": []
@@ -193,7 +177,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WarehouseCreate"
+                "$ref": "#/components/schemas/CostCenterCreate"
               }
             }
           }
@@ -204,7 +188,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_WarehouseResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_CostCenterResponse_"
                 }
               }
             }
@@ -222,13 +206,13 @@
         }
       }
     },
-    "/api/v1/warehouses/{warehouse_id}": {
+    "/api/v1/cost-centers/{cost_center_id}": {
       "get": {
         "tags": [
-          "Warehouses"
+          "Cost Centers"
         ],
-        "summary": "Get Warehouse",
-        "operationId": "get_warehouse_api_v1_warehouses__warehouse_id__get",
+        "summary": "Get Cost Center",
+        "operationId": "get_cost_center_api_v1_cost_centers__cost_center_id__get",
         "security": [
           {
             "HTTPBearer": []
@@ -236,13 +220,13 @@
         ],
         "parameters": [
           {
-            "name": "warehouse_id",
+            "name": "cost_center_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Warehouse Id"
+              "title": "Cost Center Id"
             }
           }
         ],
@@ -252,7 +236,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_WarehouseResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_CostCenterResponse_"
                 }
               }
             }
@@ -271,10 +255,10 @@
       },
       "patch": {
         "tags": [
-          "Warehouses"
+          "Cost Centers"
         ],
-        "summary": "Update Warehouse",
-        "operationId": "update_warehouse_api_v1_warehouses__warehouse_id__patch",
+        "summary": "Update Cost Center",
+        "operationId": "update_cost_center_api_v1_cost_centers__cost_center_id__patch",
         "security": [
           {
             "HTTPBearer": []
@@ -282,13 +266,13 @@
         ],
         "parameters": [
           {
-            "name": "warehouse_id",
+            "name": "cost_center_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Warehouse Id"
+              "title": "Cost Center Id"
             }
           }
         ],
@@ -297,7 +281,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WarehouseUpdate"
+                "$ref": "#/components/schemas/CostCenterUpdate"
               }
             }
           }
@@ -308,7 +292,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_WarehouseResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_CostCenterResponse_"
                 }
               }
             }
@@ -327,10 +311,10 @@
       },
       "delete": {
         "tags": [
-          "Warehouses"
+          "Cost Centers"
         ],
-        "summary": "Delete Warehouse",
-        "operationId": "delete_warehouse_api_v1_warehouses__warehouse_id__delete",
+        "summary": "Delete Cost Center",
+        "operationId": "delete_cost_center_api_v1_cost_centers__cost_center_id__delete",
         "security": [
           {
             "HTTPBearer": []
@@ -338,13 +322,13 @@
         ],
         "parameters": [
           {
-            "name": "warehouse_id",
+            "name": "cost_center_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Warehouse Id"
+              "title": "Cost Center Id"
             }
           }
         ],
@@ -354,7 +338,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_WarehouseResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_CostCenterResponse_"
                 }
               }
             }
@@ -375,195 +359,7 @@
   },
   "components": {
     "schemas": {
-      "AddressPayload": {
-        "properties": {
-          "address_line_1": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 250
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Address Line 1"
-          },
-          "address_line_2": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 250
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Address Line 2"
-          },
-          "city": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "City"
-          },
-          "state": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "State"
-          },
-          "country": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Country"
-          },
-          "country_code": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 10
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Country Code"
-          },
-          "postal_code": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 30
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Postal Code"
-          }
-        },
-        "type": "object",
-        "title": "AddressPayload"
-      },
-      "AddressResponse": {
-        "properties": {
-          "address_line_1": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 250
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Address Line 1"
-          },
-          "address_line_2": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 250
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Address Line 2"
-          },
-          "city": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "City"
-          },
-          "state": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "State"
-          },
-          "country": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 100
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Country"
-          },
-          "country_code": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 10
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Country Code"
-          },
-          "postal_code": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 30
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Postal Code"
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id"
-        ],
-        "title": "AddressResponse"
-      },
-      "ApiResponse_WarehouseResponse_": {
+      "ApiResponse_CostCenterResponse_": {
         "properties": {
           "success": {
             "type": "boolean",
@@ -572,7 +368,7 @@
             "default": true
           },
           "data": {
-            "$ref": "#/components/schemas/WarehouseResponse"
+            "$ref": "#/components/schemas/CostCenterResponse"
           },
           "message": {
             "anyOf": [
@@ -595,9 +391,9 @@
         "required": [
           "data"
         ],
-        "title": "ApiResponse[WarehouseResponse]"
+        "title": "ApiResponse[CostCenterResponse]"
       },
-      "ApiResponse_list_WarehouseResponse__": {
+      "ApiResponse_list_CostCenterResponse__": {
         "properties": {
           "success": {
             "type": "boolean",
@@ -607,7 +403,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/WarehouseResponse"
+              "$ref": "#/components/schemas/CostCenterResponse"
             },
             "type": "array",
             "title": "Data"
@@ -633,7 +429,177 @@
         "required": [
           "data"
         ],
-        "title": "ApiResponse[list[WarehouseResponse]]"
+        "title": "ApiResponse[list[CostCenterResponse]]"
+      },
+      "CostCenterCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 30,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "code"
+        ],
+        "title": "CostCenterCreate"
+      },
+      "CostCenterResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tenant Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "name",
+          "code",
+          "description",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CostCenterResponse"
+      },
+      "CostCenterUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 150,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 30,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "CostCenterUpdate"
       },
       "HTTPValidationError": {
         "properties": {
@@ -687,237 +653,6 @@
           "type"
         ],
         "title": "ValidationError"
-      },
-      "WarehouseCreate": {
-        "properties": {
-          "code": {
-            "type": "string",
-            "maxLength": 50,
-            "minLength": 1,
-            "title": "Code"
-          },
-          "name": {
-            "type": "string",
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Name"
-          },
-          "phone": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 50
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phone"
-          },
-          "address": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AddressPayload"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "is_default": {
-            "type": "boolean",
-            "title": "Is Default",
-            "default": false
-          },
-          "is_designated_zone": {
-            "type": "boolean",
-            "title": "Is Designated Zone",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "code",
-          "name"
-        ],
-        "title": "WarehouseCreate"
-      },
-      "WarehouseResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "tenant_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Tenant Id"
-          },
-          "code": {
-            "type": "string",
-            "title": "Code"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
-          },
-          "phone": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phone"
-          },
-          "address": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AddressResponse"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "is_default": {
-            "type": "boolean",
-            "title": "Is Default"
-          },
-          "is_designated_zone": {
-            "type": "boolean",
-            "title": "Is Designated Zone"
-          },
-          "is_active": {
-            "type": "boolean",
-            "title": "Is Active"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By"
-          },
-          "updated_by": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated By"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "tenant_id",
-          "code",
-          "name",
-          "phone",
-          "is_default",
-          "is_designated_zone",
-          "is_active",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "WarehouseResponse"
-      },
-      "WarehouseUpdate": {
-        "properties": {
-          "name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 200,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          },
-          "phone": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 50
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phone"
-          },
-          "address": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AddressPayload"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "is_default": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Default"
-          },
-          "is_designated_zone": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Designated Zone"
-          },
-          "is_active": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Active"
-          }
-        },
-        "type": "object",
-        "title": "WarehouseUpdate"
       }
     },
     "securitySchemes": {

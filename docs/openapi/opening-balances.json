@@ -148,6 +148,77 @@
         }
       }
     },
+    "/api/v1/opening-balances/inventory-catch-up": {
+      "post": {
+        "tags": [
+          "Opening Balances"
+        ],
+        "summary": "Catch Up Inventory Gl",
+        "operationId": "catch_up_inventory_gl_api_v1_opening_balances_inventory_catch_up_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "as_of",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_InventoryCatchUpResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/opening-balances/reset": {
       "post": {
         "tags": [
@@ -177,6 +248,40 @@
   },
   "components": {
     "schemas": {
+      "ApiResponse_InventoryCatchUpResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/InventoryCatchUpResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[InventoryCatchUpResponse]"
+      },
       "ApiResponse_OpeningBalancePreviewResponse_": {
         "properties": {
           "success": {
@@ -257,6 +362,66 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "InventoryCatchUpResponse": {
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "valuation_total": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Valuation Total"
+          },
+          "gl_balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Gl Balance"
+          },
+          "difference": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Difference"
+          },
+          "posted": {
+            "type": "boolean",
+            "title": "Posted"
+          },
+          "journal_entry_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal Entry Id"
+          },
+          "document_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Number"
+          }
+        },
+        "type": "object",
+        "required": [
+          "as_of",
+          "valuation_total",
+          "gl_balance",
+          "difference",
+          "posted"
+        ],
+        "title": "InventoryCatchUpResponse"
       },
       "OpeningBalanceGLLine": {
         "properties": {
@@ -404,6 +569,11 @@
             },
             "type": "array",
             "title": "Stock Lines"
+          },
+          "acknowledge_existing_activity": {
+            "type": "boolean",
+            "title": "Acknowledge Existing Activity",
+            "default": false
           }
         },
         "type": "object",
@@ -621,6 +791,21 @@
             "type": "boolean",
             "title": "Can Reset",
             "default": false
+          },
+          "posted_journal_count": {
+            "type": "integer",
+            "title": "Posted Journal Count",
+            "default": 0
+          },
+          "has_posted_activity": {
+            "type": "boolean",
+            "title": "Has Posted Activity",
+            "default": false
+          },
+          "stock_movement_count": {
+            "type": "integer",
+            "title": "Stock Movement Count",
+            "default": 0
           }
         },
         "type": "object",

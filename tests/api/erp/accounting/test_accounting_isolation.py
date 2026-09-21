@@ -37,6 +37,22 @@ async def test_tax_tenant_isolation(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_cost_center_tenant_isolation(client: AsyncClient) -> None:
+    tenant_a, email_a, password_a = await provision_admin()
+    tenant_b, email_b, password_b = await provision_admin()
+    headers_a = await login_headers(client, tenant_a, email_a, password_a)
+    headers_b = await login_headers(client, tenant_b, email_b, password_b)
+    suffix = uuid4().hex[:8]
+    created = await client.post(
+        "/api/v1/cost-centers",
+        headers=headers_a,
+        json={"name": f"CC {suffix}", "code": f"CC{suffix[:6].upper()}"},
+    )
+    assert created.status_code == 201, created.text
+    await _assert_isolated(client, headers_b, "cost-centers", created.json()["data"]["id"])
+
+
+@pytest.mark.asyncio
 async def test_payment_term_tenant_isolation(client: AsyncClient) -> None:
     tenant_a, email_a, password_a = await provision_admin()
     tenant_b, email_b, password_b = await provision_admin()

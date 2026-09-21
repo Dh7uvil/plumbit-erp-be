@@ -197,6 +197,57 @@ async def test_ar_line_with_party_posts(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_cost_center_dimension_survives_post_and_reverse(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    accounts = await _accounts(client, headers)
+    suffix = uuid4().hex[:6].upper()
+    cc = await client.post(
+        "/api/v1/cost-centers",
+        headers=headers,
+        json={"name": f"Dim {suffix}", "code": f"CC{suffix}"},
+    )
+    assert cc.status_code == 201, cc.text
+    cost_center_id = cc.json()["data"]["id"]
+    created = await client.post(
+        "/api/v1/journals",
+        headers=headers,
+        json={
+            "cost_center_id": cost_center_id,
+            "lines": [
+                {
+                    "account_id": accounts["BANK"],
+                    "debit": "15.0000",
+                    "credit": "0",
+                    "cost_center_id": cost_center_id,
+                },
+                {"account_id": accounts["CASH_ON_HAND"], "debit": "0", "credit": "15.0000"},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    row = created.json()["data"]
+    assert row["cost_center_id"] == cost_center_id
+    assert row["lines"][0]["cost_center_id"] == cost_center_id
+    posted = await client.post(
+        f"/api/v1/journals/{row['id']}/post",
+        headers=_if_match(headers, row["version"], key=uuid4().hex),
+    )
+    assert posted.status_code == 200, posted.text
+    body = posted.json()["data"]
+    assert body["cost_center_id"] == cost_center_id
+    reversed_row = await client.post(
+        f"/api/v1/journals/{body['id']}/reverse",
+        headers=_if_match(headers, body["version"], key=uuid4().hex),
+        json={"reason": "Reverse tagged entry", "version": body["version"]},
+    )
+    assert reversed_row.status_code == 200, reversed_row.text
+    mirror = reversed_row.json()["data"]
+    assert mirror["cost_center_id"] == cost_center_id
+    assert mirror["lines"][0]["cost_center_id"] == cost_center_id
+
+
+@pytest.mark.asyncio
 async def test_group_account_cannot_be_posted_to(client: AsyncClient) -> None:
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)

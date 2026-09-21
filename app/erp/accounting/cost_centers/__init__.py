@@ -1,0 +1,1 @@
+"""Cost center master slice."""
