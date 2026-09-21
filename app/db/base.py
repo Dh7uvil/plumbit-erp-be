@@ -46,6 +46,7 @@ import app.crm.contacts.models as _contacts  # noqa: E402, F401
 import app.crm.customers.models as _customers  # noqa: E402, F401
 import app.crm.lead_sources.models as _lead_sources  # noqa: E402, F401
 import app.crm.leads.models as _leads  # noqa: E402, F401
+import app.crm.opportunities.models as _opportunities  # noqa: E402, F401
 import app.crm.lost_reasons.models as _lost_reasons  # noqa: E402, F401
 import app.crm.pipelines.models as _pipelines  # noqa: E402, F401
 import app.erp.accounting.accounts.models as _accounts  # noqa: E402, F401

@@ -87,6 +87,7 @@ class Lead(AuditUserMixin, SoftDeleteTenantModel):
     )
     converted_opportunity_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
+        ForeignKey("crm_opportunities.id", ondelete="SET NULL"),
         nullable=True,
     )
     converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
