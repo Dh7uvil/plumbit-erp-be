@@ -51,6 +51,7 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "opportunity": _with_imex('create', 'read', 'update', 'delete'),
         "activity": ('create', 'read', 'update', 'delete'),
         "note": ('create', 'read', 'update', 'delete'),
+        "campaign": ('create', 'read', 'update', 'delete'),
     },
     SALES_MODULE: {
         "quotation": _with_imex('create', 'read', 'update', 'delete', 'approve', 'send', 'revise'),
@@ -304,6 +305,10 @@ NOTE_CREATE = build_permission(CRM_MODULE, "note", "create")
 NOTE_READ = build_permission(CRM_MODULE, "note", "read")
 NOTE_UPDATE = build_permission(CRM_MODULE, "note", "update")
 NOTE_DELETE = build_permission(CRM_MODULE, "note", "delete")
+CAMPAIGN_CREATE = build_permission(CRM_MODULE, "campaign", "create")
+CAMPAIGN_READ = build_permission(CRM_MODULE, "campaign", "read")
+CAMPAIGN_UPDATE = build_permission(CRM_MODULE, "campaign", "update")
+CAMPAIGN_DELETE = build_permission(CRM_MODULE, "campaign", "delete")
 
 QUOTATION_CREATE = build_permission(SALES_MODULE, "quotation", "create")
 QUOTATION_READ = build_permission(SALES_MODULE, "quotation", "read")

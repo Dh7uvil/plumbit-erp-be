@@ -17,9 +17,7 @@ class LeadNumberCounter(TenantModel):
     """Per-tenant counter for LEAD-##### allocation."""
 
     __tablename__ = "crm_lead_number_counters"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", name="uq_crm_lead_number_counters_tenant_id"),
-    )
+    __table_args__ = (UniqueConstraint("tenant_id", name="uq_crm_lead_number_counters_tenant_id"),)
 
     next_number: Mapped[int] = mapped_column(
         Integer,
@@ -43,6 +41,7 @@ class Lead(AuditUserMixin, SoftDeleteTenantModel):
         Index("ix_crm_leads_tenant_id_status", "tenant_id", "status"),
         Index("ix_crm_leads_tenant_id_owner_id", "tenant_id", "owner_id"),
         Index("ix_crm_leads_tenant_id_source_id", "tenant_id", "source_id"),
+        Index("ix_crm_leads_tenant_id_campaign_id", "tenant_id", "campaign_id"),
     )
 
     lead_number: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -62,6 +61,11 @@ class Lead(AuditUserMixin, SoftDeleteTenantModel):
     owner_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    campaign_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("crm_campaigns.id", ondelete="SET NULL"),
         nullable=True,
     )
     estimated_value: Mapped[Decimal | None] = mapped_column(

@@ -81,6 +81,7 @@ class LeadService:
         source_id: UUID | None = None,
         owner_id: UUID | None = None,
         rating: str | None = None,
+        campaign_id: UUID | None = None,
     ) -> tuple[builtins.list[LeadResponse], int]:
         filters: dict[str, object] = {}
         if status is not None:
@@ -91,6 +92,8 @@ class LeadService:
             filters["owner_id"] = owner_id
         if rating is not None:
             filters["rating"] = rating
+        if campaign_id is not None:
+            filters["campaign_id"] = campaign_id
         rows, total = await self.repo.list(
             tenant_id, page=page, common_filter=common_filter, filters=filters or None
         )
@@ -99,12 +102,19 @@ class LeadService:
     async def get(self, tenant_id: UUID, lead_id: UUID) -> LeadResponse:
         return self._to_response(await self._require(tenant_id, lead_id))
 
+    async def count_for_campaign(
+        self, tenant_id: UUID, campaign_id: UUID, *, status: str | None = None
+    ) -> int:
+        return await self.repo.count_for_campaign(tenant_id, campaign_id, status=status)
+
     async def create(
         self, tenant_id: UUID, payload: LeadCreate, *, actor_user_id: UUID
     ) -> LeadResponse:
         async with transaction(self.session):
             if payload.source_id is not None:
                 await self.lead_sources.require_id(tenant_id, payload.source_id)
+            if payload.campaign_id is not None:
+                await self._require_campaign(tenant_id, payload.campaign_id)
             if payload.owner_id is not None:
                 await self._require_owner(tenant_id, payload.owner_id)
             if payload.currency_id is not None:
@@ -149,6 +159,8 @@ class LeadService:
             merged = self._merge_update(existing, payload)
             if merged.source_id is not None:
                 await self.lead_sources.require_id(tenant_id, merged.source_id)
+            if merged.campaign_id is not None:
+                await self._require_campaign(tenant_id, merged.campaign_id)
             if merged.owner_id is not None:
                 await self._require_owner(tenant_id, merged.owner_id)
             if merged.currency_id is not None:
@@ -323,6 +335,7 @@ class LeadService:
                         expected_close_date=opportunity_payload.expected_close_date,
                         owner_id=opportunity_payload.owner_id or row.owner_id,
                         source_id=row.source_id,
+                        campaign_id=row.campaign_id,
                         lead_id=lead_id,
                     ),
                     actor_user_id=actor_user_id,
@@ -369,9 +382,7 @@ class LeadService:
             )
             return response
 
-    async def delete(
-        self, tenant_id: UUID, lead_id: UUID, *, actor_user_id: UUID
-    ) -> LeadResponse:
+    async def delete(self, tenant_id: UUID, lead_id: UUID, *, actor_user_id: UUID) -> LeadResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, lead_id)
             assert_editable(LeadStatus(row.status))
@@ -423,9 +434,7 @@ class LeadService:
                 }
             )
 
-    async def _require(
-        self, tenant_id: UUID, lead_id: UUID, *, for_update: bool = False
-    ) -> Lead:
+    async def _require(self, tenant_id: UUID, lead_id: UUID, *, for_update: bool = False) -> Lead:
         row = await self.repo.get(tenant_id, lead_id, for_update=for_update)
         if row is None:
             raise ResourceNotFoundError("Lead not found")
@@ -436,6 +445,11 @@ class LeadService:
         result = await self.session.execute(statement)
         if result.scalar_one_or_none() is None:
             raise ValidationError("Owner not found")
+
+    async def _require_campaign(self, tenant_id: UUID, campaign_id: UUID) -> None:
+        from app.crm.campaigns.service import CampaignService
+
+        await CampaignService(self.session).require_id(tenant_id, campaign_id)
 
     async def _snapshot(self, row: Lead) -> dict[str, object]:
         return {
@@ -450,6 +464,7 @@ class LeadService:
             "rating": row.rating,
             "source_id": str(row.source_id) if row.source_id else None,
             "owner_id": str(row.owner_id) if row.owner_id else None,
+            "campaign_id": str(row.campaign_id) if row.campaign_id else None,
             "estimated_value": (
                 str(row.estimated_value) if row.estimated_value is not None else None
             ),
@@ -477,6 +492,7 @@ class LeadService:
             "rating": existing.rating,
             "source_id": existing.source_id,
             "owner_id": existing.owner_id,
+            "campaign_id": existing.campaign_id,
             "estimated_value": existing.estimated_value,
             "currency_id": existing.currency_id,
             "notes": existing.notes,

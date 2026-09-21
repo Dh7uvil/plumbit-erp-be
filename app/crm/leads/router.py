@@ -55,6 +55,7 @@ async def list_leads(
         source_id=filters.source_id,
         owner_id=filters.owner_id,
         rating=filters.rating,
+        campaign_id=filters.campaign_id,
     )
     return paginated_response(rows, params=page, total=total)
 

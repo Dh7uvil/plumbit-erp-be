@@ -23,9 +23,7 @@ def format_opportunity_number(sequence: int) -> str:
 async def allocate_opportunity_number(session: AsyncSession, tenant_id: UUID) -> str:
     """Lock the tenant row and return the next opportunity number."""
 
-    await session.execute(
-        select(Tenant.id).where(Tenant.id == tenant_id).with_for_update()
-    )
+    await session.execute(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update())
     statement = select(OpportunityNumberCounter).where(
         OpportunityNumberCounter.tenant_id == tenant_id
     )

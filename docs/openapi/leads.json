@@ -186,6 +186,23 @@
               ],
               "title": "Rating"
             }
+          },
+          {
+            "name": "campaign_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Campaign Id"
+            }
           }
         ],
         "responses": {
@@ -1198,6 +1215,18 @@
             ],
             "title": "Owner Id"
           },
+          "campaign_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Campaign Id"
+          },
           "estimated_value": {
             "anyOf": [
               {
@@ -1362,6 +1391,18 @@
             ],
             "title": "Owner Id"
           },
+          "campaign_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Campaign Id"
+          },
           "estimated_value": {
             "anyOf": [
               {
@@ -1506,6 +1547,7 @@
           "rating",
           "source_id",
           "owner_id",
+          "campaign_id",
           "estimated_value",
           "currency_id",
           "notes",
@@ -1676,6 +1718,18 @@
               }
             ],
             "title": "Owner Id"
+          },
+          "campaign_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Campaign Id"
           },
           "estimated_value": {
             "anyOf": [

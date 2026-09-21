@@ -23,9 +23,7 @@ def format_lead_number(sequence: int) -> str:
 async def allocate_lead_number(session: AsyncSession, tenant_id: UUID) -> str:
     """Lock the tenant row and return the next lead number."""
 
-    await session.execute(
-        select(Tenant.id).where(Tenant.id == tenant_id).with_for_update()
-    )
+    await session.execute(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update())
     statement = select(LeadNumberCounter).where(LeadNumberCounter.tenant_id == tenant_id)
     result = await session.execute(statement)
     counter = result.scalar_one_or_none()

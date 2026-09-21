@@ -63,9 +63,7 @@ def find_stage_by_kind(
 
 
 def default_reopen_stage(stages: list[PipelineStage]) -> PipelineStage | None:
-    open_stages = [
-        stage for stage in stages if stage.stage_kind == PipelineStageKind.OPEN.value
-    ]
+    open_stages = [stage for stage in stages if stage.stage_kind == PipelineStageKind.OPEN.value]
     if not open_stages:
         return None
     return min(open_stages, key=lambda item: (item.sort_order, item.name))

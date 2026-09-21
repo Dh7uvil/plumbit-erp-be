@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import select
@@ -90,6 +91,7 @@ class OpportunityService:
         owner_id: UUID | None = None,
         customer_id: UUID | None = None,
         source_id: UUID | None = None,
+        campaign_id: UUID | None = None,
     ) -> tuple[builtins.list[OpportunityResponse], int]:
         filters: dict[str, object] = {}
         if status is not None:
@@ -104,6 +106,8 @@ class OpportunityService:
             filters["customer_id"] = customer_id
         if source_id is not None:
             filters["source_id"] = source_id
+        if campaign_id is not None:
+            filters["campaign_id"] = campaign_id
         rows, total = await self.repo.list(
             tenant_id, page=page, common_filter=common_filter, filters=filters or None
         )
@@ -111,6 +115,11 @@ class OpportunityService:
 
     async def get(self, tenant_id: UUID, opportunity_id: UUID) -> OpportunityResponse:
         return await self._to_response(await self._require(tenant_id, opportunity_id))
+
+    async def won_attribution_for_campaign(
+        self, tenant_id: UUID, campaign_id: UUID
+    ) -> tuple[int, Decimal]:
+        return await self.repo.won_attribution_for_campaign(tenant_id, campaign_id)
 
     async def list_quotations(
         self,
@@ -140,53 +149,53 @@ class OpportunityService:
     async def create_record(
         self, tenant_id: UUID, payload: OpportunityCreate, *, actor_user_id: UUID
     ) -> OpportunityResponse:
-            pipeline_id, stage = await self._resolve_pipeline_and_stage(
-                tenant_id, payload.pipeline_id, payload.stage_id
-            )
-            await self._validate_references(tenant_id, payload, pipeline_id=pipeline_id)
-            if stage.stage_kind in {
-                PipelineStageKind.WON.value,
-                PipelineStageKind.LOST.value,
-            }:
-                raise ValidationError("New opportunities must start in an open stage")
-            opportunity_number = await allocate_opportunity_number(self.session, tenant_id)
-            status = status_for_stage_kind(stage.stage_kind).value
-            probability = payload.probability
-            if probability is None:
-                probability = stage.probability
-            row = await self.repo.create(
-                tenant_id,
-                {
-                    **payload.model_dump(exclude={"pipeline_id", "stage_id"}),
-                    "pipeline_id": pipeline_id,
-                    "stage_id": stage.id,
-                    "opportunity_number": opportunity_number,
-                    "status": status,
-                    "probability": probability,
-                    "created_by": actor_user_id,
-                    "updated_by": actor_user_id,
-                },
-            )
-            now = datetime.now(UTC)
-            await self.stage_history.append(
-                tenant_id,
-                opportunity_id=row.id,
-                from_stage_id=None,
-                to_stage_id=stage.id,
-                changed_by=actor_user_id,
-                changed_at=now,
-                duration_days=None,
-            )
-            await self.audit.write(
-                tenant_id=tenant_id,
-                user_id=actor_user_id,
-                action=AuditAction.CREATE,
-                module=CRM_MODULE,
-                entity_type="opportunity",
-                entity_id=row.id,
-                new_values=await self._snapshot(row),
-            )
-            return await self._to_response(row)
+        pipeline_id, stage = await self._resolve_pipeline_and_stage(
+            tenant_id, payload.pipeline_id, payload.stage_id
+        )
+        await self._validate_references(tenant_id, payload, pipeline_id=pipeline_id)
+        if stage.stage_kind in {
+            PipelineStageKind.WON.value,
+            PipelineStageKind.LOST.value,
+        }:
+            raise ValidationError("New opportunities must start in an open stage")
+        opportunity_number = await allocate_opportunity_number(self.session, tenant_id)
+        status = status_for_stage_kind(stage.stage_kind).value
+        probability = payload.probability
+        if probability is None:
+            probability = stage.probability
+        row = await self.repo.create(
+            tenant_id,
+            {
+                **payload.model_dump(exclude={"pipeline_id", "stage_id"}),
+                "pipeline_id": pipeline_id,
+                "stage_id": stage.id,
+                "opportunity_number": opportunity_number,
+                "status": status,
+                "probability": probability,
+                "created_by": actor_user_id,
+                "updated_by": actor_user_id,
+            },
+        )
+        now = datetime.now(UTC)
+        await self.stage_history.append(
+            tenant_id,
+            opportunity_id=row.id,
+            from_stage_id=None,
+            to_stage_id=stage.id,
+            changed_by=actor_user_id,
+            changed_at=now,
+            duration_days=None,
+        )
+        await self.audit.write(
+            tenant_id=tenant_id,
+            user_id=actor_user_id,
+            action=AuditAction.CREATE,
+            module=CRM_MODULE,
+            entity_type="opportunity",
+            entity_id=row.id,
+            new_values=await self._snapshot(row),
+        )
+        return await self._to_response(row)
 
     async def update(
         self,
@@ -531,6 +540,13 @@ class OpportunityService:
                 raise ValidationError("Contact does not belong to the selected customer")
         if getattr(payload, "source_id", None) is not None:
             await self.lead_sources.require_id(tenant_id, payload.source_id)  # type: ignore[arg-type]
+        if getattr(payload, "campaign_id", None) is not None:
+            from app.crm.campaigns.service import CampaignService
+
+            await CampaignService(self.session).require_id(
+                tenant_id,
+                payload.campaign_id,  # type: ignore[arg-type]
+            )
         if getattr(payload, "owner_id", None) is not None:
             await self._require_owner(tenant_id, payload.owner_id)  # type: ignore[arg-type]
         if getattr(payload, "currency_id", None) is not None:
@@ -574,6 +590,7 @@ class OpportunityService:
             "owner_id": str(row.owner_id) if row.owner_id else None,
             "source_id": str(row.source_id) if row.source_id else None,
             "lead_id": str(row.lead_id) if row.lead_id else None,
+            "campaign_id": str(row.campaign_id) if row.campaign_id else None,
             "version": row.version,
         }
 
@@ -591,6 +608,7 @@ class OpportunityService:
             "owner_id": existing.owner_id,
             "source_id": existing.source_id,
             "lead_id": existing.lead_id,
+            "campaign_id": existing.campaign_id,
         }
         data.update(payload.model_dump(exclude_unset=True, exclude={"version"}))
         return OpportunityCreate.model_validate(data)

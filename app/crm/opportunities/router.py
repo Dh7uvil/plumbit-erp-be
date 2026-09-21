@@ -54,6 +54,7 @@ async def list_opportunities(
         owner_id=filters.owner_id,
         customer_id=filters.customer_id,
         source_id=filters.source_id,
+        campaign_id=filters.campaign_id,
     )
     return paginated_response(rows, params=page, total=total)
 

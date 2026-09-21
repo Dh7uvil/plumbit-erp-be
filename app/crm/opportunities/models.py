@@ -55,6 +55,7 @@ class Opportunity(AuditUserMixin, SoftDeleteTenantModel):
         Index("ix_crm_opportunities_tenant_id_stage_id", "tenant_id", "stage_id"),
         Index("ix_crm_opportunities_tenant_id_owner_id", "tenant_id", "owner_id"),
         Index("ix_crm_opportunities_tenant_id_customer_id", "tenant_id", "customer_id"),
+        Index("ix_crm_opportunities_tenant_id_campaign_id", "tenant_id", "campaign_id"),
     )
 
     opportunity_number: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -114,6 +115,11 @@ class Opportunity(AuditUserMixin, SoftDeleteTenantModel):
         ForeignKey("crm_leads.id", ondelete="SET NULL"),
         nullable=True,
     )
+    campaign_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("crm_campaigns.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
 
 
@@ -121,9 +127,7 @@ class OpportunityStageHistory(TenantModel):
     """Append-only stage transition log for an opportunity."""
 
     __tablename__ = "crm_opportunity_stage_history"
-    __table_args__ = (
-        Index("ix_crm_opportunity_stage_history_opportunity_id", "opportunity_id"),
-    )
+    __table_args__ = (Index("ix_crm_opportunity_stage_history_opportunity_id", "opportunity_id"),)
 
     opportunity_id: Mapped[UUID] = mapped_column(
         PostgreSQLUUID(as_uuid=True),

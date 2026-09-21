@@ -43,6 +43,7 @@ import app.common.notification_preferences.models as _notification_preferences  
 import app.common.outbox.models as _outbox  # noqa: E402, F401
 import app.common.table_preferences.models as _table_preferences  # noqa: E402, F401
 import app.crm.activities.models as _crm_activities  # noqa: E402, F401
+import app.crm.campaigns.models as _crm_campaigns  # noqa: E402, F401
 import app.crm.contacts.models as _contacts  # noqa: E402, F401
 import app.crm.customers.models as _customers  # noqa: E402, F401
 import app.crm.lead_sources.models as _lead_sources  # noqa: E402, F401
