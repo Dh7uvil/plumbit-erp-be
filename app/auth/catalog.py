@@ -47,6 +47,7 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "pipeline": ('create', 'read', 'update', 'delete'),
         "lead_source": ('create', 'read', 'update', 'delete'),
         "lost_reason": ('create', 'read', 'update', 'delete'),
+        "lead": _with_imex('create', 'read', 'update', 'delete', 'assign', 'convert'),
     },
     SALES_MODULE: {
         "quotation": _with_imex('create', 'read', 'update', 'delete', 'approve', 'send', 'revise'),
@@ -278,6 +279,14 @@ LOST_REASON_CREATE = build_permission(CRM_MODULE, "lost_reason", "create")
 LOST_REASON_READ = build_permission(CRM_MODULE, "lost_reason", "read")
 LOST_REASON_UPDATE = build_permission(CRM_MODULE, "lost_reason", "update")
 LOST_REASON_DELETE = build_permission(CRM_MODULE, "lost_reason", "delete")
+LEAD_CREATE = build_permission(CRM_MODULE, "lead", "create")
+LEAD_READ = build_permission(CRM_MODULE, "lead", "read")
+LEAD_UPDATE = build_permission(CRM_MODULE, "lead", "update")
+LEAD_DELETE = build_permission(CRM_MODULE, "lead", "delete")
+LEAD_ASSIGN = build_permission(CRM_MODULE, "lead", "assign")
+LEAD_CONVERT = build_permission(CRM_MODULE, "lead", "convert")
+LEAD_IMPORT = build_permission(CRM_MODULE, "lead", "import")
+LEAD_EXPORT = build_permission(CRM_MODULE, "lead", "export")
 
 QUOTATION_CREATE = build_permission(SALES_MODULE, "quotation", "create")
 QUOTATION_READ = build_permission(SALES_MODULE, "quotation", "read")
