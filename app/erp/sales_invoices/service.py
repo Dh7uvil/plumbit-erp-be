@@ -19,6 +19,7 @@ from app.auth.catalog import (
     SALES_INVOICE_DELETE,
     SALES_INVOICE_POST,
     SALES_MODULE,
+    WRITE_OFF_CREATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
@@ -1274,13 +1275,16 @@ class SalesInvoiceService:
         row.amount_paid = quantize_money(row.amount_paid + amount)
         if row.amount_paid < _ZERO:
             raise ValidationError("Paid amount cannot be negative")
-        settled = quantize_money(row.amount_paid + row.amount_credited)
+        settled = quantize_money(
+            row.amount_paid + row.amount_credited + row.amount_written_off
+        )
         if settled > row.grand_total:
             raise PaymentOverAllocatedError(
                 details={
                     "grand_total": str(row.grand_total),
                     "amount_paid": str(row.amount_paid),
                     "amount_credited": str(row.amount_credited),
+                    "amount_written_off": str(row.amount_written_off),
                 }
             )
         self._refresh_payment_status(row)
@@ -1297,6 +1301,8 @@ class SalesInvoiceService:
             raise InvoiceCannotVoidError("This invoice has payments and cannot be voided")
         if row.amount_credited > _ZERO:
             raise InvoiceCannotVoidError("This invoice has credit notes and cannot be voided")
+        if row.amount_written_off > _ZERO:
+            raise InvoiceCannotVoidError("This invoice has write-offs and cannot be voided")
         for probe in registered_probes():
             if await probe(self.session, tenant_id, row.id):
                 raise InvoiceCannotVoidError(
@@ -1648,6 +1654,7 @@ class SalesInvoiceService:
             "container_number": payload.container_number,
             "amount_paid": _ZERO,
             "amount_credited": _ZERO,
+            "amount_written_off": _ZERO,
             "balance_due": grand,
             "payment_status": PaymentStatus.UNPAID.value,
             "cogs_amount": _ZERO,
@@ -1853,10 +1860,14 @@ class SalesInvoiceService:
         return product.item_type != ItemType.SERVICE and product.track_inventory
 
     def _refresh_payment_status(self, row: SalesInvoice) -> None:
-        row.balance_due = quantize_money(row.grand_total - row.amount_paid - row.amount_credited)
+        row.balance_due = quantize_money(
+            row.grand_total - row.amount_paid - row.amount_credited - row.amount_written_off
+        )
         if row.balance_due < _ZERO:
             row.balance_due = _ZERO
-        applied = quantize_money(row.amount_paid + row.amount_credited)
+        applied = quantize_money(
+            row.amount_paid + row.amount_credited + row.amount_written_off
+        )
         if applied <= _ZERO:
             row.payment_status = PaymentStatus.UNPAID.value
         elif row.balance_due <= _ZERO:
@@ -1891,6 +1902,12 @@ class SalesInvoiceService:
         ):
             actions.append("record_payment")
             actions.append("apply_credits")
+        if (
+            status == InvoiceDocumentStatus.POSTED
+            and row.balance_due > _ZERO
+            and has_permission(self.actor_permissions, WRITE_OFF_CREATE)
+        ):
+            actions.append("write_off")
         return actions
 
     def _to_response(
@@ -1957,6 +1974,7 @@ class SalesInvoiceService:
             container_number=row.container_number,
             amount_paid=row.amount_paid,
             amount_credited=row.amount_credited,
+            amount_written_off=row.amount_written_off,
             balance_due=row.balance_due,
             payment_status=PaymentStatus(row.payment_status),
             cogs_amount=row.cogs_amount,

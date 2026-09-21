@@ -257,6 +257,7 @@ class SalesInvoiceResponse(BaseModel):
     container_number: str | None = None
     amount_paid: Decimal
     amount_credited: Decimal
+    amount_written_off: Decimal = Decimal("0")
     balance_due: Decimal
     payment_status: PaymentStatus
     cogs_amount: Decimal
