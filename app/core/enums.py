@@ -629,3 +629,28 @@ class OpportunityStatus(StrEnum):
     OPEN = "OPEN"
     WON = "WON"
     LOST = "LOST"
+
+
+class CrmRelatedEntityType(StrEnum):
+    LEAD = "lead"
+    OPPORTUNITY = "opportunity"
+    CUSTOMER = "customer"
+    CONTACT = "contact"
+
+
+class ActivityType(StrEnum):
+    TASK = "TASK"
+    CALL = "CALL"
+    MEETING = "MEETING"
+
+
+class ActivityStatus(StrEnum):
+    OPEN = "OPEN"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
+
+class ActivityPriority(StrEnum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"

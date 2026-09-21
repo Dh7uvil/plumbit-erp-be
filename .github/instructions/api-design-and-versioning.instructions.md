@@ -54,7 +54,8 @@ app/auth/                            →  /api/v1/auth, /users, /roles, /tenants
 The URL space is flat, so resource segments must be unique across every module. When two
 modules own a similar concept, name the resource for what it is rather than reintroducing the
 module as a path segment: `/customer-payments` and `/supplier-payments`, `/credit-notes` and
-`/debit-notes`, `/delivery-notes`.
+`/debit-notes`, `/delivery-notes`. Keep `/activity` (common audit feed) distinct from
+`/activities` (CRM scheduled tasks, calls and meetings).
 
 Avoid verb-style routes such as `/getCustomers` or `/createCustomer`. The HTTP method is
 the verb. Workflow verbs that are not CRUD belong as sub-resources on the document:
