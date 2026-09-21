@@ -20,6 +20,7 @@ from app.erp.accounting.accounts.chart import UAE_CHART
 from app.erp.accounting.accounts.models import Account
 from app.erp.accounting.fiscal import FiscalYearConfig
 from app.erp.accounting.models import DocumentSequence, PaymentTerm, Tax, TermsTemplate
+from app.db.seeds.crm_foundations import seed_crm_foundations
 from app.inventory_management.units.models import Unit
 from app.inventory_management.warehouses.models import Warehouse
 
@@ -202,6 +203,7 @@ async def seed_required_masters(session: AsyncSession, tenant_id: UUID) -> None:
     await _upsert_document_sequences(session, tenant_id)
     await seed_chart_of_accounts(session, tenant_id)
     await reconcile_chart_of_accounts(session, tenant_id)
+    await seed_crm_foundations(session, tenant_id)
     await session.flush()
 
 
