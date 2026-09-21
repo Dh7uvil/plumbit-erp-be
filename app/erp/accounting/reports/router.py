@@ -35,6 +35,7 @@ from app.erp.accounting.reports.schemas import (
     BalanceSheetResponse,
     CashFlowResponse,
     DashboardResponse,
+    DayBookResponse,
     ExportEvidenceExceptionResponse,
     GeneralLedgerResponse,
     InvoicedNotDispatchedResponse,
@@ -137,6 +138,62 @@ async def get_general_ledger(
             page_size=page_size,
         )
     )
+
+
+@router.get("/cash-book", response_model=ApiResponse[DayBookResponse])
+async def get_cash_book(
+    request: Request,
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    user: Annotated[CurrentUser, Depends(require_permission(REPORT_LEDGER))],
+    from_date: Annotated[date, Query(alias="from")],
+    to_date: Annotated[date, Query(alias="to")],
+    account_id: UUID | None = None,
+    branch_id: UUID | None = None,
+    cost_center_id: UUID | None = None,
+    source_type: str | None = None,
+    side: str | None = None,
+    export_format: FormatQuery = None,
+) -> Any:
+    data = await service.cash_book(
+        tenant.tenant_id,
+        from_date=from_date,
+        to_date=to_date,
+        account_id=account_id,
+        branch_id=branch_id,
+        cost_center_id=cost_center_id,
+        source_type=source_type,
+        side=side,
+    )
+    return _maybe_csv(request, export_format, data, user, filename="cash-book.csv")
+
+
+@router.get("/bank-book", response_model=ApiResponse[DayBookResponse])
+async def get_bank_book(
+    request: Request,
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    user: Annotated[CurrentUser, Depends(require_permission(REPORT_LEDGER))],
+    from_date: Annotated[date, Query(alias="from")],
+    to_date: Annotated[date, Query(alias="to")],
+    account_id: UUID | None = None,
+    branch_id: UUID | None = None,
+    cost_center_id: UUID | None = None,
+    source_type: str | None = None,
+    side: str | None = None,
+    export_format: FormatQuery = None,
+) -> Any:
+    data = await service.bank_book(
+        tenant.tenant_id,
+        from_date=from_date,
+        to_date=to_date,
+        account_id=account_id,
+        branch_id=branch_id,
+        cost_center_id=cost_center_id,
+        source_type=source_type,
+        side=side,
+    )
+    return _maybe_csv(request, export_format, data, user, filename="bank-book.csv")
 
 
 @router.get("/account-statement", response_model=ApiResponse[AccountStatementResponse])

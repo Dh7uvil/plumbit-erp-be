@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 from datetime import date
+from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
 
@@ -25,18 +26,28 @@ from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
 from app.common.utils.datetime import today_in_timezone
-from app.core.enums import AuditAction, DocumentType, JournalEntryStatus, JournalType, PartyType
+from app.core.enums import (
+    AccountSubtype,
+    AuditAction,
+    DocumentType,
+    JournalEntryStatus,
+    JournalType,
+    PartyType,
+)
 from app.core.exceptions import (
     DocumentStaleError,
     ResourceNotFoundError,
+    ValidationError,
 )
 from app.core.permissions import has_permission
 from app.db.session import transaction
+from app.erp.accounting.accounts.service import AccountService
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.models import JournalEntry
 from app.erp.accounting.ledger.posting import LedgerPostingService
 from app.erp.accounting.ledger.repository import JournalEntryRepository
 from app.erp.accounting.ledger.schemas import (
+    JournalContraCreate,
     JournalEntryCreate,
     JournalEntryResponse,
     JournalEntryUpdate,
@@ -76,6 +87,7 @@ class JournalEntryService:
         self.sequences = DocumentSequenceService(session)
         self.idempotency = IdempotencyService(session)
         self.audit = AuditWriter(session)
+        self.accounts = AccountService(session)
         self._can_override = has_permission(actor_permissions, PERIOD_OVERRIDE)
         self._period_policy: PeriodLockPolicy | None = None
 
@@ -166,6 +178,51 @@ class JournalEntryService:
                 new_values=_journal_snapshot(loaded),
             )
             return self._to_response(loaded)
+
+    async def create_contra(
+        self, tenant_id: UUID, payload: JournalContraCreate, *, actor_user_id: UUID
+    ) -> JournalEntryResponse:
+        source = await self.accounts.get(tenant_id, payload.source_account_id)
+        destination = await self.accounts.get(tenant_id, payload.destination_account_id)
+        allowed = frozenset({AccountSubtype.CASH.value, AccountSubtype.BANK.value})
+        for account in (source, destination):
+            if account.is_group or not account.is_active:
+                raise ValidationError(
+                    "Contra entry requires active postable cash or bank accounts",
+                    details={"account_id": str(account.id), "is_group": account.is_group},
+                )
+            if account.account_subtype not in allowed:
+                raise ValidationError(
+                    "Contra entry accounts must be cash or bank",
+                    details={
+                        "account_id": str(account.id),
+                        "account_subtype": account.account_subtype,
+                    },
+                )
+        narration = payload.narration or f"Transfer from {source.code} to {destination.code}"
+        return await self.create(
+            tenant_id,
+            JournalEntryCreate(
+                entry_date=payload.entry_date,
+                branch_id=payload.branch_id,
+                cost_center_id=payload.cost_center_id,
+                narration=narration,
+                reference=payload.reference,
+                lines=[
+                    JournalLineInput(
+                        account_id=payload.destination_account_id,
+                        debit=payload.amount,
+                        credit=Decimal("0"),
+                    ),
+                    JournalLineInput(
+                        account_id=payload.source_account_id,
+                        debit=Decimal("0"),
+                        credit=payload.amount,
+                    ),
+                ],
+            ),
+            actor_user_id=actor_user_id,
+        )
 
     async def update(
         self,

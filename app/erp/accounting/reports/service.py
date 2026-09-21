@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
+from collections import defaultdict
+from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -16,6 +17,7 @@ from app.common.utils.currency import quantize_money
 from app.common.utils.datetime import utcnow
 from app.common.utils.export_evidence import has_export_evidence
 from app.core.enums import (
+    AccountSubtype,
     AccountType,
     CogsStatus,
     CompanyType,
@@ -44,6 +46,9 @@ from app.erp.accounting.reports.schemas import (
     DashboardCreditBreach,
     DashboardResponse,
     DashboardUnpostedCount,
+    DayBookAccountSection,
+    DayBookLine,
+    DayBookResponse,
     ExportEvidenceExceptionLine,
     ExportEvidenceExceptionResponse,
     GeneralLedgerLine,
@@ -282,6 +287,284 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             total_lines=total_lines,
             lines=lines,
         )
+
+    async def cash_book(
+        self,
+        tenant_id: UUID,
+        *,
+        from_date: date,
+        to_date: date,
+        account_id: UUID | None = None,
+        branch_id: UUID | None = None,
+        cost_center_id: UUID | None = None,
+        source_type: str | None = None,
+        side: str | None = None,
+    ) -> DayBookResponse:
+        return await self._day_book(
+            tenant_id,
+            book_kind="cash",
+            account_subtype=AccountSubtype.CASH,
+            from_date=from_date,
+            to_date=to_date,
+            account_id=account_id,
+            branch_id=branch_id,
+            cost_center_id=cost_center_id,
+            source_type=source_type,
+            side=side,
+        )
+
+    async def bank_book(
+        self,
+        tenant_id: UUID,
+        *,
+        from_date: date,
+        to_date: date,
+        account_id: UUID | None = None,
+        branch_id: UUID | None = None,
+        cost_center_id: UUID | None = None,
+        source_type: str | None = None,
+        side: str | None = None,
+    ) -> DayBookResponse:
+        return await self._day_book(
+            tenant_id,
+            book_kind="bank",
+            account_subtype=AccountSubtype.BANK,
+            from_date=from_date,
+            to_date=to_date,
+            account_id=account_id,
+            branch_id=branch_id,
+            cost_center_id=cost_center_id,
+            source_type=source_type,
+            side=side,
+        )
+
+    async def _day_book(
+        self,
+        tenant_id: UUID,
+        *,
+        book_kind: str,
+        account_subtype: AccountSubtype,
+        from_date: date,
+        to_date: date,
+        account_id: UUID | None,
+        branch_id: UUID | None,
+        cost_center_id: UUID | None,
+        source_type: str | None,
+        side: str | None,
+    ) -> DayBookResponse:
+        if from_date > to_date:
+            raise ValidationError("from_date must be on or before to_date")
+        all_accounts = await self.accounts.repo.list_all(tenant_id)
+        subtype_accounts = [
+            row
+            for row in all_accounts
+            if not row.is_group
+            and row.is_active
+            and row.account_subtype == account_subtype.value
+        ]
+        if account_id is not None:
+            match = next((row for row in subtype_accounts if row.id == account_id), None)
+            if match is None:
+                account = await self.accounts.get(tenant_id, account_id)
+                raise ValidationError(
+                    f"Account must have subtype {account_subtype.value}",
+                    details={
+                        "account_id": str(account_id),
+                        "account_subtype": account.account_subtype,
+                    },
+                )
+            target_accounts = [match]
+        else:
+            target_accounts = sorted(subtype_accounts, key=lambda row: row.code)
+        sections: list[DayBookAccountSection] = []
+        flat_lines: list[DayBookLine] = []
+        combined_opening = _ZERO
+        combined_closing = _ZERO
+        for account in target_accounts:
+            opening_map = await self._sum_by_account(
+                tenant_id,
+                before=from_date,
+                account_id=account.id,
+                branch_id=branch_id,
+                cost_center_id=cost_center_id,
+            )
+            opening_d, opening_c = opening_map.get(account.id, (_ZERO, _ZERO))
+            opening_signed = self._signed(account.account_type, opening_d, opening_c)
+            movements = await self._ledger_movements(
+                tenant_id,
+                account_id=account.id,
+                from_date=from_date,
+                to_date=to_date,
+                branch_id=branch_id,
+                cost_center_id=cost_center_id,
+                source_type=source_type,
+                side=side,
+            )
+            section_lines = self._build_day_book_lines(
+                account_id=account.id,
+                account_code=account.code,
+                account_name=account.name,
+                account_type=account.account_type,
+                from_date=from_date,
+                to_date=to_date,
+                opening_signed=opening_signed,
+                movements=movements,
+            )
+            closing_signed = (
+                section_lines[-1].running_balance
+                if section_lines
+                else opening_signed
+            )
+            sections.append(
+                DayBookAccountSection(
+                    account_id=account.id,
+                    account_code=account.code,
+                    account_name=account.name,
+                    opening_balance=opening_signed,
+                    closing_balance=closing_signed,
+                    lines=section_lines,
+                )
+            )
+            flat_lines.extend(section_lines)
+            combined_opening = quantize_money(combined_opening + opening_signed)
+            combined_closing = quantize_money(combined_closing + closing_signed)
+        return DayBookResponse(
+            currency_code=await self._report_currency_code(tenant_id),
+            book_kind=book_kind,
+            from_date=from_date,
+            to_date=to_date,
+            account_id=account_id,
+            combined_opening_balance=combined_opening,
+            combined_closing_balance=combined_closing,
+            sections=sections,
+            lines=flat_lines,
+        )
+
+    async def _ledger_movements(
+        self,
+        tenant_id: UUID,
+        *,
+        account_id: UUID,
+        from_date: date,
+        to_date: date,
+        branch_id: UUID | None,
+        cost_center_id: UUID | None,
+        source_type: str | None,
+        side: str | None,
+    ) -> list[tuple[JournalEntryLine, JournalEntry]]:
+        statement = (
+            select(JournalEntryLine, JournalEntry)
+            .join(JournalEntry, _posted_join())
+            .where(
+                JournalEntryLine.tenant_id == tenant_id,
+                JournalEntryLine.account_id == account_id,
+                JournalEntry.entry_date >= from_date,
+                JournalEntry.entry_date <= to_date,
+            )
+            .order_by(
+                JournalEntry.entry_date.asc(),
+                JournalEntryLine.line_number.asc(),
+            )
+        )
+        if branch_id is not None:
+            statement = statement.where(
+                (JournalEntryLine.branch_id == branch_id) | (JournalEntry.branch_id == branch_id)
+            )
+        if cost_center_id is not None:
+            statement = statement.where(
+                (JournalEntryLine.cost_center_id == cost_center_id)
+                | (JournalEntry.cost_center_id == cost_center_id)
+            )
+        if source_type:
+            statement = statement.where(JournalEntry.source_type == source_type)
+        rows = (await self.session.execute(statement)).all()
+        movements: list[tuple[JournalEntryLine, JournalEntry]] = []
+        for line, header in rows:
+            if side == "debit" and line.debit_base == _ZERO:
+                continue
+            if side == "credit" and line.credit_base == _ZERO:
+                continue
+            movements.append((line, header))
+        return movements
+
+    def _build_day_book_lines(
+        self,
+        *,
+        account_id: UUID,
+        account_code: str,
+        account_name: str,
+        account_type: str,
+        from_date: date,
+        to_date: date,
+        opening_signed: Decimal,
+        movements: list[tuple[JournalEntryLine, JournalEntry]],
+    ) -> list[DayBookLine]:
+        by_date: dict[date, list[tuple[JournalEntryLine, JournalEntry]]] = defaultdict(list)
+        for line, header in movements:
+            by_date[header.entry_date].append((line, header))
+        lines: list[DayBookLine] = []
+        running = opening_signed
+        current = from_date
+        account_fields = {
+            "account_id": account_id,
+            "account_code": account_code,
+            "account_name": account_name,
+        }
+        while current <= to_date:
+            lines.append(
+                DayBookLine(
+                    row_type="opening",
+                    entry_date=current,
+                    running_balance=running,
+                    **account_fields,
+                )
+            )
+            day_debit = _ZERO
+            day_credit = _ZERO
+            for line, header in by_date.get(current, []):
+                day_debit = quantize_money(day_debit + line.debit_base)
+                day_credit = quantize_money(day_credit + line.credit_base)
+                running = quantize_money(
+                    running + self._delta(account_type, line.debit_base, line.credit_base)
+                )
+                lines.append(
+                    DayBookLine(
+                        row_type="movement",
+                        entry_date=current,
+                        journal_entry_id=header.id,
+                        journal_entry_line_id=line.id,
+                        document_number=header.document_number,
+                        source_type=header.source_type,
+                        source_id=header.source_id,
+                        debit=line.debit_base,
+                        credit=line.credit_base,
+                        running_balance=running,
+                        party_id=line.party_id,
+                        description=line.description,
+                        narration=header.narration,
+                        **account_fields,
+                    )
+                )
+            lines.append(
+                DayBookLine(
+                    row_type="day_total",
+                    entry_date=current,
+                    debit=day_debit,
+                    credit=day_credit,
+                    running_balance=running,
+                    **account_fields,
+                )
+            )
+            lines.append(
+                DayBookLine(
+                    row_type="closing",
+                    entry_date=current,
+                    running_balance=running,
+                    **account_fields,
+                )
+            )
+            current += timedelta(days=1)
+        return lines
 
     async def account_statement(
         self,

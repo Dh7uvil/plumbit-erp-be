@@ -77,6 +77,45 @@ class GeneralLedgerResponse(ReportCurrencyMixin):
     lines: list[GeneralLedgerLine] = Field(default_factory=list)
 
 
+class DayBookLine(BaseModel):
+    row_type: str
+    account_id: UUID | None = None
+    account_code: str | None = None
+    account_name: str | None = None
+    entry_date: date | None = None
+    journal_entry_id: UUID | None = None
+    journal_entry_line_id: UUID | None = None
+    document_number: str | None = None
+    source_type: str | None = None
+    source_id: UUID | None = None
+    debit: Decimal = Decimal("0")
+    credit: Decimal = Decimal("0")
+    running_balance: Decimal
+    party_id: UUID | None = None
+    description: str | None = None
+    narration: str | None = None
+
+
+class DayBookAccountSection(BaseModel):
+    account_id: UUID
+    account_code: str
+    account_name: str
+    opening_balance: Decimal
+    closing_balance: Decimal
+    lines: list[DayBookLine] = Field(default_factory=list)
+
+
+class DayBookResponse(ReportCurrencyMixin):
+    book_kind: str
+    from_date: date
+    to_date: date
+    account_id: UUID | None = None
+    combined_opening_balance: Decimal
+    combined_closing_balance: Decimal
+    sections: list[DayBookAccountSection] = Field(default_factory=list)
+    lines: list[DayBookLine] = Field(default_factory=list)
+
+
 class AccountStatementLine(BaseModel):
     journal_entry_id: UUID
     document_number: str
