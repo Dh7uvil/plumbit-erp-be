@@ -95,6 +95,10 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "description": "Reporting dimensions tagged on journal lines and report filters.",
     },
     {
+        "name": "Dunning Rules",
+        "description": "Payment reminder rules and automated dunning for open sales invoices.",
+    },
+    {
         "name": "Terms Templates",
         "description": "Reusable terms-and-conditions bodies for quotations.",
     },

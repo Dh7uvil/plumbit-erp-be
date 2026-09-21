@@ -19,6 +19,7 @@ from app.auth.catalog import (
     SALES_INVOICE_DELETE,
     SALES_INVOICE_POST,
     SALES_MODULE,
+    DUNNING_SEND,
     WRITE_OFF_CREATE,
 )
 from app.auth.org_service import OrganizationService
@@ -1908,6 +1909,13 @@ class SalesInvoiceService:
             and has_permission(self.actor_permissions, WRITE_OFF_CREATE)
         ):
             actions.append("write_off")
+        if (
+            status == InvoiceDocumentStatus.POSTED
+            and row.balance_due > _ZERO
+            and row.due_date is not None
+            and has_permission(self.actor_permissions, DUNNING_SEND)
+        ):
+            actions.append("send_reminder")
         return actions
 
     def _to_response(

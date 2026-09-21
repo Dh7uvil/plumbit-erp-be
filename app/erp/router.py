@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.erp.accounting.accounts.router import router as accounts_router
 from app.erp.accounting.cost_centers.router import router as cost_centers_router
+from app.erp.accounting.dunning.router import router as dunning_rules_router
 from app.erp.accounting.ledger.router import router as journals_router
 from app.erp.accounting.opening_balances.router import router as opening_balances_router
 from app.erp.accounting.reports.router import router as reports_router
@@ -43,6 +44,7 @@ router.include_router(landed_costs_router)
 router.include_router(supplier_payments_router)
 router.include_router(accounts_router)
 router.include_router(cost_centers_router)
+router.include_router(dunning_rules_router)
 router.include_router(journals_router)
 router.include_router(opening_balances_router)
 router.include_router(reports_router)

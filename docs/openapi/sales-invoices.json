@@ -1585,6 +1585,119 @@
         }
       }
     },
+    "/api/v1/sales-invoices/{invoice_id}/payment-reminders": {
+      "get": {
+        "tags": [
+          "Sales Invoices"
+        ],
+        "summary": "List Sales Invoice Payment Reminders",
+        "operationId": "list_sales_invoice_payment_reminders_api_v1_sales_invoices__invoice_id__payment_reminders_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "invoice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invoice Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_DunningLogResponse__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sales-invoices/{invoice_id}/send-reminder": {
+      "post": {
+        "tags": [
+          "Sales Invoices"
+        ],
+        "summary": "Send Sales Invoice Payment Reminder",
+        "operationId": "send_sales_invoice_payment_reminder_api_v1_sales_invoices__invoice_id__send_reminder_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "invoice_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invoice Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SendPaymentReminderRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SendPaymentReminderResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/sales-invoices/{invoice_id}/journal": {
       "get": {
         "tags": [
@@ -1888,6 +2001,78 @@
         ],
         "title": "ApiResponse[SalesInvoiceResponse]"
       },
+      "ApiResponse_SendPaymentReminderResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/SendPaymentReminderResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[SendPaymentReminderResponse]"
+      },
+      "ApiResponse_list_DunningLogResponse__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/DunningLogResponse"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[list[DunningLogResponse]]"
+      },
       "ApiResponse_list_SalesInvoiceResponse__": {
         "properties": {
           "success": {
@@ -2065,6 +2250,84 @@
           "message"
         ],
         "title": "DocumentWarning"
+      },
+      "DunningLogResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tenant Id"
+          },
+          "sales_invoice_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sales Invoice Id"
+          },
+          "dunning_rule_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Dunning Rule Id"
+          },
+          "dunning_rule_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dunning Rule Name"
+          },
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "recipient_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient Email"
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Sent At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "sales_invoice_id",
+          "dunning_rule_id",
+          "channel",
+          "recipient_email",
+          "sent_at"
+        ],
+        "title": "DunningLogResponse"
       },
       "HTTPValidationError": {
         "properties": {
@@ -5228,6 +5491,43 @@
         },
         "type": "object",
         "title": "SalesInvoiceUpdate"
+      },
+      "SendPaymentReminderRequest": {
+        "properties": {
+          "dunning_rule_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dunning Rule Id"
+          }
+        },
+        "type": "object",
+        "title": "SendPaymentReminderRequest"
+      },
+      "SendPaymentReminderResponse": {
+        "properties": {
+          "dunning_log_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Dunning Log Id"
+          },
+          "recipient_email": {
+            "type": "string",
+            "title": "Recipient Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dunning_log_id",
+          "recipient_email"
+        ],
+        "title": "SendPaymentReminderResponse"
       },
       "TaxTreatment": {
         "type": "string",
