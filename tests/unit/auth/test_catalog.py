@@ -77,6 +77,8 @@ def test_catalog_includes_quote_ready_permissions() -> None:
     assert "purchase.supplier_payment.post" in CATALOG_PERMISSIONS
     assert "accounting.credit_control.override" in CATALOG_PERMISSIONS
     assert "masters.document_sequence.create" in CATALOG_PERMISSIONS
+    assert "masters.cost_center.create" in CATALOG_PERMISSIONS
+    assert "masters.cost_center.read" in CATALOG_PERMISSIONS
     assert "inventory.stock.read" in CATALOG_PERMISSIONS
     assert "inventory.stock.update" in CATALOG_PERMISSIONS
     assert "inventory.stock_transfer.create" in CATALOG_PERMISSIONS

@@ -190,6 +190,11 @@ class JournalEntryService:
                         currency_id=payload.currency_id or row.currency_id,
                         exchange_rate=payload.exchange_rate or row.exchange_rate,
                         branch_id=payload.branch_id if "branch_id" in values else row.branch_id,
+                        cost_center_id=(
+                            payload.cost_center_id
+                            if "cost_center_id" in values
+                            else row.cost_center_id
+                        ),
                         narration=payload.narration if "narration" in values else row.narration,
                         reference=payload.reference if "reference" in values else row.reference,
                         lines=payload.lines
@@ -206,6 +211,7 @@ class JournalEntryService:
                                 external_reference=line.external_reference,
                                 tax_id=line.tax_id,
                                 branch_id=line.branch_id,
+                                cost_center_id=line.cost_center_id,
                                 description=line.description,
                             )
                             for line in row.lines
@@ -400,6 +406,7 @@ class JournalEntryService:
                     "external_reference": line.external_reference,
                     "tax_id": line.tax_id,
                     "branch_id": line.branch_id or payload.branch_id,
+                    "cost_center_id": line.cost_center_id or payload.cost_center_id,
                     "description": line.description,
                 }
             )
@@ -408,6 +415,7 @@ class JournalEntryService:
             "currency_id": currency_id,
             "exchange_rate": rate,
             "branch_id": payload.branch_id,
+            "cost_center_id": payload.cost_center_id,
             "narration": payload.narration,
             "reference": payload.reference,
         }
@@ -433,6 +441,7 @@ class JournalEntryService:
             currency_id=row.currency_id,
             exchange_rate=row.exchange_rate,
             branch_id=row.branch_id,
+            cost_center_id=row.cost_center_id,
             narration=row.narration,
             reference=row.reference,
             posted_at=row.posted_at,

@@ -107,6 +107,24 @@
       }
     },
     "/api/v1/tenants/current/logo": {
+      "get": {
+        "tags": [
+          "Tenants"
+        ],
+        "summary": "Get current organization logo",
+        "description": "Requires `identity.organization.read`. Streams the logo through the API.",
+        "operationId": "get_current_tenant_logo_api_v1_tenants_current_logo_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
       "post": {
         "tags": [
           "Tenants"
@@ -176,6 +194,43 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/tenants/{tenant_id}/logo": {
+      "get": {
+        "tags": [
+          "Tenants"
+        ],
+        "summary": "Get public tenant logo",
+        "description": "Returns a public login-screen logo through the application proxy.",
+        "operationId": "get_public_tenant_logo_api_v1_tenants__tenant_id__logo_get",
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Tenant Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     }
   },

@@ -103,14 +103,21 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         from_date: date,
         to_date: date,
         branch_id: UUID | None = None,
+        cost_center_id: UUID | None = None,
         include_zero: bool = False,
     ) -> TrialBalanceResponse:
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
         accounts = await self.accounts.repo.list_all(tenant_id)
-        opening_map = await self._sum_by_account(tenant_id, before=from_date, branch_id=branch_id)
+        opening_map = await self._sum_by_account(
+            tenant_id, before=from_date, branch_id=branch_id, cost_center_id=cost_center_id
+        )
         period_map = await self._sum_by_account(
-            tenant_id, start=from_date, end=to_date, branch_id=branch_id
+            tenant_id,
+            start=from_date,
+            end=to_date,
+            branch_id=branch_id,
+            cost_center_id=cost_center_id,
         )
         lines: list[TrialBalanceLine] = []
         tot_od = tot_oc = tot_pd = tot_pc = tot_cd = tot_cc = tot_nd = tot_nc = _ZERO
@@ -184,6 +191,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         to_date: date,
         party_id: UUID | None = None,
         branch_id: UUID | None = None,
+        cost_center_id: UUID | None = None,
         source_type: str | None = None,
         side: str | None = None,
         page: int = 1,
@@ -198,6 +206,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             account_id=account_id,
             party_id=party_id,
             branch_id=branch_id,
+            cost_center_id=cost_center_id,
         )
         opening_d, opening_c = opening_map.get(account_id, (_ZERO, _ZERO))
         running = self._signed(account.account_type, opening_d, opening_c)
@@ -217,6 +226,11 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         if branch_id is not None:
             statement = statement.where(
                 (JournalEntryLine.branch_id == branch_id) | (JournalEntry.branch_id == branch_id)
+            )
+        if cost_center_id is not None:
+            statement = statement.where(
+                (JournalEntryLine.cost_center_id == cost_center_id)
+                | (JournalEntry.cost_center_id == cost_center_id)
             )
         if source_type:
             statement = statement.where(JournalEntry.source_type == source_type)
@@ -733,6 +747,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         account_id: UUID | None = None,
         party_id: UUID | None = None,
         branch_id: UUID | None = None,
+        cost_center_id: UUID | None = None,
     ) -> dict[UUID, tuple[Decimal, Decimal]]:
         statement = (
             select(
@@ -757,6 +772,11 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         if branch_id is not None:
             statement = statement.where(
                 (JournalEntryLine.branch_id == branch_id) | (JournalEntry.branch_id == branch_id)
+            )
+        if cost_center_id is not None:
+            statement = statement.where(
+                (JournalEntryLine.cost_center_id == cost_center_id)
+                | (JournalEntry.cost_center_id == cost_center_id)
             )
         result: dict[UUID, tuple[Decimal, Decimal]] = {}
         for account_id_row, debit, credit in (await self.session.execute(statement)).all():

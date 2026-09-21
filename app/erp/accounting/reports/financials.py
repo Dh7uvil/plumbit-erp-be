@@ -32,6 +32,7 @@ class FinancialReports:
         from_date: date,
         to_date: date,
         branch_id: UUID | None = None,
+        cost_center_id: UUID | None = None,
         include_ytd: bool = False,
     ) -> ProfitAndLossResponse:
         if from_date > to_date:
@@ -44,13 +45,27 @@ class FinancialReports:
             fiscal = await FiscalYearConfig.load(self.session, tenant_id)
             ytd_from = fiscal.bounds(fiscal.year_for(to_date))[0]
         current_map = await self._sum_by_account(
-            tenant_id, start=from_date, end=to_date, branch_id=branch_id
+            tenant_id,
+            start=from_date,
+            end=to_date,
+            branch_id=branch_id,
+            cost_center_id=cost_center_id,
         )
         comparative_map = await self._sum_by_account(
-            tenant_id, start=comparative_from, end=comparative_to, branch_id=branch_id
+            tenant_id,
+            start=comparative_from,
+            end=comparative_to,
+            branch_id=branch_id,
+            cost_center_id=cost_center_id,
         )
         ytd_map = (
-            await self._sum_by_account(tenant_id, start=ytd_from, end=to_date, branch_id=branch_id)
+            await self._sum_by_account(
+                tenant_id,
+                start=ytd_from,
+                end=to_date,
+                branch_id=branch_id,
+                cost_center_id=cost_center_id,
+            )
             if ytd_from is not None
             else {}
         )
@@ -140,9 +155,12 @@ class FinancialReports:
         *,
         as_of: date,
         branch_id: UUID | None = None,
+        cost_center_id: UUID | None = None,
         include_comparative: bool = True,
     ) -> BalanceSheetResponse:
-        current = await self._balance_sheet_at(tenant_id, as_of=as_of, branch_id=branch_id)
+        current = await self._balance_sheet_at(
+            tenant_id, as_of=as_of, branch_id=branch_id, cost_center_id=cost_center_id
+        )
         comparative_as_of: date | None = None
         prior: BalanceSheetResponse | None = None
         if include_comparative:
@@ -151,7 +169,10 @@ class FinancialReports:
             except ValueError:
                 comparative_as_of = as_of.replace(year=as_of.year - 1, day=28)
             prior = await self._balance_sheet_at(
-                tenant_id, as_of=comparative_as_of, branch_id=branch_id
+                tenant_id,
+                as_of=comparative_as_of,
+                branch_id=branch_id,
+                cost_center_id=cost_center_id,
             )
             prior_by_id = {line.account_id: line.amount for line in prior.lines}
             for line in current.lines:
@@ -169,9 +190,12 @@ class FinancialReports:
         *,
         as_of: date,
         branch_id: UUID | None = None,
+        cost_center_id: UUID | None = None,
     ) -> BalanceSheetResponse:
         accounts = await self.accounts.repo.list_all(tenant_id)
-        closing = await self._sum_by_account(tenant_id, end=as_of, branch_id=branch_id)
+        closing = await self._sum_by_account(
+            tenant_id, end=as_of, branch_id=branch_id, cost_center_id=cost_center_id
+        )
         lines: list[BalanceSheetLine] = []
         total_assets = _ZERO
         total_liabilities = _ZERO

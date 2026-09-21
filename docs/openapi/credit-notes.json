@@ -1973,6 +1973,30 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
           }
         },
         "type": "object",
@@ -2353,6 +2377,18 @@
             ],
             "title": "Branch Id"
           },
+          "cost_center_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Center Id"
+          },
           "narration": {
             "anyOf": [
               {
@@ -2444,6 +2480,30 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
           }
         },
         "type": "object",
@@ -2463,6 +2523,7 @@
           "currency_id",
           "exchange_rate",
           "branch_id",
+          "cost_center_id",
           "narration",
           "reference",
           "posted_at",
@@ -2598,6 +2659,18 @@
             ],
             "title": "Branch Id"
           },
+          "cost_center_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Center Id"
+          },
           "description": {
             "anyOf": [
               {
@@ -2627,6 +2700,7 @@
           "external_reference",
           "tax_id",
           "branch_id",
+          "cost_center_id",
           "description"
         ],
         "title": "JournalLineResponse"
