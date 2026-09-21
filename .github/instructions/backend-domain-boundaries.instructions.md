@@ -147,8 +147,11 @@ inventory_management    implemented: units, categories, products, price_lists, w
                         delivery_notes, packages, shipments, sales_returns, history
                         planned: —
 
-crm                     implemented: customers, contacts
-                        planned: leads, opportunities, activities
+crm                     implemented: customers, contacts, pipelines, lead_sources,
+                        lost_reasons, leads, opportunities, activities, notes
+                        planned: campaigns, reports
+                        `/activities` is CRM tasks/calls/meetings; `/activity` is the
+                        common audit feed. They are not interchangeable.
 
 communication_service   planned: Email, WhatsApp, Chat, Meetings
 notifications_service   planned: In-App, Email, WhatsApp and Push, templates, delivery status

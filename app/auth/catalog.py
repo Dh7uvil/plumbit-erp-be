@@ -49,6 +49,8 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "lost_reason": ('create', 'read', 'update', 'delete'),
         "lead": _with_imex('create', 'read', 'update', 'delete', 'assign', 'convert'),
         "opportunity": _with_imex('create', 'read', 'update', 'delete'),
+        "activity": ('create', 'read', 'update', 'delete'),
+        "note": ('create', 'read', 'update', 'delete'),
     },
     SALES_MODULE: {
         "quotation": _with_imex('create', 'read', 'update', 'delete', 'approve', 'send', 'revise'),
@@ -294,6 +296,14 @@ OPPORTUNITY_UPDATE = build_permission(CRM_MODULE, "opportunity", "update")
 OPPORTUNITY_DELETE = build_permission(CRM_MODULE, "opportunity", "delete")
 OPPORTUNITY_IMPORT = build_permission(CRM_MODULE, "opportunity", "import")
 OPPORTUNITY_EXPORT = build_permission(CRM_MODULE, "opportunity", "export")
+ACTIVITY_CREATE = build_permission(CRM_MODULE, "activity", "create")
+ACTIVITY_READ = build_permission(CRM_MODULE, "activity", "read")
+ACTIVITY_UPDATE = build_permission(CRM_MODULE, "activity", "update")
+ACTIVITY_DELETE = build_permission(CRM_MODULE, "activity", "delete")
+NOTE_CREATE = build_permission(CRM_MODULE, "note", "create")
+NOTE_READ = build_permission(CRM_MODULE, "note", "read")
+NOTE_UPDATE = build_permission(CRM_MODULE, "note", "update")
+NOTE_DELETE = build_permission(CRM_MODULE, "note", "delete")
 
 QUOTATION_CREATE = build_permission(SALES_MODULE, "quotation", "create")
 QUOTATION_READ = build_permission(SALES_MODULE, "quotation", "read")

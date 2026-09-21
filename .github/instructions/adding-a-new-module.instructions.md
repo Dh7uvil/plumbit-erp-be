@@ -36,7 +36,7 @@ implemented vs planned so agents do not stub a slice without an API.
 | `erp` | **Implemented:** currencies, exchange_rates, taxes, payment_terms, terms_templates, document_sequences, suppliers, supplier_products, quotations, proforma_invoices, period_lock, sales_orders, sales_invoices, credit_notes, purchase_orders, purchase_invoices, debit_notes, landed_costs, accounting/accounts, accounting/ledger, accounting/opening_balances, accounting/customer_payments, accounting/supplier_payments, accounting/reports. **Planned:** einvoicing **status APIs** (on sales invoices and credit notes; inbound e-bills as draft purchase invoices). |
 | `inventory_management` | **Implemented:** units, categories, products, price_lists, warehouses, stock, stock_transfers, stock_adjustments, costing (internal FIFO ledger), goods_receipts, quality_inspections, delivery_notes, packages, sales_returns, purchase_returns, history (query layer). **Planned:** — |
 | `logistics` | **Implemented:** shipments (API `/shipments`; packages stay in inventory_management but nav is Shipments). Packages do **not** reserve stock — sales-order confirm owns `qty_reserved`. | `/shipments` | — |
-| `crm` | **Implemented:** customers, contacts. **Planned:** leads, opportunities, activities. |
+| `crm` | **Implemented:** customers, contacts, pipelines, lead_sources, lost_reasons, leads, opportunities, activities, notes. **Planned:** campaigns, reports. |
 | `communication_service` | **Planned:** email, whatsapp, chat, meetings. |
 | `notifications_service` | **Planned:** notifications, templates, delivery status. |
 
@@ -74,7 +74,7 @@ plumbit-erp-be/
 │   │   ├── services/             audit.py
 │   │   ├── dependencies/         auth.py tenant.py permissions.py pagination.py
 │   │   ├── attachments/          identity.attachment.* slice
-│   │   ├── activity/              per-record activity feed
+│   │   ├── activity/              per-record audit feed (`GET /activity`)
 │   │   ├── outbox/               transactional outbox
 │   │   ├── registries/          unposted-document probes, quotation_dependents
 │   │   ├── period_lock.py       shared PeriodLockPolicy invariant (no DB)
@@ -101,7 +101,7 @@ plumbit-erp-be/
 │   │                             stock/ costing/ stock_transfers/ stock_adjustments/
 │   │                             goods_receipts/ quality_inspections/
 │   ├── crm/                      customers/ contacts/
-│   │                             leads/ opportunities/ activities/  (planned)
+│   │                             leads/ opportunities/ activities/ notes/
 │   ├── communication_service/    planned
 │   ├── notifications_service/    planned
 │   │
@@ -202,7 +202,8 @@ app/auth/                            →  /api/v1/users  /api/v1/roles  /api/v1/
 Because the URL space is flat, resource segments must be unique across every module. Where two
 modules own a similar concept, name the resource for what it actually is rather than
 prefixing it with the module: `/customer-payments` and `/supplier-payments`, not
-`/sales/payments` and `/purchasing/payments`.
+`/sales/payments` and `/purchasing/payments`. Keep `/activity` (common audit feed) distinct from
+`/activities` (CRM tasks, calls and meetings); neither replaces the other.
 
 ## Model bases
 

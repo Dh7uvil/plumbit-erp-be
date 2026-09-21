@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from app.auth.catalog import (
     ACCOUNT_READ,
     ACCOUNTING_MODULE,
+    ACTIVITY_READ,
     CONTACT_READ,
     CREDIT_NOTE_READ,
     CRM_MODULE,
@@ -19,8 +20,9 @@ from app.auth.catalog import (
     JOURNAL_ENTRY_READ,
     LANDED_COST_READ,
     LEAD_READ,
-    OPPORTUNITY_READ,
     LOGISTICS_MODULE,
+    NOTE_READ,
+    OPPORTUNITY_READ,
     PACKAGE_READ,
     PRODUCT_READ,
     PROFORMA_INVOICE_READ,
@@ -453,6 +455,32 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
                 "version",
             }
         ),
+    ),
+    "activity": ActivityEntitySpec(
+        module=CRM_MODULE,
+        entity_type="activity",
+        read_permission=ACTIVITY_READ,
+        changed_fields=frozenset(
+            {
+                "activity_type",
+                "subject",
+                "status",
+                "priority",
+                "due_at",
+                "start_at",
+                "end_at",
+                "outcome",
+                "owner",
+                "related_entity_type",
+                "related_entity_id",
+            }
+        ),
+    ),
+    "note": ActivityEntitySpec(
+        module=CRM_MODULE,
+        entity_type="note",
+        read_permission=NOTE_READ,
+        changed_fields=frozenset({"body", "related_entity_type", "related_entity_id"}),
     ),
     "account": ActivityEntitySpec(
         module=ACCOUNTING_MODULE,
