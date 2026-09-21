@@ -403,3 +403,124 @@ async def test_profit_and_loss_balance_sheet_and_cash_flow(client: AsyncClient) 
     )
     assert vat.status_code == 200, vat.text
     assert Decimal(vat.json()["data"]["net_vat"]) == Decimal("0.0000")
+
+
+@pytest.mark.asyncio
+async def test_cash_book_and_bank_book_day_layout(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    accounts = await _accounts(client, headers)
+    created = await client.post(
+        "/api/v1/journals",
+        headers=headers,
+        json={
+            "narration": "Cash to bank",
+            "lines": [
+                {"account_id": accounts["BANK"], "debit": "25.0000", "credit": "0"},
+                {"account_id": accounts["CASH_ON_HAND"], "debit": "0", "credit": "25.0000"},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    row = created.json()["data"]
+    posted = await client.post(
+        f"/api/v1/journals/{row['id']}/post",
+        headers=_if_match(headers, row["version"], key=uuid4().hex),
+    )
+    assert posted.status_code == 200, posted.text
+    entry_date = posted.json()["data"]["entry_date"]
+    bank_book = await client.get(
+        "/api/v1/reports/bank-book",
+        headers=headers,
+        params={"from": entry_date, "to": entry_date, "account_id": accounts["BANK"]},
+    )
+    assert bank_book.status_code == 200, bank_book.text
+    data = bank_book.json()["data"]
+    assert data["book_kind"] == "bank"
+    assert Decimal(data["combined_closing_balance"]) == Decimal("25.0000")
+    row_types = [line["row_type"] for line in data["lines"]]
+    assert row_types == ["opening", "movement", "day_total", "closing"]
+    assert Decimal(data["lines"][0]["running_balance"]) == Decimal("0.0000")
+    assert Decimal(data["lines"][-1]["running_balance"]) == Decimal("25.0000")
+    cash_book = await client.get(
+        "/api/v1/reports/cash-book",
+        headers=headers,
+        params={"from": entry_date, "to": entry_date},
+    )
+    assert cash_book.status_code == 200, cash_book.text
+    cash_data = cash_book.json()["data"]
+    assert len(cash_data["sections"]) >= 1
+    assert Decimal(cash_data["combined_closing_balance"]) == Decimal("-25.0000")
+
+
+@pytest.mark.asyncio
+async def test_cash_book_empty_period_shows_carry_forward(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    accounts = await _accounts(client, headers)
+    created = await client.post(
+        "/api/v1/journals",
+        headers=headers,
+        json={
+            "lines": [
+                {"account_id": accounts["BANK"], "debit": "10.0000", "credit": "0"},
+                {"account_id": accounts["CASH_ON_HAND"], "debit": "0", "credit": "10.0000"},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    row = created.json()["data"]
+    posted = await client.post(
+        f"/api/v1/journals/{row['id']}/post",
+        headers=_if_match(headers, row["version"], key=uuid4().hex),
+    )
+    assert posted.status_code == 200, posted.text
+    entry_date = posted.json()["data"]["entry_date"]
+    quiet = await client.get(
+        "/api/v1/reports/bank-book",
+        headers=headers,
+        params={"from": "2099-01-01", "to": "2099-01-03", "account_id": accounts["BANK"]},
+    )
+    assert quiet.status_code == 200, quiet.text
+    lines = quiet.json()["data"]["lines"]
+    assert len(lines) == 9
+    assert all(line["row_type"] == "opening" for line in lines[0::3])
+    assert Decimal(lines[-1]["running_balance"]) == Decimal("10.0000")
+    assert entry_date < "2099-01-01"
+
+
+@pytest.mark.asyncio
+async def test_journal_contra_creates_draft_and_rejects_non_cash_bank(
+    client: AsyncClient,
+) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    accounts = await _accounts(client, headers)
+    contra = await client.post(
+        "/api/v1/journals/contra",
+        headers=headers,
+        json={
+            "source_account_id": accounts["CASH_ON_HAND"],
+            "destination_account_id": accounts["BANK"],
+            "amount": "15.0000",
+            "narration": "Petty cash top-up",
+        },
+    )
+    assert contra.status_code == 201, contra.text
+    draft = contra.json()["data"]
+    assert draft["status"] == "DRAFT"
+    assert len(draft["lines"]) == 2
+    assert draft["lines"][0]["account_id"] == accounts["BANK"]
+    assert draft["lines"][0]["debit"] == "15.0000"
+    assert draft["lines"][1]["account_id"] == accounts["CASH_ON_HAND"]
+    assert draft["lines"][1]["credit"] == "15.0000"
+    bad = await client.post(
+        "/api/v1/journals/contra",
+        headers=headers,
+        json={
+            "source_account_id": accounts["CASH_ON_HAND"],
+            "destination_account_id": accounts["ACCOUNTS_RECEIVABLE"],
+            "amount": "5.0000",
+        },
+    )
+    assert bad.status_code == 422, bad.text

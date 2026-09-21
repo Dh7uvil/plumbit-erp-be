@@ -82,6 +82,31 @@ class JournalLineResponse(BaseModel):
     description: str | None
 
 
+class JournalContraCreate(BaseModel):
+    source_account_id: UUID
+    destination_account_id: UUID
+    amount: Decimal = Field(gt=0, max_digits=18, decimal_places=4)
+    entry_date: date | None = None
+    branch_id: UUID | None = None
+    cost_center_id: UUID | None = None
+    narration: str | None = None
+    reference: str | None = Field(default=None, max_length=100)
+
+    @field_validator("narration", "reference")
+    @classmethod
+    def normalize_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def accounts_must_differ(self) -> "JournalContraCreate":
+        if self.source_account_id == self.destination_account_id:
+            raise ValueError("source_account_id and destination_account_id must differ")
+        return self
+
+
 class JournalEntryCreate(BaseModel):
     entry_date: date | None = None
     currency_id: UUID | None = None

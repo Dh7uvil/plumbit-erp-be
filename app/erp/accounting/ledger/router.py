@@ -23,6 +23,7 @@ from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
 from app.erp.accounting.ledger.dependencies import JournalEntryServiceDependency
 from app.erp.accounting.ledger.schemas import (
+    JournalContraCreate,
     JournalEntryCancelRequest,
     JournalEntryCreate,
     JournalEntryFilter,
@@ -73,6 +74,21 @@ async def create_journal(
 ) -> ApiResponse[JournalEntryResponse]:
     row = await service.create(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Journal entry created successfully")
+
+
+@router.post(
+    "/contra",
+    response_model=ApiResponse[JournalEntryResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_contra_journal(
+    payload: JournalContraCreate,
+    tenant: TenantContextDependency,
+    service: JournalEntryServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(JOURNAL_ENTRY_CREATE))],
+) -> ApiResponse[JournalEntryResponse]:
+    row = await service.create_contra(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
+    return ApiResponse(data=row, message="Contra journal draft created successfully")
 
 
 @router.get("/{journal_id}", response_model=ApiResponse[JournalEntryResponse])
