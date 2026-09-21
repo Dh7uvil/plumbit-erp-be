@@ -186,6 +186,11 @@ class CustomerService:
         self, tenant_id: UUID, payload: CustomerCreate, *, actor_user_id: UUID
     ) -> CustomerResponse:
         async with transaction(self.session):
+            return await self.create_record(tenant_id, payload, actor_user_id=actor_user_id)
+
+    async def create_record(
+        self, tenant_id: UUID, payload: CustomerCreate, *, actor_user_id: UUID
+    ) -> CustomerResponse:
             currency_id = payload.currency_id
             if currency_id is None:
                 currency_id = (await self.currencies.get_base(tenant_id)).id

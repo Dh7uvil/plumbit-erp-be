@@ -3,10 +3,11 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, Header, Request, status
 
 from app.auth.catalog import (
     LEAD_ASSIGN,
+    LEAD_CONVERT,
     LEAD_CREATE,
     LEAD_DELETE,
     LEAD_READ,
@@ -16,12 +17,15 @@ from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
+from app.common.idempotency.service import hash_request, require_idempotency_key
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
 from app.crm.leads.dependencies import LeadServiceDependency
 from app.crm.leads.schemas import (
     LeadAssign,
+    LeadConvert,
+    LeadConvertResponse,
     LeadCreate,
     LeadFilter,
     LeadResponse,
@@ -32,6 +36,7 @@ from app.crm.leads.schemas import (
 router = APIRouter(prefix="/leads", tags=["Leads"])
 
 IfMatch = Annotated[str | None, Header()]
+IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
 
 
 @router.get("", response_model=ApiResponse[list[LeadResponse]])
@@ -145,3 +150,32 @@ async def change_lead_status(
         expected_version=require_document_version(if_match=if_match, body_version=payload.version),
     )
     return ApiResponse(data=row, message="Lead status updated successfully")
+
+
+@router.post(
+    "/{lead_id}/convert",
+    response_model=ApiResponse[LeadConvertResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def convert_lead(
+    lead_id: UUID,
+    request: Request,
+    payload: LeadConvert,
+    tenant: TenantContextDependency,
+    service: LeadServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(LEAD_CONVERT))],
+    if_match: IfMatch = None,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[LeadConvertResponse]:
+    body = await request.body()
+    row = await service.convert(
+        tenant.tenant_id,
+        lead_id,
+        payload,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(if_match=if_match, body_version=payload.version),
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(data=row, message="Lead converted successfully")

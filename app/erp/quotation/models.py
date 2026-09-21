@@ -39,6 +39,7 @@ class Quotation(AuditUserMixin, SoftDeleteTenantModel):
         ),
         Index("ix_quotations_tenant_id_status", "tenant_id", "status"),
         Index("ix_quotations_tenant_id_quote_date", "tenant_id", "quote_date"),
+        Index("ix_quotations_tenant_id_opportunity_id", "tenant_id", "opportunity_id"),
     )
 
     quote_number: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -67,6 +68,11 @@ class Quotation(AuditUserMixin, SoftDeleteTenantModel):
         ForeignKey("contacts.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
+    )
+    opportunity_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("crm_opportunities.id", ondelete="SET NULL"),
+        nullable=True,
     )
     customer_trn: Mapped[str | None] = mapped_column(String(50), nullable=True)
     tax_treatment: Mapped[str] = mapped_column(String(30), nullable=False)

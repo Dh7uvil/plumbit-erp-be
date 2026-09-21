@@ -203,6 +203,23 @@
             }
           },
           {
+            "name": "opportunity_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Opportunity Id"
+            }
+          },
+          {
             "name": "branch_id",
             "in": "query",
             "required": false,
@@ -557,6 +574,23 @@
                 }
               ],
               "title": "Customer Id"
+            }
+          },
+          {
+            "name": "opportunity_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Opportunity Id"
             }
           },
           {
@@ -4548,6 +4582,18 @@
             ],
             "title": "Contact Id"
           },
+          "opportunity_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opportunity Id"
+          },
           "branch_id": {
             "anyOf": [
               {
@@ -5254,6 +5300,18 @@
               }
             ],
             "title": "Contact Id"
+          },
+          "opportunity_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opportunity Id"
           },
           "customer_trn": {
             "anyOf": [

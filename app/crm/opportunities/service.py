@@ -112,10 +112,34 @@ class OpportunityService:
     async def get(self, tenant_id: UUID, opportunity_id: UUID) -> OpportunityResponse:
         return await self._to_response(await self._require(tenant_id, opportunity_id))
 
+    async def list_quotations(
+        self,
+        tenant_id: UUID,
+        opportunity_id: UUID,
+        *,
+        page: PageParams,
+        common_filter: BaseFilter | None = None,
+    ) -> tuple[builtins.list[object], int]:
+        from app.erp.quotation.service import QuotationService
+
+        await self._require(tenant_id, opportunity_id)
+        quotations = QuotationService(self.session, actor_permissions=self.actor_permissions)
+        return await quotations.list(
+            tenant_id,
+            page=page,
+            common_filter=common_filter,
+            opportunity_id=opportunity_id,
+        )
+
     async def create(
         self, tenant_id: UUID, payload: OpportunityCreate, *, actor_user_id: UUID
     ) -> OpportunityResponse:
         async with transaction(self.session):
+            return await self.create_record(tenant_id, payload, actor_user_id=actor_user_id)
+
+    async def create_record(
+        self, tenant_id: UUID, payload: OpportunityCreate, *, actor_user_id: UUID
+    ) -> OpportunityResponse:
             pipeline_id, stage = await self._resolve_pipeline_and_stage(
                 tenant_id, payload.pipeline_id, payload.stage_id
             )
