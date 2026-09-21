@@ -27,6 +27,7 @@ class QuotationFilter(BaseFilter):
     )
     status: QuotationStatus | None = None
     customer_id: UUID | None = None
+    opportunity_id: UUID | None = None
     branch_id: UUID | None = None
     currency_id: UUID | None = None
 
@@ -86,6 +87,7 @@ class QuotationLineResponse(PackingFields):
 class QuotationCreate(BaseModel):
     customer_id: UUID
     contact_id: UUID | None = None
+    opportunity_id: UUID | None = None
     branch_id: UUID | None = None
     quote_date: date | None = None
     valid_until: date | None = None
@@ -177,6 +179,7 @@ class QuotationResponse(BaseModel):
     branch_id: UUID | None
     customer_id: UUID
     contact_id: UUID | None
+    opportunity_id: UUID | None = None
     customer_trn: str | None
     tax_treatment: TaxTreatment
     place_of_supply: PlaceOfSupply

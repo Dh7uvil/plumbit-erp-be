@@ -84,6 +84,7 @@ async def list_quotations(
         common_filter=filters,
         status=filters.status.value if filters.status else None,
         customer_id=filters.customer_id,
+        opportunity_id=filters.opportunity_id,
         branch_id=filters.branch_id,
         currency_id=filters.currency_id,
     )

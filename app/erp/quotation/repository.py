@@ -40,7 +40,9 @@ class QuotationRepository:
                     "grand_total",
                 }
             ),
-            allowed_filter_fields=frozenset({"status", "customer_id", "branch_id", "currency_id"}),
+            allowed_filter_fields=frozenset(
+                {"status", "customer_id", "opportunity_id", "branch_id", "currency_id"}
+            ),
             search_fields=frozenset(
                 {
                     "quote_number",

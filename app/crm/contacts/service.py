@@ -70,6 +70,11 @@ class ContactService:
         self, tenant_id: UUID, payload: ContactCreate, *, actor_user_id: UUID
     ) -> ContactResponse:
         async with transaction(self.session):
+            return await self.create_record(tenant_id, payload, actor_user_id=actor_user_id)
+
+    async def create_record(
+        self, tenant_id: UUID, payload: ContactCreate, *, actor_user_id: UUID
+    ) -> ContactResponse:
             await self.customers.require_party(tenant_id, payload.customer_id)
             if payload.is_primary:
                 await self.repo.clear_other_primaries(tenant_id, payload.customer_id)

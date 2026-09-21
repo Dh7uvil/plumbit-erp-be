@@ -10,6 +10,7 @@ from app.auth.catalog import (
     OPPORTUNITY_DELETE,
     OPPORTUNITY_READ,
     OPPORTUNITY_UPDATE,
+    QUOTATION_READ,
 )
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
@@ -28,6 +29,7 @@ from app.crm.opportunities.schemas import (
     OpportunityUpdate,
     OpportunityVersionedAction,
 )
+from app.erp.quotation.schemas import QuotationResponse
 
 router = APIRouter(prefix="/opportunities", tags=["Opportunities"])
 
@@ -69,6 +71,22 @@ async def create_opportunity(
 ) -> ApiResponse[OpportunityResponse]:
     row = await service.create(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Opportunity created successfully")
+
+
+@router.get("/{opportunity_id}/quotations", response_model=ApiResponse[list[QuotationResponse]])
+async def list_opportunity_quotations(
+    opportunity_id: UUID,
+    tenant: TenantContextDependency,
+    page: PaginationDependency,
+    service: OpportunityServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(QUOTATION_READ))],
+) -> ApiResponse[list[QuotationResponse]]:
+    rows, total = await service.list_quotations(
+        tenant.tenant_id,
+        opportunity_id,
+        page=page,
+    )
+    return paginated_response(rows, params=page, total=total)
 
 
 @router.get("/{opportunity_id}", response_model=ApiResponse[OpportunityResponse])

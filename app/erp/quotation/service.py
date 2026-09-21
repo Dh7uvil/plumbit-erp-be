@@ -149,6 +149,7 @@ class QuotationService:
         common_filter: BaseFilter | None = None,
         status: str | None = None,
         customer_id: UUID | None = None,
+        opportunity_id: UUID | None = None,
         branch_id: UUID | None = None,
         currency_id: UUID | None = None,
     ) -> tuple[list[QuotationResponse], int]:
@@ -157,6 +158,8 @@ class QuotationService:
         filters: dict[str, object] = {}
         if customer_id is not None:
             filters["customer_id"] = customer_id
+        if opportunity_id is not None:
+            filters["opportunity_id"] = opportunity_id
         if branch_id is not None:
             filters["branch_id"] = branch_id
         if currency_id is not None:
@@ -926,6 +929,14 @@ class QuotationService:
             contact = await self.contacts.get(tenant_id, payload.contact_id)
             if contact.customer_id != customer.id:
                 raise ValidationError("Contact does not belong to this customer")
+        if payload.opportunity_id is not None:
+            from app.crm.opportunities.service import OpportunityService
+
+            opportunity = await OpportunityService(self.session).get(
+                tenant_id, payload.opportunity_id
+            )
+            if opportunity.customer_id is not None and opportunity.customer_id != customer.id:
+                raise ValidationError("Opportunity belongs to a different customer")
         if payload.salesperson_id is not None:
             await self.org.require_employee(tenant_id, payload.salesperson_id)
         if payload.payment_terms_id is not None:
@@ -976,6 +987,7 @@ class QuotationService:
             "branch_id": payload.branch_id,
             "customer_id": customer.id,
             "contact_id": payload.contact_id,
+            "opportunity_id": payload.opportunity_id,
             "customer_trn": customer.trn,
             "tax_treatment": customer.tax_treatment.value,
             "place_of_supply": place.value,
@@ -1199,6 +1211,7 @@ class QuotationService:
             branch_id=row.branch_id,
             customer_id=row.customer_id,
             contact_id=row.contact_id,
+            opportunity_id=row.opportunity_id,
             customer_trn=row.customer_trn,
             tax_treatment=TaxTreatment(row.tax_treatment),
             place_of_supply=PlaceOfSupply(row.place_of_supply),
