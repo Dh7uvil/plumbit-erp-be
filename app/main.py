@@ -156,6 +156,18 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "description": "People belonging to a customer. One contact may be primary per customer.",
     },
     {
+        "name": "Pipelines",
+        "description": "CRM opportunity pipelines and ordered stages with win probabilities.",
+    },
+    {
+        "name": "Lead Sources",
+        "description": "CRM lead attribution sources used on leads and opportunities.",
+    },
+    {
+        "name": "Lost Reasons",
+        "description": "CRM reasons recorded when an opportunity is lost.",
+    },
+    {
         "name": "Suppliers",
         "description": "Purchase-side party master sharing customer rows via company_type.",
     },

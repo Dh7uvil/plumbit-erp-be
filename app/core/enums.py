@@ -608,3 +608,24 @@ class OutboxStatus(StrEnum):
 class SortOrder(StrEnum):
     ASC = "asc"
     DESC = "desc"
+
+
+class PipelineStageKind(StrEnum):
+    OPEN = "OPEN"
+    WON = "WON"
+    LOST = "LOST"
+
+
+class LeadStatus(StrEnum):
+    NEW = "NEW"
+    CONTACTED = "CONTACTED"
+    QUALIFIED = "QUALIFIED"
+    UNQUALIFIED = "UNQUALIFIED"
+    CONVERTED = "CONVERTED"
+    LOST = "LOST"
+
+
+class OpportunityStatus(StrEnum):
+    OPEN = "OPEN"
+    WON = "WON"
+    LOST = "LOST"

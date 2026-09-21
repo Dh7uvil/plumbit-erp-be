@@ -7,6 +7,9 @@ from app.auth.repository import AccessRepository
 from app.common.attachments.repository import AttachmentRepository
 from app.crm.contacts.repository import ContactRepository
 from app.crm.customers.repository import CustomerRepository
+from app.crm.lead_sources.repository import LeadSourceRepository
+from app.crm.lost_reasons.repository import LostReasonRepository
+from app.crm.pipelines.repository import PipelineRepository
 from app.erp.accounting.accounts.repository import AccountRepository
 from app.erp.accounting.customer_payments.repository import CustomerPaymentRepository
 from app.erp.accounting.ledger.repository import JournalEntryRepository
@@ -51,6 +54,9 @@ def test_list_repositories_construct_with_valid_search_config() -> None:
     AttachmentRepository(session)
     ContactRepository(session)
     CustomerRepository(session)
+    LeadSourceRepository(session)
+    LostReasonRepository(session)
+    PipelineRepository(session)
     AccountRepository(session)
     CustomerPaymentRepository(session)
     JournalEntryRepository(session)

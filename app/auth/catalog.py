@@ -44,6 +44,9 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
     CRM_MODULE: {
         "customer": _with_imex('create', 'read', 'update', 'delete', 'history'),
         "contact": _with_imex('create', 'read', 'update', 'delete'),
+        "pipeline": ('create', 'read', 'update', 'delete'),
+        "lead_source": ('create', 'read', 'update', 'delete'),
+        "lost_reason": ('create', 'read', 'update', 'delete'),
     },
     SALES_MODULE: {
         "quotation": _with_imex('create', 'read', 'update', 'delete', 'approve', 'send', 'revise'),
@@ -263,6 +266,18 @@ CONTACT_UPDATE = build_permission(CRM_MODULE, "contact", "update")
 CONTACT_DELETE = build_permission(CRM_MODULE, "contact", "delete")
 CONTACT_IMPORT = build_permission(CRM_MODULE, "contact", "import")
 CONTACT_EXPORT = build_permission(CRM_MODULE, "contact", "export")
+PIPELINE_CREATE = build_permission(CRM_MODULE, "pipeline", "create")
+PIPELINE_READ = build_permission(CRM_MODULE, "pipeline", "read")
+PIPELINE_UPDATE = build_permission(CRM_MODULE, "pipeline", "update")
+PIPELINE_DELETE = build_permission(CRM_MODULE, "pipeline", "delete")
+LEAD_SOURCE_CREATE = build_permission(CRM_MODULE, "lead_source", "create")
+LEAD_SOURCE_READ = build_permission(CRM_MODULE, "lead_source", "read")
+LEAD_SOURCE_UPDATE = build_permission(CRM_MODULE, "lead_source", "update")
+LEAD_SOURCE_DELETE = build_permission(CRM_MODULE, "lead_source", "delete")
+LOST_REASON_CREATE = build_permission(CRM_MODULE, "lost_reason", "create")
+LOST_REASON_READ = build_permission(CRM_MODULE, "lost_reason", "read")
+LOST_REASON_UPDATE = build_permission(CRM_MODULE, "lost_reason", "update")
+LOST_REASON_DELETE = build_permission(CRM_MODULE, "lost_reason", "delete")
 
 QUOTATION_CREATE = build_permission(SALES_MODULE, "quotation", "create")
 QUOTATION_READ = build_permission(SALES_MODULE, "quotation", "read")
