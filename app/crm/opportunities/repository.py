@@ -2,9 +2,10 @@
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.repositories.base import BaseRepository
@@ -38,6 +39,7 @@ class OpportunityRepository:
                     "owner_id",
                     "customer_id",
                     "source_id",
+                    "campaign_id",
                 }
             ),
             search_fields=frozenset({"opportunity_number", "name"}),
@@ -66,6 +68,28 @@ class OpportunityRepository:
 
     async def create(self, tenant_id: UUID, values: Mapping[str, object]) -> Opportunity:
         return await self._repo.create(tenant_id, values)
+
+    async def won_attribution_for_campaign(
+        self, tenant_id: UUID, campaign_id: UUID
+    ) -> tuple[int, Decimal]:
+        from app.core.enums import OpportunityStatus
+
+        criteria = (
+            Opportunity.tenant_id == tenant_id,
+            Opportunity.campaign_id == campaign_id,
+            Opportunity.status == OpportunityStatus.WON.value,
+            Opportunity.deleted_at.is_(None),
+        )
+        count_value = await self.session.scalar(
+            select(func.count()).select_from(Opportunity).where(*criteria)
+        )
+        amount_value = await self.session.scalar(
+            select(func.coalesce(func.sum(Opportunity.amount), 0)).where(*criteria)
+        )
+        won_value = (
+            amount_value if isinstance(amount_value, Decimal) else Decimal(str(amount_value or 0))
+        )
+        return int(count_value or 0), won_value
 
     async def update(
         self, tenant_id: UUID, opportunity_id: UUID, values: Mapping[str, object]

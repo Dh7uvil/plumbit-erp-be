@@ -20,9 +20,7 @@ _ALLOWED: dict[LeadStatus, frozenset[LeadStatus]] = {
     LeadStatus.QUALIFIED: frozenset(
         {LeadStatus.CONTACTED, LeadStatus.UNQUALIFIED, LeadStatus.LOST}
     ),
-    LeadStatus.UNQUALIFIED: frozenset(
-        {LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.LOST}
-    ),
+    LeadStatus.UNQUALIFIED: frozenset({LeadStatus.NEW, LeadStatus.CONTACTED, LeadStatus.LOST}),
     LeadStatus.LOST: frozenset(),
     LeadStatus.CONVERTED: frozenset(),
 }
@@ -30,9 +28,7 @@ _ALLOWED: dict[LeadStatus, frozenset[LeadStatus]] = {
 
 def assert_editable(status: LeadStatus) -> None:
     if status in _TERMINAL:
-        raise InvalidStatusTransitionError(
-            f"Leads in {status.value} status cannot be changed"
-        )
+        raise InvalidStatusTransitionError(f"Leads in {status.value} status cannot be changed")
 
 
 def allowed_status_targets(current: LeadStatus) -> list[LeadStatus]:

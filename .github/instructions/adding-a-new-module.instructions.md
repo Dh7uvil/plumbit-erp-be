@@ -36,7 +36,7 @@ implemented vs planned so agents do not stub a slice without an API.
 | `erp` | **Implemented:** currencies, exchange_rates, taxes, payment_terms, terms_templates, document_sequences, suppliers, supplier_products, quotations, proforma_invoices, period_lock, sales_orders, sales_invoices, credit_notes, purchase_orders, purchase_invoices, debit_notes, landed_costs, accounting/accounts, accounting/ledger, accounting/opening_balances, accounting/customer_payments, accounting/supplier_payments, accounting/reports. **Planned:** einvoicing **status APIs** (on sales invoices and credit notes; inbound e-bills as draft purchase invoices). |
 | `inventory_management` | **Implemented:** units, categories, products, price_lists, warehouses, stock, stock_transfers, stock_adjustments, costing (internal FIFO ledger), goods_receipts, quality_inspections, delivery_notes, packages, sales_returns, purchase_returns, history (query layer). **Planned:** — |
 | `logistics` | **Implemented:** shipments (API `/shipments`; packages stay in inventory_management but nav is Shipments). Packages do **not** reserve stock — sales-order confirm owns `qty_reserved`. | `/shipments` | — |
-| `crm` | **Implemented:** customers, contacts, pipelines, lead_sources, lost_reasons, leads, opportunities, activities, notes. **Planned:** campaigns, reports. |
+| `crm` | **Implemented:** customers, contacts, pipelines, lead_sources, lost_reasons, leads, opportunities, activities, notes, campaigns. **Planned:** reports. |
 | `communication_service` | **Planned:** email, whatsapp, chat, meetings. |
 | `notifications_service` | **Planned:** notifications, templates, delivery status. |
 
@@ -101,7 +101,7 @@ plumbit-erp-be/
 │   │                             stock/ costing/ stock_transfers/ stock_adjustments/
 │   │                             goods_receipts/ quality_inspections/
 │   ├── crm/                      customers/ contacts/
-│   │                             leads/ opportunities/ activities/ notes/
+│   │                             leads/ opportunities/ activities/ notes/ campaigns/
 │   ├── communication_service/    planned
 │   ├── notifications_service/    planned
 │   │

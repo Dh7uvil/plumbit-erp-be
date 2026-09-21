@@ -654,3 +654,32 @@ class ActivityPriority(StrEnum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
+
+
+class CampaignType(StrEnum):
+    EMAIL = "EMAIL"
+    WEBINAR = "WEBINAR"
+    TRADE_SHOW = "TRADE_SHOW"
+    ADVERTISEMENT = "ADVERTISEMENT"
+    SOCIAL = "SOCIAL"
+    REFERRAL = "REFERRAL"
+    OTHER = "OTHER"
+
+
+class CampaignStatus(StrEnum):
+    PLANNED = "PLANNED"
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+
+
+class CampaignMemberType(StrEnum):
+    LEAD = "lead"
+    CONTACT = "contact"
+
+
+class CampaignMemberStatus(StrEnum):
+    PLANNED = "PLANNED"
+    SENT = "SENT"
+    RESPONDED = "RESPONDED"
+    CONVERTED = "CONVERTED"

@@ -27,6 +27,7 @@ class LeadFilter(BaseFilter):
     source_id: UUID | None = None
     owner_id: UUID | None = None
     rating: str | None = None
+    campaign_id: UUID | None = None
 
 
 class LeadCreate(BaseModel):
@@ -39,6 +40,7 @@ class LeadCreate(BaseModel):
     rating: str | None = Field(default=None, max_length=20)
     source_id: UUID | None = None
     owner_id: UUID | None = None
+    campaign_id: UUID | None = None
     estimated_value: Decimal | None = Field(default=None, ge=0)
     currency_id: UUID | None = None
     notes: str | None = Field(default=None, max_length=4000)
@@ -91,6 +93,7 @@ class LeadUpdate(BaseModel):
     rating: str | None = Field(default=None, max_length=20)
     source_id: UUID | None = None
     owner_id: UUID | None = None
+    campaign_id: UUID | None = None
     estimated_value: Decimal | None = Field(default=None, ge=0)
     currency_id: UUID | None = None
     notes: str | None = Field(default=None, max_length=4000)
@@ -255,6 +258,7 @@ class LeadResponse(BaseModel):
     rating: str | None
     source_id: UUID | None
     owner_id: UUID | None
+    campaign_id: UUID | None
     estimated_value: Decimal | None
     currency_id: UUID | None
     notes: str | None

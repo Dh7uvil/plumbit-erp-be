@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.crm.activities.router import router as activities_router
+from app.crm.campaigns.router import router as campaigns_router
 from app.crm.contacts.router import router as contacts_router
 from app.crm.customers.router import router as customers_router
 from app.crm.lead_sources.router import router as lead_sources_router
@@ -22,3 +23,4 @@ router.include_router(leads_router)
 router.include_router(opportunities_router)
 router.include_router(activities_router)
 router.include_router(notes_router)
+router.include_router(campaigns_router)

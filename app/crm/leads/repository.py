@@ -3,6 +3,7 @@
 from collections.abc import Mapping, Sequence
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.repositories.base import BaseRepository
@@ -28,7 +29,9 @@ class LeadRepository:
                     "company_name",
                 }
             ),
-            allowed_filter_fields=frozenset({"status", "source_id", "owner_id", "rating"}),
+            allowed_filter_fields=frozenset(
+                {"status", "source_id", "owner_id", "rating", "campaign_id"}
+            ),
             search_fields=frozenset(
                 {
                     "lead_number",
@@ -41,9 +44,7 @@ class LeadRepository:
             ),
         )
 
-    async def get(
-        self, tenant_id: UUID, lead_id: UUID, *, for_update: bool = False
-    ) -> Lead | None:
+    async def get(self, tenant_id: UUID, lead_id: UUID, *, for_update: bool = False) -> Lead | None:
         statement = self._repo.base_query(tenant_id).where(Lead.id == lead_id)
         if for_update:
             statement = statement.with_for_update()
@@ -64,6 +65,19 @@ class LeadRepository:
 
     async def create(self, tenant_id: UUID, values: Mapping[str, object]) -> Lead:
         return await self._repo.create(tenant_id, values)
+
+    async def count_for_campaign(
+        self, tenant_id: UUID, campaign_id: UUID, *, status: str | None = None
+    ) -> int:
+        criteria = [
+            Lead.tenant_id == tenant_id,
+            Lead.campaign_id == campaign_id,
+            Lead.deleted_at.is_(None),
+        ]
+        if status is not None:
+            criteria.append(Lead.status == status)
+        value = await self.session.scalar(select(func.count()).select_from(Lead).where(*criteria))
+        return int(value or 0)
 
     async def update(
         self, tenant_id: UUID, lead_id: UUID, values: Mapping[str, object]

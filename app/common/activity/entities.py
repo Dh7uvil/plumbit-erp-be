@@ -8,6 +8,7 @@ from app.auth.catalog import (
     ACCOUNT_READ,
     ACCOUNTING_MODULE,
     ACTIVITY_READ,
+    CAMPAIGN_READ,
     CONTACT_READ,
     CREDIT_NOTE_READ,
     CRM_MODULE,
@@ -424,6 +425,7 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
                 "rating",
                 "source",
                 "owner",
+                "campaign",
                 "estimated_value",
                 "currency",
                 "notes",
@@ -452,6 +454,7 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
                 "owner",
                 "source",
                 "lead",
+                "campaign",
                 "version",
             }
         ),
@@ -481,6 +484,24 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
         entity_type="note",
         read_permission=NOTE_READ,
         changed_fields=frozenset({"body", "related_entity_type", "related_entity_id"}),
+    ),
+    "campaign": ActivityEntitySpec(
+        module=CRM_MODULE,
+        entity_type="campaign",
+        read_permission=CAMPAIGN_READ,
+        changed_fields=frozenset(
+            {
+                "name",
+                "campaign_type",
+                "status",
+                "start_date",
+                "end_date",
+                "budgeted_cost",
+                "actual_cost",
+                "expected_revenue",
+                "owner",
+            }
+        ),
     ),
     "account": ActivityEntitySpec(
         module=ACCOUNTING_MODULE,

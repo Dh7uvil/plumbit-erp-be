@@ -29,6 +29,7 @@ class OpportunityFilter(BaseFilter):
     owner_id: UUID | None = None
     customer_id: UUID | None = None
     source_id: UUID | None = None
+    campaign_id: UUID | None = None
 
 
 class OpportunityCreate(BaseModel):
@@ -44,6 +45,7 @@ class OpportunityCreate(BaseModel):
     owner_id: UUID | None = None
     source_id: UUID | None = None
     lead_id: UUID | None = None
+    campaign_id: UUID | None = None
 
     @field_validator("name")
     @classmethod
@@ -71,6 +73,7 @@ class OpportunityUpdate(BaseModel):
     expected_close_date: date | None = None
     owner_id: UUID | None = None
     source_id: UUID | None = None
+    campaign_id: UUID | None = None
 
     @field_validator("name")
     @classmethod
@@ -118,6 +121,7 @@ class OpportunityResponse(BaseModel):
     owner_id: UUID | None
     source_id: UUID | None
     lead_id: UUID | None
+    campaign_id: UUID | None
     version: int
     available_actions: list[str] = Field(default_factory=list)
     created_at: datetime
