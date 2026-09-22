@@ -14,12 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
     CUSTOMER_PAYMENT_CREATE,
+    DUNNING_SEND,
     PERIOD_OVERRIDE,
     SALES_INVOICE_CANCEL,
     SALES_INVOICE_DELETE,
     SALES_INVOICE_POST,
     SALES_MODULE,
-    DUNNING_SEND,
     WRITE_OFF_CREATE,
 )
 from app.auth.org_service import OrganizationService
@@ -292,14 +292,17 @@ class SalesInvoiceService:
                 for _row_number, item in items:
                     sku = (item.get("line.sku") or "").strip()
                     product = await self.products.find_by_sku(tenant_id, sku) if sku else None
+                    hs_code = (item.get("line.hs_code") or "").strip() or None
                     lines.append(
                         SalesInvoiceLineInput(
                             product_id=product.id if product else None,
                             quantity=require_line_quantity(item),
                             rate=parse_optional_decimal(item.get("line.unit_price")),
+                            hs_code=hs_code,
                             **packing_kwargs(item, sku=sku),
                         )
                     )
+                origin = (header.get("country_of_origin") or "").strip() or None
                 created = await self.create(
                     tenant_id,
                     SalesInvoiceCreate(
@@ -309,6 +312,7 @@ class SalesInvoiceService:
                         notes=(header.get("notes") or "").strip() or None,
                         bl_number=(header.get("bl_number") or "").strip() or None,
                         container_number=(header.get("container_number") or "").strip() or None,
+                        country_of_origin=origin.upper() if origin else None,
                         shipping_amount=shipping,
                         lines=lines,
                     ),
@@ -335,7 +339,7 @@ class SalesInvoiceService:
         invoice_date_from: date | None = None,
         invoice_date_to: date | None = None,
     ) -> builtins.list[builtins.list[object]]:
-        from app.common.imex.commercial import commercial_export_row
+        from app.common.imex.commercial import sales_invoice_export_row
         from app.core.constants import MAX_PAGE_SIZE
 
         exported: builtins.list[builtins.list[object]] = []
@@ -358,7 +362,7 @@ class SalesInvoiceService:
             )
             for row in rows:
                 for line in row.lines:
-                    exported.append(commercial_export_row(row, line, party_id=row.customer_id))
+                    exported.append(sales_invoice_export_row(row, line, party_id=row.customer_id))
             if len(rows) < MAX_PAGE_SIZE or page * MAX_PAGE_SIZE >= total:
                 break
             page += 1
@@ -853,6 +857,7 @@ class SalesInvoiceService:
                 shipping_amount=pfi.shipping_amount,
                 adjustment_amount=pfi.adjustment_amount,
                 place_of_supply=pfi.place_of_supply,
+                country_of_origin=pfi.country_of_origin,
                 lines=[
                     SalesInvoiceLineInput(
                         product_id=source.product_id,
@@ -865,6 +870,7 @@ class SalesInvoiceService:
                         discount_type=source.discount_type,
                         discount_value=source.discount_value,
                         tax_id=source.tax_id,
+                        hs_code=source.hs_code,
                     )
                     for source, qty in selected
                 ],
@@ -1276,9 +1282,7 @@ class SalesInvoiceService:
         row.amount_paid = quantize_money(row.amount_paid + amount)
         if row.amount_paid < _ZERO:
             raise ValidationError("Paid amount cannot be negative")
-        settled = quantize_money(
-            row.amount_paid + row.amount_credited + row.amount_written_off
-        )
+        settled = quantize_money(row.amount_paid + row.amount_credited + row.amount_written_off)
         if settled > row.grand_total:
             raise PaymentOverAllocatedError(
                 details={
@@ -1653,6 +1657,7 @@ class SalesInvoiceService:
             "terms_and_conditions": terms_body,
             "bl_number": payload.bl_number,
             "container_number": payload.container_number,
+            "country_of_origin": payload.country_of_origin,
             "amount_paid": _ZERO,
             "amount_credited": _ZERO,
             "amount_written_off": _ZERO,
@@ -1689,6 +1694,7 @@ class SalesInvoiceService:
             )
             if not description:
                 raise ValidationError("Line description is required")
+            hs_code = line.hs_code or (product.hs_code if product else None)
             unit_id = line.unit_id or (product.unit_id if product else None)
             if unit_id is not None:
                 await self.units.require_id(tenant_id, unit_id)
@@ -1748,6 +1754,7 @@ class SalesInvoiceService:
                     "cogs_amount": _ZERO,
                     "cogs_status": CogsStatus.NOT_APPLICABLE.value,
                     "qty_credited": _ZERO,
+                    "hs_code": hs_code,
                     **packing_persist(line),
                 }
             )
@@ -1777,6 +1784,7 @@ class SalesInvoiceService:
                     discount_type=DiscountType(line.discount_type) if line.discount_type else None,
                     discount_value=line.discount_value,
                     tax_id=line.tax_id,
+                    hs_code=line.hs_code,
                 )
                 for line in existing.lines
             ]
@@ -1795,6 +1803,7 @@ class SalesInvoiceService:
             terms_and_conditions=values.get("terms_and_conditions", existing.terms_and_conditions),
             bl_number=values.get("bl_number", existing.bl_number),
             container_number=values.get("container_number", existing.container_number),
+            country_of_origin=values.get("country_of_origin", existing.country_of_origin),
             discount_type=(
                 values["discount_type"]
                 if "discount_type" in values
@@ -1828,6 +1837,7 @@ class SalesInvoiceService:
             terms_and_conditions=row.terms_and_conditions,
             bl_number=row.bl_number,
             container_number=row.container_number,
+            country_of_origin=row.country_of_origin,
             discount_type=DiscountType(row.discount_type) if row.discount_type else None,
             discount_value=row.discount_value,
             shipping_amount=row.shipping_amount,
@@ -1849,6 +1859,7 @@ class SalesInvoiceService:
                     discount_type=DiscountType(line.discount_type) if line.discount_type else None,
                     discount_value=line.discount_value,
                     tax_id=line.tax_id,
+                    hs_code=line.hs_code,
                 )
                 for line in row.lines
             ],
@@ -1866,9 +1877,7 @@ class SalesInvoiceService:
         )
         if row.balance_due < _ZERO:
             row.balance_due = _ZERO
-        applied = quantize_money(
-            row.amount_paid + row.amount_credited + row.amount_written_off
-        )
+        applied = quantize_money(row.amount_paid + row.amount_credited + row.amount_written_off)
         if applied <= _ZERO:
             row.payment_status = PaymentStatus.UNPAID.value
         elif row.balance_due <= _ZERO:
@@ -1980,6 +1989,7 @@ class SalesInvoiceService:
             terms_and_conditions=row.terms_and_conditions,
             bl_number=row.bl_number,
             container_number=row.container_number,
+            country_of_origin=row.country_of_origin,
             amount_paid=row.amount_paid,
             amount_credited=row.amount_credited,
             amount_written_off=row.amount_written_off,
@@ -2027,6 +2037,12 @@ class SalesInvoiceService:
                     cogs_amount=line.cogs_amount,
                     cogs_status=CogsStatus(line.cogs_status),
                     qty_credited=line.qty_credited,
+                    hs_code=line.hs_code,
+                    carton_qty=line.carton_qty,
+                    packing_unit=line.packing_unit,
+                    cbm=line.cbm,
+                    weight=line.weight,
+                    item_code=line.item_code,
                 )
                 for line in row.lines
             ],

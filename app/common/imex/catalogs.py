@@ -50,23 +50,26 @@ SALES_INVOICE_FIELDS = (
         ("document_date", "Invoice date", False, ("date", "invoice date")),
         ("bl_number", "B/L number", False, ("b/l", "bl", "bl_number")),
         ("container_number", "Container", False, ("container",)),
+        ("country_of_origin", "Country of origin", False, ("origin", "coo")),
         ("notes", "Notes", False, ("remark",)),
         ("shipping_amount", "Freight", False, ("freight", "loading", "local")),
     )
     + COMMERCIAL_LINES
-)
-PACKAGE_FIELDS = (
-    _header(("sales_order_number", "Sales order", True, ("so", "sales order")))
     + _lines(
-        ("line.sku", "SKU", True, ("item no",)),
-        ("line.description", "Description", False, ("descriptions",)),
-        ("line.quantity", "Quantity", True, ("tt.qty", "qty")),
-        ("line.carton_qty", "Carton qty", False, ("ctns",)),
-        ("line.packing_unit", "Packing unit", False, ("pkg",)),
-        ("line.cbm", "CBM", False, ("tt.cbm",)),
-        ("line.weight", "Weight", False, ("tt.weight",)),
-        ("line.item_code", "Item code", False, ("item no",)),
+        ("line.hs_code", "HS code", False, ("hs", "tariff code", "hsn")),
     )
+)
+PACKAGE_FIELDS = _header(
+    ("sales_order_number", "Sales order", True, ("so", "sales order"))
+) + _lines(
+    ("line.sku", "SKU", True, ("item no",)),
+    ("line.description", "Description", False, ("descriptions",)),
+    ("line.quantity", "Quantity", True, ("tt.qty", "qty")),
+    ("line.carton_qty", "Carton qty", False, ("ctns",)),
+    ("line.packing_unit", "Packing unit", False, ("pkg",)),
+    ("line.cbm", "CBM", False, ("tt.cbm",)),
+    ("line.weight", "Weight", False, ("tt.weight",)),
+    ("line.item_code", "Item code", False, ("item no",)),
 )
 CUSTOMER_FIELDS = _header(
     ("name", "Name", True, ("customer", "customer name")),

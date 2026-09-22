@@ -71,8 +71,9 @@ class SalesInvoiceLineInput(PackingFields):
     discount_type: DiscountType | None = None
     discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     tax_id: UUID | None = None
+    hs_code: str | None = Field(default=None, max_length=20)
 
-    @field_validator("description")
+    @field_validator("description", "hs_code")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -119,6 +120,7 @@ class SalesInvoiceLineResponse(PackingFields):
     cogs_amount: Decimal
     cogs_status: CogsStatus
     qty_credited: Decimal
+    hs_code: str | None = None
 
 
 class SalesInvoiceCreate(BaseModel):
@@ -136,6 +138,7 @@ class SalesInvoiceCreate(BaseModel):
     terms_and_conditions: str | None = None
     bl_number: str | None = Field(default=None, max_length=80)
     container_number: str | None = Field(default=None, max_length=80)
+    country_of_origin: str | None = Field(default=None, max_length=2)
     terms_template_id: UUID | None = None
     discount_type: DiscountType | None = None
     discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
@@ -153,6 +156,13 @@ class SalesInvoiceCreate(BaseModel):
         normalized = value.strip()
         return normalized or None
 
+    @field_validator("country_of_origin")
+    @classmethod
+    def normalize_country(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip().upper() or None
+
 
 class SalesInvoiceUpdate(BaseModel):
     contact_id: UUID | None = None
@@ -166,6 +176,7 @@ class SalesInvoiceUpdate(BaseModel):
     terms_and_conditions: str | None = None
     bl_number: str | None = Field(default=None, max_length=80)
     container_number: str | None = Field(default=None, max_length=80)
+    country_of_origin: str | None = Field(default=None, max_length=2)
     discount_type: DiscountType | None = None
     discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     shipping_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
@@ -182,6 +193,13 @@ class SalesInvoiceUpdate(BaseModel):
             return None
         normalized = value.strip()
         return normalized or None
+
+    @field_validator("country_of_origin")
+    @classmethod
+    def normalize_country(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip().upper() or None
 
 
 class SalesInvoiceCancelRequest(BaseModel):
@@ -255,6 +273,7 @@ class SalesInvoiceResponse(BaseModel):
     terms_and_conditions: str | None
     bl_number: str | None = None
     container_number: str | None = None
+    country_of_origin: str | None = None
     amount_paid: Decimal
     amount_credited: Decimal
     amount_written_off: Decimal = Decimal("0")

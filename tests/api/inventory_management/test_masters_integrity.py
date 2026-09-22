@@ -56,15 +56,18 @@ async def _create_customer(
     headers: dict[str, str],
     *,
     currency_id: str,
-    trn: str | None = "100000000000003",
+    trn: str | None = None,
     tax_treatment: str = "REGISTERED",
     default_price_list_id: str | None = None,
 ) -> str:
     suffix = uuid4().hex[:8]
+    resolved_trn = trn
+    if resolved_trn is None and tax_treatment == "REGISTERED":
+        resolved_trn = f"{int(uuid4().int % (10**15 - 1)) + 1:015d}"
     payload: dict[str, object] = {
         "name": f"Customer {suffix}",
         "tax_treatment": tax_treatment,
-        "trn": trn,
+        "trn": resolved_trn,
         "currency_id": currency_id,
         "shipping_address": {
             "address_line_1": "Warehouse 1",

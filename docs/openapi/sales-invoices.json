@@ -3857,6 +3857,18 @@
             ],
             "title": "Container Number"
           },
+          "country_of_origin": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Of Origin"
+          },
           "terms_template_id": {
             "anyOf": [
               {
@@ -4288,6 +4300,18 @@
               }
             ],
             "title": "Tax Id"
+          },
+          "hs_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hs Code"
           }
         },
         "type": "object",
@@ -4543,6 +4567,17 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Qty Credited"
+          },
+          "hs_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hs Code"
           }
         },
         "type": "object",
@@ -4979,6 +5014,17 @@
             ],
             "title": "Container Number"
           },
+          "country_of_origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Of Origin"
+          },
           "amount_paid": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -5379,6 +5425,18 @@
               }
             ],
             "title": "Container Number"
+          },
+          "country_of_origin": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Of Origin"
           },
           "discount_type": {
             "anyOf": [

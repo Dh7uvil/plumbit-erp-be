@@ -60,8 +60,9 @@ class CreditNoteLineInput(BaseModel):
     discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     tax_id: UUID | None = None
     income_account_id: UUID | None = None
+    hs_code: str | None = Field(default=None, max_length=20)
 
-    @field_validator("description")
+    @field_validator("description", "hs_code")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -96,6 +97,7 @@ class CreditNoteLineResponse(BaseModel):
     tax_amount: Decimal
     amount: Decimal
     income_account_id: UUID | None
+    hs_code: str | None = None
 
 
 class CreditNoteCreate(BaseModel):
@@ -113,6 +115,7 @@ class CreditNoteCreate(BaseModel):
     adjustment_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     round_off_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    country_of_origin: str | None = Field(default=None, max_length=2)
     lines: list[CreditNoteLineInput] = Field(min_length=1)
 
     @field_validator("notes")
@@ -122,6 +125,13 @@ class CreditNoteCreate(BaseModel):
             return None
         normalized = value.strip()
         return normalized or None
+
+    @field_validator("country_of_origin")
+    @classmethod
+    def normalize_country(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip().upper() or None
 
 
 class CreditNoteUpdate(BaseModel):
@@ -138,6 +148,7 @@ class CreditNoteUpdate(BaseModel):
     adjustment_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     round_off_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    country_of_origin: str | None = Field(default=None, max_length=2)
     lines: list[CreditNoteLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
@@ -148,6 +159,13 @@ class CreditNoteUpdate(BaseModel):
             return None
         normalized = value.strip()
         return normalized or None
+
+    @field_validator("country_of_origin")
+    @classmethod
+    def normalize_country(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip().upper() or None
 
 
 class CreditNoteCancelRequest(BaseModel):
@@ -213,6 +231,7 @@ class CreditNoteResponse(BaseModel):
     foreign_amount: Decimal
     base_amount: Decimal
     notes: str | None
+    country_of_origin: str | None = None
     amount_applied: Decimal
     amount_unapplied: Decimal
     journal_entry_id: UUID | None
