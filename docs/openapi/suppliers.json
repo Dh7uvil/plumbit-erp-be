@@ -2500,6 +2500,18 @@
       },
       "SupplierPaymentAllocationResponse": {
         "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
           "item_type": {
             "type": "string",
             "title": "Item Type"
@@ -2508,6 +2520,17 @@
             "type": "string",
             "format": "uuid",
             "title": "Item Id"
+          },
+          "item_document_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Document Number"
           },
           "amount": {
             "type": "string",
@@ -2525,6 +2548,30 @@
               }
             ],
             "title": "Journal Entry Id"
+          },
+          "reversed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reversed At"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
           }
         },
         "type": "object",

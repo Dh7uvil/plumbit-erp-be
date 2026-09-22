@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any, cast
 from uuid import UUID
 
@@ -76,9 +77,24 @@ from app.erp.accounting.ledger.cash_guard import assert_cash_available
 from app.erp.accounting.ledger.posting import LedgerPostingService
 from app.erp.accounting.ledger.schemas import JournalEntryResponse, JournalLineInput
 from app.erp.accounting.ledger.service import JournalEntryService
+from app.erp.accounting.open_items.models import PaymentAllocation
 from app.erp.accounting.open_items.repository import PaymentAllocationRepository
-from app.erp.accounting.open_items.schemas import PaymentAllocationInput
+from app.erp.accounting.open_items.schemas import (
+    PaymentAllocationInput,
+    PaymentAllocationRecordResponse,
+)
 from app.erp.accounting.open_items.service import OpenItemsService
+from app.erp.accounting.payment_allocations.document_labels import allocation_item_document_number
+from app.erp.accounting.payment_allocations.helpers import (
+    cash_allocation_types,
+    open_item_amount_in_payment_currency,
+    open_item_row_for_allocation,
+    realized_fx_on_allocation,
+    record_note_allocations_on_payment,
+    require_single_invoice_target,
+    reverse_note_netting_on_payment,
+    split_payment_allocations,
+)
 from app.erp.accounting.service import DocumentSequenceService, TaxService
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 
@@ -92,7 +108,9 @@ _ACTION_PERMISSIONS: dict[str, str] = {
 SOURCE_CUSTOMER_PAYMENT = "customer_payment"
 SOURCE_CUSTOMER_PAYMENT_ALLOCATION = "customer_payment_allocation"
 SOURCE_CUSTOMER_PAYMENT_REFUND = "customer_payment_refund"
-_ALLOCATABLE = frozenset({OpenItemType.SALES_INVOICE, OpenItemType.OPENING_AR})
+_ALLOCATABLE = frozenset(
+    {OpenItemType.SALES_INVOICE, OpenItemType.OPENING_AR, OpenItemType.CREDIT_NOTE}
+)
 
 
 class CustomerPaymentService:
@@ -172,9 +190,7 @@ class CustomerPaymentService:
         await self._ensure_policy(tenant_id)
         response = await self._to_response(tenant_id, row)
         response.related_documents = await self._related_documents(tenant_id, row)
-        response.realized_fx_amount = await self._realized_fx_amount(
-            tenant_id, row.journal_entry_id
-        )
+        response.realized_fx_amount = await self._payment_realized_fx(tenant_id, row)
         return response
 
     async def create(
@@ -316,6 +332,7 @@ class CustomerPaymentService:
             policy.assert_open(row.payment_date, can_override=self._can_override)
             old_values = await self._snapshot(tenant_id, row)
             await self._apply_rate(tenant_id, row)
+            await self._apply_draft_credit_note_netting(tenant_id, row, actor_user_id=actor_user_id)
             lines, tax_amount = await self._post_journal_lines(tenant_id, row)
             journal = await self.posting.post_for_document(
                 tenant_id,
@@ -333,7 +350,7 @@ class CustomerPaymentService:
             )
             row.journal_entry_id = journal.id
             row.tax_amount = tax_amount
-            await self._settle_allocations(tenant_id, row, sign=Decimal("1"))
+            await self._apply_live_cash_allocations(tenant_id, row, actor_user_id=actor_user_id)
             row.status = target.value
             row.is_posted = True
             row.posted_at = utcnow()
@@ -447,7 +464,32 @@ class CustomerPaymentService:
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(row.payment_date, can_override=self._can_override)
             old_values = await self._snapshot(tenant_id, row)
-            total = quantize_money(sum((item.amount for item in allocations), _ZERO))
+            for item in allocations:
+                if item.item_type == OpenItemType.CUSTOMER_PAYMENT:
+                    raise ValidationError("Receipts allocate to invoices or opening AR only")
+            cash, notes = split_payment_allocations(allocations, receivable=True)
+            if notes:
+                await self._apply_credit_notes_to_invoice(
+                    tenant_id,
+                    row.customer_id,
+                    notes,
+                    invoice_id=require_single_invoice_target(cash, receivable=True),
+                    actor_user_id=actor_user_id,
+                )
+                await record_note_allocations_on_payment(
+                    self.allocations,
+                    tenant_id,
+                    PaymentAllocationSource.CUSTOMER_PAYMENT.value,
+                    row.id,
+                    notes,
+                    receivable=True,
+                )
+            total = _ZERO
+            for item in cash:
+                open_row = await self._require_open_item(tenant_id, row.customer_id, item)
+                total = quantize_money(
+                    total + open_item_amount_in_payment_currency(row, open_row, item.amount)
+                )
             if total > row.amount_unapplied:
                 raise PaymentOverAllocatedError(
                     details={
@@ -460,7 +502,7 @@ class CustomerPaymentService:
                 if row.amount_unapplied > _ZERO and row.tax_amount > _ZERO
                 else _ZERO
             )
-            for item in allocations:
+            for item in cash:
                 await self._allocate_posted_slice(
                     tenant_id,
                     row,
@@ -495,6 +537,117 @@ class CustomerPaymentService:
                 dedupe_key=f"customer-payment-allocated:{payment_id}:{row.version}",
             )
             return await self._to_response(tenant_id, loaded)
+
+    async def list_allocations(
+        self, tenant_id: UUID, payment_id: UUID
+    ) -> list[PaymentAllocationRecordResponse]:
+        await self._require(tenant_id, payment_id)
+        rows = await self.allocations.list_all_for_payment(
+            tenant_id, PaymentAllocationSource.CUSTOMER_PAYMENT.value, payment_id
+        )
+        return [await self._allocation_record(tenant_id, row) for row in rows]
+
+    async def unallocate(
+        self,
+        tenant_id: UUID,
+        payment_id: UUID,
+        allocation_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> CustomerPaymentResponse:
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return CustomerPaymentResponse.model_validate(replay)
+            row = await self._require(tenant_id, payment_id, for_update=True)
+            self._assert_version(row, expected_version)
+            if InvoiceDocumentStatus(row.status) != InvoiceDocumentStatus.POSTED:
+                raise ValidationError("Only posted receipts can be unallocated")
+            allocation = await self.allocations.get(tenant_id, allocation_id)
+            if (
+                allocation is None
+                or allocation.payment_id != payment_id
+                or allocation.payment_type != PaymentAllocationSource.CUSTOMER_PAYMENT.value
+            ):
+                raise ResourceNotFoundError("Allocation not found")
+            if allocation.reversed_at is not None:
+                response = await self._to_response(tenant_id, row)
+                await self.idempotency.store(
+                    tenant_id, idempotency_key, response.model_dump(mode="json")
+                )
+                return response
+            if allocation.item_type == OpenItemType.CREDIT_NOTE.value:
+                raise ValidationError("Credit note netting cannot be unapplied from the receipt")
+            policy = await self._ensure_policy(tenant_id)
+            policy.assert_open(row.payment_date, can_override=self._can_override)
+            old_values = await self._snapshot(tenant_id, row)
+            item = PaymentAllocationInput(
+                item_type=OpenItemType(allocation.item_type),
+                item_id=allocation.item_id,
+                amount=allocation.amount,
+            )
+            open_row = await open_item_row_for_allocation(
+                self.session,
+                tenant_id,
+                receivable=True,
+                party_id=row.customer_id,
+                item=item,
+            )
+            payment_slice = open_item_amount_in_payment_currency(row, open_row, allocation.amount)
+            if allocation.journal_entry_id is not None:
+                await self.posting.reverse(
+                    tenant_id,
+                    allocation.journal_entry_id,
+                    reversal_date=row.payment_date,
+                    reason=f"Unapply receipt {row.document_number}",
+                    actor_id=actor_user_id,
+                )
+            allocation.reversed_at = utcnow()
+            await self._settle_allocations(
+                tenant_id, row, sign=Decimal("-1"), allocations=[allocation]
+            )
+            if row.amount_unapplied > _ZERO and row.tax_amount > _ZERO:
+                vat_ratio = row.tax_amount / row.amount_unapplied
+                tax_delta = quantize_money(payment_slice * vat_ratio)
+            else:
+                _, tax_delta = await self._split_advance_vat(tenant_id, row, payment_slice)
+            row.amount_unapplied = quantize_money(row.amount_unapplied + payment_slice)
+            row.tax_amount = quantize_money(row.tax_amount + tax_delta)
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            loaded = await self._require(tenant_id, payment_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.REVERSE,
+                module=SALES_MODULE,
+                entity_type="customer_payment_allocation",
+                entity_id=allocation_id,
+                old_values={"allocation_id": str(allocation_id), "amount": str(allocation.amount)},
+                new_values={"reversed_at": allocation.reversed_at.isoformat()},
+            )
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=SALES_MODULE,
+                entity_type="customer_payment",
+                entity_id=payment_id,
+                old_values=old_values,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            response = await self._to_response(tenant_id, loaded)
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
+            return response
 
     async def refund(
         self,
@@ -816,17 +969,33 @@ class CustomerPaymentService:
                 tenant_id, PaymentAllocationSource.CUSTOMER_PAYMENT.value, row.id
             )
         )
+        cash_types = cash_allocation_types(receivable=True)
+        cash_inputs = [
+            PaymentAllocationInput(
+                item_type=OpenItemType(item.item_type),
+                item_id=item.item_id,
+                amount=item.amount,
+            )
+            for item in live
+            if OpenItemType(item.item_type) in cash_types
+        ]
+        invoice_id_for_notes = require_single_invoice_target(cash_inputs, receivable=True)
         for allocation in live:
             item_type = OpenItemType(allocation.item_type)
             amount = quantize_money(allocation.amount * sign)
             if item_type == OpenItemType.SALES_INVOICE:
                 await invoices.apply_payment(tenant_id, allocation.item_id, amount)
-            elif item_type == OpenItemType.CREDIT_NOTE:
-                from app.erp.credit_notes.service import CreditNoteService
-
-                await CreditNoteService(
-                    self.session, actor_permissions=self.actor_permissions
-                ).adjust_unapplied(tenant_id, allocation.item_id, -amount)
+            elif item_type == OpenItemType.CREDIT_NOTE and sign < _ZERO:
+                if invoice_id_for_notes is None:
+                    continue
+                await reverse_note_netting_on_payment(
+                    self.session,
+                    tenant_id,
+                    receivable=True,
+                    note_id=allocation.item_id,
+                    invoice_id=invoice_id_for_notes,
+                    amount=allocation.amount,
+                )
 
     async def _allocate_posted_slice(
         self,
@@ -836,6 +1005,7 @@ class CustomerPaymentService:
         *,
         actor_user_id: UUID,
         vat_ratio: Decimal,
+        existing_allocation: PaymentAllocation | None = None,
     ) -> None:
         if item.item_type not in {OpenItemType.SALES_INVOICE, OpenItemType.OPENING_AR}:
             raise ValidationError("Receipts allocate to invoices or opening AR only")
@@ -844,10 +1014,9 @@ class CustomerPaymentService:
             raise PaymentOverAllocatedError(
                 details={"item_id": str(item.item_id), "balance": str(open_row.balance)}
             )
-        if open_row.currency_id != row.currency_id:
-            raise ValidationError("Payment currency must match the open item currency")
-        vat_amount = quantize_money(item.amount * vat_ratio)
-        net_amount = quantize_money(item.amount - vat_amount)
+        payment_slice = open_item_amount_in_payment_currency(row, open_row, item.amount)
+        vat_amount = quantize_money(payment_slice * vat_ratio)
+        net_amount = quantize_money(payment_slice - vat_amount)
         lines = await self._application_journal_lines(
             tenant_id,
             row,
@@ -856,14 +1025,16 @@ class CustomerPaymentService:
             net_amount=net_amount,
             vat_amount=vat_amount,
         )
-        allocation = await self.allocations.create(
-            tenant_id,
-            payment_type=PaymentAllocationSource.CUSTOMER_PAYMENT.value,
-            payment_id=row.id,
-            item_type=item.item_type.value,
-            item_id=item.item_id,
-            amount=item.amount,
-        )
+        allocation = existing_allocation
+        if allocation is None:
+            allocation = await self.allocations.create(
+                tenant_id,
+                payment_type=PaymentAllocationSource.CUSTOMER_PAYMENT.value,
+                payment_id=row.id,
+                item_type=item.item_type.value,
+                item_id=item.item_id,
+                amount=item.amount,
+            )
         journal = await self.posting.post_for_document(
             tenant_id,
             source_type=SOURCE_CUSTOMER_PAYMENT_ALLOCATION,
@@ -892,14 +1063,26 @@ class CustomerPaymentService:
         allocations = await self.allocations.list_live_for_payment(
             tenant_id, PaymentAllocationSource.CUSTOMER_PAYMENT.value, row.id
         )
-        allocated = quantize_money(sum((item.amount for item in allocations), _ZERO))
+        allocated = await self._sum_allocations_in_payment_currency(
+            tenant_id,
+            row.customer_id,
+            currency_id=row.currency_id,
+            exchange_rate=row.exchange_rate,
+            allocations=[
+                PaymentAllocationInput(
+                    item_type=OpenItemType(item.item_type),
+                    item_id=item.item_id,
+                    amount=item.amount,
+                )
+                for item in allocations
+                if item.item_type != OpenItemType.CREDIT_NOTE.value
+            ],
+        )
         if allocated > row.amount_received:
             raise PaymentOverAllocatedError(
                 details={"amount_received": str(row.amount_received), "allocated": str(allocated)}
             )
-        unapplied = quantize_money(row.amount_received - allocated)
-        row.amount_unapplied = unapplied
-        ar = await self.party_accounts.resolve_receivable(tenant_id, row.customer_id)
+        row.amount_unapplied = row.amount_received
         advance = await self.resolver.require(tenant_id, AccountSystemRole.ADVANCE_FROM_CUSTOMER)
         vat_account = await self.resolver.require(tenant_id, AccountSystemRole.VAT_OUTPUT)
         fx_account = await self.resolver.require(tenant_id, AccountSystemRole.FX_GAIN_LOSS)
@@ -932,61 +1115,75 @@ class CustomerPaymentService:
                     description="Bank charges",
                 )
             )
-        fx_total = _ZERO
-        for allocation in allocations:
-            open_row = await self._require_open_item(
-                tenant_id,
-                row.customer_id,
-                PaymentAllocationInput(
-                    item_type=OpenItemType(allocation.item_type),
-                    item_id=allocation.item_id,
-                    amount=allocation.amount,
-                ),
+        net, tax_amount = await self._split_advance_vat(tenant_id, row, row.amount_received)
+        lines.append(
+            JournalLineInput(
+                account_id=advance.id,
+                credit=net,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                party_type=PartyType.CUSTOMER,
+                party_id=row.customer_id,
+                description="Customer receipt",
             )
-            if open_row.currency_id != row.currency_id:
-                raise ValidationError("Payment currency must match the open item currency")
-            item_rate = open_row.exchange_rate or row.exchange_rate
+        )
+        if tax_amount > _ZERO:
             lines.append(
                 JournalLineInput(
-                    account_id=ar.id,
-                    credit=allocation.amount,
-                    currency_id=row.currency_id,
-                    exchange_rate=item_rate,
-                    party_type=PartyType.CUSTOMER,
-                    party_id=row.customer_id,
-                    description=open_row.document_number,
-                )
-            )
-            fx_total += quantize_money(
-                allocation.amount * row.exchange_rate - allocation.amount * item_rate
-            )
-        tax_amount = _ZERO
-        if unapplied > _ZERO:
-            net, tax_amount = await self._split_advance_vat(tenant_id, row, unapplied)
-            lines.append(
-                JournalLineInput(
-                    account_id=advance.id,
-                    credit=net,
+                    account_id=vat_account.id,
+                    credit=tax_amount,
                     currency_id=row.currency_id,
                     exchange_rate=row.exchange_rate,
-                    party_type=PartyType.CUSTOMER,
-                    party_id=row.customer_id,
-                    description="Unapplied receipt",
+                    tax_id=row.tax_id,
+                    description="VAT on advance",
                 )
             )
-            if tax_amount > _ZERO:
-                lines.append(
-                    JournalLineInput(
-                        account_id=vat_account.id,
-                        credit=tax_amount,
-                        currency_id=row.currency_id,
-                        exchange_rate=row.exchange_rate,
-                        tax_id=row.tax_id,
-                        description="VAT on advance",
-                    )
-                )
-        self._append_fx(lines, fx_account.id, fx_total, row)
+        self._append_fx(lines, fx_account.id, _ZERO, row)
         return lines, tax_amount
+
+    async def _apply_live_cash_allocations(
+        self,
+        tenant_id: UUID,
+        row: CustomerPayment,
+        *,
+        actor_user_id: UUID,
+    ) -> None:
+        live = await self.allocations.list_live_for_payment(
+            tenant_id, PaymentAllocationSource.CUSTOMER_PAYMENT.value, row.id
+        )
+        if not live:
+            return
+        vat_ratio = (
+            row.tax_amount / row.amount_unapplied
+            if row.amount_unapplied > _ZERO and row.tax_amount > _ZERO
+            else _ZERO
+        )
+        for allocation in live:
+            if allocation.item_type == OpenItemType.CREDIT_NOTE.value:
+                continue
+            if allocation.journal_entry_id is not None:
+                continue
+            item = PaymentAllocationInput(
+                item_type=OpenItemType(allocation.item_type),
+                item_id=allocation.item_id,
+                amount=allocation.amount,
+            )
+            open_row = await self._require_open_item(tenant_id, row.customer_id, item)
+            payment_slice = open_item_amount_in_payment_currency(row, open_row, allocation.amount)
+            await self._allocate_posted_slice(
+                tenant_id,
+                row,
+                item,
+                actor_user_id=actor_user_id,
+                vat_ratio=vat_ratio,
+                existing_allocation=allocation,
+            )
+            row.amount_unapplied = quantize_money(row.amount_unapplied - payment_slice)
+            row.tax_amount = quantize_money(
+                row.tax_amount - quantize_money(payment_slice * vat_ratio)
+            )
+        if row.amount_unapplied <= _ZERO:
+            row.tax_amount = _ZERO
 
     async def _application_journal_lines(
         self,
@@ -1003,6 +1200,7 @@ class CustomerPaymentService:
         vat_account = await self.resolver.require(tenant_id, AccountSystemRole.VAT_OUTPUT)
         fx_account = await self.resolver.require(tenant_id, AccountSystemRole.FX_GAIN_LOSS)
         item_rate = open_row.exchange_rate or row.exchange_rate
+        ar_currency = open_row.currency_id
         lines = [
             JournalLineInput(
                 account_id=advance.id,
@@ -1016,7 +1214,7 @@ class CustomerPaymentService:
             JournalLineInput(
                 account_id=ar.id,
                 credit=item.amount,
-                currency_id=row.currency_id,
+                currency_id=ar_currency,
                 exchange_rate=item_rate,
                 party_type=PartyType.CUSTOMER,
                 party_id=row.customer_id,
@@ -1035,7 +1233,7 @@ class CustomerPaymentService:
                     description="Reverse advance VAT",
                 ),
             )
-        fx_total = quantize_money(item.amount * row.exchange_rate - item.amount * item_rate)
+        fx_total = realized_fx_on_allocation(row, open_row, item.amount)
         self._append_fx(lines, fx_account.id, fx_total, row)
         return lines
 
@@ -1121,6 +1319,32 @@ class CustomerPaymentService:
                 total += line.credit - line.debit
         return quantize_money(total)
 
+    async def _payment_realized_fx(self, tenant_id: UUID, row: CustomerPayment) -> Decimal | None:
+        fx_account = await self.resolver.require(tenant_id, AccountSystemRole.FX_GAIN_LOSS)
+        journal_ids: list[UUID] = []
+        if row.journal_entry_id is not None:
+            journal_ids.append(row.journal_entry_id)
+        live = await self.allocations.list_live_for_payment(
+            tenant_id, PaymentAllocationSource.CUSTOMER_PAYMENT.value, row.id
+        )
+        for allocation in live:
+            if allocation.journal_entry_id is not None:
+                journal_ids.append(allocation.journal_entry_id)
+        if not journal_ids:
+            return None
+        total = _ZERO
+        seen: set[UUID] = set()
+        for journal_id in journal_ids:
+            if journal_id in seen:
+                continue
+            seen.add(journal_id)
+            journal = await self.journals.get(tenant_id, journal_id)
+            for line in journal.lines:
+                if line.account_id == fx_account.id:
+                    total += line.credit - line.debit
+        amount = quantize_money(total)
+        return amount if amount != _ZERO else None
+
     async def _split_advance_vat(
         self, tenant_id: UUID, row: CustomerPayment, unapplied: Decimal
     ) -> tuple[Decimal, Decimal]:
@@ -1170,12 +1394,18 @@ class CustomerPaymentService:
             await SalesOrderService(self.session).get(tenant_id, payload.sales_order_id)
         if payload.tax_id is not None:
             await self.taxes.get(tenant_id, payload.tax_id)
-        allocated = quantize_money(sum((item.amount for item in payload.allocations), _ZERO))
-        if allocated > payload.amount_received:
+        cash_allocated = await self._sum_allocations_in_payment_currency(
+            tenant_id,
+            payload.customer_id,
+            currency_id=currency_id,
+            exchange_rate=rate,
+            allocations=payload.allocations,
+        )
+        if cash_allocated > payload.amount_received:
             raise PaymentOverAllocatedError(
                 details={
                     "amount_received": str(payload.amount_received),
-                    "allocated": str(allocated),
+                    "allocated": str(cash_allocated),
                 }
             )
         amount = quantize_money(payload.amount_received)
@@ -1190,7 +1420,7 @@ class CustomerPaymentService:
             "base_amount": base_amount,
             "amount_received": amount,
             "bank_charges": quantize_money(payload.bank_charges),
-            "amount_unapplied": quantize_money(payload.amount_received - allocated),
+            "amount_unapplied": quantize_money(payload.amount_received - cash_allocated),
             "payment_account_id": payload.payment_account_id,
             "payment_method": payload.payment_method.value,
             "reference": payload.reference,
@@ -1246,6 +1476,9 @@ class CustomerPaymentService:
         row: CustomerPayment,
         allocations: Sequence[PaymentAllocationInput],
     ) -> None:
+        cash, notes = split_payment_allocations(allocations, receivable=True)
+        if notes:
+            require_single_invoice_target(cash, receivable=True)
         await self.allocations.delete_live_for_payment(
             tenant_id, PaymentAllocationSource.CUSTOMER_PAYMENT.value, row.id
         )
@@ -1270,6 +1503,130 @@ class CustomerPaymentService:
                 item_id=item.item_id,
                 amount=item.amount,
             )
+
+    async def _sum_allocations_in_payment_currency(
+        self,
+        tenant_id: UUID,
+        customer_id: UUID,
+        *,
+        currency_id: UUID,
+        exchange_rate: Decimal,
+        allocations: Sequence[PaymentAllocationInput],
+    ) -> Decimal:
+        payment = SimpleNamespace(currency_id=currency_id, exchange_rate=exchange_rate)
+        cash, _ = split_payment_allocations(allocations, receivable=True)
+        total = _ZERO
+        for item in cash:
+            open_row = await self._require_open_item(tenant_id, customer_id, item)
+            total = quantize_money(
+                total + open_item_amount_in_payment_currency(payment, open_row, item.amount)
+            )
+        return total
+
+    async def _apply_draft_credit_note_netting(
+        self,
+        tenant_id: UUID,
+        row: CustomerPayment,
+        *,
+        actor_user_id: UUID,
+    ) -> None:
+        live = await self.allocations.list_live_for_payment(
+            tenant_id, PaymentAllocationSource.CUSTOMER_PAYMENT.value, row.id
+        )
+        items = [
+            PaymentAllocationInput(
+                item_type=OpenItemType(item.item_type),
+                item_id=item.item_id,
+                amount=item.amount,
+            )
+            for item in live
+        ]
+        cash, notes = split_payment_allocations(items, receivable=True)
+        if not notes:
+            return
+        await self._apply_credit_notes_to_invoice(
+            tenant_id,
+            row.customer_id,
+            notes,
+            invoice_id=require_single_invoice_target(cash, receivable=True),
+            actor_user_id=actor_user_id,
+        )
+
+    async def _apply_credit_notes_to_invoice(
+        self,
+        tenant_id: UUID,
+        customer_id: UUID,
+        notes: Sequence[PaymentAllocationInput],
+        *,
+        invoice_id: UUID | None,
+        actor_user_id: UUID,
+    ) -> None:
+        if invoice_id is None:
+            raise ValidationError("Credit notes on a receipt require a sales invoice allocation")
+        from app.erp.credit_notes.service import CreditNoteService
+
+        notes_svc = CreditNoteService(self.session, actor_permissions=self.actor_permissions)
+        for note in notes:
+            open_row = await self._require_open_item(tenant_id, customer_id, note)
+            if note.amount > open_row.balance:
+                raise PaymentOverAllocatedError(
+                    details={"item_id": str(note.item_id), "balance": str(open_row.balance)}
+                )
+            await notes_svc.apply_to_invoice(
+                tenant_id,
+                note.item_id,
+                invoice_id,
+                note.amount,
+                actor_user_id=actor_user_id,
+            )
+
+    async def _live_allocation_responses(
+        self,
+        tenant_id: UUID,
+        row: CustomerPayment,
+        live: Sequence[PaymentAllocation],
+    ) -> list[CustomerPaymentAllocationResponse]:
+        responses: list[CustomerPaymentAllocationResponse] = []
+        for item in live:
+            item_type = OpenItemType(item.item_type)
+            responses.append(
+                CustomerPaymentAllocationResponse(
+                    id=item.id,
+                    item_type=item.item_type,
+                    item_id=item.item_id,
+                    item_document_number=await allocation_item_document_number(
+                        self.session, tenant_id, item_type, item.item_id
+                    ),
+                    amount=item.amount,
+                    journal_entry_id=item.journal_entry_id,
+                    reversed_at=item.reversed_at,
+                    created_at=item.created_at,
+                )
+            )
+        return responses
+
+    async def _allocation_record(
+        self, tenant_id: UUID, row: PaymentAllocation
+    ) -> PaymentAllocationRecordResponse:
+        document_number = await allocation_item_document_number(
+            self.session,
+            tenant_id,
+            OpenItemType(row.item_type),
+            row.item_id,
+        )
+        return PaymentAllocationRecordResponse(
+            id=row.id,
+            payment_type=row.payment_type,
+            payment_id=row.payment_id,
+            item_type=OpenItemType(row.item_type),
+            item_id=row.item_id,
+            item_document_number=document_number,
+            amount=row.amount,
+            journal_entry_id=row.journal_entry_id,
+            reversed_at=row.reversed_at,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
 
     async def _require_open_item(
         self, tenant_id: UUID, customer_id: UUID, item: PaymentAllocationInput
@@ -1431,15 +1788,7 @@ class CustomerPaymentService:
             refunded_by=row.refunded_by,
             available_actions=self._available_actions(row, status, period_locked=period_locked),
             related_documents=[],
-            allocations=[
-                CustomerPaymentAllocationResponse(
-                    item_type=item.item_type,
-                    item_id=item.item_id,
-                    amount=item.amount,
-                    journal_entry_id=item.journal_entry_id,
-                )
-                for item in live
-            ],
+            allocations=await self._live_allocation_responses(tenant_id, row, live),
             created_at=row.created_at,
             updated_at=row.updated_at,
             created_by=row.created_by,

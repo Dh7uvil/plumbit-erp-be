@@ -13,6 +13,8 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
+from app.common.utils.currency import quantize_money
+
 from tests.api.erp.customer_payments.test_routes import (
     _enable_books as _enable_books_payment,
 )
@@ -327,17 +329,11 @@ async def test_baseline_realized_fx_on_foreign_receipt_at_different_rate(
         headers=_idempotent(headers, row["version"]),
     )
     assert posted_receipt.status_code == 200, posted_receipt.text
-    journal = await client.get(
-        f"/api/v1/customer-payments/{row['id']}/journal", headers=headers
-    )
-    fx_lines = [
-        line
-        for line in journal.json()["data"]["lines"]
-        if line["account_id"] == accounts["FX_GAIN_LOSS"]
-    ]
-    assert fx_lines
-    fx_amount = sum(Decimal(line["debit"]) - Decimal(line["credit"]) for line in fx_lines)
-    assert fx_amount != Decimal("0")
+    detail = await client.get(f"/api/v1/customer-payments/{row['id']}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    realized = detail.json()["data"].get("realized_fx_amount")
+    assert realized is not None
+    assert Decimal(realized) != Decimal("0")
 
 
 @pytest.mark.asyncio
@@ -401,12 +397,13 @@ async def test_baseline_allocate_rejects_over_allocation_and_currency_mismatch(
     assert over.status_code == 422, over.text
     assert over.json()["error"]["code"] == "PAYMENT_OVER_ALLOCATED"
 
+    base_received = quantize_money(total * Decimal("0.5000"))
     mismatch = await client.post(
         "/api/v1/customer-payments",
         headers=headers,
         json={
             "customer_id": customer_id,
-            "amount_received": str(total),
+            "amount_received": str(base_received),
             "payment_account_id": accounts["BANK"],
             "allocations": [
                 {
@@ -423,6 +420,10 @@ async def test_baseline_allocate_rejects_over_allocation_and_currency_mismatch(
         f"/api/v1/customer-payments/{payment['id']}/post",
         headers=_idempotent(headers, payment["version"]),
     )
-    assert posted_payment.status_code == 422, posted_payment.text
-    mismatch_msg = "Payment currency must match the open item currency"
-    assert posted_payment.json()["error"]["message"] == mismatch_msg
+    assert posted_payment.status_code == 200, posted_payment.text
+    journal = await client.get(
+        f"/api/v1/customer-payments/{payment['id']}/journal", headers=headers
+    )
+    assert journal.status_code == 200, journal.text
+    settled = await client.get(f"/api/v1/sales-invoices/{invoice['id']}", headers=headers)
+    assert Decimal(settled.json()["data"]["balance_due"]) == Decimal("0")

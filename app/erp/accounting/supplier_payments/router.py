@@ -22,7 +22,11 @@ from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
-from app.erp.accounting.open_items.schemas import PaymentAllocateRequest, PaymentCancelRequest
+from app.erp.accounting.open_items.schemas import (
+    PaymentAllocateRequest,
+    PaymentAllocationRecordResponse,
+    PaymentCancelRequest,
+)
 from app.erp.accounting.supplier_payments.dependencies import SupplierPaymentServiceDependency
 from app.erp.accounting.supplier_payments.schemas import (
     SupplierPaymentCreate,
@@ -175,6 +179,48 @@ async def cancel_supplier_payment(
     return ApiResponse(data=row, message="Supplier payment cancelled")
 
 
+@router.get(
+    "/{payment_id}/allocations",
+    response_model=ApiResponse[list[PaymentAllocationRecordResponse]],
+)
+async def list_supplier_payment_allocations(
+    payment_id: UUID,
+    tenant: TenantContextDependency,
+    service: SupplierPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_READ))],
+) -> ApiResponse[list[PaymentAllocationRecordResponse]]:
+    rows = await service.list_allocations(tenant.tenant_id, payment_id)
+    return ApiResponse(data=rows)
+
+
+@router.delete(
+    "/{payment_id}/allocations/{allocation_id}",
+    response_model=ApiResponse[SupplierPaymentResponse],
+)
+async def unallocate_supplier_payment(
+    payment_id: UUID,
+    allocation_id: UUID,
+    request: Request,
+    tenant: TenantContextDependency,
+    service: SupplierPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_POST))],
+    if_match: IfMatch = None,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[SupplierPaymentResponse]:
+    body = await request.body()
+    row = await service.unallocate(
+        tenant.tenant_id,
+        payment_id,
+        allocation_id,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(if_match=if_match),
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(data=row, message="Allocation reversed")
+
+
 @router.post("/{payment_id}/allocate", response_model=ApiResponse[SupplierPaymentResponse])
 async def allocate_supplier_payment(
     payment_id: UUID,
@@ -189,9 +235,7 @@ async def allocate_supplier_payment(
         payment_id,
         payload.allocations,
         actor_user_id=tenant.user_id,
-        expected_version=require_document_version(
-            if_match=if_match, body_version=payload.version
-        ),
+        expected_version=require_document_version(if_match=if_match, body_version=payload.version),
     )
     return ApiResponse(data=row, message="Supplier payment allocated")
 

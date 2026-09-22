@@ -45,10 +45,14 @@ class CustomerPaymentFilter(BaseFilter):
 
 
 class CustomerPaymentAllocationResponse(BaseModel):
+    id: UUID | None = None
     item_type: str
     item_id: UUID
+    item_document_number: str | None = None
     amount: Decimal
     journal_entry_id: UUID | None = None
+    reversed_at: datetime | None = None
+    created_at: datetime | None = None
 
 
 class CustomerPaymentCreate(BaseModel):

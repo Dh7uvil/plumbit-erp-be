@@ -21,14 +21,18 @@ from app.common.idempotency.service import hash_request, require_idempotency_key
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
-from app.erp.accounting.ledger.schemas import JournalEntryResponse
-from app.erp.accounting.open_items.schemas import PaymentAllocateRequest, PaymentCancelRequest
 from app.erp.accounting.customer_payments.dependencies import CustomerPaymentServiceDependency
 from app.erp.accounting.customer_payments.schemas import (
     CustomerPaymentCreate,
     CustomerPaymentFilter,
     CustomerPaymentResponse,
     CustomerPaymentUpdate,
+)
+from app.erp.accounting.ledger.schemas import JournalEntryResponse
+from app.erp.accounting.open_items.schemas import (
+    PaymentAllocateRequest,
+    PaymentAllocationRecordResponse,
+    PaymentCancelRequest,
 )
 
 router = APIRouter(prefix="/customer-payments", tags=["Customer Payments"])
@@ -176,6 +180,48 @@ async def cancel_customer_payment(
     return ApiResponse(data=row, message="Customer payment cancelled")
 
 
+@router.get(
+    "/{payment_id}/allocations",
+    response_model=ApiResponse[list[PaymentAllocationRecordResponse]],
+)
+async def list_customer_payment_allocations(
+    payment_id: UUID,
+    tenant: TenantContextDependency,
+    service: CustomerPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_READ))],
+) -> ApiResponse[list[PaymentAllocationRecordResponse]]:
+    rows = await service.list_allocations(tenant.tenant_id, payment_id)
+    return ApiResponse(data=rows)
+
+
+@router.delete(
+    "/{payment_id}/allocations/{allocation_id}",
+    response_model=ApiResponse[CustomerPaymentResponse],
+)
+async def unallocate_customer_payment(
+    payment_id: UUID,
+    allocation_id: UUID,
+    request: Request,
+    tenant: TenantContextDependency,
+    service: CustomerPaymentServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_POST))],
+    if_match: IfMatch = None,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[CustomerPaymentResponse]:
+    body = await request.body()
+    row = await service.unallocate(
+        tenant.tenant_id,
+        payment_id,
+        allocation_id,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(if_match=if_match),
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(data=row, message="Allocation reversed")
+
+
 @router.post("/{payment_id}/allocate", response_model=ApiResponse[CustomerPaymentResponse])
 async def allocate_customer_payment(
     payment_id: UUID,
@@ -190,9 +236,7 @@ async def allocate_customer_payment(
         payment_id,
         payload.allocations,
         actor_user_id=tenant.user_id,
-        expected_version=require_document_version(
-            if_match=if_match, body_version=payload.version
-        ),
+        expected_version=require_document_version(if_match=if_match, body_version=payload.version),
     )
     return ApiResponse(data=row, message="Customer payment allocated")
 

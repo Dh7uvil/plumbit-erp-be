@@ -196,19 +196,12 @@ async def test_cny_bill_paid_later_books_fx(client: AsyncClient) -> None:
         headers=_idempotent(headers, created.json()["data"]["version"]),
     )
     assert posted.status_code == 200, posted.text
-    journal = await client.get(
-        f"/api/v1/supplier-payments/{posted.json()['data']['id']}/journal",
-        headers=headers,
-    )
-    assert journal.status_code == 200, journal.text
-    fx_lines = [
-        line
-        for line in journal.json()["data"]["lines"]
-        if line["account_id"] == accounts["FX_GAIN_LOSS"]
-    ]
-    assert fx_lines
-    fx_amount = sum(Decimal(line["debit"]) - Decimal(line["credit"]) for line in fx_lines)
-    assert fx_amount != Decimal("0")
+    payment_id = posted.json()["data"]["id"]
+    detail = await client.get(f"/api/v1/supplier-payments/{payment_id}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    realized = detail.json()["data"].get("realized_fx_amount")
+    assert realized is not None
+    assert Decimal(realized) != Decimal("0")
 
 
 @pytest.mark.asyncio

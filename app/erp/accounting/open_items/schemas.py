@@ -1,6 +1,6 @@
 """Open-item picker and allocation request/response schemas."""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Self
 from uuid import UUID
@@ -54,6 +54,20 @@ class ApplyCreditsRequest(BaseModel):
 class PaymentAllocateRequest(BaseModel):
     allocations: list[PaymentAllocationInput] = Field(min_length=1)
     version: int | None = Field(default=None, ge=1)
+
+
+class PaymentAllocationRecordResponse(BaseModel):
+    id: UUID
+    payment_type: str
+    payment_id: UUID
+    item_type: OpenItemType
+    item_id: UUID
+    item_document_number: str | None = None
+    amount: Decimal
+    journal_entry_id: UUID | None = None
+    reversed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class PaymentCancelRequest(BaseModel):

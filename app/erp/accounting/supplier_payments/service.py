@@ -62,9 +62,24 @@ from app.erp.accounting.ledger.cash_guard import assert_cash_available
 from app.erp.accounting.ledger.posting import LedgerPostingService
 from app.erp.accounting.ledger.schemas import JournalEntryResponse, JournalLineInput
 from app.erp.accounting.ledger.service import JournalEntryService
+from app.erp.accounting.open_items.models import PaymentAllocation
 from app.erp.accounting.open_items.repository import PaymentAllocationRepository
-from app.erp.accounting.open_items.schemas import PaymentAllocationInput
+from app.erp.accounting.open_items.schemas import (
+    PaymentAllocationInput,
+    PaymentAllocationRecordResponse,
+)
 from app.erp.accounting.open_items.service import OpenItemsService
+from app.erp.accounting.payment_allocations.document_labels import allocation_item_document_number
+from app.erp.accounting.payment_allocations.helpers import (
+    cash_allocation_types,
+    open_item_amount_in_payment_currency,
+    open_item_row_for_allocation,
+    realized_fx_on_allocation,
+    record_note_allocations_on_payment,
+    require_single_invoice_target,
+    reverse_note_netting_on_payment,
+    split_payment_allocations,
+)
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.accounting.supplier_payments.models import SupplierPayment
 from app.erp.accounting.supplier_payments.repository import SupplierPaymentRepository
@@ -90,7 +105,9 @@ _ACTION_PERMISSIONS: dict[str, str] = {
 SOURCE_SUPPLIER_PAYMENT = "supplier_payment"
 SOURCE_SUPPLIER_PAYMENT_ALLOCATION = "supplier_payment_allocation"
 SOURCE_SUPPLIER_PAYMENT_REFUND = "supplier_payment_refund"
-_ALLOCATABLE = frozenset({OpenItemType.PURCHASE_INVOICE, OpenItemType.OPENING_AP})
+_ALLOCATABLE = frozenset(
+    {OpenItemType.PURCHASE_INVOICE, OpenItemType.OPENING_AP, OpenItemType.DEBIT_NOTE}
+)
 
 
 class SupplierPaymentService:
@@ -166,9 +183,7 @@ class SupplierPaymentService:
         await self._ensure_policy(tenant_id)
         response = await self._to_response(tenant_id, row)
         response.related_documents = await self._related_documents(tenant_id, row)
-        response.realized_fx_amount = await self._realized_fx_amount(
-            tenant_id, row.journal_entry_id
-        )
+        response.realized_fx_amount = await self._payment_realized_fx(tenant_id, row)
         return response
 
     async def create(
@@ -310,6 +325,7 @@ class SupplierPaymentService:
             policy.assert_open(row.payment_date, can_override=self._can_override)
             old_values = await self._snapshot(tenant_id, row)
             await self._apply_rate(tenant_id, row)
+            await self._apply_draft_debit_note_netting(tenant_id, row, actor_user_id=actor_user_id)
             settings = await self.org.get_money_movement_settings(tenant_id)
             outflow = quantize_money((row.amount_paid + row.bank_charges) * row.exchange_rate)
             await assert_cash_available(
@@ -336,7 +352,7 @@ class SupplierPaymentService:
                 reference=row.document_number,
             )
             row.journal_entry_id = journal.id
-            await self._settle_allocations(tenant_id, row, sign=Decimal("1"))
+            await self._apply_live_cash_allocations(tenant_id, row, actor_user_id=actor_user_id)
             row.status = target.value
             row.is_posted = True
             row.posted_at = utcnow()
@@ -431,6 +447,111 @@ class SupplierPaymentService:
             )
             return response
 
+    async def list_allocations(
+        self, tenant_id: UUID, payment_id: UUID
+    ) -> list[PaymentAllocationRecordResponse]:
+        await self._require(tenant_id, payment_id)
+        rows = await self.allocations.list_all_for_payment(
+            tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, payment_id
+        )
+        return [await self._allocation_record(tenant_id, row) for row in rows]
+
+    async def unallocate(
+        self,
+        tenant_id: UUID,
+        payment_id: UUID,
+        allocation_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> SupplierPaymentResponse:
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return SupplierPaymentResponse.model_validate(replay)
+            row = await self._require(tenant_id, payment_id, for_update=True)
+            self._assert_version(row, expected_version)
+            if InvoiceDocumentStatus(row.status) != InvoiceDocumentStatus.POSTED:
+                raise ValidationError("Only posted supplier payments can be unallocated")
+            allocation = await self.allocations.get(tenant_id, allocation_id)
+            if (
+                allocation is None
+                or allocation.payment_id != payment_id
+                or allocation.payment_type != PaymentAllocationSource.SUPPLIER_PAYMENT.value
+            ):
+                raise ResourceNotFoundError("Allocation not found")
+            if allocation.reversed_at is not None:
+                response = await self._to_response(tenant_id, row)
+                await self.idempotency.store(
+                    tenant_id, idempotency_key, response.model_dump(mode="json")
+                )
+                return response
+            if allocation.item_type == OpenItemType.DEBIT_NOTE.value:
+                raise ValidationError("Debit note netting cannot be unapplied from the payment")
+            policy = await self._ensure_policy(tenant_id)
+            policy.assert_open(row.payment_date, can_override=self._can_override)
+            old_values = await self._snapshot(tenant_id, row)
+            item = PaymentAllocationInput(
+                item_type=OpenItemType(allocation.item_type),
+                item_id=allocation.item_id,
+                amount=allocation.amount,
+            )
+            open_row = await open_item_row_for_allocation(
+                self.session,
+                tenant_id,
+                receivable=False,
+                party_id=row.supplier_id,
+                item=item,
+            )
+            payment_slice = open_item_amount_in_payment_currency(row, open_row, allocation.amount)
+            if allocation.journal_entry_id is not None:
+                await self.posting.reverse(
+                    tenant_id,
+                    allocation.journal_entry_id,
+                    reversal_date=row.payment_date,
+                    reason=f"Unapply payment {row.document_number}",
+                    actor_id=actor_user_id,
+                )
+            allocation.reversed_at = utcnow()
+            await self._settle_allocations(
+                tenant_id, row, sign=Decimal("-1"), allocations=[allocation]
+            )
+            row.amount_unapplied = quantize_money(row.amount_unapplied + payment_slice)
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            loaded = await self._require(tenant_id, payment_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.REVERSE,
+                module=PURCHASE_MODULE,
+                entity_type="supplier_payment_allocation",
+                entity_id=allocation_id,
+                old_values={"allocation_id": str(allocation_id), "amount": str(allocation.amount)},
+                new_values={"reversed_at": allocation.reversed_at.isoformat()},
+            )
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=PURCHASE_MODULE,
+                entity_type="supplier_payment",
+                entity_id=payment_id,
+                old_values=old_values,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            response = await self._to_response(tenant_id, loaded)
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
+            return response
+
     async def allocate(
         self,
         tenant_id: UUID,
@@ -450,7 +571,32 @@ class SupplierPaymentService:
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(row.payment_date, can_override=self._can_override)
             old_values = await self._snapshot(tenant_id, row)
-            total = quantize_money(sum((item.amount for item in allocations), _ZERO))
+            for item in allocations:
+                if item.item_type == OpenItemType.SUPPLIER_PAYMENT:
+                    raise ValidationError("Payments allocate to bills or opening AP only")
+            cash, notes = split_payment_allocations(allocations, receivable=False)
+            if notes:
+                await self._apply_debit_notes_to_invoice(
+                    tenant_id,
+                    row.supplier_id,
+                    notes,
+                    invoice_id=require_single_invoice_target(cash, receivable=False),
+                    actor_user_id=actor_user_id,
+                )
+                await record_note_allocations_on_payment(
+                    self.allocations,
+                    tenant_id,
+                    PaymentAllocationSource.SUPPLIER_PAYMENT.value,
+                    row.id,
+                    notes,
+                    receivable=False,
+                )
+            total = _ZERO
+            for item in cash:
+                open_row = await self._require_open_item(tenant_id, row.supplier_id, item)
+                total = quantize_money(
+                    total + open_item_amount_in_payment_currency(row, open_row, item.amount)
+                )
             if total > row.amount_unapplied:
                 raise PaymentOverAllocatedError(
                     details={
@@ -458,7 +604,7 @@ class SupplierPaymentService:
                         "allocated": str(total),
                     }
                 )
-            for item in allocations:
+            for item in cash:
                 await self._allocate_posted_slice(
                     tenant_id,
                     row,
@@ -777,17 +923,33 @@ class SupplierPaymentService:
                 tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, row.id
             )
         )
+        cash_types = cash_allocation_types(receivable=False)
+        cash_inputs = [
+            PaymentAllocationInput(
+                item_type=OpenItemType(item.item_type),
+                item_id=item.item_id,
+                amount=item.amount,
+            )
+            for item in live
+            if OpenItemType(item.item_type) in cash_types
+        ]
+        invoice_id_for_notes = require_single_invoice_target(cash_inputs, receivable=False)
         for allocation in live:
             item_type = OpenItemType(allocation.item_type)
             amount = quantize_money(allocation.amount * sign)
             if item_type == OpenItemType.PURCHASE_INVOICE:
                 await invoices.apply_payment(tenant_id, allocation.item_id, amount)
-            elif item_type == OpenItemType.DEBIT_NOTE:
-                from app.erp.debit_notes.service import DebitNoteService
-
-                await DebitNoteService(
-                    self.session, actor_permissions=self.actor_permissions
-                ).adjust_unapplied(tenant_id, allocation.item_id, -amount)
+            elif item_type == OpenItemType.DEBIT_NOTE and sign < _ZERO:
+                if invoice_id_for_notes is None:
+                    continue
+                await reverse_note_netting_on_payment(
+                    self.session,
+                    tenant_id,
+                    receivable=False,
+                    note_id=allocation.item_id,
+                    invoice_id=invoice_id_for_notes,
+                    amount=allocation.amount,
+                )
 
     async def _allocate_posted_slice(
         self,
@@ -796,6 +958,7 @@ class SupplierPaymentService:
         item: PaymentAllocationInput,
         *,
         actor_user_id: UUID,
+        existing_allocation: PaymentAllocation | None = None,
     ) -> None:
         if item.item_type not in {OpenItemType.PURCHASE_INVOICE, OpenItemType.OPENING_AP}:
             raise ValidationError("Payments allocate to bills or opening AP only")
@@ -804,22 +967,24 @@ class SupplierPaymentService:
             raise PaymentOverAllocatedError(
                 details={"item_id": str(item.item_id), "balance": str(open_row.balance)}
             )
-        if open_row.currency_id != row.currency_id:
-            raise ValidationError("Payment currency must match the open item currency")
+        payment_slice = open_item_amount_in_payment_currency(row, open_row, item.amount)
         lines = await self._application_journal_lines(
             tenant_id,
             row,
             item=item,
             open_row=open_row,
+            payment_slice=payment_slice,
         )
-        allocation = await self.allocations.create(
-            tenant_id,
-            payment_type=PaymentAllocationSource.SUPPLIER_PAYMENT.value,
-            payment_id=row.id,
-            item_type=item.item_type.value,
-            item_id=item.item_id,
-            amount=item.amount,
-        )
+        allocation = existing_allocation
+        if allocation is None:
+            allocation = await self.allocations.create(
+                tenant_id,
+                payment_type=PaymentAllocationSource.SUPPLIER_PAYMENT.value,
+                payment_id=row.id,
+                item_type=item.item_type.value,
+                item_id=item.item_id,
+                amount=item.amount,
+            )
         journal = await self.posting.post_for_document(
             tenant_id,
             source_type=SOURCE_SUPPLIER_PAYMENT_ALLOCATION,
@@ -848,14 +1013,26 @@ class SupplierPaymentService:
         allocations = await self.allocations.list_live_for_payment(
             tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, row.id
         )
-        allocated = quantize_money(sum((item.amount for item in allocations), _ZERO))
+        allocated = await self._sum_allocations_in_payment_currency(
+            tenant_id,
+            row.supplier_id,
+            currency_id=row.currency_id,
+            exchange_rate=row.exchange_rate,
+            allocations=[
+                PaymentAllocationInput(
+                    item_type=OpenItemType(item.item_type),
+                    item_id=item.item_id,
+                    amount=item.amount,
+                )
+                for item in allocations
+                if item.item_type != OpenItemType.DEBIT_NOTE.value
+            ],
+        )
         if allocated > row.amount_paid:
             raise PaymentOverAllocatedError(
                 details={"amount_paid": str(row.amount_paid), "allocated": str(allocated)}
             )
-        unapplied = quantize_money(row.amount_paid - allocated)
-        row.amount_unapplied = unapplied
-        ap = await self.party_accounts.resolve_payable(tenant_id, row.supplier_id)
+        row.amount_unapplied = row.amount_paid
         advance = await self.resolver.require(tenant_id, AccountSystemRole.ADVANCE_TO_SUPPLIER)
         fx_account = await self.resolver.require(tenant_id, AccountSystemRole.FX_GAIN_LOSS)
         charges_account = await self.resolver.require(tenant_id, AccountSystemRole.BANK_CHARGES)
@@ -887,48 +1064,50 @@ class SupplierPaymentService:
                     description="Bank charges",
                 )
             )
-        fx_total = _ZERO
-        for allocation in allocations:
-            open_row = await self._require_open_item(
-                tenant_id,
-                row.supplier_id,
-                PaymentAllocationInput(
-                    item_type=OpenItemType(allocation.item_type),
-                    item_id=allocation.item_id,
-                    amount=allocation.amount,
-                ),
+        lines.append(
+            JournalLineInput(
+                account_id=advance.id,
+                debit=row.amount_paid,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                party_type=PartyType.SUPPLIER,
+                party_id=row.supplier_id,
+                description="Supplier payment",
             )
-            if open_row.currency_id != row.currency_id:
-                raise ValidationError("Payment currency must match the open item currency")
-            item_rate = open_row.exchange_rate or row.exchange_rate
-            lines.append(
-                JournalLineInput(
-                    account_id=ap.id,
-                    debit=allocation.amount,
-                    currency_id=row.currency_id,
-                    exchange_rate=item_rate,
-                    party_type=PartyType.SUPPLIER,
-                    party_id=row.supplier_id,
-                    description=open_row.document_number,
-                )
-            )
-            fx_total += quantize_money(
-                allocation.amount * item_rate - allocation.amount * row.exchange_rate
-            )
-        if unapplied > _ZERO:
-            lines.append(
-                JournalLineInput(
-                    account_id=advance.id,
-                    debit=unapplied,
-                    currency_id=row.currency_id,
-                    exchange_rate=row.exchange_rate,
-                    party_type=PartyType.SUPPLIER,
-                    party_id=row.supplier_id,
-                    description="Unapplied payment",
-                )
-            )
-        self._append_fx(lines, fx_account.id, fx_total, row)
+        )
+        self._append_fx(lines, fx_account.id, _ZERO, row)
         return lines
+
+    async def _apply_live_cash_allocations(
+        self,
+        tenant_id: UUID,
+        row: SupplierPayment,
+        *,
+        actor_user_id: UUID,
+    ) -> None:
+        live = await self.allocations.list_live_for_payment(
+            tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, row.id
+        )
+        for allocation in live:
+            if allocation.item_type == OpenItemType.DEBIT_NOTE.value:
+                continue
+            if allocation.journal_entry_id is not None:
+                continue
+            item = PaymentAllocationInput(
+                item_type=OpenItemType(allocation.item_type),
+                item_id=allocation.item_id,
+                amount=allocation.amount,
+            )
+            open_row = await self._require_open_item(tenant_id, row.supplier_id, item)
+            payment_slice = open_item_amount_in_payment_currency(row, open_row, allocation.amount)
+            await self._allocate_posted_slice(
+                tenant_id,
+                row,
+                item,
+                actor_user_id=actor_user_id,
+                existing_allocation=allocation,
+            )
+            row.amount_unapplied = quantize_money(row.amount_unapplied - payment_slice)
 
     async def _application_journal_lines(
         self,
@@ -937,16 +1116,19 @@ class SupplierPaymentService:
         *,
         item: PaymentAllocationInput,
         open_row: Any,
+        payment_slice: Decimal | None = None,
     ) -> list[JournalLineInput]:
         ap = await self.party_accounts.resolve_payable(tenant_id, row.supplier_id)
         advance = await self.resolver.require(tenant_id, AccountSystemRole.ADVANCE_TO_SUPPLIER)
         fx_account = await self.resolver.require(tenant_id, AccountSystemRole.FX_GAIN_LOSS)
         item_rate = open_row.exchange_rate or row.exchange_rate
+        ap_currency = open_row.currency_id
+        advance_amount = payment_slice or item.amount
         lines = [
             JournalLineInput(
                 account_id=ap.id,
                 debit=item.amount,
-                currency_id=row.currency_id,
+                currency_id=ap_currency,
                 exchange_rate=item_rate,
                 party_type=PartyType.SUPPLIER,
                 party_id=row.supplier_id,
@@ -954,7 +1136,7 @@ class SupplierPaymentService:
             ),
             JournalLineInput(
                 account_id=advance.id,
-                credit=item.amount,
+                credit=advance_amount,
                 currency_id=row.currency_id,
                 exchange_rate=row.exchange_rate,
                 party_type=PartyType.SUPPLIER,
@@ -962,7 +1144,7 @@ class SupplierPaymentService:
                 description=f"Apply {row.document_number}",
             ),
         ]
-        fx_total = quantize_money(item.amount * item_rate - item.amount * row.exchange_rate)
+        fx_total = realized_fx_on_allocation(row, open_row, item.amount, payable=True)
         self._append_fx(lines, fx_account.id, fx_total, row)
         return lines
 
@@ -1033,6 +1215,32 @@ class SupplierPaymentService:
                 total += line.credit - line.debit
         return quantize_money(total)
 
+    async def _payment_realized_fx(self, tenant_id: UUID, row: SupplierPayment) -> Decimal | None:
+        fx_account = await self.resolver.require(tenant_id, AccountSystemRole.FX_GAIN_LOSS)
+        journal_ids: list[UUID] = []
+        if row.journal_entry_id is not None:
+            journal_ids.append(row.journal_entry_id)
+        live = await self.allocations.list_live_for_payment(
+            tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, row.id
+        )
+        for allocation in live:
+            if allocation.journal_entry_id is not None:
+                journal_ids.append(allocation.journal_entry_id)
+        if not journal_ids:
+            return None
+        total = _ZERO
+        seen: set[UUID] = set()
+        for journal_id in journal_ids:
+            if journal_id in seen:
+                continue
+            seen.add(journal_id)
+            journal = await self.journals.get(tenant_id, journal_id)
+            for line in journal.lines:
+                if line.account_id == fx_account.id:
+                    total += line.credit - line.debit
+        amount = quantize_money(total)
+        return amount if amount != _ZERO else None
+
     async def _draft_values(
         self, tenant_id: UUID, payload: SupplierPaymentCreate
     ) -> dict[str, object]:
@@ -1053,12 +1261,18 @@ class SupplierPaymentService:
             from app.erp.purchase_orders.service import PurchaseOrderService
 
             await PurchaseOrderService(self.session).get(tenant_id, payload.purchase_order_id)
-        allocated = quantize_money(sum((item.amount for item in payload.allocations), _ZERO))
-        if allocated > payload.amount_paid:
+        cash_allocated = await self._sum_allocations_in_payment_currency(
+            tenant_id,
+            payload.supplier_id,
+            currency_id=currency_id,
+            exchange_rate=rate,
+            allocations=payload.allocations,
+        )
+        if cash_allocated > payload.amount_paid:
             raise PaymentOverAllocatedError(
                 details={
                     "amount_paid": str(payload.amount_paid),
-                    "allocated": str(allocated),
+                    "allocated": str(cash_allocated),
                 }
             )
         amount = quantize_money(payload.amount_paid)
@@ -1073,7 +1287,7 @@ class SupplierPaymentService:
             "base_amount": base_amount,
             "amount_paid": amount,
             "bank_charges": quantize_money(payload.bank_charges),
-            "amount_unapplied": quantize_money(payload.amount_paid - allocated),
+            "amount_unapplied": quantize_money(payload.amount_paid - cash_allocated),
             "payment_account_id": payload.payment_account_id,
             "payment_method": payload.payment_method.value,
             "reference": payload.reference,
@@ -1121,6 +1335,9 @@ class SupplierPaymentService:
         row: SupplierPayment,
         allocations: Sequence[PaymentAllocationInput],
     ) -> None:
+        cash, notes = split_payment_allocations(allocations, receivable=False)
+        if notes:
+            require_single_invoice_target(cash, receivable=False)
         await self.allocations.delete_live_for_payment(
             tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, row.id
         )
@@ -1145,6 +1362,132 @@ class SupplierPaymentService:
                 item_id=item.item_id,
                 amount=item.amount,
             )
+
+    async def _sum_allocations_in_payment_currency(
+        self,
+        tenant_id: UUID,
+        supplier_id: UUID,
+        *,
+        currency_id: UUID,
+        exchange_rate: Decimal,
+        allocations: Sequence[PaymentAllocationInput],
+    ) -> Decimal:
+        from types import SimpleNamespace
+
+        payment = SimpleNamespace(currency_id=currency_id, exchange_rate=exchange_rate)
+        cash, _ = split_payment_allocations(allocations, receivable=False)
+        total = _ZERO
+        for item in cash:
+            open_row = await self._require_open_item(tenant_id, supplier_id, item)
+            total = quantize_money(
+                total + open_item_amount_in_payment_currency(payment, open_row, item.amount)
+            )
+        return total
+
+    async def _apply_draft_debit_note_netting(
+        self,
+        tenant_id: UUID,
+        row: SupplierPayment,
+        *,
+        actor_user_id: UUID,
+    ) -> None:
+        live = await self.allocations.list_live_for_payment(
+            tenant_id, PaymentAllocationSource.SUPPLIER_PAYMENT.value, row.id
+        )
+        items = [
+            PaymentAllocationInput(
+                item_type=OpenItemType(item.item_type),
+                item_id=item.item_id,
+                amount=item.amount,
+            )
+            for item in live
+        ]
+        cash, notes = split_payment_allocations(items, receivable=False)
+        if not notes:
+            return
+        await self._apply_debit_notes_to_invoice(
+            tenant_id,
+            row.supplier_id,
+            notes,
+            invoice_id=require_single_invoice_target(cash, receivable=False),
+            actor_user_id=actor_user_id,
+        )
+
+    async def _apply_debit_notes_to_invoice(
+        self,
+        tenant_id: UUID,
+        supplier_id: UUID,
+        notes: Sequence[PaymentAllocationInput],
+        *,
+        invoice_id: UUID | None,
+        actor_user_id: UUID,
+    ) -> None:
+        if invoice_id is None:
+            raise ValidationError("Debit notes on a payment require a purchase invoice allocation")
+        from app.erp.debit_notes.service import DebitNoteService
+
+        notes_svc = DebitNoteService(self.session, actor_permissions=self.actor_permissions)
+        for note in notes:
+            open_row = await self._require_open_item(tenant_id, supplier_id, note)
+            if note.amount > open_row.balance:
+                raise PaymentOverAllocatedError(
+                    details={"item_id": str(note.item_id), "balance": str(open_row.balance)}
+                )
+            await notes_svc.apply_to_invoice(
+                tenant_id,
+                note.item_id,
+                invoice_id,
+                note.amount,
+                actor_user_id=actor_user_id,
+            )
+
+    async def _live_allocation_responses(
+        self,
+        tenant_id: UUID,
+        row: SupplierPayment,
+        live: Sequence[PaymentAllocation],
+    ) -> list[SupplierPaymentAllocationResponse]:
+        responses: list[SupplierPaymentAllocationResponse] = []
+        for item in live:
+            item_type = OpenItemType(item.item_type)
+            responses.append(
+                SupplierPaymentAllocationResponse(
+                    id=item.id,
+                    item_type=item.item_type,
+                    item_id=item.item_id,
+                    item_document_number=await allocation_item_document_number(
+                        self.session, tenant_id, item_type, item.item_id
+                    ),
+                    amount=item.amount,
+                    journal_entry_id=item.journal_entry_id,
+                    reversed_at=item.reversed_at,
+                    created_at=item.created_at,
+                )
+            )
+        return responses
+
+    async def _allocation_record(
+        self, tenant_id: UUID, row: PaymentAllocation
+    ) -> PaymentAllocationRecordResponse:
+        document_number = await allocation_item_document_number(
+            self.session,
+            tenant_id,
+            OpenItemType(row.item_type),
+            row.item_id,
+        )
+        return PaymentAllocationRecordResponse(
+            id=row.id,
+            payment_type=row.payment_type,
+            payment_id=row.payment_id,
+            item_type=OpenItemType(row.item_type),
+            item_id=row.item_id,
+            item_document_number=document_number,
+            amount=row.amount,
+            journal_entry_id=row.journal_entry_id,
+            reversed_at=row.reversed_at,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
 
     async def _require_open_item(
         self, tenant_id: UUID, supplier_id: UUID, item: PaymentAllocationInput
@@ -1288,15 +1631,7 @@ class SupplierPaymentService:
             refunded_by=row.refunded_by,
             available_actions=self._available_actions(row, status, period_locked=period_locked),
             related_documents=[],
-            allocations=[
-                SupplierPaymentAllocationResponse(
-                    item_type=item.item_type,
-                    item_id=item.item_id,
-                    amount=item.amount,
-                    journal_entry_id=item.journal_entry_id,
-                )
-                for item in live
-            ],
+            allocations=await self._live_allocation_responses(tenant_id, row, live),
             created_at=row.created_at,
             updated_at=row.updated_at,
             created_by=row.created_by,

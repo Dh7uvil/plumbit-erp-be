@@ -118,7 +118,20 @@ async def test_full_allocate_settles_invoice_and_blocks_void(client: AsyncClient
     assert journal.status_code == 200, journal.text
     by_account = {line["account_id"]: line for line in journal.json()["data"]["lines"]}
     assert Decimal(by_account[accounts["BANK"]]["debit"]) == total
-    assert Decimal(by_account[accounts["ACCOUNTS_RECEIVABLE"]]["credit"]) == total
+    assert Decimal(by_account[accounts["ADVANCE_FROM_CUSTOMER"]]["credit"]) > Decimal("0")
+    history = await client.get(
+        f"/api/v1/customer-payments/{receipt['id']}/allocations", headers=headers
+    )
+    assert history.status_code == 200, history.text
+    allocation = next(row for row in history.json()["data"] if row.get("journal_entry_id"))
+    apply_journal = await client.get(
+        f"/api/v1/journals/{allocation['journal_entry_id']}", headers=headers
+    )
+    assert apply_journal.status_code == 200, apply_journal.text
+    apply_by_account = {
+        line["account_id"]: line for line in apply_journal.json()["data"]["lines"]
+    }
+    assert Decimal(apply_by_account[accounts["ACCOUNTS_RECEIVABLE"]]["credit"]) == total
 
 
 @pytest.mark.asyncio
@@ -585,15 +598,10 @@ async def test_cny_sales_invoice_paid_later_books_fx(client: AsyncClient) -> Non
             ],
         },
     )
-    journal = await client.get(
-        f"/api/v1/customer-payments/{receipt['id']}/journal", headers=headers
+    detail = await client.get(
+        f"/api/v1/customer-payments/{receipt['id']}", headers=headers
     )
-    assert journal.status_code == 200, journal.text
-    fx_lines = [
-        line
-        for line in journal.json()["data"]["lines"]
-        if line["account_id"] == accounts["FX_GAIN_LOSS"]
-    ]
-    assert fx_lines
-    fx_amount = sum(Decimal(line["debit"]) - Decimal(line["credit"]) for line in fx_lines)
-    assert fx_amount != Decimal("0")
+    assert detail.status_code == 200, detail.text
+    realized = detail.json()["data"].get("realized_fx_amount")
+    assert realized is not None
+    assert Decimal(realized) != Decimal("0")

@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.enums import InvoiceDocumentStatus, PaymentAllocationSource
-from app.erp.accounting.open_items.models import PaymentAllocation
 from app.erp.accounting.customer_payments.models import CustomerPayment
+from app.erp.accounting.open_items.models import PaymentAllocation
 from app.erp.accounting.supplier_payments.models import SupplierPayment
 
 _ZERO = Decimal("0")
@@ -53,6 +53,13 @@ class PaymentAllocationRepository:
             PaymentAllocation.payment_type.in_(_NOTE_SOURCES),
         )
 
+    async def get(self, tenant_id: UUID, allocation_id: UUID) -> PaymentAllocation | None:
+        statement = select(PaymentAllocation).where(
+            PaymentAllocation.tenant_id == tenant_id,
+            PaymentAllocation.id == allocation_id,
+        )
+        return (await self.session.execute(statement)).scalar_one_or_none()
+
     async def list_live_for_payment(
         self, tenant_id: UUID, payment_type: str, payment_id: UUID
     ) -> list[PaymentAllocation]:
@@ -63,6 +70,38 @@ class PaymentAllocationRepository:
             PaymentAllocation.reversed_at.is_(None),
         )
         return list((await self.session.execute(statement)).scalars().all())
+
+    async def list_all_for_payment(
+        self, tenant_id: UUID, payment_type: str, payment_id: UUID
+    ) -> list[PaymentAllocation]:
+        statement = (
+            select(PaymentAllocation)
+            .where(
+                PaymentAllocation.tenant_id == tenant_id,
+                PaymentAllocation.payment_type == payment_type,
+                PaymentAllocation.payment_id == payment_id,
+            )
+            .order_by(PaymentAllocation.created_at.desc())
+        )
+        return list((await self.session.execute(statement)).scalars().all())
+
+    async def delete_note_draft_rows_for_payment(
+        self,
+        tenant_id: UUID,
+        payment_type: str,
+        payment_id: UUID,
+        *,
+        note_item_type: str,
+    ) -> None:
+        await self.session.execute(
+            delete(PaymentAllocation).where(
+                PaymentAllocation.tenant_id == tenant_id,
+                PaymentAllocation.payment_type == payment_type,
+                PaymentAllocation.payment_id == payment_id,
+                PaymentAllocation.item_type == note_item_type,
+                PaymentAllocation.reversed_at.is_(None),
+            )
+        )
 
     async def list_live_for_item(
         self, tenant_id: UUID, item_type: str, item_id: UUID
