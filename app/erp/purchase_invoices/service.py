@@ -74,6 +74,12 @@ from app.crm.contacts.service import ContactService
 from app.db.session import transaction
 from app.erp.accounting.accounts.models import Account
 from app.erp.accounting.accounts.service import AccountResolver, AccountService
+from app.erp.accounting.charge_types.legacy import (
+    charge_code_for_expense,
+    legacy_expense_category,
+)
+from app.erp.accounting.charge_types.models import ChargeType
+from app.erp.accounting.charge_types.repository import ChargeTypeRepository
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.inventory_posting import SOURCE_GOODS_RECEIPT
 from app.erp.accounting.ledger.posting import LedgerPostingService
@@ -133,6 +139,7 @@ class PurchaseInvoiceService:
         self.sequences = DocumentSequenceService(session)
         self.accounts = AccountService(session)
         self.resolver = AccountResolver(session)
+        self.charge_types = ChargeTypeRepository(session)
         self.posting = LedgerPostingService(session, actor_permissions=actor_permissions)
         self.journals = JournalEntryService(session, actor_permissions=actor_permissions)
         self.purchase_orders = PurchaseOrderService(session, actor_permissions=actor_permissions)
@@ -1132,6 +1139,10 @@ class PurchaseInvoiceService:
     async def _resolve_expense_account(
         self, tenant_id: UUID, line: PurchaseInvoiceLine
     ) -> Account:
+        charge_type = await self._charge_type_for_line(tenant_id, line)
+        if charge_type is not None:
+            account_id = line.expense_account_id or charge_type.default_account_id
+            return await self.accounts.require_postable(tenant_id, account_id)
         category = ExpenseCategory(line.expense_category) if line.expense_category else None
         if category == ExpenseCategory.FREIGHT:
             return await self.resolver.require(tenant_id, AccountSystemRole.FREIGHT_IN)
@@ -1140,6 +1151,19 @@ class PurchaseInvoiceService:
         if line.expense_account_id is None:
             raise ValidationError("Expense lines require expense_account_id")
         return await self.accounts.require_postable(tenant_id, line.expense_account_id)
+
+    async def _charge_type_for_line(
+        self, tenant_id: UUID, line: PurchaseInvoiceLine
+    ) -> ChargeType | None:
+        if line.charge_type_id is not None:
+            row = await self.charge_types.get(tenant_id, line.charge_type_id)
+            if row is None or not row.is_active:
+                raise ValidationError("Charge type not found")
+            return row
+        if line.expense_category is None:
+            return None
+        code = charge_code_for_expense(ExpenseCategory(line.expense_category))
+        return await self.charge_types.get_by_code(tenant_id, code)
 
     def _header_discount_share(self, row: PurchaseInvoice, line: PurchaseInvoiceLine) -> Decimal:
         if row.subtotal <= _ZERO or row.discount_amount == _ZERO:
@@ -1280,13 +1304,48 @@ class PurchaseInvoiceService:
                 rate = quantize_money(product.purchase_rate)
             else:
                 raise ValidationError("Custom lines require a rate")
-            if (
-                line.line_type == PurchaseInvoiceLineType.EXPENSE
-                and line.expense_category
-                not in {ExpenseCategory.FREIGHT, ExpenseCategory.CUSTOMS_DUTY}
-                and line.expense_account_id is None
-            ):
-                raise ValidationError("Expense lines require expense_account_id")
+            charge_type_id = line.charge_type_id
+            expense_category = line.expense_category
+            if line.line_type == PurchaseInvoiceLineType.EXPENSE:
+                if charge_type_id is not None:
+                    charge_type = await self.charge_types.get(tenant_id, charge_type_id)
+                    if charge_type is None or not charge_type.is_active:
+                        raise ValidationError("Charge type not found")
+                    expense_category = legacy_expense_category(charge_type.code)
+                    if line.tax_id is None and charge_type.default_tax_id is not None:
+                        line = line.model_copy(update={"tax_id": charge_type.default_tax_id})
+                    if (
+                        not charge_type.is_inventoriable
+                        and line.expense_account_id is None
+                    ):
+                        line = line.model_copy(
+                            update={"expense_account_id": charge_type.default_account_id}
+                        )
+                elif expense_category is None:
+                    raise ValidationError(
+                        "Expense lines require expense_category or charge_type_id"
+                    )
+                else:
+                    mapped = await self.charge_types.get_by_code(
+                        tenant_id, charge_code_for_expense(expense_category)
+                    )
+                    if mapped is not None:
+                        charge_type_id = mapped.id
+                charge_type_row = (
+                    await self.charge_types.get(tenant_id, charge_type_id)
+                    if charge_type_id is not None
+                    else None
+                )
+                needs_expense_account = True
+                if charge_type_row is not None:
+                    needs_expense_account = not charge_type_row.is_inventoriable
+                elif expense_category in {
+                    ExpenseCategory.FREIGHT,
+                    ExpenseCategory.CUSTOMS_DUTY,
+                }:
+                    needs_expense_account = False
+                if needs_expense_account and line.expense_account_id is None:
+                    raise ValidationError("Expense lines require expense_account_id")
             if line.expense_account_id is not None:
                 await self.accounts.require_postable(tenant_id, line.expense_account_id)
             item_category: TaxCategory | None = None
@@ -1326,8 +1385,9 @@ class PurchaseInvoiceService:
                     "supplier_sku": line.supplier_sku,
                     "expense_account_id": line.expense_account_id,
                     "expense_category": (
-                        line.expense_category.value if line.expense_category else None
+                        expense_category.value if expense_category else None
                     ),
+                    "charge_type_id": charge_type_id,
                     "discount_type": line.discount_type.value if line.discount_type else None,
                     "discount_value": line.discount_value,
                     "discount_amount": line_discount,
@@ -1368,6 +1428,7 @@ class PurchaseInvoiceService:
                     expense_category=(
                         ExpenseCategory(line.expense_category) if line.expense_category else None
                     ),
+                    charge_type_id=line.charge_type_id,
                     discount_type=DiscountType(line.discount_type) if line.discount_type else None,
                     discount_value=line.discount_value,
                     tax_id=line.tax_id,
@@ -1451,6 +1512,7 @@ class PurchaseInvoiceService:
                     expense_category=(
                         ExpenseCategory(line.expense_category) if line.expense_category else None
                     ),
+                    charge_type_id=line.charge_type_id,
                     discount_type=DiscountType(line.discount_type) if line.discount_type else None,
                     discount_value=line.discount_value,
                     tax_id=line.tax_id,
@@ -1608,6 +1670,7 @@ class PurchaseInvoiceService:
                     expense_category=(
                         ExpenseCategory(line.expense_category) if line.expense_category else None
                     ),
+                    charge_type_id=line.charge_type_id,
                     discount_type=DiscountType(line.discount_type) if line.discount_type else None,
                     discount_value=line.discount_value,
                     discount_amount=line.discount_amount,

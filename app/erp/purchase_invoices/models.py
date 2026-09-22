@@ -236,6 +236,12 @@ class PurchaseInvoiceLine(TenantModel):
         nullable=True,
     )
     expense_category: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    charge_type_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("charge_types.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     discount_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
     discount_value: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     discount_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))

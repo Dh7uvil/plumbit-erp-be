@@ -87,6 +87,12 @@ PRODUCT_FIELDS = _header(
     ("name", "Name", True, ("description", "descriptions")),
     ("selling_rate", "Selling rate", False, ("price", "unit price")),
     ("purchase_rate", "Purchase rate", False, ()),
+    ("volume", "Volume", False, ("cbm",)),
+)
+
+PURCHASE_INVOICE_CHARGE_FIELDS = _lines(
+    ("line.charge_code", "Charge code", False, ("charge", "charge type")),
+    ("line.charge_amount", "Charge amount", False, ("amount",)),
 )
 
 CATALOGS: dict[str, list[ImexField]] = {
@@ -97,4 +103,5 @@ CATALOGS: dict[str, list[ImexField]] = {
     "customer": CUSTOMER_FIELDS,
     "supplier": SUPPLIER_FIELDS,
     "product": PRODUCT_FIELDS,
+    "purchase_invoice_charges": PURCHASE_INVOICE_CHARGE_FIELDS,
 }

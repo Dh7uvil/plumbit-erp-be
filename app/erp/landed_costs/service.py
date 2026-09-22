@@ -41,13 +41,15 @@ from app.core.exceptions import (
     DocumentStaleError,
     LandedCostCannotCancelError,
     LandedCostLineOverAllocatedError,
+    LandedCostVolumeRequiredError,
     LandedCostWeightRequiredError,
     ResourceNotFoundError,
     ValidationError,
 )
 from app.core.permissions import has_permission
 from app.db.session import transaction
-from app.erp.accounting.accounts.service import AccountResolver
+from app.erp.accounting.accounts.service import AccountResolver, AccountService
+from app.erp.accounting.charge_types.repository import ChargeTypeRepository
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
 from app.erp.accounting.ledger.schemas import JournalLineInput
@@ -95,6 +97,8 @@ class LandedCostService:
         self.inventory_ledger = InventoryLedgerService(session, actor_permissions=actor_permissions)
         self.journals = JournalEntryService(session, actor_permissions=actor_permissions)
         self.resolver = AccountResolver(session)
+        self.accounts = AccountService(session)
+        self.charge_types = ChargeTypeRepository(session)
         self.org = OrganizationService(session)
         self.sequences = DocumentSequenceService(session)
         self.idempotency = IdempotencyService(session)
@@ -504,11 +508,14 @@ class LandedCostService:
             await self.org.get_timezone(tenant_id)
         )
         method = payload.allocation_method
-        charge_rows, total_charges = await self._charge_rows(
+        charge_rows, total_charges, charge_specs = await self._charge_rows(
             tenant_id, payload.charges, exclude_id=exclude_id
         )
         allocation_rows = await self._allocation_rows(
-            tenant_id, payload.allocations, method=method, total_charges=total_charges
+            tenant_id,
+            payload.allocations,
+            header_method=method,
+            charge_specs=charge_specs,
         )
         return (
             {
@@ -551,7 +558,11 @@ class LandedCostService:
         charges: list[LandedCostChargeInput],
         *,
         exclude_id: UUID | None,
-    ) -> tuple[list[dict[str, object]], Decimal]:
+    ) -> tuple[
+        list[dict[str, object]],
+        Decimal,
+        list[tuple[Decimal, LandedCostAllocationMethod | None]],
+    ]:
         from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
 
         bill_repo = PurchaseInvoiceRepository(self.session)
@@ -562,11 +573,13 @@ class LandedCostService:
             tenant_id, line_ids, exclude_landed_cost_id=exclude_id
         )
         built: list[dict[str, object]] = []
+        specs: list[tuple[Decimal, LandedCostAllocationMethod | None]] = []
         total = _ZERO
         for index, item in enumerate(charges, start=1):
             bill_line, bill = await self._require_expense_line(
                 tenant_id, bill_repo, item.purchase_invoice_line_id
             )
+            await self._assert_inventoriable_charge(tenant_id, bill_line)
             remaining = quantize_money(bill_line.amount - allocated_map.get(bill_line.id, _ZERO))
             amount = quantize_money(item.amount if item.amount is not None else remaining)
             if amount <= _ZERO:
@@ -581,26 +594,30 @@ class LandedCostService:
                     }
                 )
             category = ExpenseCategory(bill_line.expense_category)
+            basis = await self._line_allocation_basis(tenant_id, bill_line)
             built.append(
                 {
                     "line_number": index,
                     "purchase_invoice_id": bill.id,
                     "purchase_invoice_line_id": bill_line.id,
                     "expense_category": category.value,
+                    "charge_type_id": bill_line.charge_type_id,
+                    "allocation_basis": None if basis is None else basis.value,
                     "bill_number": bill.document_number,
                     "amount": amount,
                 }
             )
+            specs.append((amount, basis))
             total += amount
-        return built, quantize_money(total)
+        return built, quantize_money(total), specs
 
     async def _allocation_rows(
         self,
         tenant_id: UUID,
         allocations: list[LandedCostAllocationInput],
         *,
-        method: LandedCostAllocationMethod,
-        total_charges: Decimal,
+        header_method: LandedCostAllocationMethod,
+        charge_specs: list[tuple[Decimal, LandedCostAllocationMethod | None]],
     ) -> list[dict[str, object]]:
         from app.inventory_management.goods_receipts.repository import GoodsReceiptRepository
 
@@ -608,27 +625,38 @@ class LandedCostService:
         line_ids = [item.goods_receipt_line_id for item in allocations]
         if len(set(line_ids)) != len(line_ids):
             raise ValidationError("Duplicate goods receipt lines are not allowed")
-        contexts: list[tuple[GoodsReceiptLine, Decimal]] = []
+        contexts: list[tuple[GoodsReceiptLine, UUID]] = []
         for item in allocations:
             line, receipt = await self._require_posted_grn_line(
                 tenant_id, receipt_repo, item.goods_receipt_line_id
             )
-            base = await self._allocation_base(tenant_id, line, receipt.id, method)
-            contexts.append((line, base))
-        bases = [base for _, base in contexts]
-        total_base = sum(bases, _ZERO)
-        if total_base <= _ZERO:
-            raise ValidationError("Allocation base cannot be zero")
-        shares = _spread(total_charges, bases)
+            contexts.append((line, receipt.id))
+        totals: dict[UUID, Decimal] = {line.id: _ZERO for line, _ in contexts}
+        for amount, basis_override in charge_specs:
+            method = basis_override or header_method
+            bases: list[Decimal] = []
+            for line, receipt_id in contexts:
+                bases.append(
+                    await self._allocation_base(tenant_id, line, receipt_id, method)
+                )
+            total_base = sum(bases, _ZERO)
+            if total_base <= _ZERO:
+                raise ValidationError("Allocation base cannot be zero")
+            shares = _spread(amount, bases)
+            for (line, _), share in zip(contexts, shares, strict=True):
+                totals[line.id] = quantize_money(totals[line.id] + share)
         built: list[dict[str, object]] = []
-        for index, ((line, base), amount) in enumerate(zip(contexts, shares, strict=True), start=1):
+        for index, (line, receipt_id) in enumerate(contexts, start=1):
+            display_base = await self._allocation_base(
+                tenant_id, line, receipt_id, header_method
+            )
             built.append(
                 {
                     "line_number": index,
                     "goods_receipt_id": line.goods_receipt_id,
                     "goods_receipt_line_id": line.id,
-                    "allocation_base": quantize_money(base),
-                    "allocated_amount": amount,
+                    "allocation_base": quantize_money(display_base),
+                    "allocated_amount": totals[line.id],
                 }
             )
         return built
@@ -646,6 +674,10 @@ class LandedCostService:
             if line.net_weight is None or line.net_weight <= _ZERO:
                 raise LandedCostWeightRequiredError(details={"goods_receipt_line_id": str(line.id)})
             return line.net_weight
+        if method == LandedCostAllocationMethod.VOLUME:
+            if line.volume is None or line.volume <= _ZERO:
+                raise LandedCostVolumeRequiredError(details={"goods_receipt_line_id": str(line.id)})
+            return line.volume
         layers = await self.costing.layers_for_source(
             tenant_id, SOURCE_GOODS_RECEIPT, receipt_id, line.id
         )
@@ -681,6 +713,10 @@ class LandedCostService:
                 line.net_weight is None or line.net_weight <= _ZERO
             ):
                 raise LandedCostWeightRequiredError(details={"goods_receipt_line_id": str(line.id)})
+            if method == LandedCostAllocationMethod.VOLUME and (
+                line.volume is None or line.volume <= _ZERO
+            ):
+                raise LandedCostVolumeRequiredError(details={"goods_receipt_line_id": str(line.id)})
             layers = await self.costing.layers_for_source(
                 tenant_id, SOURCE_GOODS_RECEIPT, receipt.id, line.id
             )
@@ -731,10 +767,14 @@ class LandedCostService:
                 )
             )
         credits: dict[UUID, Decimal] = {}
+        from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
+
+        bill_repo = PurchaseInvoiceRepository(self.session)
         for charge in row.charges:
-            account = await self._parked_account(
-                tenant_id, ExpenseCategory(charge.expense_category)
+            bill_line, _bill = await self._require_expense_line(
+                tenant_id, bill_repo, charge.purchase_invoice_line_id
             )
+            account = await self._clearing_account(tenant_id, charge, bill_line)
             credits[account.id] = credits.get(account.id, _ZERO) + charge.amount
         for account_id, amount in credits.items():
             lines.append(
@@ -790,12 +830,45 @@ class LandedCostService:
             row.reversal_journal_entry_id = reversal.id
         row.is_posted = False
 
+    async def _clearing_account(
+        self, tenant_id: UUID, charge: Any, bill_line: PurchaseInvoiceLine
+    ):
+        charge_type_id = charge.charge_type_id or bill_line.charge_type_id
+        if charge_type_id is not None:
+            charge_type = await self.charge_types.get(tenant_id, charge_type_id)
+            if charge_type is not None:
+                return await self.accounts.require_postable(
+                    tenant_id, charge_type.default_account_id
+                )
+        return await self._parked_account(
+            tenant_id, ExpenseCategory(charge.expense_category)
+        )
+
     async def _parked_account(self, tenant_id: UUID, category: ExpenseCategory):
         if category == ExpenseCategory.FREIGHT:
             return await self.resolver.require(tenant_id, AccountSystemRole.FREIGHT_IN)
         if category == ExpenseCategory.CUSTOMS_DUTY:
             return await self.resolver.require(tenant_id, AccountSystemRole.CUSTOMS_DUTY)
         return await self.resolver.require(tenant_id, AccountSystemRole.OTHER_CHARGES)
+
+    async def _line_allocation_basis(
+        self, tenant_id: UUID, bill_line: PurchaseInvoiceLine
+    ) -> LandedCostAllocationMethod | None:
+        if bill_line.charge_type_id is None:
+            return None
+        charge_type = await self.charge_types.get(tenant_id, bill_line.charge_type_id)
+        if charge_type is None or charge_type.allocation_basis is None:
+            return None
+        return LandedCostAllocationMethod(charge_type.allocation_basis)
+
+    async def _assert_inventoriable_charge(
+        self, tenant_id: UUID, bill_line: PurchaseInvoiceLine
+    ) -> None:
+        if bill_line.charge_type_id is None:
+            return
+        charge_type = await self.charge_types.get(tenant_id, bill_line.charge_type_id)
+        if charge_type is not None and not charge_type.is_inventoriable:
+            raise ValidationError("Expensed charges cannot be allocated to landed cost")
 
     async def _usable_from_bills_line_ids(
         self, tenant_id: UUID, line_ids: list[UUID]
@@ -807,6 +880,10 @@ class LandedCostService:
         usable: list[UUID] = []
         for line_id in line_ids:
             bill_line, _bill = await self._require_expense_line(tenant_id, bill_repo, line_id)
+            if bill_line.charge_type_id is not None:
+                charge_type = await self.charge_types.get(tenant_id, bill_line.charge_type_id)
+                if charge_type is not None and not charge_type.is_inventoriable:
+                    continue
             remaining = quantize_money(bill_line.amount - allocated_map.get(bill_line.id, _ZERO))
             if remaining > _ZERO:
                 usable.append(line_id)
@@ -1052,6 +1129,12 @@ class LandedCostService:
                     purchase_invoice_id=charge.purchase_invoice_id,
                     purchase_invoice_line_id=charge.purchase_invoice_line_id,
                     expense_category=ExpenseCategory(charge.expense_category),
+                    charge_type_id=charge.charge_type_id,
+                    allocation_basis=(
+                        LandedCostAllocationMethod(charge.allocation_basis)
+                        if charge.allocation_basis
+                        else None
+                    ),
                     bill_number=charge.bill_number,
                     amount=charge.amount,
                 )

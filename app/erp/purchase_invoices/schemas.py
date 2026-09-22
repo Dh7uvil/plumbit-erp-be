@@ -68,6 +68,7 @@ class PurchaseInvoiceLineInput(BaseModel):
     supplier_sku: str | None = Field(default=None, max_length=80)
     expense_account_id: UUID | None = None
     expense_category: ExpenseCategory | None = None
+    charge_type_id: UUID | None = None
     discount_type: DiscountType | None = None
     discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     tax_id: UUID | None = None
@@ -83,8 +84,8 @@ class PurchaseInvoiceLineInput(BaseModel):
     @model_validator(mode="after")
     def validate_line_shape(self) -> "PurchaseInvoiceLineInput":
         if self.line_type == PurchaseInvoiceLineType.EXPENSE:
-            if self.expense_category is None:
-                raise ValueError("Expense lines require expense_category")
+            if self.expense_category is None and self.charge_type_id is None:
+                raise ValueError("Expense lines require expense_category or charge_type_id")
             if self.rate is None:
                 raise ValueError("Expense lines require a rate")
         elif self.product_id is None and not self.description:
@@ -112,6 +113,7 @@ class PurchaseInvoiceLineResponse(BaseModel):
     supplier_sku: str | None
     expense_account_id: UUID | None
     expense_category: ExpenseCategory | None
+    charge_type_id: UUID | None = None
     discount_type: DiscountType | None
     discount_value: Decimal | None
     discount_amount: Decimal

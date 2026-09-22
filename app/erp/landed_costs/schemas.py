@@ -51,6 +51,8 @@ class LandedCostChargeResponse(BaseModel):
     purchase_invoice_id: UUID
     purchase_invoice_line_id: UUID
     expense_category: ExpenseCategory
+    charge_type_id: UUID | None = None
+    allocation_basis: LandedCostAllocationMethod | None = None
     bill_number: str
     amount: Decimal
 

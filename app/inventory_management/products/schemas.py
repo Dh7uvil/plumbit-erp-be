@@ -35,6 +35,7 @@ class ProductCreate(BaseModel):
     purchase_description: str | None = None
     tax_id: UUID | None = None
     hs_code: str | None = Field(default=None, max_length=20)
+    volume: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
     track_inventory: bool = False
     requires_qc: bool | None = None
     income_account_id: UUID | None = None
@@ -70,6 +71,7 @@ class ProductUpdate(BaseModel):
     purchase_description: str | None = None
     tax_id: UUID | None = None
     hs_code: str | None = Field(default=None, max_length=20)
+    volume: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
     track_inventory: bool | None = None
     requires_qc: bool | None = None
     is_active: bool | None = None
@@ -108,6 +110,7 @@ class ProductResponse(BaseModel):
     purchase_description: str | None
     tax_id: UUID | None
     hs_code: str | None
+    volume: Decimal | None = None
     track_inventory: bool
     requires_qc: bool
     income_account_id: UUID | None = None

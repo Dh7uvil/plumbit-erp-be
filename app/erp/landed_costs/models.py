@@ -139,6 +139,13 @@ class LandedCostCharge(TenantModel):
         nullable=False,
     )
     expense_category: Mapped[str] = mapped_column(String(30), nullable=False)
+    charge_type_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("charge_types.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    allocation_basis: Mapped[str | None] = mapped_column(String(20), nullable=True)
     bill_number: Mapped[str] = mapped_column(String(40), nullable=False)
     amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
 

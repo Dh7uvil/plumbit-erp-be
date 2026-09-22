@@ -47,6 +47,7 @@ class GoodsReceiptLineInput(BaseModel):
     rate: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     net_weight: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
     gross_weight: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
+    volume: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
 
     @field_validator("supplier_sku", "description")
     @classmethod
@@ -72,6 +73,7 @@ class GoodsReceiptLineResponse(BaseModel):
     rate: Decimal
     net_weight: Decimal | None
     gross_weight: Decimal | None
+    volume: Decimal | None = None
     qty_accepted: Decimal
     qty_rejected: Decimal
     qty_on_hold: Decimal

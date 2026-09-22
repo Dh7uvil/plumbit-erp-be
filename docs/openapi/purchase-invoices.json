@@ -3015,6 +3015,18 @@
               }
             ]
           },
+          "charge_type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Charge Type Id"
+          },
           "discount_type": {
             "anyOf": [
               {
@@ -3189,6 +3201,18 @@
                 "type": "null"
               }
             ]
+          },
+          "charge_type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Charge Type Id"
           },
           "discount_type": {
             "anyOf": [

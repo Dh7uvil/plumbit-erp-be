@@ -53,6 +53,7 @@ import app.crm.notes.models as _crm_notes  # noqa: E402, F401
 import app.crm.opportunities.models as _opportunities  # noqa: E402, F401
 import app.crm.pipelines.models as _pipelines  # noqa: E402, F401
 import app.erp.accounting.accounts.models as _accounts  # noqa: E402, F401
+import app.erp.accounting.charge_types.models as _charge_types  # noqa: E402, F401
 import app.erp.accounting.cost_centers.models as _cost_centers  # noqa: E402, F401
 import app.erp.accounting.customer_payments.models as _customer_payments  # noqa: E402, F401
 import app.erp.accounting.dunning.models as _dunning  # noqa: E402, F401

@@ -172,6 +172,7 @@ class GoodsReceiptLine(TenantModel):
     )
     rate: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     net_weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    volume: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     gross_weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     qty_accepted: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     qty_rejected: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))

@@ -7,7 +7,7 @@ from sqlalchemy import Boolean, ForeignKey, Index, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.constants import MONEY_PRECISION, MONEY_SCALE
+from app.core.constants import MONEY_PRECISION, MONEY_SCALE, QUANTITY_PRECISION, QUANTITY_SCALE
 from app.db.base import SoftDeleteTenantModel
 from app.db.mixins import AuditUserMixin, IsActiveMixin
 
@@ -60,6 +60,9 @@ class Product(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
         index=True,
     )
     hs_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    volume: Mapped[Decimal | None] = mapped_column(
+        Numeric(QUANTITY_PRECISION, QUANTITY_SCALE), nullable=True
+    )
     track_inventory: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

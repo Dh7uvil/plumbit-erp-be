@@ -124,6 +124,7 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "credit_control": ('override',),
         "write_off": ('create', 'reverse'),
         "dunning": ('read', 'manage', 'send'),
+        "charge_type": ('create', 'read', 'update', 'delete'),
     },
     REPORTS_MODULE: {
         "report": (
@@ -562,6 +563,10 @@ COST_CENTER_CREATE = build_permission(MASTERS_MODULE, "cost_center", "create")
 COST_CENTER_READ = build_permission(MASTERS_MODULE, "cost_center", "read")
 COST_CENTER_UPDATE = build_permission(MASTERS_MODULE, "cost_center", "update")
 COST_CENTER_DELETE = build_permission(MASTERS_MODULE, "cost_center", "delete")
+CHARGE_TYPE_CREATE = build_permission(ACCOUNTING_MODULE, "charge_type", "create")
+CHARGE_TYPE_READ = build_permission(ACCOUNTING_MODULE, "charge_type", "read")
+CHARGE_TYPE_UPDATE = build_permission(ACCOUNTING_MODULE, "charge_type", "update")
+CHARGE_TYPE_DELETE = build_permission(ACCOUNTING_MODULE, "charge_type", "delete")
 
 SYSTEM_ADMIN_ROLE_NAME = "Superadmin"
 
