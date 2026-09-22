@@ -6,7 +6,9 @@ PostgreSQL, SQLAlchemy 2.x, Alembic and Pydantic v2.
 The product scope is Zoho Books + Inventory + CRM / Odoo Sales, Purchase, Inventory, Accounting,
 CRM: quotes, orders, invoices, GRN, credit/debit notes, payments, stock, journals, UAE VAT, and
 UAE e-invoicing through third-party Accredited Service Providers (ASPs). Manufacturing, POS, full
-payroll, e-commerce, projects/timesheets, recurring invoices, and banking/PDC are out of scope.
+payroll, e-commerce, and projects/timesheets are out of scope. Bank reconciliation, PDC,
+recurring templates, vouchers, cost sheets, charge types, and budgets are planned in-scope
+accounting work — see the module map below.
 
 Follow the project's architecture and guardrails strictly. ERP financial, inventory, tenant-isolation
 and e-invoicing rules have higher priority than convenience. Do not bypass these rules even if
@@ -59,7 +61,8 @@ app/
 │                                 accounting/ledger, accounting/opening_balances,
 │                                 accounting/reports
 │                                 planned: einvoicing (status APIs on sales invoices and credit notes;
-│                                 inbound e-bills as draft purchase invoices)
+│                                 inbound e-bills as draft purchase invoices), vouchers, cost_sheets,
+│                                 bank_accounts, bank_reconciliation, cheques, budgets, recurring
 ├── integrations/                 implemented: storage/
 │                                 planned: email, whatsapp, video, ai, forecast,
 │                                 einvoicing/ (ASP adapters only — Zoho, Tally, generic Peppol ASP)

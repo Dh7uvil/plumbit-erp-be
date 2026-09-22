@@ -10,8 +10,10 @@ possible to extract a module later, and what keeps tenant and financial data saf
 never outranks them.
 
 Plumbit is a UAE trading ERP (Zoho Books + Inventory + CRM / Odoo Sales, Purchase, Inventory,
-Accounting, CRM). Out of scope: manufacturing, POS, full payroll, e-commerce, projects/timesheets,
-recurring invoices, banking/PDC. Plumbit will **not** become a Peppol Access Point or MoF-accredited
+Accounting, CRM). Out of scope: manufacturing, POS, full payroll, e-commerce, projects/timesheets.
+Bank reconciliation, PDC, recurring transaction templates, cash/bank vouchers, import/export cost
+sheets, charge-type masters, and budgets are **in scope** as planned accounting modules. Plumbit will
+**not** become a Peppol Access Point or MoF-accredited
 ASP, and will **not** dual-write the ledger into Zoho Books or TallyPrime.
 
 ## Architecture principles
@@ -134,12 +136,14 @@ erp                     implemented: currencies, exchange_rates, taxes, payment_
                         terms_templates, document_sequences, suppliers, supplier_products,
                         quotations, proforma_invoices, period_lock, sales_orders,
                         sales_invoices, credit_notes, purchase_orders, purchase_invoices,
-                        debit_notes, customer_payments, supplier_payments, chart of accounts,
-                        journals, opening balances, ledger reports (trial balance, general
-                        ledger, account statement, export-evidence exceptions,
+                        debit_notes, customer_payments, supplier_payments, landed_costs,
+                        chart of accounts, journals, opening balances, ledger reports (trial
+                        balance, general ledger, account statement, export-evidence exceptions,
                         invoiced-not-dispatched), AR/AP aging and party statements
                         planned: einvoicing status APIs (on sales invoices and credit notes;
-                        inbound e-bills as draft purchase invoices)
+                        inbound e-bills as draft purchase invoices), vouchers,
+                        cost_sheets, bank_accounts, bank_reconciliation, cheques, budgets,
+                        recurring
 
 inventory_management    implemented: units, categories, products, price_lists, warehouses,
                         stock, costing (internal FIFO ledger), stock_transfers,
@@ -295,6 +299,20 @@ missing — reject the operation with `EXCHANGE_RATE_MISSING` instead.
 
 A document that is e-invoice `exchanged` is as immutable as `POSTED`. Rejection does not unlock
 the original row; the user posts a credit note (and a new invoice if needed) in the open period.
+
+## 10.1 Cash and bank vouchers (planned)
+
+Cash receipt, cash payment, bank receipt, bank payment and contra vouchers will post through
+`LedgerPostingService` like other commercial documents. The rule that protects AR/AP integrity:
+
+A voucher line that hits an **accounts receivable or accounts payable control account** must carry
+a **party** (`party_type` / `party_id`) and settle open items through the shared **payment
+allocation** engine (`payment_allocations` + allocation journals). Never post a bare journal line
+against AR or AP — that would double-count against aging, party statements, credit exposure and
+allocation, which all read the open-item subledger as the single truth.
+
+Non-AR/AP lines (bank, cash, expense, tax, FX) may post as ordinary journal lines without
+allocation.
 
 ## 11. Negative stock (inventory rule)
 
