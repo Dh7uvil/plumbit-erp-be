@@ -125,6 +125,14 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "write_off": ('create', 'reverse'),
         "dunning": ('read', 'manage', 'send'),
         "charge_type": ('create', 'read', 'update', 'delete'),
+        "cost_sheet": _with_imex(
+            "create",
+            "read",
+            "update",
+            "delete",
+            "confirm",
+            "close",
+        ),
     },
     REPORTS_MODULE: {
         "report": (
@@ -567,6 +575,14 @@ CHARGE_TYPE_CREATE = build_permission(ACCOUNTING_MODULE, "charge_type", "create"
 CHARGE_TYPE_READ = build_permission(ACCOUNTING_MODULE, "charge_type", "read")
 CHARGE_TYPE_UPDATE = build_permission(ACCOUNTING_MODULE, "charge_type", "update")
 CHARGE_TYPE_DELETE = build_permission(ACCOUNTING_MODULE, "charge_type", "delete")
+COST_SHEET_CREATE = build_permission(ACCOUNTING_MODULE, "cost_sheet", "create")
+COST_SHEET_READ = build_permission(ACCOUNTING_MODULE, "cost_sheet", "read")
+COST_SHEET_UPDATE = build_permission(ACCOUNTING_MODULE, "cost_sheet", "update")
+COST_SHEET_DELETE = build_permission(ACCOUNTING_MODULE, "cost_sheet", "delete")
+COST_SHEET_CONFIRM = build_permission(ACCOUNTING_MODULE, "cost_sheet", "confirm")
+COST_SHEET_CLOSE = build_permission(ACCOUNTING_MODULE, "cost_sheet", "close")
+COST_SHEET_IMPORT = build_permission(ACCOUNTING_MODULE, "cost_sheet", "import")
+COST_SHEET_EXPORT = build_permission(ACCOUNTING_MODULE, "cost_sheet", "export")
 
 SYSTEM_ADMIN_ROLE_NAME = "Superadmin"
 

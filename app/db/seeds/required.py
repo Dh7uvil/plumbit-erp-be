@@ -67,6 +67,9 @@ _DOCUMENT_SEQUENCES: tuple[tuple[DocumentType, str], ...] = (
     (DocumentType.CUSTOMER_PAYMENT, "RCP"),
     (DocumentType.SUPPLIER_PAYMENT, "PAY"),
     (DocumentType.LANDED_COST, "LC"),
+    (DocumentType.COST_SHEET_IMPORT, "CSI"),
+    (DocumentType.COST_SHEET_EXPORT, "CSE"),
+    (DocumentType.COST_SHEET_OTHER, "CSO"),
 )
 
 _SEQUENCE_PADDING = 6
