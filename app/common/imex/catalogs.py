@@ -98,6 +98,14 @@ PURCHASE_INVOICE_CHARGE_FIELDS = _lines(
     ("line.charge_amount", "Charge amount", False, ("amount",)),
 )
 
+BANK_STATEMENT_FIELDS = _lines(
+    ("line_date", "Date", True, ("transaction date", "date")),
+    ("description", "Description", False, ("narration", "details")),
+    ("reference", "Reference", False, ("ref", "cheque no", "utr")),
+    ("debit", "Debit", False, ("withdrawal", "dr")),
+    ("credit", "Credit", False, ("deposit", "cr")),
+)
+
 CATALOGS: dict[str, list[ImexField]] = {
     "quotation": QUOTATION_FIELDS,
     "proforma_invoice": PROFORMA_FIELDS,
@@ -107,4 +115,5 @@ CATALOGS: dict[str, list[ImexField]] = {
     "supplier": SUPPLIER_FIELDS,
     "product": PRODUCT_FIELDS,
     "purchase_invoice_charges": PURCHASE_INVOICE_CHARGE_FIELDS,
+    "bank_statement": BANK_STATEMENT_FIELDS,
 }

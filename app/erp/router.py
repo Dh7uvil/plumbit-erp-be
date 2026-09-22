@@ -3,16 +3,21 @@
 from fastapi import APIRouter
 
 from app.erp.accounting.accounts.router import router as accounts_router
+from app.erp.accounting.bank_accounts.router import router as bank_accounts_router
+from app.erp.accounting.bank_reconciliation.router import router as bank_reconciliation_router
 from app.erp.accounting.charge_types.router import router as charge_types_router
+from app.erp.accounting.cheques.router import router as cheques_router
 from app.erp.accounting.cost_centers.router import router as cost_centers_router
+from app.erp.accounting.customer_payments.router import router as customer_payments_router
 from app.erp.accounting.dunning.router import router as dunning_rules_router
 from app.erp.accounting.ledger.router import router as journals_router
 from app.erp.accounting.opening_balances.router import router as opening_balances_router
 from app.erp.accounting.reports.router import router as reports_router
 from app.erp.accounting.router import router as accounting_router
+from app.erp.accounting.supplier_payments.router import router as supplier_payments_router
+from app.erp.accounting.vouchers.router import router as vouchers_router
 from app.erp.cost_sheets.router import router as cost_sheets_router
 from app.erp.credit_notes.router import router as credit_notes_router
-from app.erp.accounting.customer_payments.router import router as customer_payments_router
 from app.erp.debit_notes.router import router as debit_notes_router
 from app.erp.exchange_rates.router import router as exchange_rates_router
 from app.erp.landed_costs.router import router as landed_costs_router
@@ -23,8 +28,6 @@ from app.erp.purchase_orders.router import router as purchase_orders_router
 from app.erp.quotation.router import router as quotation_router
 from app.erp.sales_invoices.router import router as sales_invoices_router
 from app.erp.sales_orders.router import router as sales_orders_router
-from app.erp.accounting.supplier_payments.router import router as supplier_payments_router
-from app.erp.accounting.vouchers.router import router as vouchers_router
 from app.erp.supplier_products.router import router as supplier_products_router
 from app.erp.suppliers.router import router as suppliers_router
 
@@ -54,3 +57,6 @@ router.include_router(journals_router)
 router.include_router(opening_balances_router)
 router.include_router(reports_router)
 router.include_router(vouchers_router)
+router.include_router(bank_accounts_router)
+router.include_router(bank_reconciliation_router)
+router.include_router(cheques_router)

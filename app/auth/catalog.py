@@ -134,6 +134,19 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
             "close",
         ),
         "voucher": ("create", "read", "update", "delete", "post", "cancel"),
+        "bank_account": ("create", "read", "update", "delete"),
+        "bank_reconciliation": _with_imex("create", "read", "update", "delete", "reconcile"),
+        "cheque": (
+            "create",
+            "read",
+            "update",
+            "delete",
+            "issue",
+            "deposit",
+            "clear",
+            "bounce",
+            "cancel",
+        ),
     },
     REPORTS_MODULE: {
         "report": (
@@ -592,6 +605,28 @@ VOUCHER_UPDATE = build_permission(ACCOUNTING_MODULE, "voucher", "update")
 VOUCHER_DELETE = build_permission(ACCOUNTING_MODULE, "voucher", "delete")
 VOUCHER_POST = build_permission(ACCOUNTING_MODULE, "voucher", "post")
 VOUCHER_CANCEL = build_permission(ACCOUNTING_MODULE, "voucher", "cancel")
+BANK_ACCOUNT_CREATE = build_permission(ACCOUNTING_MODULE, "bank_account", "create")
+BANK_ACCOUNT_READ = build_permission(ACCOUNTING_MODULE, "bank_account", "read")
+BANK_ACCOUNT_UPDATE = build_permission(ACCOUNTING_MODULE, "bank_account", "update")
+BANK_ACCOUNT_DELETE = build_permission(ACCOUNTING_MODULE, "bank_account", "delete")
+BANK_RECONCILIATION_CREATE = build_permission(ACCOUNTING_MODULE, "bank_reconciliation", "create")
+BANK_RECONCILIATION_READ = build_permission(ACCOUNTING_MODULE, "bank_reconciliation", "read")
+BANK_RECONCILIATION_UPDATE = build_permission(ACCOUNTING_MODULE, "bank_reconciliation", "update")
+BANK_RECONCILIATION_DELETE = build_permission(ACCOUNTING_MODULE, "bank_reconciliation", "delete")
+BANK_RECONCILIATION_RECONCILE = build_permission(
+    ACCOUNTING_MODULE, "bank_reconciliation", "reconcile"
+)
+BANK_RECONCILIATION_IMPORT = build_permission(ACCOUNTING_MODULE, "bank_reconciliation", "import")
+BANK_RECONCILIATION_EXPORT = build_permission(ACCOUNTING_MODULE, "bank_reconciliation", "export")
+CHEQUE_CREATE = build_permission(ACCOUNTING_MODULE, "cheque", "create")
+CHEQUE_READ = build_permission(ACCOUNTING_MODULE, "cheque", "read")
+CHEQUE_UPDATE = build_permission(ACCOUNTING_MODULE, "cheque", "update")
+CHEQUE_DELETE = build_permission(ACCOUNTING_MODULE, "cheque", "delete")
+CHEQUE_ISSUE = build_permission(ACCOUNTING_MODULE, "cheque", "issue")
+CHEQUE_DEPOSIT = build_permission(ACCOUNTING_MODULE, "cheque", "deposit")
+CHEQUE_CLEAR = build_permission(ACCOUNTING_MODULE, "cheque", "clear")
+CHEQUE_BOUNCE = build_permission(ACCOUNTING_MODULE, "cheque", "bounce")
+CHEQUE_CANCEL = build_permission(ACCOUNTING_MODULE, "cheque", "cancel")
 
 SYSTEM_ADMIN_ROLE_NAME = "Superadmin"
 

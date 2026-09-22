@@ -61,6 +61,9 @@ import app.erp.accounting.ledger.models as _journal_entries  # noqa: E402, F401
 import app.erp.accounting.models as _accounting  # noqa: E402, F401
 import app.erp.accounting.open_items.models as _payment_allocations  # noqa: E402, F401
 import app.erp.accounting.supplier_payments.models as _supplier_payments  # noqa: E402, F401
+import app.erp.accounting.bank_accounts.models as _bank_accounts  # noqa: E402, F401
+import app.erp.accounting.bank_reconciliation.models as _bank_reconciliation  # noqa: E402, F401
+import app.erp.accounting.cheques.models as _cheques  # noqa: E402, F401
 import app.erp.accounting.vouchers.models as _vouchers  # noqa: E402, F401
 import app.erp.accounting.write_offs.models as _invoice_write_offs  # noqa: E402, F401
 import app.erp.credit_notes.models as _credit_notes  # noqa: E402, F401

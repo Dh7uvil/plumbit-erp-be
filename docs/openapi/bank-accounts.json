@@ -1,24 +1,24 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Plumbit ERP API \u2014 Document Sequences",
-    "description": "Locked counters that allocate human-readable document numbers.",
+    "title": "Plumbit ERP API \u2014 Bank Accounts",
+    "description": "Bank Accounts",
     "version": "0.1.0"
   },
   "tags": [
     {
-      "name": "Document Sequences",
-      "description": "Locked counters that allocate human-readable document numbers."
+      "name": "Bank Accounts",
+      "description": "Bank Accounts"
     }
   ],
   "paths": {
-    "/api/v1/document-sequences": {
+    "/api/v1/bank-accounts": {
       "get": {
         "tags": [
-          "Document Sequences"
+          "Bank Accounts"
         ],
-        "summary": "List Document Sequences",
-        "operationId": "list_document_sequences_api_v1_document_sequences_get",
+        "summary": "List Bank Accounts",
+        "operationId": "list_bank_accounts_api_v1_bank_accounts_get",
         "security": [
           {
             "HTTPBearer": []
@@ -122,54 +122,6 @@
             }
           },
           {
-            "name": "document_type",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/DocumentType"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Document Type"
-            }
-          },
-          {
-            "name": "series",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Series"
-            }
-          },
-          {
-            "name": "fiscal_year",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Fiscal Year"
-            }
-          },
-          {
             "name": "is_active",
             "in": "query",
             "required": false,
@@ -184,6 +136,23 @@
               ],
               "title": "Is Active"
             }
+          },
+          {
+            "name": "currency_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency Id"
+            }
           }
         ],
         "responses": {
@@ -192,7 +161,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_list_DocumentSequenceResponse__"
+                  "$ref": "#/components/schemas/ApiResponse_list_BankAccountResponse__"
                 }
               }
             }
@@ -211,10 +180,10 @@
       },
       "post": {
         "tags": [
-          "Document Sequences"
+          "Bank Accounts"
         ],
-        "summary": "Create Document Sequence",
-        "operationId": "create_document_sequence_api_v1_document_sequences_post",
+        "summary": "Create Bank Account",
+        "operationId": "create_bank_account_api_v1_bank_accounts_post",
         "security": [
           {
             "HTTPBearer": []
@@ -225,7 +194,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DocumentSequenceCreate"
+                "$ref": "#/components/schemas/BankAccountCreate"
               }
             }
           }
@@ -236,7 +205,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DocumentSequenceResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_BankAccountResponse_"
                 }
               }
             }
@@ -254,13 +223,13 @@
         }
       }
     },
-    "/api/v1/document-sequences/{sequence_id}": {
+    "/api/v1/bank-accounts/{bank_account_id}": {
       "get": {
         "tags": [
-          "Document Sequences"
+          "Bank Accounts"
         ],
-        "summary": "Get Document Sequence",
-        "operationId": "get_document_sequence_api_v1_document_sequences__sequence_id__get",
+        "summary": "Get Bank Account",
+        "operationId": "get_bank_account_api_v1_bank_accounts__bank_account_id__get",
         "security": [
           {
             "HTTPBearer": []
@@ -268,13 +237,13 @@
         ],
         "parameters": [
           {
-            "name": "sequence_id",
+            "name": "bank_account_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Sequence Id"
+              "title": "Bank Account Id"
             }
           }
         ],
@@ -284,7 +253,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DocumentSequenceResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_BankAccountResponse_"
                 }
               }
             }
@@ -303,10 +272,10 @@
       },
       "patch": {
         "tags": [
-          "Document Sequences"
+          "Bank Accounts"
         ],
-        "summary": "Update Document Sequence",
-        "operationId": "update_document_sequence_api_v1_document_sequences__sequence_id__patch",
+        "summary": "Update Bank Account",
+        "operationId": "update_bank_account_api_v1_bank_accounts__bank_account_id__patch",
         "security": [
           {
             "HTTPBearer": []
@@ -314,13 +283,13 @@
         ],
         "parameters": [
           {
-            "name": "sequence_id",
+            "name": "bank_account_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Sequence Id"
+              "title": "Bank Account Id"
             }
           }
         ],
@@ -329,7 +298,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DocumentSequenceUpdate"
+                "$ref": "#/components/schemas/BankAccountUpdate"
               }
             }
           }
@@ -340,7 +309,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DocumentSequenceResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_BankAccountResponse_"
                 }
               }
             }
@@ -359,10 +328,10 @@
       },
       "delete": {
         "tags": [
-          "Document Sequences"
+          "Bank Accounts"
         ],
-        "summary": "Delete Document Sequence",
-        "operationId": "delete_document_sequence_api_v1_document_sequences__sequence_id__delete",
+        "summary": "Delete Bank Account",
+        "operationId": "delete_bank_account_api_v1_bank_accounts__bank_account_id__delete",
         "security": [
           {
             "HTTPBearer": []
@@ -370,13 +339,13 @@
         ],
         "parameters": [
           {
-            "name": "sequence_id",
+            "name": "bank_account_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Sequence Id"
+              "title": "Bank Account Id"
             }
           }
         ],
@@ -386,7 +355,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_DocumentSequenceResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_BankAccountResponse_"
                 }
               }
             }
@@ -407,7 +376,7 @@
   },
   "components": {
     "schemas": {
-      "ApiResponse_DocumentSequenceResponse_": {
+      "ApiResponse_BankAccountResponse_": {
         "properties": {
           "success": {
             "type": "boolean",
@@ -416,7 +385,7 @@
             "default": true
           },
           "data": {
-            "$ref": "#/components/schemas/DocumentSequenceResponse"
+            "$ref": "#/components/schemas/BankAccountResponse"
           },
           "message": {
             "anyOf": [
@@ -439,9 +408,9 @@
         "required": [
           "data"
         ],
-        "title": "ApiResponse[DocumentSequenceResponse]"
+        "title": "ApiResponse[BankAccountResponse]"
       },
-      "ApiResponse_list_DocumentSequenceResponse__": {
+      "ApiResponse_list_BankAccountResponse__": {
         "properties": {
           "success": {
             "type": "boolean",
@@ -451,7 +420,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/DocumentSequenceResponse"
+              "$ref": "#/components/schemas/BankAccountResponse"
             },
             "type": "array",
             "title": "Data"
@@ -477,55 +446,121 @@
         "required": [
           "data"
         ],
-        "title": "ApiResponse[list[DocumentSequenceResponse]]"
+        "title": "ApiResponse[list[BankAccountResponse]]"
       },
-      "DocumentSequenceCreate": {
+      "BankAccountCreate": {
         "properties": {
-          "document_type": {
-            "$ref": "#/components/schemas/DocumentType"
-          },
-          "series": {
+          "account_id": {
             "type": "string",
-            "maxLength": 20,
-            "minLength": 1,
-            "title": "Series"
+            "format": "uuid",
+            "title": "Account Id"
           },
-          "fiscal_year": {
-            "type": "integer",
-            "maximum": 2100.0,
-            "minimum": 2000.0,
-            "title": "Fiscal Year"
-          },
-          "prefix": {
+          "account_name": {
             "type": "string",
-            "maxLength": 20,
+            "maxLength": 150,
             "minLength": 1,
-            "title": "Prefix"
+            "title": "Account Name"
           },
-          "next_number": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Next Number",
-            "default": 1
+          "bank_name": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 1,
+            "title": "Bank Name"
           },
-          "padding": {
-            "type": "integer",
-            "maximum": 10.0,
-            "minimum": 1.0,
-            "title": "Padding",
-            "default": 6
+          "branch_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 150
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Name"
+          },
+          "account_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Number"
+          },
+          "iban": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iban"
+          },
+          "swift": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swift"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "opening_balance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              }
+            ],
+            "title": "Opening Balance",
+            "default": "0"
+          },
+          "opening_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Date"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default",
+            "default": false
           }
         },
         "type": "object",
         "required": [
-          "document_type",
-          "series",
-          "fiscal_year",
-          "prefix"
+          "account_id",
+          "account_name",
+          "bank_name",
+          "currency_id"
         ],
-        "title": "DocumentSequenceCreate"
+        "title": "BankAccountCreate"
       },
-      "DocumentSequenceResponse": {
+      "BankAccountResponse": {
         "properties": {
           "id": {
             "type": "string",
@@ -537,28 +572,88 @@
             "format": "uuid",
             "title": "Tenant Id"
           },
-          "document_type": {
-            "$ref": "#/components/schemas/DocumentType"
-          },
-          "series": {
+          "account_id": {
             "type": "string",
-            "title": "Series"
+            "format": "uuid",
+            "title": "Account Id"
           },
-          "fiscal_year": {
-            "type": "integer",
-            "title": "Fiscal Year"
-          },
-          "prefix": {
+          "account_name": {
             "type": "string",
-            "title": "Prefix"
+            "title": "Account Name"
           },
-          "next_number": {
-            "type": "integer",
-            "title": "Next Number"
+          "bank_name": {
+            "type": "string",
+            "title": "Bank Name"
           },
-          "padding": {
-            "type": "integer",
-            "title": "Padding"
+          "branch_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Name"
+          },
+          "account_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Number"
+          },
+          "iban": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iban"
+          },
+          "swift": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swift"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "opening_balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Opening Balance"
+          },
+          "opening_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Date"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default"
           },
           "is_active": {
             "type": "boolean",
@@ -603,57 +698,148 @@
         "required": [
           "id",
           "tenant_id",
-          "document_type",
-          "series",
-          "fiscal_year",
-          "prefix",
-          "next_number",
-          "padding",
+          "account_id",
+          "account_name",
+          "bank_name",
+          "branch_name",
+          "account_number",
+          "iban",
+          "swift",
+          "currency_id",
+          "opening_balance",
+          "opening_date",
+          "is_default",
           "is_active",
           "created_at",
           "updated_at"
         ],
-        "title": "DocumentSequenceResponse"
+        "title": "BankAccountResponse"
       },
-      "DocumentSequenceUpdate": {
+      "BankAccountUpdate": {
         "properties": {
-          "prefix": {
+          "account_name": {
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 20,
+                "maxLength": 150,
                 "minLength": 1
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Prefix"
+            "title": "Account Name"
           },
-          "next_number": {
+          "bank_name": {
             "anyOf": [
               {
-                "type": "integer",
-                "minimum": 1.0
+                "type": "string",
+                "maxLength": 150,
+                "minLength": 1
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Next Number"
+            "title": "Bank Name"
           },
-          "padding": {
+          "branch_name": {
             "anyOf": [
               {
-                "type": "integer",
-                "maximum": 10.0,
-                "minimum": 1.0
+                "type": "string",
+                "maxLength": 150
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Padding"
+            "title": "Branch Name"
+          },
+          "account_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Number"
+          },
+          "iban": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Iban"
+          },
+          "swift": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swift"
+          },
+          "currency_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Id"
+          },
+          "opening_balance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Balance"
+          },
+          "opening_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Date"
+          },
+          "is_default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Default"
           },
           "is_active": {
             "anyOf": [
@@ -668,43 +854,7 @@
           }
         },
         "type": "object",
-        "title": "DocumentSequenceUpdate"
-      },
-      "DocumentType": {
-        "type": "string",
-        "enum": [
-          "QUOTATION",
-          "SALES_ORDER",
-          "DELIVERY_NOTE",
-          "SALES_INVOICE",
-          "CREDIT_NOTE",
-          "PURCHASE_ORDER",
-          "GOODS_RECEIPT",
-          "PURCHASE_INVOICE",
-          "DEBIT_NOTE",
-          "STOCK_TRANSFER",
-          "STOCK_ADJUSTMENT",
-          "PROFORMA_INVOICE",
-          "QUALITY_INSPECTION",
-          "PACKAGE",
-          "SHIPMENT",
-          "SALES_RETURN",
-          "PURCHASE_RETURN",
-          "JOURNAL_ENTRY",
-          "CUSTOMER_PAYMENT",
-          "SUPPLIER_PAYMENT",
-          "LANDED_COST",
-          "COST_SHEET_IMPORT",
-          "COST_SHEET_EXPORT",
-          "COST_SHEET_OTHER",
-          "CASH_RECEIPT_VOUCHER",
-          "CASH_PAYMENT_VOUCHER",
-          "BANK_RECEIPT_VOUCHER",
-          "BANK_PAYMENT_VOUCHER",
-          "CONTRA_VOUCHER",
-          "CHEQUE"
-        ],
-        "title": "DocumentType"
+        "title": "BankAccountUpdate"
       },
       "HTTPValidationError": {
         "properties": {
