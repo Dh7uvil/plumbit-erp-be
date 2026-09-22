@@ -12,6 +12,7 @@ _ZERO = Decimal("0")
 
 class _CommercialDoc(Protocol):
     subtotal: Decimal
+    discount_amount: Decimal
     tax_amount: Decimal
     grand_total: Decimal
     exchange_rate: Decimal
@@ -46,7 +47,11 @@ def document_base_net_tax(
     """Net, tax, and grand in base currency."""
 
     rate = doc.exchange_rate
-    net = net_amount if net_amount is not None else doc.subtotal
+    net = (
+        net_amount
+        if net_amount is not None
+        else quantize_money(doc.subtotal - doc.discount_amount)
+    )
     tax = tax_amount if tax_amount is not None else doc.tax_amount
     net_base = quantize_money(net * rate * sign)
     tax_base = quantize_money(tax * rate * sign)

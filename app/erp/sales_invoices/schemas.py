@@ -314,6 +314,7 @@ class SalesInvoiceMarginLine(BaseModel):
 
 class SalesInvoiceMarginResponse(BaseModel):
     invoice_id: UUID
+    currency_code: str
     revenue: Decimal
     cogs_amount: Decimal
     cogs_status: CogsStatus

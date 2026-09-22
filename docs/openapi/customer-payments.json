@@ -1382,7 +1382,7 @@
           },
           "allocations": {
             "items": {
-              "$ref": "#/components/schemas/PaymentAllocationInput"
+              "$ref": "#/components/schemas/PaymentAllocationInput-Input"
             },
             "type": "array",
             "title": "Allocations"
@@ -1932,7 +1932,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/PaymentAllocationInput"
+                  "$ref": "#/components/schemas/PaymentAllocationInput-Input"
                 },
                 "type": "array"
               },
@@ -2455,7 +2455,7 @@
         "properties": {
           "allocations": {
             "items": {
-              "$ref": "#/components/schemas/PaymentAllocationInput"
+              "$ref": "#/components/schemas/PaymentAllocationInput-Input"
             },
             "type": "array",
             "minItems": 1,
@@ -2480,7 +2480,7 @@
         ],
         "title": "PaymentAllocateRequest"
       },
-      "PaymentAllocationInput": {
+      "PaymentAllocationInput-Input": {
         "properties": {
           "item_type": {
             "$ref": "#/components/schemas/OpenItemType"

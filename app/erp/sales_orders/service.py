@@ -26,6 +26,7 @@ from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
 from app.common.outbox.service import OutboxService
 from app.common.schemas.conversion import ConversionLineInput
+from app.common.schemas.packing import packing_persist
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import QuantityProgress, RelatedDocumentRef
@@ -38,6 +39,7 @@ from app.common.utils.conversion import (
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
+    apply_adjusted_line_taxes,
     compute_header_totals,
     compute_line_amounts,
     format_address_snapshot,
@@ -333,6 +335,11 @@ class SalesOrderService:
                         discount_type=source.discount_type,
                         discount_value=source.discount_value,
                         tax_id=source.tax_id,
+                        carton_qty=source.carton_qty,
+                        packing_unit=source.packing_unit,
+                        cbm=source.cbm,
+                        weight=source.weight,
+                        item_code=source.item_code,
                     )
                     for source, qty in selected
                 ],
@@ -467,6 +474,11 @@ class SalesOrderService:
                         discount_type=source.discount_type,
                         discount_value=source.discount_value,
                         tax_id=source.tax_id,
+                        carton_qty=source.carton_qty,
+                        packing_unit=source.packing_unit,
+                        cbm=source.cbm,
+                        weight=source.weight,
+                        item_code=source.item_code,
                     )
                     for source, qty in selected
                 ],
@@ -1709,7 +1721,7 @@ class SalesOrderService:
             price_list_id=price_list_id,
             currency_id=currency_id,
         )
-        subtotal, doc_discount, tax_total, grand = compute_header_totals(
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
             line_nets=line_nets,
             line_taxes=line_taxes,
             discount_type=payload.discount_type,
@@ -1717,6 +1729,7 @@ class SalesOrderService:
             shipping_amount=quantize_money(payload.shipping_amount),
             adjustment_amount=quantize_money(payload.adjustment_amount),
         )
+        apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         header: dict[str, object] = {
             "order_date": order_date,
             "expected_shipment_date": payload.expected_shipment_date,
@@ -1838,6 +1851,7 @@ class SalesOrderService:
                     "qty_reserved": _ZERO,
                     "qty_invoiced": _ZERO,
                     "qty_converted": _ZERO,
+                    **packing_persist(line),
                 }
             )
             nets.append(net)

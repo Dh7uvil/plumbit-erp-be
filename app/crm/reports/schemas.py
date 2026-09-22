@@ -12,6 +12,10 @@ class CrmReportCurrencyMixin(BaseModel):
         default=None,
         description="ISO currency code for monetary amounts (tenant base currency).",
     )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Non-fatal FX or data warnings for monetary totals.",
+    )
 
 
 class SalesPipelineLine(BaseModel):

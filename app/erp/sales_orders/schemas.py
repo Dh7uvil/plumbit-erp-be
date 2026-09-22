@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.schemas.conversion import ConversionLineInput
+from app.common.schemas.packing import PackingFields
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.related_documents import QuantityProgress, RelatedDocumentRef
 from app.common.schemas.warnings import DocumentWarning
@@ -44,7 +45,7 @@ class SalesOrderFilter(BaseFilter):
     source_proforma_invoice_id: UUID | None = None
 
 
-class SalesOrderLineInput(BaseModel):
+class SalesOrderLineInput(PackingFields):
     product_id: UUID | None = None
     description: str | None = None
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
@@ -69,7 +70,7 @@ class SalesOrderLineInput(BaseModel):
         return self
 
 
-class SalesOrderLineResponse(BaseModel):
+class SalesOrderLineResponse(PackingFields):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID

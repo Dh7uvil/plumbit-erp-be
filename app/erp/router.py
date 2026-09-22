@@ -24,6 +24,7 @@ from app.erp.quotation.router import router as quotation_router
 from app.erp.sales_invoices.router import router as sales_invoices_router
 from app.erp.sales_orders.router import router as sales_orders_router
 from app.erp.accounting.supplier_payments.router import router as supplier_payments_router
+from app.erp.accounting.vouchers.router import router as vouchers_router
 from app.erp.supplier_products.router import router as supplier_products_router
 from app.erp.suppliers.router import router as suppliers_router
 
@@ -52,3 +53,4 @@ router.include_router(dunning_rules_router)
 router.include_router(journals_router)
 router.include_router(opening_balances_router)
 router.include_router(reports_router)
+router.include_router(vouchers_router)

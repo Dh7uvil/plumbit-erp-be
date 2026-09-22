@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.utils.currency import quantize_quantity
+from app.inventory_management.packages.packing_totals import weight_to_kg
 from app.core.enums import PackageStatus
 from app.inventory_management.delivery_notes.repository import DeliveryNoteRepository
 from app.inventory_management.packages.repository import PackageRepository
@@ -32,6 +33,7 @@ async def apply_shipment_package_totals(
     if not notes:
         shipment.gross_weight = None
         shipment.net_weight = None
+        shipment.total_cbm = None
         shipment.total_packages = None
         await session.flush()
         return
@@ -43,10 +45,34 @@ async def apply_shipment_package_totals(
     shipment.total_packages = len(active)
     has_gross = any(pkg.gross_weight is not None for pkg in active)
     has_net = any(pkg.net_weight is not None for pkg in active)
+    has_cbm = any(pkg.total_cbm is not None for pkg in active)
     shipment.gross_weight = (
-        quantize_quantity(sum((pkg.gross_weight or _ZERO) for pkg in active)) if has_gross else None
+        quantize_quantity(
+            sum(
+                (
+                    weight_to_kg(pkg.gross_weight, pkg.weight_unit) or _ZERO
+                    for pkg in active
+                ),
+                start=_ZERO,
+            )
+        )
+        if has_gross
+        else None
     )
     shipment.net_weight = (
-        quantize_quantity(sum((pkg.net_weight or _ZERO) for pkg in active)) if has_net else None
+        quantize_quantity(
+            sum(
+                (
+                    weight_to_kg(pkg.net_weight, pkg.weight_unit) or _ZERO
+                    for pkg in active
+                ),
+                start=_ZERO,
+            )
+        )
+        if has_net
+        else None
+    )
+    shipment.total_cbm = (
+        quantize_quantity(sum((pkg.total_cbm or _ZERO) for pkg in active)) if has_cbm else None
     )
     await session.flush()

@@ -1319,7 +1319,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/PaymentAllocationInput"
+                  "$ref": "#/components/schemas/PaymentAllocationInput-Input"
                 },
                 "type": "array"
               },
@@ -1971,7 +1971,7 @@
         ],
         "title": "PartyType"
       },
-      "PaymentAllocationInput": {
+      "PaymentAllocationInput-Input": {
         "properties": {
           "item_type": {
             "$ref": "#/components/schemas/OpenItemType"

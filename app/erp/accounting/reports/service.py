@@ -343,12 +343,50 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             side=side,
         )
 
+    async def day_book(
+        self,
+        tenant_id: UUID,
+        *,
+        from_date: date,
+        to_date: date,
+        account_id: UUID | None = None,
+        party_id: UUID | None = None,
+        branch_id: UUID | None = None,
+        cost_center_id: UUID | None = None,
+        source_type: str | None = None,
+        voucher_type: str | None = None,
+        side: str | None = None,
+    ) -> DayBookResponse:
+        resolved_source = source_type
+        if voucher_type:
+            mapping = {
+                "CASH_RECEIPT": "cash_receipt_voucher",
+                "CASH_PAYMENT": "cash_payment_voucher",
+                "BANK_RECEIPT": "bank_receipt_voucher",
+                "BANK_PAYMENT": "bank_payment_voucher",
+                "CONTRA": "contra_voucher",
+            }
+            resolved_source = mapping.get(voucher_type, voucher_type)
+        return await self._day_book(
+            tenant_id,
+            book_kind="all",
+            account_subtype=None,
+            from_date=from_date,
+            to_date=to_date,
+            account_id=account_id,
+            branch_id=branch_id,
+            cost_center_id=cost_center_id,
+            source_type=resolved_source,
+            side=side,
+            party_id=party_id,
+        )
+
     async def _day_book(
         self,
         tenant_id: UUID,
         *,
         book_kind: str,
-        account_subtype: AccountSubtype,
+        account_subtype: AccountSubtype | None,
         from_date: date,
         to_date: date,
         account_id: UUID | None,
@@ -356,6 +394,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         cost_center_id: UUID | None,
         source_type: str | None,
         side: str | None,
+        party_id: UUID | None = None,
     ) -> DayBookResponse:
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
@@ -365,20 +404,28 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             for row in all_accounts
             if not row.is_group
             and row.is_active
-            and row.account_subtype == account_subtype.value
+            and (account_subtype is None or row.account_subtype == account_subtype.value)
         ]
         if account_id is not None:
             match = next((row for row in subtype_accounts if row.id == account_id), None)
             if match is None:
                 account = await self.accounts.get(tenant_id, account_id)
-                raise ValidationError(
-                    f"Account must have subtype {account_subtype.value}",
-                    details={
-                        "account_id": str(account_id),
-                        "account_subtype": account.account_subtype,
-                    },
-                )
-            target_accounts = [match]
+                if account.is_group or not account.is_active:
+                    raise ValidationError(
+                        "Account must be an active postable account",
+                        details={"account_id": str(account_id)},
+                    )
+                if account_subtype is not None and account.account_subtype != account_subtype.value:
+                    raise ValidationError(
+                        f"Account must have subtype {account_subtype.value}",
+                        details={
+                            "account_id": str(account_id),
+                            "account_subtype": account.account_subtype,
+                        },
+                    )
+                target_accounts = [account]
+            else:
+                target_accounts = [match]
         else:
             target_accounts = sorted(subtype_accounts, key=lambda row: row.code)
         sections: list[DayBookAccountSection] = []
@@ -404,6 +451,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 cost_center_id=cost_center_id,
                 source_type=source_type,
                 side=side,
+                party_id=party_id,
             )
             section_lines = self._build_day_book_lines(
                 account_id=account.id,
@@ -420,6 +468,8 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 if section_lines
                 else opening_signed
             )
+            if not section_lines and party_id is not None and not movements:
+                continue
             sections.append(
                 DayBookAccountSection(
                     account_id=account.id,
@@ -456,6 +506,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         cost_center_id: UUID | None,
         source_type: str | None,
         side: str | None,
+        party_id: UUID | None = None,
     ) -> list[tuple[JournalEntryLine, JournalEntry]]:
         statement = (
             select(JournalEntryLine, JournalEntry)
@@ -482,6 +533,8 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             )
         if source_type:
             statement = statement.where(JournalEntry.source_type == source_type)
+        if party_id is not None:
+            statement = statement.where(JournalEntryLine.party_id == party_id)
         rows = (await self.session.execute(statement)).all()
         movements: list[tuple[JournalEntryLine, JournalEntry]] = []
         for line, header in rows:
@@ -769,6 +822,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 GoodsReceiptLine.qty_billed,
                 outstanding,
                 GoodsReceiptLine.rate,
+                GoodsReceipt.exchange_rate,
             )
             .select_from(GoodsReceiptLine)
             .join(GoodsReceipt, GoodsReceipt.id == GoodsReceiptLine.goods_receipt_id)
@@ -802,7 +856,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                     quantity=row[8],
                     qty_billed=row[9],
                     outstanding_qty=row[10],
-                    amount=quantize_money(row[10] * row[11]),
+                    amount=quantize_money(row[10] * row[11] * row[12]),
                 )
                 for row in rows
             ],
@@ -840,6 +894,25 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             .scalar_subquery(),
             _ZERO,
         )
+        billed_value_base = func.coalesce(
+            select(
+                func.coalesce(
+                    func.sum(PurchaseInvoiceLine.amount * PurchaseInvoice.exchange_rate),
+                    _ZERO,
+                )
+            )
+            .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.purchase_invoice_id)
+            .where(
+                PurchaseInvoiceLine.purchase_order_line_id == PurchaseOrderLine.id,
+                PurchaseInvoice.tenant_id == tenant_id,
+                PurchaseInvoice.deleted_at.is_(None),
+                PurchaseInvoice.status == InvoiceDocumentStatus.POSTED.value,
+                PurchaseInvoiceLine.tenant_id == tenant_id,
+            )
+            .correlate(PurchaseOrderLine)
+            .scalar_subquery(),
+            _ZERO,
+        )
         statement = (
             select(
                 PurchaseOrder.id,
@@ -857,6 +930,8 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 PurchaseOrderLine.amount,
                 PurchaseOrderLine.rate,
                 billed_value,
+                PurchaseOrder.exchange_rate,
+                billed_value_base,
             )
             .select_from(PurchaseOrderLine)
             .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderLine.purchase_order_id)
@@ -888,7 +963,9 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             ordered_value = row[12]
             rate = row[13]
             billed_amt = row[14]
-            received_value = quantize_money(received_qty * rate)
+            exchange_rate = row[15]
+            billed_amt_base = row[16]
+            received_value = quantize_money(received_qty * rate * exchange_rate)
             status = self._three_way_status(
                 ordered_qty=ordered_qty,
                 received_qty=received_qty,
@@ -909,9 +986,9 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                     ordered_qty=ordered_qty,
                     received_qty=received_qty,
                     billed_qty=billed,
-                    ordered_value=ordered_value,
+                    ordered_value=quantize_money(ordered_value * exchange_rate),
                     received_value=received_value,
-                    billed_value=billed_amt,
+                    billed_value=quantize_money(billed_amt_base),
                     status=status,
                 )
             )

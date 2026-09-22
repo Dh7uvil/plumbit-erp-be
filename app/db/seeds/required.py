@@ -70,6 +70,11 @@ _DOCUMENT_SEQUENCES: tuple[tuple[DocumentType, str], ...] = (
     (DocumentType.COST_SHEET_IMPORT, "CSI"),
     (DocumentType.COST_SHEET_EXPORT, "CSE"),
     (DocumentType.COST_SHEET_OTHER, "CSO"),
+    (DocumentType.CASH_RECEIPT_VOUCHER, "CRV"),
+    (DocumentType.CASH_PAYMENT_VOUCHER, "CPV"),
+    (DocumentType.BANK_RECEIPT_VOUCHER, "BRV"),
+    (DocumentType.BANK_PAYMENT_VOUCHER, "BPV"),
+    (DocumentType.CONTRA_VOUCHER, "CON"),
 )
 
 _SEQUENCE_PADDING = 6

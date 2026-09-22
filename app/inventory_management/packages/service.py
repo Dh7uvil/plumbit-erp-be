@@ -34,6 +34,7 @@ from app.erp.accounting.service import DocumentSequenceService
 from app.erp.sales_orders.service import SalesOrderService
 from app.inventory_management.delivery_notes.service import DeliveryNoteService
 from app.inventory_management.packages.models import Package
+from app.inventory_management.packages.packing_totals import apply_package_header_rollups
 from app.inventory_management.packages.repository import PackageRepository
 from app.inventory_management.packages.schemas import (
     PackableLineResponse,
@@ -483,6 +484,7 @@ class PackageService:
             outstanding = quantize_quantity(line.quantity - qty_packed)
             if outstanding <= _ZERO:
                 continue
+            ratio = outstanding / line.quantity if line.quantity > _ZERO else _ZERO
             rows.append(
                 PackableLineResponse(
                     sales_order_line_id=line.id,
@@ -492,6 +494,13 @@ class PackageService:
                     quantity=line.quantity,
                     qty_packed=qty_packed,
                     outstanding=outstanding,
+                    carton_qty=line.carton_qty,
+                    packing_unit=line.packing_unit,
+                    cbm=quantize_quantity(line.cbm * ratio) if line.cbm is not None else None,
+                    weight=(
+                        quantize_quantity(line.weight * ratio) if line.weight is not None else None
+                    ),
+                    item_code=line.item_code,
                 )
             )
         return rows
@@ -554,6 +563,7 @@ class PackageService:
             "_fiscal_year": fiscal_year,
             "_party_id": order.customer_id,
         }
+        apply_package_header_rollups(header, line_rows)
         return header, line_rows
 
     async def _update_to_create(self, existing: Package, payload: PackageUpdate) -> PackageCreate:
@@ -603,6 +613,7 @@ class PackageService:
             dimension_unit=row.dimension_unit,
             gross_weight=row.gross_weight,
             net_weight=row.net_weight,
+            total_cbm=row.total_cbm,
             weight_unit=row.weight_unit,
             shipping_marks=row.shipping_marks,
             notes=row.notes,

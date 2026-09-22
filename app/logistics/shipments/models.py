@@ -56,5 +56,6 @@ class Shipment(AuditUserMixin, SoftDeleteTenantModel):
     actual_arrival_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     gross_weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     net_weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    total_cbm: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     total_packages: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -5,8 +5,10 @@ from uuid import uuid4
 
 from app.auth.schemas import AddressResponse
 from app.common.utils.document_totals import (
+    apply_adjusted_line_taxes,
     compute_header_totals,
     compute_line_amounts,
+    header_discount_share,
     place_of_supply_from_address,
     resolve_line_tax_category,
 )
@@ -27,8 +29,8 @@ def test_line_amounts_apply_percent_discount_then_vat() -> None:
     assert tax == Decimal("9.0000")
 
 
-def test_header_totals_ignore_client_intent_and_add_shipping() -> None:
-    subtotal, discount, tax_total, grand = compute_header_totals(
+def test_header_totals_reduce_vat_pro_rata_and_add_shipping() -> None:
+    subtotal, discount, tax_total, grand, adjusted = compute_header_totals(
         line_nets=[Decimal("180.0000")],
         line_taxes=[Decimal("9.0000")],
         discount_type=DiscountType.AMOUNT,
@@ -38,8 +40,36 @@ def test_header_totals_ignore_client_intent_and_add_shipping() -> None:
     )
     assert subtotal == Decimal("180.0000")
     assert discount == Decimal("20.0000")
-    assert tax_total == Decimal("9.0000")
-    assert grand == Decimal("174.0000")
+    assert adjusted == [Decimal("8.0000")]
+    assert tax_total == Decimal("8.0000")
+    assert grand == Decimal("173.0000")
+
+
+def test_header_totals_mixed_tax_rates_with_percent_discount() -> None:
+    subtotal, discount, tax_total, grand, adjusted = compute_header_totals(
+        line_nets=[Decimal("100.0000"), Decimal("200.0000")],
+        line_taxes=[Decimal("5.0000"), Decimal("10.0000")],
+        discount_type=DiscountType.PERCENTAGE,
+        discount_value=Decimal("10"),
+        shipping_amount=Decimal("0"),
+        adjustment_amount=Decimal("0"),
+    )
+    assert subtotal == Decimal("300.0000")
+    assert discount == Decimal("30.0000")
+    assert adjusted == [Decimal("4.5000"), Decimal("9.0000")]
+    assert tax_total == Decimal("13.5000")
+    assert grand == Decimal("283.5000")
+
+
+def test_header_discount_share_allocates_pro_rata() -> None:
+    share = header_discount_share(Decimal("30"), Decimal("300"), Decimal("100"))
+    assert share == Decimal("10.0000")
+
+
+def test_apply_adjusted_line_taxes_updates_rows() -> None:
+    rows = [{"tax_amount": Decimal("9.0000")}]
+    apply_adjusted_line_taxes(rows, [Decimal("8.0000")])
+    assert rows[0]["tax_amount"] == Decimal("8.0000")
 
 
 def test_export_and_outside_uae_zero_rate_standard_items() -> None:
