@@ -5,9 +5,10 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
 from app.common.repositories.search import (
@@ -90,6 +91,32 @@ class PurchaseOrderRepository:
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()
 
+    def _has_outstanding_bill_clause(self) -> ColumnElement[bool]:
+        return exists().where(
+            PurchaseOrderLine.purchase_order_id == PurchaseOrder.id,
+            PurchaseOrderLine.tenant_id == PurchaseOrder.tenant_id,
+            PurchaseOrderLine.quantity > PurchaseOrderLine.qty_billed,
+        )
+
+    async def list_billing_queue(
+        self,
+        tenant_id: UUID,
+        *,
+        page: PageParams,
+        common_filter: BaseFilter | None = None,
+    ) -> tuple[Sequence[PurchaseOrder], int]:
+        return await self.list(
+            tenant_id,
+            page=page,
+            common_filter=common_filter,
+            extra_criteria=[
+                self._has_outstanding_bill_clause(),
+                PurchaseOrder.status.in_(
+                    [PurchaseOrderStatus.ISSUED.value, PurchaseOrderStatus.CLOSED.value]
+                ),
+            ],
+        )
+
     async def list(
         self,
         tenant_id: UUID,
@@ -97,12 +124,14 @@ class PurchaseOrderRepository:
         page: PageParams,
         common_filter: BaseFilter | None = None,
         filters: Mapping[str, object] | None = None,
+        extra_criteria: Sequence[ColumnElement[bool]] | None = None,
     ) -> tuple[Sequence[PurchaseOrder], int]:
         rows, total = await self._repo.list(
             tenant_id,
             page=page,
             common_filter=common_filter,
             filters=filters,
+            extra_criteria=extra_criteria,
         )
         if not rows:
             return rows, total

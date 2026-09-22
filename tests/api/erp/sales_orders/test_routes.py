@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 
 from app.db.session import async_session_factory
 from app.inventory_management.stock.models import StockMovement
-from tests.conftest import login_headers, provision_admin
+from tests.conftest import login_headers, provision_admin, unique_trn
 
 
 async def _seeded_ids(client: AsyncClient, headers: dict[str, str]) -> dict[str, str]:
@@ -38,11 +38,13 @@ async def _create_customer(
     headers: dict[str, str],
     *,
     tax_treatment: str = "REGISTERED",
-    trn: str | None = "100000000000003",
+    trn: str | None = None,
     shipping_state: str = "DUBAI",
     shipping_country_code: str = "AE",
 ) -> str:
     suffix = uuid4().hex[:8]
+    if trn is None and tax_treatment == "REGISTERED":
+        trn = unique_trn()
     payload: dict[str, object] = {
         "name": f"Customer {suffix}",
         "tax_treatment": tax_treatment,
@@ -262,7 +264,7 @@ async def test_available_actions_respect_permissions(client: AsyncClient) -> Non
     product_id = await _create_product(client, headers, ids)
     created = await _create_order(client, headers, customer_id=customer_id, product_id=product_id)
     order_id = created["body"]["data"]["id"]
-    permissions = await client.get("/api/v1/permissions?module=erp&page_size=100", headers=headers)
+    permissions = await client.get("/api/v1/permissions?module=sales&page_size=100", headers=headers)
     codes = {item["code"]: item["id"] for item in permissions.json()["data"]}
     suffix = uuid4().hex[:8]
     role = await client.post(

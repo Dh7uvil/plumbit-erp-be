@@ -19,6 +19,7 @@ from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
 from app.common.idempotency.service import hash_request, require_idempotency_key
 from app.common.print.schemas import PrintDocumentResponse
+from app.common.schemas.billing_queue import GoodsReceiptBillingQueueItem
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
@@ -39,6 +40,17 @@ router = APIRouter(prefix="/goods-receipts", tags=["Goods Receipts"])
 
 IfMatch = Annotated[str | None, Header()]
 IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
+
+
+@router.get("/billing-queue", response_model=ApiResponse[list[GoodsReceiptBillingQueueItem]])
+async def goods_receipt_billing_queue(
+    tenant: TenantContextDependency,
+    page: PaginationDependency,
+    service: GoodsReceiptServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(GOODS_RECEIPT_READ))],
+) -> ApiResponse[list[GoodsReceiptBillingQueueItem]]:
+    rows, total = await service.billing_queue(tenant.tenant_id, page=page)
+    return paginated_response(rows, params=page, total=total)
 
 
 @router.get("", response_model=ApiResponse[list[GoodsReceiptResponse]])

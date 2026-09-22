@@ -44,6 +44,12 @@ if _SETTINGS.database_name != "plumb_it_test":
 ADMIN_PASSWORD = "password12"
 
 
+def unique_trn(*, prefix: str = "1") -> str:
+    """Return a 15-digit TRN unlikely to collide within a tenant."""
+
+    return f"{prefix}{uuid4().int % 10**14:014d}"[:15]
+
+
 @pytest.fixture
 def app():
     return create_app()

@@ -32,7 +32,7 @@ async def test_stock_transfer_moves_on_hand_between_warehouses(client: AsyncClie
         json={
             "from_warehouse_id": from_warehouse_id,
             "to_warehouse_id": to_warehouse_id,
-            "lines": [{"product_id": product_id, "quantity": "4"}],
+            "lines": [{"product_id": product_id, "qty": "4"}],
         },
     )
     assert created.status_code == 201, created.text

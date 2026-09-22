@@ -145,7 +145,7 @@ async def test_convert_requires_sales_order_create(client: AsyncClient) -> None:
     product_id = await _create_product(client, headers, ids)
     created = await _create_quote(client, headers, customer_id=customer_id, product_id=product_id)
     quote = await _accept_quote(client, headers, created["body"]["data"])
-    permissions = await client.get("/api/v1/permissions?module=erp&page_size=100", headers=headers)
+    permissions = await client.get("/api/v1/permissions?module=sales&page_size=100", headers=headers)
     codes = {item["code"]: item["id"] for item in permissions.json()["data"]}
     suffix = uuid4().hex[:8]
     role = await client.post(

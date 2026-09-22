@@ -27,11 +27,15 @@ from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
 from app.common.print.schemas import PrintDocumentResponse
 from app.common.print.service import PrintService
+from app.common.schemas.billing_queue import (
+    GoodsReceiptBillingQueueItem,
+    OutstandingBillLine,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
-from app.common.utils.conversion import quantity_summary
+from app.common.utils.conversion import quantity_summary, remaining_qty
 from app.common.utils.currency import document_fx_amounts, quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import format_address_snapshot, place_of_supply_from_address
@@ -170,6 +174,19 @@ class GoodsReceiptService:
         response = self._to_response(row)
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
+
+    async def billing_queue(
+        self,
+        tenant_id: UUID,
+        *,
+        page: PageParams,
+        common_filter: BaseFilter | None = None,
+    ) -> tuple[builtins.list[GoodsReceiptBillingQueueItem], int]:
+        rows, total = await self.repo.list_billing_queue(
+            tenant_id, page=page, common_filter=common_filter
+        )
+        await self._ensure_policy(tenant_id)
+        return [self._to_billing_queue_item(row) for row in rows], total
 
     async def journal(self, tenant_id: UUID, receipt_id: UUID) -> JournalEntryResponse:
         await self._require(tenant_id, receipt_id)
@@ -1007,6 +1024,33 @@ class GoodsReceiptService:
             actions.append("create_purchase_return")
         return actions
 
+    def _to_billing_queue_item(self, row: GoodsReceipt) -> GoodsReceiptBillingQueueItem:
+        lines: builtins.list[OutstandingBillLine] = []
+        for line in row.lines:
+            remaining = remaining_qty(line.quantity, line.qty_billed)
+            if remaining <= _ZERO:
+                continue
+            lines.append(
+                OutstandingBillLine(
+                    line_id=line.id,
+                    line_number=line.line_number,
+                    description=line.description,
+                    quantity=line.quantity,
+                    qty_fulfilled=line.qty_billed,
+                    qty_remaining=remaining,
+                )
+            )
+        return GoodsReceiptBillingQueueItem(
+            id=row.id,
+            document_number=row.document_number,
+            supplier_id=row.supplier_id,
+            purchase_order_id=row.purchase_order_id,
+            document_date=row.document_date,
+            status=row.status,
+            currency_id=row.currency_id,
+            lines=lines,
+        )
+
     def _to_response(self, row: GoodsReceipt) -> GoodsReceiptResponse:
         status = StockDocumentStatus(row.status)
         date_locked = self._date_in_locked_period(row.document_date)
@@ -1077,46 +1121,46 @@ class GoodsReceiptService:
                         document_date=order.order_date,
                     )
                 )
-        for item in await PurchaseInvoiceRepository(self.session).list_for_goods_receipt(
+        for invoice in await PurchaseInvoiceRepository(self.session).list_for_goods_receipt(
             tenant_id, row.id
         ):
             related.append(
                 RelatedDocumentRef(
                     document_type=DocumentType.PURCHASE_INVOICE.value,
-                    document_id=item.id,
-                    document_number=item.document_number,
-                    status=item.status,
+                    document_id=invoice.id,
+                    document_number=invoice.document_number,
+                    status=invoice.status,
                     relationship="child",
-                    document_date=item.invoice_date,
-                    quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                    document_date=invoice.invoice_date,
+                    quantity_summary=quantity_summary([line.quantity for line in invoice.lines]),
                 )
             )
-        for item in await QualityInspectionRepository(self.session).list_for_goods_receipt(
+        for inspection in await QualityInspectionRepository(self.session).list_for_goods_receipt(
             tenant_id, row.id
         ):
             related.append(
                 RelatedDocumentRef(
                     document_type=DocumentType.QUALITY_INSPECTION.value,
-                    document_id=item.id,
-                    document_number=item.document_number,
-                    status=item.status,
+                    document_id=inspection.id,
+                    document_number=inspection.document_number,
+                    status=inspection.status,
                     relationship="child",
-                    document_date=item.inspection_date,
+                    document_date=inspection.inspection_date,
                 )
             )
         from app.erp.landed_costs.repository import LandedCostRepository
 
-        for item in await LandedCostRepository(self.session).list_for_goods_receipt(
+        for landed in await LandedCostRepository(self.session).list_for_goods_receipt(
             tenant_id, row.id
         ):
             related.append(
                 RelatedDocumentRef(
                     document_type=DocumentType.LANDED_COST.value,
-                    document_id=item.id,
-                    document_number=item.document_number,
-                    status=item.status,
+                    document_id=landed.id,
+                    document_number=landed.document_number,
+                    status=landed.status,
                     relationship="child",
-                    document_date=item.document_date,
+                    document_date=landed.document_date,
                 )
             )
         return related

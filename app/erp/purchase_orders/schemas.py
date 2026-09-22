@@ -17,6 +17,7 @@ from app.core.enums import (
     ReceiptStatus,
     TaxTreatment,
 )
+from app.erp.sales_orders.schemas import OrderTrackerRow
 
 
 class PurchaseOrderFilter(BaseFilter):
@@ -327,3 +328,8 @@ class PurchaseOrderFromSalesOrderGroup(BaseModel):
 class PurchaseOrderFromSalesOrderRequest(BaseModel):
     groups: list[PurchaseOrderFromSalesOrderGroup] = Field(min_length=1)
     allow_overcommit: bool = False
+
+
+class PurchaseOrderCycleResponse(BaseModel):
+    purchase_order_id: UUID
+    rows: list[OrderTrackerRow] = Field(default_factory=list)

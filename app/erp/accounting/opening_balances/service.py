@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import ACCOUNTING_MODULE, PERIOD_OVERRIDE
@@ -37,16 +37,10 @@ from app.erp.accounting.ledger.posting import (
     SOURCE_OPENING_BALANCE,
     LedgerPostingService,
 )
-from app.erp.accounting.opening_balances.schemas import (
-    InventoryCatchUpResponse,
-    OpeningBalancePayload,
-    OpeningBalancePreviewLine,
-    OpeningBalancePreviewResponse,
-    OpeningBalanceStateResponse,
-)
 from app.erp.accounting.ledger.repository import JournalEntryRepository
 from app.erp.accounting.ledger.schemas import JournalLineInput
 from app.erp.accounting.opening_balances.schemas import (
+    InventoryCatchUpResponse,
     OpeningBalancePayload,
     OpeningBalancePreviewLine,
     OpeningBalancePreviewResponse,
@@ -196,9 +190,7 @@ class OpeningBalanceService:
                 },
             )
             state = await self.get_state(tenant_id)
-            await self.idempotency.store(
-                tenant_id, idempotency_key, state.model_dump(mode="json")
-            )
+            await self.idempotency.store(tenant_id, idempotency_key, state.model_dump(mode="json"))
             return state
 
     async def reset(self, tenant_id: UUID, *, actor_user_id: UUID) -> OpeningBalanceStateResponse:
@@ -313,9 +305,7 @@ class OpeningBalanceService:
                     tenant_id, idempotency_key, result.model_dump(mode="json")
                 )
                 return result
-            inventory = await self.accounts.resolver.require(
-                tenant_id, AccountSystemRole.INVENTORY
-            )
+            inventory = await self.accounts.resolver.require(tenant_id, AccountSystemRole.INVENTORY)
             equity = await self.accounts.resolver.require(
                 tenant_id, AccountSystemRole.OPENING_BALANCE_EQUITY
             )
@@ -408,24 +398,16 @@ class OpeningBalanceService:
                 journal_entry_id=journal.id,
                 document_number=journal.document_number,
             )
-            await self.idempotency.store(
-                tenant_id, idempotency_key, result.model_dump(mode="json")
-            )
+            await self.idempotency.store(tenant_id, idempotency_key, result.model_dump(mode="json"))
             return result
 
-    async def _build_lines(
-        self, tenant_id: UUID, payload: OpeningBalancePayload
-    ) -> _BuiltOpening:
-        if not (
-            payload.gl_lines or payload.ar_items or payload.ap_items or payload.stock_lines
-        ):
+    async def _build_lines(self, tenant_id: UUID, payload: OpeningBalancePayload) -> _BuiltOpening:
+        if not (payload.gl_lines or payload.ar_items or payload.ap_items or payload.stock_lines):
             raise ValidationError("Opening balances require at least one line")
         equity = await self.accounts.resolver.require(
             tenant_id, AccountSystemRole.OPENING_BALANCE_EQUITY
         )
-        ar = await self.accounts.resolver.require(
-            tenant_id, AccountSystemRole.ACCOUNTS_RECEIVABLE
-        )
+        ar = await self.accounts.resolver.require(tenant_id, AccountSystemRole.ACCOUNTS_RECEIVABLE)
         ap = await self.accounts.resolver.require(tenant_id, AccountSystemRole.ACCOUNTS_PAYABLE)
         inventory = await self.accounts.resolver.require(tenant_id, AccountSystemRole.INVENTORY)
         entry_date = payload.books_start_date - timedelta(days=1)
@@ -561,9 +543,7 @@ class OpeningBalanceService:
         )
         return int(await self.session.scalar(statement) or 0) > 0
 
-    async def _assert_commit_allowed(
-        self, tenant_id: UUID, payload: OpeningBalancePayload
-    ) -> None:
+    async def _assert_commit_allowed(self, tenant_id: UUID, payload: OpeningBalancePayload) -> None:
         count = await self._posted_activity_count(tenant_id)
         if count == 0:
             return
@@ -586,8 +566,11 @@ class OpeningBalanceService:
                 JournalEntry.journal_type.notin_(
                     (JournalType.OPENING_BALANCE.value, JournalType.REVERSAL.value)
                 ),
-                JournalEntry.source_type.notin_(
-                    (SOURCE_OPENING_BALANCE, SOURCE_INVENTORY_CATCH_UP)
+                or_(
+                    JournalEntry.source_type.is_(None),
+                    JournalEntry.source_type.notin_(
+                        (SOURCE_OPENING_BALANCE, SOURCE_INVENTORY_CATCH_UP)
+                    ),
                 ),
             )
         )

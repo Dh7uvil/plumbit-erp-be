@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 
 from app.db.session import async_session_factory
 from app.inventory_management.stock.models import StockBalance, StockMovement
-from tests.conftest import login_headers, provision_admin
+from tests.conftest import login_headers, provision_admin, unique_trn
 
 
 async def _seeded_ids(client: AsyncClient, headers: dict[str, str]) -> dict[str, str]:
@@ -36,11 +36,13 @@ async def _create_supplier(
     headers: dict[str, str],
     *,
     tax_treatment: str = "REGISTERED",
-    trn: str | None = "100000000000003",
+    trn: str | None = None,
     shipping_state: str | None = "DUBAI",
     shipping_country_code: str = "AE",
 ) -> str:
     suffix = uuid4().hex[:8]
+    if trn is None and tax_treatment == "REGISTERED":
+        trn = unique_trn()
     payload: dict[str, object] = {
         "name": f"Supplier {suffix}",
         "tax_treatment": tax_treatment,

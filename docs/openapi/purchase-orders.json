@@ -60,6 +60,66 @@
         }
       }
     },
+    "/api/v1/purchase-orders/billing-queue": {
+      "get": {
+        "tags": [
+          "Purchase Orders"
+        ],
+        "summary": "Purchase Order Billing Queue",
+        "operationId": "purchase_order_billing_queue_api_v1_purchase_orders_billing_queue_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_PurchaseOrderBillingQueueItem__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/purchase-orders": {
       "get": {
         "tags": [
@@ -354,6 +414,54 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_PurchaseOrderResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/purchase-orders/{purchase_order_id}/cycle": {
+      "get": {
+        "tags": [
+          "Purchase Orders"
+        ],
+        "summary": "Get Purchase Order Cycle",
+        "operationId": "get_purchase_order_cycle_api_v1_purchase_orders__purchase_order_id__cycle_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "purchase_order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Purchase Order Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PurchaseOrderCycleResponse_"
                 }
               }
             }
@@ -1212,6 +1320,40 @@
         ],
         "title": "ApiResponse[PurchaseOrderComposeDefaults]"
       },
+      "ApiResponse_PurchaseOrderCycleResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/PurchaseOrderCycleResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[PurchaseOrderCycleResponse]"
+      },
       "ApiResponse_PurchaseOrderResponse_": {
         "properties": {
           "success": {
@@ -1245,6 +1387,44 @@
           "data"
         ],
         "title": "ApiResponse[PurchaseOrderResponse]"
+      },
+      "ApiResponse_list_PurchaseOrderBillingQueueItem__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/PurchaseOrderBillingQueueItem"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[list[PurchaseOrderBillingQueueItem]]"
       },
       "ApiResponse_list_PurchaseOrderResponse__": {
         "properties": {
@@ -1313,6 +1493,128 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "OrderTrackerRow": {
+        "properties": {
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "document_type": {
+            "type": "string",
+            "title": "Document Type"
+          },
+          "document_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Number"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "document_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Date"
+          },
+          "quantity_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity Summary"
+          },
+          "amount_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stage",
+          "document_type",
+          "status"
+        ],
+        "title": "OrderTrackerRow"
+      },
+      "OutstandingBillLine": {
+        "properties": {
+          "line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Line Id"
+          },
+          "line_number": {
+            "type": "integer",
+            "title": "Line Number"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Quantity"
+          },
+          "qty_fulfilled": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Fulfilled"
+          },
+          "qty_remaining": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Remaining"
+          }
+        },
+        "type": "object",
+        "required": [
+          "line_id",
+          "line_number",
+          "description",
+          "quantity",
+          "qty_fulfilled",
+          "qty_remaining"
+        ],
+        "title": "OutstandingBillLine"
       },
       "PlaceOfSupply": {
         "type": "string",
@@ -1834,6 +2136,60 @@
         ],
         "title": "PrintLine"
       },
+      "PurchaseOrderBillingQueueItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "supplier_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Supplier Id"
+          },
+          "order_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Order Date"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "billing_status": {
+            "type": "string",
+            "title": "Billing Status"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/OutstandingBillLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "document_number",
+          "supplier_id",
+          "order_date",
+          "status",
+          "billing_status",
+          "currency_id"
+        ],
+        "title": "PurchaseOrderBillingQueueItem"
+      },
       "PurchaseOrderCancelRequest": {
         "properties": {
           "reason": {
@@ -2197,6 +2553,27 @@
           "supplier_id"
         ],
         "title": "PurchaseOrderCreate"
+      },
+      "PurchaseOrderCycleResponse": {
+        "properties": {
+          "purchase_order_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Purchase Order Id"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/OrderTrackerRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "purchase_order_id"
+        ],
+        "title": "PurchaseOrderCycleResponse"
       },
       "PurchaseOrderLineInput": {
         "properties": {

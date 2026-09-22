@@ -19,6 +19,7 @@ from app.common.repositories.search import (
 )
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.core.enums import StockDocumentStatus
 from app.inventory_management.goods_receipts.models import GoodsReceipt, GoodsReceiptLine
 
 
@@ -115,6 +116,28 @@ class GoodsReceiptRepository:
         loaded = {item.id: item for item in (await self.session.execute(statement)).scalars().all()}
         ordered = [loaded[row.id] for row in rows if row.id in loaded]
         return ordered, total
+
+    def _has_outstanding_bill_clause(self) -> ColumnElement[bool]:
+        return exists().where(
+            GoodsReceiptLine.goods_receipt_id == GoodsReceipt.id,
+            GoodsReceiptLine.tenant_id == GoodsReceipt.tenant_id,
+            GoodsReceiptLine.quantity > GoodsReceiptLine.qty_billed,
+        )
+
+    async def list_billing_queue(
+        self,
+        tenant_id: UUID,
+        *,
+        page: PageParams,
+        common_filter: BaseFilter | None = None,
+    ) -> tuple[Sequence[GoodsReceipt], int]:
+        return await self.list(
+            tenant_id,
+            page=page,
+            common_filter=common_filter,
+            filters={"status": StockDocumentStatus.POSTED.value},
+            extra_criteria=[self._has_outstanding_bill_clause()],
+        )
 
     async def list_for_purchase_orders(
         self, tenant_id: UUID, purchase_order_ids: Sequence[UUID]

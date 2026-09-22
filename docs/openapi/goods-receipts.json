@@ -12,6 +12,66 @@
     }
   ],
   "paths": {
+    "/api/v1/goods-receipts/billing-queue": {
+      "get": {
+        "tags": [
+          "Goods Receipts"
+        ],
+        "summary": "Goods Receipt Billing Queue",
+        "operationId": "goods_receipt_billing_queue_api_v1_goods_receipts_billing_queue_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_GoodsReceiptBillingQueueItem__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/goods-receipts": {
       "get": {
         "tags": [
@@ -1040,6 +1100,44 @@
         ],
         "title": "ApiResponse[PrintDocumentResponse]"
       },
+      "ApiResponse_list_GoodsReceiptBillingQueueItem__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/GoodsReceiptBillingQueueItem"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[list[GoodsReceiptBillingQueueItem]]"
+      },
       "ApiResponse_list_GoodsReceiptResponse__": {
         "properties": {
           "success": {
@@ -1077,6 +1175,75 @@
           "data"
         ],
         "title": "ApiResponse[list[GoodsReceiptResponse]]"
+      },
+      "GoodsReceiptBillingQueueItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "supplier_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Supplier Id"
+          },
+          "purchase_order_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Order Id"
+          },
+          "document_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Document Date"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "currency_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Id"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/OutstandingBillLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "document_number",
+          "supplier_id",
+          "purchase_order_id",
+          "document_date",
+          "status",
+          "currency_id"
+        ],
+        "title": "GoodsReceiptBillingQueueItem"
       },
       "GoodsReceiptCancelRequest": {
         "properties": {
@@ -2674,6 +2841,48 @@
           "goods_receipt_id"
         ],
         "title": "LandedCostEligibleResponse"
+      },
+      "OutstandingBillLine": {
+        "properties": {
+          "line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Line Id"
+          },
+          "line_number": {
+            "type": "integer",
+            "title": "Line Number"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "quantity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Quantity"
+          },
+          "qty_fulfilled": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Fulfilled"
+          },
+          "qty_remaining": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Remaining"
+          }
+        },
+        "type": "object",
+        "required": [
+          "line_id",
+          "line_number",
+          "description",
+          "quantity",
+          "qty_fulfilled",
+          "qty_remaining"
+        ],
+        "title": "OutstandingBillLine"
       },
       "PartyType": {
         "type": "string",

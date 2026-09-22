@@ -26,6 +26,10 @@ from app.auth.schemas import AddressResponse
 from app.common.idempotency.service import IdempotencyService
 from app.common.print.schemas import PrintDocumentResponse
 from app.common.print.service import PrintService
+from app.common.schemas.billing_queue import (
+    OutstandingBillLine,
+    PurchaseOrderBillingQueueItem,
+)
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import QuantityProgress, RelatedDocumentRef
@@ -78,6 +82,7 @@ from app.erp.purchase_orders.schemas import (
     CoveragePurchaseOrderRef,
     PurchaseOrderComposeDefaults,
     PurchaseOrderCreate,
+    PurchaseOrderCycleResponse,
     PurchaseOrderFromSalesOrderRequest,
     PurchaseOrderLineInput,
     PurchaseOrderLineResponse,
@@ -90,6 +95,7 @@ from app.erp.purchase_orders.schemas import (
     SalesOrderCoverageResponse,
 )
 from app.erp.purchase_orders.workflow import assert_editable, next_status, transition_actions
+from app.erp.sales_orders.schemas import OrderTrackerRow
 from app.erp.supplier_products.service import SupplierProductService
 from app.erp.suppliers.service import SupplierService
 from app.inventory_management.products.service import ProductService
@@ -184,6 +190,25 @@ class PurchaseOrderService:
         response = self._to_response(row, requires_approval=requires_approval)
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
+
+    async def billing_queue(
+        self,
+        tenant_id: UUID,
+        *,
+        page: PageParams,
+        common_filter: BaseFilter | None = None,
+    ) -> tuple[builtins.list[PurchaseOrderBillingQueueItem], int]:
+        rows, total = await self.repo.list_billing_queue(
+            tenant_id, page=page, common_filter=common_filter
+        )
+        return [self._to_billing_queue_item(row) for row in rows], total
+
+    async def cycle(self, tenant_id: UUID, purchase_order_id: UUID) -> PurchaseOrderCycleResponse:
+        row = await self._require(tenant_id, purchase_order_id)
+        return PurchaseOrderCycleResponse(
+            purchase_order_id=row.id,
+            rows=await self._cycle_rows(tenant_id, row),
+        )
 
     async def print_document(
         self,
@@ -1398,6 +1423,190 @@ class PurchaseOrderService:
             remaining_to_invoice=remaining_qty(ordered, billed),
         )
 
+    def _to_billing_queue_item(self, row: PurchaseOrder) -> PurchaseOrderBillingQueueItem:
+        lines: list[OutstandingBillLine] = []
+        for line in row.lines:
+            remaining = remaining_qty(line.quantity, line.qty_billed)
+            if remaining <= _ZERO:
+                continue
+            lines.append(
+                OutstandingBillLine(
+                    line_id=line.id,
+                    line_number=line.line_number,
+                    description=line.description,
+                    quantity=line.quantity,
+                    qty_fulfilled=line.qty_billed,
+                    qty_remaining=remaining,
+                )
+            )
+        return PurchaseOrderBillingQueueItem(
+            id=row.id,
+            document_number=row.document_number,
+            supplier_id=row.supplier_id,
+            order_date=row.order_date,
+            status=row.status,
+            billing_status=row.billing_status,
+            currency_id=row.currency_id,
+            lines=lines,
+        )
+
+    async def _cycle_rows(
+        self, tenant_id: UUID, row: PurchaseOrder
+    ) -> builtins.list[OrderTrackerRow]:
+        from app.erp.accounting.supplier_payments.service import SupplierPaymentService
+        from app.erp.debit_notes.repository import DebitNoteRepository
+        from app.erp.landed_costs.repository import LandedCostRepository
+        from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
+        from app.inventory_management.goods_receipts.repository import GoodsReceiptRepository
+
+        rows: builtins.list[OrderTrackerRow] = [
+            self._cycle_row(
+                stage="purchase_order",
+                document_type=DocumentType.PURCHASE_ORDER.value,
+                document_id=row.id,
+                document_number=row.document_number,
+                status=row.status,
+                document_date=row.order_date,
+                quantity_summary=quantity_summary([line.quantity for line in row.lines]),
+            )
+        ]
+
+        receipts = await GoodsReceiptRepository(self.session).list_for_purchase_orders(
+            tenant_id, [row.id]
+        )
+        if receipts:
+            for receipt in receipts:
+                rows.append(
+                    self._cycle_row(
+                        stage="goods_receipt",
+                        document_type=DocumentType.GOODS_RECEIPT.value,
+                        document_id=receipt.id,
+                        document_number=receipt.document_number,
+                        status=receipt.status,
+                        document_date=receipt.document_date,
+                        quantity_summary=quantity_summary(
+                            [line.quantity for line in receipt.lines]
+                        ),
+                    )
+                )
+        else:
+            rows.append(self._cycle_pending("goods_receipt", DocumentType.GOODS_RECEIPT.value))
+
+        lc_repo = LandedCostRepository(self.session)
+        landed_rows: builtins.list[OrderTrackerRow] = []
+        for receipt in receipts:
+            for landed in await lc_repo.list_for_goods_receipt(tenant_id, receipt.id):
+                landed_rows.append(
+                    self._cycle_row(
+                        stage="landed_cost",
+                        document_type=DocumentType.LANDED_COST.value,
+                        document_id=landed.id,
+                        document_number=landed.document_number,
+                        status=landed.status,
+                        document_date=landed.document_date,
+                        quantity_summary=None,
+                        amount_summary=str(
+                            sum((charge.amount for charge in landed.charges), _ZERO)
+                        ),
+                    )
+                )
+        if landed_rows:
+            rows.extend(landed_rows)
+        elif receipts:
+            rows.append(self._cycle_pending("landed_cost", DocumentType.LANDED_COST.value))
+
+        pi_repo = PurchaseInvoiceRepository(self.session)
+        dn_repo = DebitNoteRepository(self.session)
+        bill_rows: builtins.list[OrderTrackerRow] = []
+        debit_rows: builtins.list[OrderTrackerRow] = []
+        for bill in await pi_repo.list_for_purchase_order(tenant_id, row.id):
+            bill_rows.append(
+                self._cycle_row(
+                    stage="purchase_invoice",
+                    document_type=DocumentType.PURCHASE_INVOICE.value,
+                    document_id=bill.id,
+                    document_number=bill.document_number,
+                    status=bill.status,
+                    document_date=bill.invoice_date,
+                    quantity_summary=quantity_summary([line.quantity for line in bill.lines]),
+                    amount_summary=str(bill.balance_due),
+                )
+            )
+            for debit in await dn_repo.list_for_purchase_invoice(tenant_id, bill.id):
+                debit_rows.append(
+                    self._cycle_row(
+                        stage="debit_note",
+                        document_type=DocumentType.DEBIT_NOTE.value,
+                        document_id=debit.id,
+                        document_number=debit.document_number,
+                        status=debit.status,
+                        document_date=debit.debit_note_date,
+                        quantity_summary=quantity_summary([line.quantity for line in debit.lines]),
+                        amount_summary=str(debit.amount_unapplied),
+                    )
+                )
+        if bill_rows:
+            rows.extend(bill_rows)
+        else:
+            rows.append(
+                self._cycle_pending("purchase_invoice", DocumentType.PURCHASE_INVOICE.value)
+            )
+        if debit_rows:
+            rows.extend(debit_rows)
+
+        payment_rows = await SupplierPaymentService(
+            self.session, actor_permissions=self.actor_permissions
+        ).list_for_purchase_order(tenant_id, row.id)
+        if payment_rows:
+            for payment in payment_rows:
+                rows.append(
+                    self._cycle_row(
+                        stage="supplier_payment",
+                        document_type=DocumentType.SUPPLIER_PAYMENT.value,
+                        document_id=payment.id,
+                        document_number=payment.document_number,
+                        status=payment.status,
+                        document_date=payment.payment_date,
+                        quantity_summary=None,
+                        amount_summary=str(payment.amount_unapplied),
+                    )
+                )
+        elif bill_rows:
+            rows.append(
+                self._cycle_pending("supplier_payment", DocumentType.SUPPLIER_PAYMENT.value)
+            )
+        return rows
+
+    def _cycle_row(
+        self,
+        *,
+        stage: str,
+        document_type: str,
+        document_id: UUID,
+        document_number: str,
+        status: str,
+        document_date: date | None,
+        quantity_summary: str | None,
+        amount_summary: str | None = None,
+    ) -> OrderTrackerRow:
+        return OrderTrackerRow(
+            stage=stage,
+            document_type=document_type,
+            document_id=document_id,
+            document_number=document_number,
+            status=status,
+            document_date=document_date,
+            quantity_summary=quantity_summary,
+            amount_summary=amount_summary,
+        )
+
+    def _cycle_pending(self, stage: str, document_type: str) -> OrderTrackerRow:
+        return OrderTrackerRow(
+            stage=stage,
+            document_type=document_type,
+            status="PENDING",
+        )
+
     async def _related_documents(
         self, tenant_id: UUID, row: PurchaseOrder
     ) -> builtins.list[RelatedDocumentRef]:
@@ -1425,35 +1634,35 @@ class PurchaseOrderService:
         receipts = await GoodsReceiptRepository(self.session).list_for_purchase_orders(
             tenant_id, [row.id]
         )
-        for item in receipts:
+        for receipt in receipts:
             related.append(
                 RelatedDocumentRef(
                     document_type=DocumentType.GOODS_RECEIPT.value,
-                    document_id=item.id,
-                    document_number=item.document_number,
-                    status=item.status,
+                    document_id=receipt.id,
+                    document_number=receipt.document_number,
+                    status=receipt.status,
                     relationship="child",
-                    document_date=item.document_date,
-                    quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                    document_date=receipt.document_date,
+                    quantity_summary=quantity_summary([line.quantity for line in receipt.lines]),
                 )
             )
         invoices = await PurchaseInvoiceRepository(self.session).list_for_purchase_order(
             tenant_id, row.id
         )
         dn_repo = DebitNoteRepository(self.session)
-        for item in invoices:
+        for invoice in invoices:
             related.append(
                 RelatedDocumentRef(
                     document_type=DocumentType.PURCHASE_INVOICE.value,
-                    document_id=item.id,
-                    document_number=item.document_number,
-                    status=item.status,
+                    document_id=invoice.id,
+                    document_number=invoice.document_number,
+                    status=invoice.status,
                     relationship="child",
-                    document_date=item.invoice_date,
-                    quantity_summary=quantity_summary([line.quantity for line in item.lines]),
+                    document_date=invoice.invoice_date,
+                    quantity_summary=quantity_summary([line.quantity for line in invoice.lines]),
                 )
             )
-            for note in await dn_repo.list_for_purchase_invoice(tenant_id, item.id):
+            for note in await dn_repo.list_for_purchase_invoice(tenant_id, invoice.id):
                 related.append(
                     RelatedDocumentRef(
                         document_type=DocumentType.DEBIT_NOTE.value,
