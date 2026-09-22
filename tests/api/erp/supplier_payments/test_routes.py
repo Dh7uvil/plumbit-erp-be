@@ -480,8 +480,6 @@ async def test_unapplied_supplier_payment_appears_in_ap_aging(client: AsyncClien
     assert Decimal(data["totals"]["total"]) == -advance
     row = next(item for item in data["rows"] if item["party_id"] == supplier_id)
     assert Decimal(row["unapplied_credits"]) == advance
-    assert data["base_totals"] is not None
-    assert row["base"] is not None
 
 
 @pytest.mark.asyncio

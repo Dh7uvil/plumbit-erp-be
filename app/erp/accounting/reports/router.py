@@ -81,7 +81,14 @@ def _maybe_csv(
         dumped = data.model_dump(mode="json")
         fields = [key for key, value in dumped.items() if not isinstance(value, list)]
         rows = [{key: dumped.get(key) for key in fields}]
-    return csv_response(filename, fields, rows, excel=wants_excel(format))
+    currency_code = getattr(data, "currency_code", None)
+    return csv_response(
+        filename,
+        fields,
+        rows,
+        excel=wants_excel(format),
+        currency_code=currency_code if isinstance(currency_code, str) else None,
+    )
 
 
 @router.get("/trial-balance", response_model=ApiResponse[TrialBalanceResponse])

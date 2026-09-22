@@ -14,6 +14,7 @@ from app.core.enums import AccountSystemRole, InvoiceDocumentStatus, TaxCategory
 from app.core.exceptions import ValidationError
 from app.crm.customers.models import Customer
 from app.erp.accounting.models import Tax
+from app.erp.accounting.reports.amounts import document_base_net_tax
 from app.erp.accounting.reports.schemas import (
     TaxRegisterLine,
     TaxRegisterResponse,
@@ -346,6 +347,7 @@ class TaxRegisters:
         sign: Decimal,
     ) -> TaxRegisterLine:
         category = self._first_tax_category(invoice.lines, taxes)
+        net_amount, tax_amount, grand_total = document_base_net_tax(invoice, sign=sign)
         return TaxRegisterLine(
             document_type=document_type,
             document_id=invoice.id,
@@ -357,9 +359,9 @@ class TaxRegisters:
             tax_treatment=invoice.tax_treatment,
             tax_category=category,
             place_of_supply=invoice.place_of_supply,
-            net_amount=quantize_money(invoice.subtotal * sign),
-            tax_amount=quantize_money(invoice.tax_amount * sign),
-            grand_total=quantize_money(invoice.grand_total * sign),
+            net_amount=net_amount,
+            tax_amount=tax_amount,
+            grand_total=grand_total,
             is_export=invoice.is_export,
             is_designated_zone=is_designated_zone,
         )
@@ -374,6 +376,7 @@ class TaxRegisters:
         sign: Decimal,
     ) -> TaxRegisterLine:
         category = self._first_tax_category(note.lines, taxes)
+        net_amount, tax_amount, grand_total = document_base_net_tax(note, sign=sign)
         return TaxRegisterLine(
             document_type="CREDIT_NOTE",
             document_id=note.id,
@@ -385,9 +388,9 @@ class TaxRegisters:
             tax_treatment=note.tax_treatment,
             tax_category=category,
             place_of_supply=note.place_of_supply,
-            net_amount=quantize_money(note.subtotal * sign),
-            tax_amount=quantize_money(note.tax_amount * sign),
-            grand_total=quantize_money(note.grand_total * sign),
+            net_amount=net_amount,
+            tax_amount=tax_amount,
+            grand_total=grand_total,
             is_export=note.is_export,
         )
 
@@ -404,7 +407,11 @@ class TaxRegisters:
         sign: Decimal,
     ) -> TaxRegisterLine:
         category = self._first_tax_category(bill.lines, taxes)
-        tax_amount = bill.rcm_tax_amount if is_reverse_charge else bill.tax_amount
+        net_src = bill.rcm_taxable_amount if is_reverse_charge else bill.subtotal
+        tax_src = bill.rcm_tax_amount if is_reverse_charge else bill.tax_amount
+        net_amount, tax_amount, grand_total = document_base_net_tax(
+            bill, sign=sign, net_amount=net_src, tax_amount=tax_src
+        )
         return TaxRegisterLine(
             document_type=document_type,
             document_id=bill.id,
@@ -416,11 +423,9 @@ class TaxRegisters:
             tax_treatment=bill.tax_treatment,
             tax_category=category,
             place_of_supply=bill.place_of_supply,
-            net_amount=quantize_money(
-                (bill.rcm_taxable_amount if is_reverse_charge else bill.subtotal) * sign
-            ),
-            tax_amount=quantize_money(tax_amount * sign),
-            grand_total=quantize_money(bill.grand_total * sign),
+            net_amount=net_amount,
+            tax_amount=tax_amount,
+            grand_total=grand_total,
             is_reverse_charge=is_reverse_charge,
             is_designated_zone=is_designated_zone,
         )
@@ -436,6 +441,7 @@ class TaxRegisters:
         sign: Decimal,
     ) -> TaxRegisterLine:
         category = self._first_tax_category(note.lines, taxes)
+        net_amount, tax_amount, grand_total = document_base_net_tax(note, sign=sign)
         return TaxRegisterLine(
             document_type="DEBIT_NOTE",
             document_id=note.id,
@@ -447,9 +453,9 @@ class TaxRegisters:
             tax_treatment=note.tax_treatment,
             tax_category=category,
             place_of_supply=note.place_of_supply,
-            net_amount=quantize_money(note.subtotal * sign),
-            tax_amount=quantize_money(note.tax_amount * sign),
-            grand_total=quantize_money(note.grand_total * sign),
+            net_amount=net_amount,
+            tax_amount=tax_amount,
+            grand_total=grand_total,
             is_reverse_charge=is_reverse_charge,
         )
 

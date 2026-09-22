@@ -7,10 +7,16 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+class ReportWarning(BaseModel):
+    code: str
+    message: str
+    document_id: UUID | None = None
+    document_number: str | None = None
+
+
 class ReportCurrencyMixin(BaseModel):
-    currency_code: str | None = Field(
-        default=None,
-        description="ISO currency code for monetary amounts (tenant base currency).",
+    currency_code: str = Field(
+        description="ISO currency code for all monetary amounts (tenant base currency).",
     )
 
 
@@ -191,30 +197,26 @@ class AgingDocument(BaseModel):
     document_date: date
     due_date: date | None = None
     currency_code: str | None = None
+    exchange_rate: Decimal | None = None
+    document_balance: Decimal | None = Field(
+        default=None,
+        description="Original document-currency balance (informational only).",
+    )
     balance: Decimal
-    base_balance: Decimal
     bucket: str
 
 
 class AgingPartyRow(AgingBucketTotals):
     party_id: UUID
     party_name: str
-    currency_id: UUID | None = None
-    currency_code: str | None = None
-    base: AgingBucketTotals | None = None
     documents: list[AgingDocument] = Field(default_factory=list)
-
-
-class AgingCurrencyTotals(AgingBucketTotals):
-    currency_code: str
 
 
 class AgingResponse(ReportCurrencyMixin):
     as_of: date
     rows: list[AgingPartyRow] = Field(default_factory=list)
     totals: AgingBucketTotals
-    base_totals: AgingBucketTotals | None = None
-    currency_totals: list[AgingCurrencyTotals] = Field(default_factory=list)
+    warnings: list[ReportWarning] = Field(default_factory=list)
 
 
 class PartyStatementLine(BaseModel):
@@ -223,6 +225,8 @@ class PartyStatementLine(BaseModel):
     document_number: str
     document_date: date
     due_date: date | None = None
+    currency_code: str | None = None
+    exchange_rate: Decimal | None = None
     debit: Decimal
     credit: Decimal
     running_balance: Decimal
@@ -574,9 +578,9 @@ class OutstandingDocument(BaseModel):
     party_id: UUID
     party_name: str
     currency_code: str | None = None
-    original_amount: Decimal
+    exchange_rate: Decimal | None = None
+    document_balance: Decimal | None = None
     balance: Decimal
-    base_balance: Decimal
     bucket: str
     days_overdue: int = 0
 
@@ -585,8 +589,8 @@ class OutstandingDocumentsResponse(ReportCurrencyMixin):
     as_of: date
     party_type: str
     total_balance: Decimal
-    total_base_balance: Decimal
     lines: list[OutstandingDocument] = Field(default_factory=list)
+    warnings: list[ReportWarning] = Field(default_factory=list)
 
 
 class SalesPurchaseAnalysisLine(BaseModel):

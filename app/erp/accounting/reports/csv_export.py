@@ -183,10 +183,13 @@ def csv_response(
     rows: list[dict[str, Any]],
     *,
     excel: bool = False,
+    currency_code: str | None = None,
 ) -> Response:
     buffer = io.StringIO()
     if excel:
         buffer.write("\ufeff")
+    if currency_code:
+        buffer.write(f"# Monetary amounts in {currency_code}\n")
     writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()
     for row in rows:

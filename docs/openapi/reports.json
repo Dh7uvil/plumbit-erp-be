@@ -3217,16 +3217,9 @@
       "AccountStatementResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "party_type": {
             "type": "string",
@@ -3267,6 +3260,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "party_type",
           "party_id",
           "from_date",
@@ -3324,61 +3318,6 @@
         "type": "object",
         "title": "AgingBucketTotals"
       },
-      "AgingCurrencyTotals": {
-        "properties": {
-          "current": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Current",
-            "default": "0"
-          },
-          "days_1_30": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Days 1 30",
-            "default": "0"
-          },
-          "days_31_60": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Days 31 60",
-            "default": "0"
-          },
-          "days_61_90": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Days 61 90",
-            "default": "0"
-          },
-          "days_91_plus": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Days 91 Plus",
-            "default": "0"
-          },
-          "unapplied_credits": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Unapplied Credits",
-            "default": "0"
-          },
-          "total": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Total",
-            "default": "0"
-          },
-          "currency_code": {
-            "type": "string",
-            "title": "Currency Code"
-          }
-        },
-        "type": "object",
-        "required": [
-          "currency_code"
-        ],
-        "title": "AgingCurrencyTotals"
-      },
       "AgingDocument": {
         "properties": {
           "item_type": {
@@ -3422,15 +3361,35 @@
             ],
             "title": "Currency Code"
           },
+          "exchange_rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange Rate"
+          },
+          "document_balance": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Balance",
+            "description": "Original document-currency balance (informational only)."
+          },
           "balance": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Balance"
-          },
-          "base_balance": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Base Balance"
           },
           "bucket": {
             "type": "string",
@@ -3444,7 +3403,6 @@
           "document_number",
           "document_date",
           "balance",
-          "base_balance",
           "bucket"
         ],
         "title": "AgingDocument"
@@ -3502,39 +3460,6 @@
             "type": "string",
             "title": "Party Name"
           },
-          "currency_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Currency Id"
-          },
-          "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Currency Code"
-          },
-          "base": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgingBucketTotals"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "documents": {
             "items": {
               "$ref": "#/components/schemas/AgingDocument"
@@ -3553,16 +3478,9 @@
       "AgingResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "as_of": {
             "type": "string",
@@ -3579,26 +3497,17 @@
           "totals": {
             "$ref": "#/components/schemas/AgingBucketTotals"
           },
-          "base_totals": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AgingBucketTotals"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "currency_totals": {
+          "warnings": {
             "items": {
-              "$ref": "#/components/schemas/AgingCurrencyTotals"
+              "$ref": "#/components/schemas/ReportWarning"
             },
             "type": "array",
-            "title": "Currency Totals"
+            "title": "Warnings"
           }
         },
         "type": "object",
         "required": [
+          "currency_code",
           "as_of",
           "totals"
         ],
@@ -4685,16 +4594,9 @@
       "BalanceSheetResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "as_of": {
             "type": "string",
@@ -4783,6 +4685,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "as_of",
           "total_assets",
           "total_liabilities",
@@ -4843,16 +4746,9 @@
       "CashFlowResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "from_date": {
             "type": "string",
@@ -4930,6 +4826,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "from_date",
           "to_date",
           "net_profit",
@@ -5026,16 +4923,9 @@
       "DashboardResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "as_of": {
             "type": "string",
@@ -5090,6 +4980,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "as_of",
           "open_ar",
           "open_ap",
@@ -5334,16 +5225,9 @@
       "DayBookResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "book_kind": {
             "type": "string",
@@ -5398,6 +5282,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "book_kind",
           "from_date",
           "to_date",
@@ -5466,16 +5351,9 @@
       "ExportEvidenceExceptionResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "as_of": {
             "type": "string",
@@ -5496,6 +5374,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "as_of",
           "window_days"
         ],
@@ -5633,16 +5512,9 @@
       "GeneralLedgerResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "account_id": {
             "type": "string",
@@ -5708,6 +5580,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "account_id",
           "account_code",
           "account_name",
@@ -5811,16 +5684,9 @@
       "InvoicedNotDispatchedResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "lines": {
             "items": {
@@ -5831,6 +5697,9 @@
           }
         },
         "type": "object",
+        "required": [
+          "currency_code"
+        ],
         "title": "InvoicedNotDispatchedResponse"
       },
       "LeadConversionLine": {
@@ -5984,20 +5853,34 @@
             ],
             "title": "Currency Code"
           },
-          "original_amount": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Original Amount"
+          "exchange_rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange Rate"
+          },
+          "document_balance": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Balance"
           },
           "balance": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Balance"
-          },
-          "base_balance": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Base Balance"
           },
           "bucket": {
             "type": "string",
@@ -6017,9 +5900,7 @@
           "document_date",
           "party_id",
           "party_name",
-          "original_amount",
           "balance",
-          "base_balance",
           "bucket"
         ],
         "title": "OutstandingDocument"
@@ -6027,16 +5908,9 @@
       "OutstandingDocumentsResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "as_of": {
             "type": "string",
@@ -6052,25 +5926,27 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Balance"
           },
-          "total_base_balance": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Total Base Balance"
-          },
           "lines": {
             "items": {
               "$ref": "#/components/schemas/OutstandingDocument"
             },
             "type": "array",
             "title": "Lines"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ReportWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
           }
         },
         "type": "object",
         "required": [
+          "currency_code",
           "as_of",
           "party_type",
-          "total_balance",
-          "total_base_balance"
+          "total_balance"
         ],
         "title": "OutstandingDocumentsResponse"
       },
@@ -6105,6 +5981,29 @@
               }
             ],
             "title": "Due Date"
+          },
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code"
+          },
+          "exchange_rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange Rate"
           },
           "debit": {
             "type": "string",
@@ -6148,16 +6047,9 @@
       "PartyStatementResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "party_type": {
             "type": "string",
@@ -6202,6 +6094,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "party_type",
           "party_id",
           "party_name",
@@ -6287,16 +6180,9 @@
       "ProfitAndLossResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "from_date": {
             "type": "string",
@@ -6435,6 +6321,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "from_date",
           "to_date",
           "total_income",
@@ -6551,16 +6438,9 @@
       "PurchaseSuggestionResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "as_of": {
             "type": "string",
@@ -6577,6 +6457,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "as_of"
         ],
         "title": "PurchaseSuggestionResponse"
@@ -6668,16 +6549,9 @@
       "ReceivedNotBilledResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "lines": {
             "items": {
@@ -6688,7 +6562,51 @@
           }
         },
         "type": "object",
+        "required": [
+          "currency_code"
+        ],
         "title": "ReceivedNotBilledResponse"
+      },
+      "ReportWarning": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "document_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Number"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ReportWarning"
       },
       "SalesActivityLine": {
         "properties": {
@@ -7091,16 +7009,9 @@
       "SalesPurchaseAnalysisResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "from_date": {
             "type": "string",
@@ -7152,6 +7063,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "from_date",
           "to_date",
           "group_by",
@@ -7275,16 +7187,9 @@
       "StockAgingResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "as_of": {
             "type": "string",
@@ -7304,6 +7209,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "as_of",
           "totals"
         ],
@@ -7400,16 +7306,9 @@
       "StockMovementReportResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "from_date": {
             "type": "string",
@@ -7451,6 +7350,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "from_date",
           "to_date",
           "total_opening_qty",
@@ -7463,16 +7363,9 @@
       "StockValuationGlResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "as_of": {
             "type": "string",
@@ -7509,6 +7402,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "as_of",
           "valuation_total",
           "gl_balance",
@@ -7601,16 +7495,9 @@
       "StockValuationResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "as_of": {
             "type": "string",
@@ -7644,6 +7531,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "as_of",
           "total_qty",
           "total_value"
@@ -7795,16 +7683,9 @@
       "TaxRegisterResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "from_date": {
             "type": "string",
@@ -7841,6 +7722,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "from_date",
           "to_date",
           "total_net",
@@ -7953,16 +7835,9 @@
       "ThreeWayMatchResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "lines": {
             "items": {
@@ -7973,6 +7848,9 @@
           }
         },
         "type": "object",
+        "required": [
+          "currency_code"
+        ],
         "title": "ThreeWayMatchResponse"
       },
       "TrialBalanceLine": {
@@ -8060,16 +7938,9 @@
       "TrialBalanceResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "from_date": {
             "type": "string",
@@ -8137,6 +8008,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "from_date",
           "to_date",
           "is_balanced",
@@ -8222,16 +8094,9 @@
       "Vat201Response": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "from_date": {
             "type": "string",
@@ -8267,6 +8132,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "from_date",
           "to_date",
           "recoverable_input_vat",
@@ -8326,16 +8192,9 @@
       "VatGlReconResponse": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "from_date": {
             "type": "string",
@@ -8357,6 +8216,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "from_date",
           "to_date"
         ],

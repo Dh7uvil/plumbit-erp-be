@@ -3558,16 +3558,9 @@
       "OutstandingSummary": {
         "properties": {
           "currency_code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Currency Code",
-            "description": "ISO currency code for monetary amounts (tenant base currency)."
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "party_id": {
             "type": "string",
@@ -3616,6 +3609,7 @@
         },
         "type": "object",
         "required": [
+          "currency_code",
           "party_id",
           "balance_due",
           "overdue",

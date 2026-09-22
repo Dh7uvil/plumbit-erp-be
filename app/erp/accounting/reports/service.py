@@ -32,6 +32,11 @@ from app.core.exceptions import ValidationError
 from app.crm.customers.models import Customer
 from app.erp.accounting.accounts.service import AccountService
 from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
+from app.erp.accounting.reports.amounts import (
+    document_base_grand,
+    open_item_base_amount,
+    payment_base_amount,
+)
 from app.erp.accounting.reports.analytical import AnalyticalReports
 from app.erp.accounting.reports.financials import FinancialReports
 from app.erp.accounting.reports.inventory import InventoryReports
@@ -39,7 +44,6 @@ from app.erp.accounting.reports.schemas import (
     AccountStatementLine,
     AccountStatementResponse,
     AgingBucketTotals,
-    AgingCurrencyTotals,
     AgingDocument,
     AgingPartyRow,
     AgingResponse,
@@ -62,6 +66,7 @@ from app.erp.accounting.reports.schemas import (
     PartyStatementResponse,
     ReceivedNotBilledLine,
     ReceivedNotBilledResponse,
+    ReportWarning,
     ThreeWayMatchLine,
     ThreeWayMatchResponse,
     TrialBalanceLine,
@@ -678,7 +683,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                     invoice_date=invoice.invoice_date,
                     customer_id=invoice.customer_id,
                     customer_name=names.get(invoice.customer_id, ""),
-                    grand_total=invoice.grand_total,
+                    grand_total=document_base_grand(invoice),
                     days_elapsed=days_elapsed,
                     window_days=EXPORT_EVIDENCE_WINDOW_DAYS,
                     overdue=days_elapsed > EXPORT_EVIDENCE_WINDOW_DAYS,
@@ -705,6 +710,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 SalesInvoiceLine.quantity,
                 SalesInvoiceLine.amount,
                 SalesInvoiceLine.cogs_status,
+                SalesInvoice.exchange_rate,
             )
             .select_from(SalesInvoiceLine)
             .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.sales_invoice_id)
@@ -736,7 +742,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                     product_id=row[6],
                     description=str(row[7]),
                     quantity=row[8],
-                    amount=row[9],
+                    amount=quantize_money(row[9] * row[11]),
                     cogs_status=str(row[10]),
                 )
                 for row in rows
@@ -976,9 +982,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 GoodsReceipt.document_date == as_of_date,
             )
         )
-        ar_by_party = {
-            row.party_id: row.base.total if row.base is not None else row.total for row in ar.rows
-        }
+        ar_by_party = {row.party_id: row.total for row in ar.rows}
         customers = (
             (
                 await self.session.execute(
@@ -1004,8 +1008,8 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                         outstanding=outstanding,
                     )
                 )
-        ar_open = ar.base_totals.total if ar.base_totals is not None else ar.totals.total
-        ap_open = ap.base_totals.total if ap.base_totals is not None else ap.totals.total
+        ar_open = ar.totals.total
+        ap_open = ap.totals.total
         return DashboardResponse(
             currency_code=await self._report_currency_code(tenant_id),
             as_of=as_of_date,
@@ -1189,72 +1193,37 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         )
         open_items = OpenItemsService(self.session)
         rows: list[AgingPartyRow] = []
-        base_totals = AgingBucketTotals()
-        by_currency: dict[str, AgingBucketTotals] = {}
+        totals = AgingBucketTotals()
+        warnings: list[ReportWarning] = []
         report_currency = await self._report_currency_code(tenant_id)
-        currency_codes = await self.currencies.codes_by_ids(
-            tenant_id,
-            [party.currency_id for party in parties if party.currency_id is not None],
-        )
         for party in parties:
             if party_type == PartyType.CUSTOMER:
                 items = await open_items.list_ar_open_items(tenant_id, party.id)
             else:
                 items = await open_items.list_ap_open_items(tenant_id, party.id)
-            buckets, base_buckets = self._bucket_items(items, as_of=as_of, party_type=party_type)
-            if all(value == _ZERO for value in buckets.model_dump().values()) and all(
-                value == _ZERO for value in base_buckets.model_dump().values()
-            ):
+            buckets, documents, item_warnings = self._bucket_items(
+                items, as_of=as_of, party_type=party_type
+            )
+            warnings.extend(item_warnings)
+            if all(value == _ZERO for value in buckets.model_dump().values()):
                 continue
-            item_codes = {item.currency_code for item in items if item.currency_code}
-            mixed_currency = len(item_codes) > 1
-            if mixed_currency:
-                # Never show mixed document-currency buckets as one party total.
-                party_code = report_currency
-                display_buckets = base_buckets
-            elif len(item_codes) == 1:
-                party_code = next(iter(item_codes))
-                display_buckets = buckets
-            else:
-                party_code = (
-                    currency_codes.get(party.currency_id) if party.currency_id is not None else None
-                )
-                display_buckets = buckets
-            documents = self._aging_documents(items, as_of=as_of, party_type=party_type)
             rows.append(
                 AgingPartyRow(
                     party_id=party.id,
                     party_name=party.name,
-                    currency_id=party.currency_id,
-                    currency_code=party_code,
-                    base=base_buckets,
                     documents=documents,
-                    **display_buckets.model_dump(),
+                    **buckets.model_dump(),
                 )
             )
-            for name, value in base_buckets.model_dump().items():
-                setattr(base_totals, name, quantize_money(getattr(base_totals, name) + value))
-            if not mixed_currency and party_code:
-                currency_row = by_currency.setdefault(party_code, AgingBucketTotals())
-                for name, value in buckets.model_dump().items():
-                    setattr(
-                        currency_row,
-                        name,
-                        quantize_money(getattr(currency_row, name) + value),
-                    )
+            for name, value in buckets.model_dump().items():
+                setattr(totals, name, quantize_money(getattr(totals, name) + value))
         rows.sort(key=lambda row: row.party_name)
-        currency_totals = [
-            AgingCurrencyTotals(currency_code=code, **buckets.model_dump())
-            for code, buckets in sorted(by_currency.items())
-        ]
         return AgingResponse(
             currency_code=report_currency,
             as_of=as_of,
             rows=rows,
-            # Primary totals are always base currency to prevent mixed-FX misuse.
-            totals=base_totals,
-            base_totals=base_totals,
-            currency_totals=currency_totals,
+            totals=totals,
+            warnings=warnings,
         )
 
     async def outstanding_documents(
@@ -1269,7 +1238,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         )
         lines: list[OutstandingDocument] = []
         total_balance = _ZERO
-        total_base = _ZERO
         for row in aging.rows:
             for document in row.documents:
                 due = document.due_date or document.document_date
@@ -1284,65 +1252,23 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                         party_id=row.party_id,
                         party_name=row.party_name,
                         currency_code=document.currency_code,
-                        original_amount=document.balance,
+                        exchange_rate=document.exchange_rate,
+                        document_balance=document.document_balance,
                         balance=document.balance,
-                        base_balance=document.base_balance,
                         bucket=document.bucket,
                         days_overdue=days,
                     )
                 )
                 total_balance = quantize_money(total_balance + document.balance)
-                total_base = quantize_money(total_base + document.base_balance)
         lines.sort(key=lambda item: (item.party_name, item.document_date, item.document_number))
         return OutstandingDocumentsResponse(
             currency_code=aging.currency_code,
             as_of=aging.as_of,
             party_type=party_type.value,
             total_balance=total_balance,
-            total_base_balance=total_base,
             lines=lines,
+            warnings=aging.warnings,
         )
-
-    def _aging_documents(
-        self, items, *, as_of: date, party_type: PartyType
-    ) -> list[AgingDocument]:
-        outstanding_types = (
-            {OpenItemType.SALES_INVOICE, OpenItemType.OPENING_AR}
-            if party_type == PartyType.CUSTOMER
-            else {OpenItemType.PURCHASE_INVOICE, OpenItemType.OPENING_AP}
-        )
-        credit_types = (
-            {OpenItemType.CREDIT_NOTE, OpenItemType.CUSTOMER_PAYMENT}
-            if party_type == PartyType.CUSTOMER
-            else {OpenItemType.DEBIT_NOTE, OpenItemType.SUPPLIER_PAYMENT}
-        )
-        documents: list[AgingDocument] = []
-        for item in items:
-            if item.document_date > as_of:
-                continue
-            base_amount = item.base_balance if item.base_balance is not None else item.balance
-            if item.item_type in credit_types:
-                bucket = "unapplied_credits"
-            elif item.item_type in outstanding_types:
-                bucket = self._aging_bucket(as_of, item.due_date or item.document_date)
-            else:
-                continue
-            documents.append(
-                AgingDocument(
-                    item_type=item.item_type.value
-                    if hasattr(item.item_type, "value")
-                    else str(item.item_type),
-                    document_id=item.document_id,
-                    document_number=item.document_number,
-                    document_date=item.document_date,
-                    due_date=item.due_date,
-                    currency_code=item.currency_code,
-                    balance=item.balance,
-                    base_balance=base_amount,
-                    bucket=bucket,
-                )
-            )
-        return documents
 
     def _aging_bucket(self, as_of: date, due: date) -> str:
         days = (as_of - due).days
@@ -1358,9 +1284,10 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
 
     def _bucket_items(
         self, items, *, as_of: date, party_type: PartyType
-    ) -> tuple[AgingBucketTotals, AgingBucketTotals]:
+    ) -> tuple[AgingBucketTotals, list[AgingDocument], list[ReportWarning]]:
         buckets = AgingBucketTotals()
-        base_buckets = AgingBucketTotals()
+        documents: list[AgingDocument] = []
+        warnings: list[ReportWarning] = []
         outstanding_types = (
             {OpenItemType.SALES_INVOICE, OpenItemType.OPENING_AR}
             if party_type == PartyType.CUSTOMER
@@ -1378,26 +1305,52 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         for item in items:
             if item.document_date > as_of:
                 continue
-            base_amount = item.base_balance if item.base_balance is not None else item.balance
+            base_amount = open_item_base_amount(item)
+            if base_amount is None:
+                warnings.append(
+                    ReportWarning(
+                        code="MISSING_EXCHANGE_RATE",
+                        message="Open item excluded from aging: no base amount could be resolved.",
+                        document_id=item.document_id,
+                        document_number=item.document_number,
+                    )
+                )
+                continue
             if item.item_type in credit_types:
-                _add(buckets, "unapplied_credits", item.balance)
-                _add(base_buckets, "unapplied_credits", base_amount)
+                bucket = "unapplied_credits"
+            elif item.item_type in outstanding_types:
+                bucket = self._aging_bucket(as_of, item.due_date or item.document_date)
+            else:
                 continue
-            if item.item_type not in outstanding_types:
-                continue
-            field = self._aging_bucket(as_of, item.due_date or item.document_date)
-            _add(buckets, field, item.balance)
-            _add(base_buckets, field, base_amount)
-        for target in (buckets, base_buckets):
-            target.total = quantize_money(
-                target.current
-                + target.days_1_30
-                + target.days_31_60
-                + target.days_61_90
-                + target.days_91_plus
-                - target.unapplied_credits
+            if item.item_type in credit_types:
+                _add(buckets, "unapplied_credits", base_amount)
+            else:
+                _add(buckets, bucket, base_amount)
+            documents.append(
+                AgingDocument(
+                    item_type=item.item_type.value
+                    if hasattr(item.item_type, "value")
+                    else str(item.item_type),
+                    document_id=item.document_id,
+                    document_number=item.document_number,
+                    document_date=item.document_date,
+                    due_date=item.due_date,
+                    currency_code=item.currency_code,
+                    exchange_rate=item.exchange_rate,
+                    document_balance=item.balance,
+                    balance=base_amount,
+                    bucket=bucket,
+                )
             )
-        return buckets, base_buckets
+        buckets.total = quantize_money(
+            buckets.current
+            + buckets.days_1_30
+            + buckets.days_31_60
+            + buckets.days_61_90
+            + buckets.days_91_plus
+            - buckets.unapplied_credits
+        )
+        return buckets, documents, warnings
 
     def _outstanding_from_items(
         self,
@@ -1421,7 +1374,9 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         )
         balance_due = overdue = unapplied = _ZERO
         for item in items:
-            amount = item.base_balance if item.base_balance is not None else item.balance
+            amount = open_item_base_amount(item)
+            if amount is None:
+                continue
             if item.item_type in credit_types:
                 unapplied = quantize_money(unapplied + amount)
                 continue
@@ -1468,7 +1423,20 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             raise ValidationError("from_date must be on or before to_date")
         role = CUSTOMER_PARTY_ROLE if party_type == PartyType.CUSTOMER else SUPPLIER_PARTY_ROLE
         party = await CustomerService(self.session, role=role).get(tenant_id, party_id)
-        events: list[tuple[date, str, UUID, str, Decimal, Decimal, date | None, str | None]] = []
+        events: list[
+            tuple[
+                date,
+                str,
+                UUID,
+                str,
+                Decimal,
+                Decimal,
+                date | None,
+                str | None,
+                UUID,
+                Decimal,
+            ]
+        ] = []
         if party_type == PartyType.CUSTOMER:
             invoices = (
                 (
@@ -1485,16 +1453,19 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 .all()
             )
             for row in invoices:
+                amount = document_base_grand(row)
                 events.append(
                     (
                         row.invoice_date,
                         "SALES_INVOICE",
                         row.id,
                         row.document_number,
-                        row.grand_total,
+                        amount,
                         _ZERO,
                         row.due_date,
                         None,
+                        row.currency_id,
+                        row.exchange_rate,
                     )
                 )
             notes = (
@@ -1512,6 +1483,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 .all()
             )
             for row in notes:
+                amount = document_base_grand(row)
                 events.append(
                     (
                         row.credit_note_date,
@@ -1519,9 +1491,11 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                         row.id,
                         row.document_number,
                         _ZERO,
-                        row.grand_total,
+                        amount,
                         row.due_date,
                         None,
+                        row.currency_id,
+                        row.exchange_rate,
                     )
                 )
             payments = (
@@ -1539,6 +1513,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 .all()
             )
             for row in payments:
+                amount = payment_base_amount(row.amount_received, row.exchange_rate)
                 events.append(
                     (
                         row.payment_date,
@@ -1546,9 +1521,11 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                         row.id,
                         row.document_number,
                         _ZERO,
-                        row.amount_received,
+                        amount,
                         None,
                         row.reference,
+                        row.currency_id,
+                        row.exchange_rate,
                     )
                 )
         else:
@@ -1567,6 +1544,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 .all()
             )
             for row in invoices:
+                amount = document_base_grand(row)
                 events.append(
                     (
                         row.invoice_date,
@@ -1574,9 +1552,11 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                         row.id,
                         row.document_number,
                         _ZERO,
-                        row.grand_total,
+                        amount,
                         row.due_date,
                         None,
+                        row.currency_id,
+                        row.exchange_rate,
                     )
                 )
             notes = (
@@ -1594,16 +1574,19 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 .all()
             )
             for row in notes:
+                amount = document_base_grand(row)
                 events.append(
                     (
                         row.debit_note_date,
                         "DEBIT_NOTE",
                         row.id,
                         row.document_number,
-                        row.grand_total,
+                        amount,
                         _ZERO,
                         row.due_date,
                         None,
+                        row.currency_id,
+                        row.exchange_rate,
                     )
                 )
             payments = (
@@ -1621,23 +1604,40 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 .all()
             )
             for row in payments:
+                amount = payment_base_amount(row.amount_paid, row.exchange_rate)
                 events.append(
                     (
                         row.payment_date,
                         "SUPPLIER_PAYMENT",
                         row.id,
                         row.document_number,
-                        row.amount_paid,
+                        amount,
                         _ZERO,
                         None,
                         row.reference,
+                        row.currency_id,
+                        row.exchange_rate,
                     )
                 )
         events.sort(key=lambda item: (item[0], item[3]))
+        currency_codes = await self.currencies.codes_by_ids(
+            tenant_id, [event[8] for event in events]
+        )
         opening = _ZERO
         lines: list[PartyStatementLine] = []
         running = _ZERO
-        for doc_date, doc_type, doc_id, number, debit, credit, due, description in events:
+        for (
+            doc_date,
+            doc_type,
+            doc_id,
+            number,
+            debit,
+            credit,
+            due,
+            description,
+            currency_id,
+            exchange_rate,
+        ) in events:
             signed = quantize_money(debit - credit)
             if doc_date < from_date:
                 opening = quantize_money(opening + signed)
@@ -1654,6 +1654,8 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                     document_number=number,
                     document_date=doc_date,
                     due_date=due,
+                    currency_code=currency_codes.get(currency_id),
+                    exchange_rate=exchange_rate,
                     debit=debit,
                     credit=credit,
                     running_balance=running,

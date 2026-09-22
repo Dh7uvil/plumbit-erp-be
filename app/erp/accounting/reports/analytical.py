@@ -14,6 +14,7 @@ from app.common.utils.currency import quantize_money
 from app.core.enums import InvoiceDocumentStatus
 from app.core.exceptions import ValidationError
 from app.crm.customers.models import Customer
+from app.erp.accounting.reports.amounts import document_base_net_tax
 from app.erp.accounting.reports.schemas import (
     SalesPurchaseAnalysisLine,
     SalesPurchaseAnalysisResponse,
@@ -183,11 +184,8 @@ class AnalyticalReports:
         sign: Decimal,
         warnings: list[str],
     ) -> None:
-        converted = _converted_amounts(invoice, sign=sign, warnings=warnings)
-        if converted is None:
-            return
-        net, tax, rate = converted
-        grand = quantize_money(net + tax)
+        net, tax, grand = document_base_net_tax(invoice, sign=sign)
+        rate = invoice.exchange_rate
         if group_by == "product":
             for line in invoice.lines:
                 line_net = quantize_money(line.amount * rate * sign)
@@ -223,10 +221,8 @@ class AnalyticalReports:
         self, buckets, note: CreditNote, *, group_by: str, names, product_names, warnings: list[str]
     ) -> None:
         sign = Decimal("-1")
-        converted = _converted_amounts(note, sign=sign, warnings=warnings)
-        if converted is None:
-            return
-        net, tax, rate = converted
+        net, tax, grand = document_base_net_tax(note, sign=sign)
+        rate = note.exchange_rate
         if group_by == "product":
             for line in note.lines:
                 line_net = quantize_money(line.amount * rate * sign)
@@ -280,7 +276,7 @@ class AnalyticalReports:
             label,
             net=net,
             tax=tax,
-            grand=quantize_money(net + tax),
+            grand=grand,
             party_id=party_id,
             salesperson_id=salesperson_id,
         )
@@ -296,10 +292,8 @@ class AnalyticalReports:
         sign: Decimal,
         warnings: list[str],
     ) -> None:
-        converted = _converted_amounts(invoice, sign=sign, warnings=warnings)
-        if converted is None:
-            return
-        net, tax, rate = converted
+        net, tax, grand = document_base_net_tax(invoice, sign=sign)
+        rate = invoice.exchange_rate
         if group_by == "product":
             for line in invoice.lines:
                 line_net = quantize_money(line.amount * rate * sign)
@@ -337,7 +331,7 @@ class AnalyticalReports:
             label,
             net=net,
             tax=tax,
-            grand=quantize_money(net + tax),
+            grand=grand,
             party_id=party_id,
         )
 
@@ -345,10 +339,8 @@ class AnalyticalReports:
         self, buckets, note: DebitNote, *, group_by: str, names, product_names, warnings: list[str]
     ) -> None:
         sign = Decimal("-1")
-        converted = _converted_amounts(note, sign=sign, warnings=warnings)
-        if converted is None:
-            return
-        net, tax, rate = converted
+        net, tax, grand = document_base_net_tax(note, sign=sign)
+        rate = note.exchange_rate
         if group_by == "product":
             for line in note.lines:
                 line_net = quantize_money(line.amount * rate * sign)
@@ -380,15 +372,7 @@ class AnalyticalReports:
             key = "summary"
             label = "All purchases"
             party_id = None
-        self._add_bucket(
-            buckets,
-            key,
-            label,
-            net=net,
-            tax=tax,
-            grand=quantize_money(net + tax),
-            party_id=party_id,
-        )
+        self._add_bucket(buckets, key, label, net=net, tax=tax, grand=grand, party_id=party_id)
 
     def _sales_group(self, invoice: SalesInvoice, *, group_by: str, names) -> tuple:
         if group_by == "customer":
