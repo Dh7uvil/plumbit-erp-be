@@ -225,6 +225,21 @@ class DocumentType(StrEnum):
     CUSTOMER_PAYMENT = "CUSTOMER_PAYMENT"
     SUPPLIER_PAYMENT = "SUPPLIER_PAYMENT"
     LANDED_COST = "LANDED_COST"
+    COST_SHEET_IMPORT = "COST_SHEET_IMPORT"
+    COST_SHEET_EXPORT = "COST_SHEET_EXPORT"
+    COST_SHEET_OTHER = "COST_SHEET_OTHER"
+
+
+class CostSheetType(StrEnum):
+    IMPORT = "IMPORT"
+    EXPORT = "EXPORT"
+    OTHER = "OTHER"
+
+
+class CostSheetStatus(StrEnum):
+    DRAFT = "DRAFT"
+    CONFIRMED = "CONFIRMED"
+    CLOSED = "CLOSED"
 
 
 class StockDocumentStatus(StrEnum):

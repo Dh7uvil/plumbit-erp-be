@@ -693,7 +693,10 @@
           "JOURNAL_ENTRY",
           "CUSTOMER_PAYMENT",
           "SUPPLIER_PAYMENT",
-          "LANDED_COST"
+          "LANDED_COST",
+          "COST_SHEET_IMPORT",
+          "COST_SHEET_EXPORT",
+          "COST_SHEET_OTHER"
         ],
         "title": "DocumentType"
       },

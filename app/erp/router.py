@@ -10,6 +10,7 @@ from app.erp.accounting.ledger.router import router as journals_router
 from app.erp.accounting.opening_balances.router import router as opening_balances_router
 from app.erp.accounting.reports.router import router as reports_router
 from app.erp.accounting.router import router as accounting_router
+from app.erp.cost_sheets.router import router as cost_sheets_router
 from app.erp.credit_notes.router import router as credit_notes_router
 from app.erp.accounting.customer_payments.router import router as customer_payments_router
 from app.erp.debit_notes.router import router as debit_notes_router
@@ -42,6 +43,7 @@ router.include_router(purchase_orders_router)
 router.include_router(purchase_invoices_router)
 router.include_router(debit_notes_router)
 router.include_router(landed_costs_router)
+router.include_router(cost_sheets_router)
 router.include_router(supplier_payments_router)
 router.include_router(accounts_router)
 router.include_router(charge_types_router)

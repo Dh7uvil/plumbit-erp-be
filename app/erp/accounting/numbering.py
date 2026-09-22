@@ -30,6 +30,9 @@ PARTY_DOCUMENT_TYPES = frozenset(
         "PURCHASE_RETURN",
         "QUALITY_INSPECTION",
         "LANDED_COST",
+        "COST_SHEET_IMPORT",
+        "COST_SHEET_EXPORT",
+        "COST_SHEET_OTHER",
     }
 )
 OLD_NUMBER_PATTERN = re.compile(r"^([A-Z]+)-(\d{4})-(\d+)$")

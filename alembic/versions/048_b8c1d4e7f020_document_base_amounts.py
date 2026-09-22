@@ -19,6 +19,22 @@ depends_on: str | Sequence[str] | None = None
 MONEY = sa.Numeric(18, 4)
 
 
+def _add_money_columns(table: str) -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing = {column["name"] for column in inspector.get_columns(table)}
+    if "foreign_amount" not in existing:
+        op.add_column(
+            table,
+            sa.Column("foreign_amount", MONEY, server_default=sa.text("0"), nullable=False),
+        )
+    if "base_amount" not in existing:
+        op.add_column(
+            table,
+            sa.Column("base_amount", MONEY, server_default=sa.text("0"), nullable=False),
+        )
+
+
 def upgrade() -> None:
     for table in (
         "goods_receipts",
@@ -26,14 +42,7 @@ def upgrade() -> None:
         "customer_payments",
         "supplier_payments",
     ):
-        op.add_column(
-            table,
-            sa.Column("foreign_amount", MONEY, server_default=sa.text("0"), nullable=False),
-        )
-        op.add_column(
-            table,
-            sa.Column("base_amount", MONEY, server_default=sa.text("0"), nullable=False),
-        )
+        _add_money_columns(table)
 
     op.execute(
         sa.text(
