@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.org_service import OrganizationService
 from app.common.utils.currency import quantize_money
 from app.common.utils.datetime import today_in_timezone, utcnow
-from app.core.exceptions import ResourceNotFoundError, ValidationError
+from app.core.exceptions import ExchangeRateMissingError, ResourceNotFoundError, ValidationError
 from app.crm.pipelines.models import Pipeline
 from app.crm.reports.constants import (
     ACTIVITY_GROUPS,
@@ -41,7 +41,7 @@ from app.crm.reports.schemas import (
     WinLossLine,
     WinLossResponse,
 )
-from app.erp.exchange_rates.service import CurrencyService
+from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 
 _ZERO = Decimal("0")
 
@@ -51,6 +51,7 @@ class CrmReportService:
         self.session = session
         self.repo = CrmReportRepository(session)
         self.currencies = CurrencyService(session)
+        self.exchange_rates = ExchangeRateService(session)
 
     async def sales_pipeline(
         self,
@@ -67,6 +68,12 @@ class CrmReportService:
                 tenant_id, group_by=grouping, pipeline_id=pipeline_id
             )
         )
+        merged, warnings = await self._merge_currency_rows(
+            tenant_id,
+            rows,
+            count_key="opportunity_count",
+            amount_keys=("amount", "weighted_amount"),
+        )
         lines = [
             SalesPipelineLine(
                 group_key=str(row["group_key"]),
@@ -75,10 +82,11 @@ class CrmReportService:
                 amount=quantize_money(Decimal(str(row["amount"]))),
                 weighted_amount=quantize_money(Decimal(str(row["weighted_amount"]))),
             )
-            for row in rows
+            for row in merged
         ]
         return SalesPipelineResponse(
             currency_code=await self._currency_code(tenant_id),
+            warnings=warnings,
             group_by=grouping,
             pipeline_id=pipeline_id,
             opportunity_count=sum(line.opportunity_count for line in lines),
@@ -102,13 +110,27 @@ class CrmReportService:
             raise ValidationError("No default pipeline is configured")
         stages = await self.repo.stages_for_pipeline(tenant_id, pipeline.id)
         aggregates = await self.repo.funnel_aggregates(tenant_id, pipeline.id)
+        warnings: list[str] = []
         lines: list[SalesFunnelLine] = []
         previous_count: int | None = None
         for stage in stages:
             stats = aggregates.get(stage.id, {})
             count = int(stats.get("opportunity_count", 0))
-            amount = quantize_money(Decimal(str(stats.get("amount", _ZERO))))
-            weighted = quantize_money(Decimal(str(stats.get("weighted_amount", _ZERO))))
+            slices = stats.get("currency_slices", [])
+            amount = _ZERO
+            weighted = _ZERO
+            if isinstance(slices, list):
+                for currency_id, slice_amount, slice_weighted in slices:
+                    converted_amount, slice_warnings = await self._convert_amount(
+                        tenant_id, currency_id, slice_amount
+                    )
+                    converted_weighted, weighted_warnings = await self._convert_amount(
+                        tenant_id, currency_id, slice_weighted
+                    )
+                    amount += converted_amount
+                    weighted += converted_weighted
+                    warnings.extend(slice_warnings)
+                    warnings.extend(weighted_warnings)
             conversion = None if previous_count is None else percent_of(count, previous_count)
             lines.append(
                 SalesFunnelLine(
@@ -117,14 +139,15 @@ class CrmReportService:
                     sort_order=stage.sort_order,
                     stage_kind=stage.stage_kind,
                     opportunity_count=count,
-                    amount=amount,
-                    weighted_amount=weighted,
+                    amount=quantize_money(amount),
+                    weighted_amount=quantize_money(weighted),
                     conversion_percent=conversion,
                 )
             )
             previous_count = count
         return SalesFunnelResponse(
             currency_code=await self._currency_code(tenant_id),
+            warnings=sorted(set(warnings)),
             pipeline_id=pipeline.id,
             pipeline_name=pipeline.name,
             opportunity_count=sum(line.opportunity_count for line in lines),
@@ -150,6 +173,13 @@ class CrmReportService:
                 tenant_id, group_by=grouping, from_date=from_date, to_date=to_date
             )
         )
+        merged, warnings = await self._merge_currency_rows(
+            tenant_id,
+            rows,
+            count_keys=("won_count", "lost_count"),
+            amount_keys=("won_amount", "lost_amount"),
+            percent_key="win_percent",
+        )
         lines = [
             WinLossLine(
                 group_key=str(row["group_key"]),
@@ -160,12 +190,13 @@ class CrmReportService:
                 lost_amount=quantize_money(Decimal(str(row["lost_amount"]))),
                 win_percent=_optional_decimal(row["win_percent"]),
             )
-            for row in rows
+            for row in merged
         ]
         won_count = sum(line.won_count for line in lines)
         lost_count = sum(line.lost_count for line in lines)
         return WinLossResponse(
             currency_code=await self._currency_code(tenant_id),
+            warnings=warnings,
             from_date=from_date,
             to_date=to_date,
             group_by=grouping,
@@ -269,17 +300,116 @@ class CrmReportService:
         totals = await self.repo.dashboard_totals(
             tenant_id, month_start=month_start, month_end=next_month, now=utcnow()
         )
+        open_value, open_warnings = await self._sum_currency_rows(
+            tenant_id, totals["open_pipeline_value_rows"]
+        )
+        closing_value, closing_warnings = await self._sum_currency_rows(
+            tenant_id, totals["closing_this_month_value_rows"]
+        )
         return CrmDashboardResponse(
             currency_code=await self._currency_code(tenant_id),
+            warnings=sorted(set(open_warnings + closing_warnings)),
             as_of=today,
             open_pipeline_count=_as_int(totals["open_pipeline_count"]),
-            open_pipeline_value=quantize_money(Decimal(str(totals["open_pipeline_value"]))),
+            open_pipeline_value=open_value,
             closing_this_month_count=_as_int(totals["closing_this_month_count"]),
-            closing_this_month_value=quantize_money(
-                Decimal(str(totals["closing_this_month_value"]))
-            ),
+            closing_this_month_value=closing_value,
             overdue_activity_count=_as_int(totals["overdue_activity_count"]),
         )
+
+    async def _merge_currency_rows(
+        self,
+        tenant_id: UUID,
+        rows: list[dict[str, object]],
+        *,
+        count_key: str | None = None,
+        count_keys: tuple[str, ...] = (),
+        amount_keys: tuple[str, ...],
+        percent_key: str | None = None,
+    ) -> tuple[list[dict[str, object]], list[str]]:
+        grouped: dict[str, dict[str, object]] = {}
+        warnings: list[str] = []
+        for row in rows:
+            group_key = str(row["group_key"])
+            bucket = grouped.setdefault(
+                group_key,
+                {
+                    "group_key": group_key,
+                    "group_label": row["group_label"],
+                    **{key: 0 for key in ([count_key] if count_key else list(count_keys))},
+                    **{key: _ZERO for key in amount_keys},
+                },
+            )
+            if count_key:
+                bucket[count_key] = _as_int(bucket[count_key]) + _as_int(row[count_key])
+            for key in count_keys:
+                bucket[key] = _as_int(bucket[key]) + _as_int(row[key])
+            raw_currency_id = row.get("currency_id")
+            currency_id = raw_currency_id if isinstance(raw_currency_id, UUID) else None
+            for key in amount_keys:
+                converted, slice_warnings = await self._convert_amount(
+                    tenant_id,
+                    currency_id,
+                    Decimal(str(row[key])),
+                )
+                bucket[key] = Decimal(str(bucket[key])) + converted
+                warnings.extend(slice_warnings)
+            if percent_key and count_keys == ("won_count", "lost_count"):
+                won = _as_int(bucket["won_count"])
+                lost = _as_int(bucket["lost_count"])
+                bucket[percent_key] = percent_of(won, won + lost)
+        merged = list(grouped.values())
+        for row in merged:
+            for key in amount_keys:
+                row[key] = quantize_money(Decimal(str(row[key])))
+        return merged, sorted(set(warnings))
+
+    async def _sum_currency_rows(
+        self,
+        tenant_id: UUID,
+        rows: object,
+    ) -> tuple[Decimal, list[str]]:
+        if not isinstance(rows, list):
+            return _ZERO, []
+        total = _ZERO
+        warnings: list[str] = []
+        for raw_currency_id, amount in rows:
+            currency_id = raw_currency_id if isinstance(raw_currency_id, UUID) else None
+            converted, slice_warnings = await self._convert_amount(
+                tenant_id,
+                currency_id,
+                Decimal(str(amount)),
+            )
+            total += converted
+            warnings.extend(slice_warnings)
+        return quantize_money(total), sorted(set(warnings))
+
+    async def _convert_amount(
+        self,
+        tenant_id: UUID,
+        currency_id: UUID | None,
+        amount: Decimal,
+        *,
+        on_date: date | None = None,
+    ) -> tuple[Decimal, list[str]]:
+        if amount == _ZERO:
+            return _ZERO, []
+        base = await self.currencies.get_base(tenant_id)
+        source_id = currency_id or base.id
+        if source_id == base.id:
+            return quantize_money(amount), []
+        try:
+            resolved = await self.exchange_rates.resolve(
+                tenant_id,
+                from_currency_id=source_id,
+                to_currency_id=base.id,
+                on_date=on_date,
+            )
+        except ExchangeRateMissingError:
+            codes = await self.currencies.codes_by_ids(tenant_id, [source_id])
+            code = codes.get(source_id, str(source_id))
+            return _ZERO, [f"Missing exchange rate for {code}; amount excluded from total"]
+        return quantize_money(amount * resolved.rate), []
 
     async def _currency_code(self, tenant_id: UUID) -> str:
         return (await self.currencies.get_base(tenant_id)).code

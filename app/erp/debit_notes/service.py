@@ -34,9 +34,11 @@ from app.common.utils.conversion import quantity_summary
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
+    apply_adjusted_line_taxes,
     compute_header_totals,
     compute_line_amounts,
     format_address_snapshot,
+    header_discount_share,
     place_of_supply_from_address,
     resolve_line_tax_category,
 )
@@ -815,7 +817,7 @@ class DebitNoteService:
             if index == last_index:
                 share = remaining_discount
             else:
-                share = self._header_discount_share(row, line)
+                share = header_discount_share(row.discount_amount, row.subtotal, line.amount)
                 remaining_discount = quantize_money(remaining_discount - share)
             net_amount = quantize_money(line.amount - share)
             account_id = await self._resolve_credit_account_id(
@@ -884,11 +886,6 @@ class DebitNoteService:
             purchase = await self.accounts.resolve_purchase_account(tenant_id, line.product_id)
             return purchase.id
         return default_purchase_id
-
-    def _header_discount_share(self, row: DebitNote, line: DebitNoteLine) -> Decimal:
-        if row.subtotal <= _ZERO or row.discount_amount == _ZERO:
-            return quantize_money(_ZERO)
-        return quantize_money(row.discount_amount * line.amount / row.subtotal)
 
     async def _posted_invoice_for_goods_receipt(
         self, tenant_id: UUID, goods_receipt_id: UUID
@@ -976,7 +973,7 @@ class DebitNoteService:
             place_of_supply=place,
         )
         round_off = quantize_money(payload.round_off_amount)
-        subtotal, doc_discount, tax_total, grand = compute_header_totals(
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
             line_nets=line_nets,
             line_taxes=line_taxes,
             discount_type=payload.discount_type,
@@ -984,6 +981,7 @@ class DebitNoteService:
             shipping_amount=quantize_money(payload.shipping_amount),
             adjustment_amount=quantize_money(payload.adjustment_amount),
         )
+        apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         grand = quantize_money(grand + round_off)
         header: dict[str, object] = {
             "debit_note_date": note_date,

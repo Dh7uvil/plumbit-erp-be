@@ -2117,7 +2117,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/PaymentAllocationInput"
+                  "$ref": "#/components/schemas/PaymentAllocationInput-Input"
                 },
                 "type": "array"
               },
@@ -3044,7 +3044,7 @@
         ],
         "title": "PartyType"
       },
-      "PaymentAllocationInput": {
+      "PaymentAllocationInput-Input": {
         "properties": {
           "item_type": {
             "$ref": "#/components/schemas/OpenItemType"
@@ -4661,6 +4661,10 @@
             "format": "uuid",
             "title": "Invoice Id"
           },
+          "currency_code": {
+            "type": "string",
+            "title": "Currency Code"
+          },
           "revenue": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -4702,6 +4706,7 @@
         "type": "object",
         "required": [
           "invoice_id",
+          "currency_code",
           "revenue",
           "cogs_amount",
           "cogs_status",

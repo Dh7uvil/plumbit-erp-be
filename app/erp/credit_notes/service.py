@@ -33,9 +33,11 @@ from app.common.services.audit import AuditWriter
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
+    apply_adjusted_line_taxes,
     compute_header_totals,
     compute_line_amounts,
     format_address_snapshot,
+    header_discount_share,
     place_of_supply_from_address,
     resolve_line_tax_category,
 )
@@ -848,7 +850,7 @@ class CreditNoteService:
             if index == last_index:
                 share = remaining_discount
             else:
-                share = self._header_discount_share(row, line)
+                share = header_discount_share(row.discount_amount, row.subtotal, line.amount)
                 remaining_discount = quantize_money(remaining_discount - share)
             net_revenue = quantize_money(line.amount - share)
             income_id = await self._resolve_income_account_id(
@@ -908,11 +910,6 @@ class CreditNoteService:
             income = await self.accounts.resolve_income_account(tenant_id, line.product_id)
             return income.id
         return default_income_id
-
-    def _header_discount_share(self, row: CreditNote, line: CreditNoteLine) -> Decimal:
-        if row.subtotal <= _ZERO or row.discount_amount == _ZERO:
-            return quantize_money(_ZERO)
-        return quantize_money(row.discount_amount * line.amount / row.subtotal)
 
     async def _posted_invoice_for_delivery_note(
         self, tenant_id: UUID, delivery_note_id: UUID
@@ -993,7 +990,7 @@ class CreditNoteService:
             place_of_supply=place,
         )
         round_off = quantize_money(payload.round_off_amount)
-        subtotal, doc_discount, tax_total, grand = compute_header_totals(
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
             line_nets=line_nets,
             line_taxes=line_taxes,
             discount_type=payload.discount_type,
@@ -1001,6 +998,7 @@ class CreditNoteService:
             shipping_amount=quantize_money(payload.shipping_amount),
             adjustment_amount=quantize_money(payload.adjustment_amount),
         )
+        apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         grand = quantize_money(grand + round_off)
         header: dict[str, object] = {
             "credit_note_date": note_date,

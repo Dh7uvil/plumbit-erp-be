@@ -257,5 +257,10 @@ class SalesOrderLine(TenantModel):
         ForeignKey("proforma_invoice_lines.id", ondelete="SET NULL"),
         nullable=True,
     )
+    carton_qty: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    packing_unit: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    cbm: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    item_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
     sales_order: Mapped[SalesOrder] = relationship(back_populates="lines")

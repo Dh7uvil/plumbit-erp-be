@@ -407,10 +407,12 @@ class TaxRegisters:
         sign: Decimal,
     ) -> TaxRegisterLine:
         category = self._first_tax_category(bill.lines, taxes)
-        net_src = bill.rcm_taxable_amount if is_reverse_charge else bill.subtotal
         tax_src = bill.rcm_tax_amount if is_reverse_charge else bill.tax_amount
         net_amount, tax_amount, grand_total = document_base_net_tax(
-            bill, sign=sign, net_amount=net_src, tax_amount=tax_src
+            bill,
+            sign=sign,
+            net_amount=bill.rcm_taxable_amount if is_reverse_charge else None,
+            tax_amount=tax_src,
         )
         return TaxRegisterLine(
             document_type=document_type,

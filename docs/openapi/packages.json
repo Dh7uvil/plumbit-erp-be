@@ -1785,6 +1785,18 @@
             ],
             "title": "Net Weight"
           },
+          "total_cbm": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Cbm"
+          },
           "weight_unit": {
             "anyOf": [
               {
@@ -1890,6 +1902,7 @@
           "dimension_unit",
           "gross_weight",
           "net_weight",
+          "total_cbm",
           "weight_unit",
           "shipping_marks",
           "notes",

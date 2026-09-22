@@ -128,6 +128,7 @@ class CrmReportRepository:
             select(
                 group_col.label("group_key"),
                 label_col.label("group_label"),
+                Opportunity.currency_id.label("currency_id"),
                 func.count().label("opportunity_count"),
                 func.coalesce(func.sum(amount), 0).label("amount"),
                 func.coalesce(func.sum(weighted), 0).label("weighted_amount"),
@@ -159,7 +160,7 @@ class CrmReportRepository:
                 ),
             )
             .where(*criteria)
-            .group_by(group_col, label_col, order_col)
+            .group_by(group_col, label_col, order_col, Opportunity.currency_id)
             .order_by(order_col, label_col)
             .limit(REPORT_ROW_LIMIT + 1)
         )
@@ -175,6 +176,7 @@ class CrmReportRepository:
         statement = (
             select(
                 Opportunity.stage_id,
+                Opportunity.currency_id,
                 func.count().label("opportunity_count"),
                 func.coalesce(func.sum(amount), 0).label("amount"),
                 func.coalesce(func.sum(weighted), 0).label("weighted_amount"),
@@ -192,18 +194,34 @@ class CrmReportRepository:
                 Opportunity.deleted_at.is_(None),
                 Opportunity.pipeline_id == pipeline_id,
             )
-            .group_by(Opportunity.stage_id)
+            .group_by(Opportunity.stage_id, Opportunity.currency_id)
         )
         rows = (await self.session.execute(statement)).all()
-        return {
-            row.stage_id: {
-                "opportunity_count": _as_int(row.opportunity_count),
-                "amount": _as_decimal(row.amount),
-                "weighted_amount": _as_decimal(row.weighted_amount),
-            }
-            for row in rows
-            if row.stage_id is not None
-        }
+        StageBucket = dict[str, Decimal | int | list[tuple[UUID | None, Decimal, Decimal]]]
+        merged: dict[UUID, StageBucket] = {}
+        for row in rows:
+            if row.stage_id is None:
+                continue
+            bucket = merged.setdefault(
+                row.stage_id,
+                {
+                    "opportunity_count": 0,
+                    "currency_slices": [],
+                },
+            )
+            bucket["opportunity_count"] = _as_int(bucket["opportunity_count"]) + _as_int(
+                row.opportunity_count
+            )
+            slices = bucket["currency_slices"]
+            assert isinstance(slices, list)
+            slices.append(
+                (
+                    row.currency_id,
+                    _as_decimal(row.amount),
+                    _as_decimal(row.weighted_amount),
+                )
+            )
+        return merged
 
     async def win_loss_aggregates(
         self,
@@ -223,6 +241,7 @@ class CrmReportRepository:
             select(
                 group_col.label("group_key"),
                 label_col.label("group_label"),
+                Opportunity.currency_id.label("currency_id"),
                 func.coalesce(func.sum(case((won, 1), else_=0)), 0).label("won_count"),
                 func.coalesce(func.sum(case((lost, 1), else_=0)), 0).label("lost_count"),
                 func.coalesce(
@@ -267,7 +286,7 @@ class CrmReportRepository:
                 close_date >= from_date,
                 close_date <= to_date,
             )
-            .group_by(group_col, label_col, order_col)
+            .group_by(group_col, label_col, order_col, Opportunity.currency_id)
             .order_by(order_col, label_col)
             .limit(REPORT_ROW_LIMIT + 1)
         )
@@ -280,6 +299,7 @@ class CrmReportRepository:
                 {
                     "group_key": self._key(row.group_key),
                     "group_label": self._label(row.group_label),
+                    "currency_id": row.currency_id,
                     "won_count": won_count,
                     "lost_count": lost_count,
                     "won_amount": _as_decimal(row.won_amount),
@@ -417,11 +437,17 @@ class CrmReportRepository:
                 select(func.count()).select_from(Opportunity).where(*open_criteria)
             )
         )
-        open_value = _as_decimal(
-            await self.session.scalar(
-                select(func.coalesce(func.sum(Opportunity.amount), 0)).where(*open_criteria)
+        open_value_rows = (
+            await self.session.execute(
+                select(
+                    Opportunity.currency_id,
+                    func.coalesce(func.sum(Opportunity.amount), 0).label("amount"),
+                )
+                .select_from(Opportunity)
+                .where(*open_criteria)
+                .group_by(Opportunity.currency_id)
             )
-        )
+        ).all()
         closing_criteria = (
             *open_criteria,
             Opportunity.expected_close_date.is_not(None),
@@ -433,11 +459,17 @@ class CrmReportRepository:
                 select(func.count()).select_from(Opportunity).where(*closing_criteria)
             )
         )
-        closing_value = _as_decimal(
-            await self.session.scalar(
-                select(func.coalesce(func.sum(Opportunity.amount), 0)).where(*closing_criteria)
+        closing_value_rows = (
+            await self.session.execute(
+                select(
+                    Opportunity.currency_id,
+                    func.coalesce(func.sum(Opportunity.amount), 0).label("amount"),
+                )
+                .select_from(Opportunity)
+                .where(*closing_criteria)
+                .group_by(Opportunity.currency_id)
             )
-        )
+        ).all()
         overdue_count = _as_int(
             await self.session.scalar(
                 select(func.count())
@@ -453,9 +485,13 @@ class CrmReportRepository:
         )
         return {
             "open_pipeline_count": open_count,
-            "open_pipeline_value": open_value,
+            "open_pipeline_value_rows": [
+                (row.currency_id, _as_decimal(row.amount)) for row in open_value_rows
+            ],
             "closing_this_month_count": closing_count,
-            "closing_this_month_value": closing_value,
+            "closing_this_month_value_rows": [
+                (row.currency_id, _as_decimal(row.amount)) for row in closing_value_rows
+            ],
             "overdue_activity_count": overdue_count,
         }
 
@@ -463,6 +499,7 @@ class CrmReportRepository:
         return {
             "group_key": self._key(row.group_key),
             "group_label": self._label(row.group_label),
+            "currency_id": row.currency_id,
             "opportunity_count": _as_int(row.opportunity_count),
             "amount": _as_decimal(row.amount),
             "weighted_amount": _as_decimal(row.weighted_amount),

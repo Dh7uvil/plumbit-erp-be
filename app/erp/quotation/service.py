@@ -42,6 +42,7 @@ from app.common.utils.conversion import (
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
+    apply_adjusted_line_taxes,
     compute_header_totals,
     compute_line_amounts,
     format_address_snapshot,
@@ -973,7 +974,7 @@ class QuotationService:
             price_list_id=price_list_id,
             currency_id=currency_id,
         )
-        subtotal, doc_discount, tax_total, grand = compute_header_totals(
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
             line_nets=line_nets,
             line_taxes=line_taxes,
             discount_type=payload.discount_type,
@@ -981,6 +982,7 @@ class QuotationService:
             shipping_amount=quantize_money(payload.shipping_amount),
             adjustment_amount=quantize_money(payload.adjustment_amount),
         )
+        apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         header: dict[str, object] = {
             "quote_date": quote_date,
             "valid_until": payload.valid_until,

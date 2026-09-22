@@ -38,6 +38,7 @@ from app.common.utils.conversion import quantity_summary, remaining_qty
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
+    apply_adjusted_line_taxes,
     compute_header_totals,
     compute_line_amounts,
     format_address_snapshot,
@@ -1114,7 +1115,7 @@ class PurchaseOrderService:
             tax_treatment=supplier.tax_treatment,
             place_of_supply=place,
         )
-        subtotal, doc_discount, tax_total, grand = compute_header_totals(
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
             line_nets=line_nets,
             line_taxes=line_taxes,
             discount_type=payload.discount_type,
@@ -1122,6 +1123,7 @@ class PurchaseOrderService:
             shipping_amount=quantize_money(payload.shipping_amount),
             adjustment_amount=quantize_money(payload.adjustment_amount),
         )
+        apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         header: dict[str, object] = {
             "order_date": order_date,
             "expected_delivery_date": payload.expected_delivery_date,

@@ -133,6 +133,7 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
             "confirm",
             "close",
         ),
+        "voucher": ("create", "read", "update", "delete", "post", "cancel"),
     },
     REPORTS_MODULE: {
         "report": (
@@ -143,6 +144,7 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
             "financial",
             "export",
             "crm",
+            "day_book",
         ),
     },
     MASTERS_MODULE: {
@@ -536,6 +538,7 @@ DUNNING_SEND = build_permission(ACCOUNTING_MODULE, "dunning", "send")
 CREDIT_CONTROL_OVERRIDE = build_permission(ACCOUNTING_MODULE, "credit_control", "override")
 
 REPORT_LEDGER = build_permission(REPORTS_MODULE, "report", "ledger")
+REPORT_DAY_BOOK = build_permission(REPORTS_MODULE, "report", "day_book")
 REPORT_TAX = build_permission(REPORTS_MODULE, "report", "tax")
 REPORT_AR_AP = build_permission(REPORTS_MODULE, "report", "ar_ap")
 REPORT_INVENTORY = build_permission(REPORTS_MODULE, "report", "inventory")
@@ -583,6 +586,12 @@ COST_SHEET_CONFIRM = build_permission(ACCOUNTING_MODULE, "cost_sheet", "confirm"
 COST_SHEET_CLOSE = build_permission(ACCOUNTING_MODULE, "cost_sheet", "close")
 COST_SHEET_IMPORT = build_permission(ACCOUNTING_MODULE, "cost_sheet", "import")
 COST_SHEET_EXPORT = build_permission(ACCOUNTING_MODULE, "cost_sheet", "export")
+VOUCHER_CREATE = build_permission(ACCOUNTING_MODULE, "voucher", "create")
+VOUCHER_READ = build_permission(ACCOUNTING_MODULE, "voucher", "read")
+VOUCHER_UPDATE = build_permission(ACCOUNTING_MODULE, "voucher", "update")
+VOUCHER_DELETE = build_permission(ACCOUNTING_MODULE, "voucher", "delete")
+VOUCHER_POST = build_permission(ACCOUNTING_MODULE, "voucher", "post")
+VOUCHER_CANCEL = build_permission(ACCOUNTING_MODULE, "voucher", "cancel")
 
 SYSTEM_ADMIN_ROLE_NAME = "Superadmin"
 

@@ -696,7 +696,12 @@
           "LANDED_COST",
           "COST_SHEET_IMPORT",
           "COST_SHEET_EXPORT",
-          "COST_SHEET_OTHER"
+          "COST_SHEET_OTHER",
+          "CASH_RECEIPT_VOUCHER",
+          "CASH_PAYMENT_VOUCHER",
+          "BANK_RECEIPT_VOUCHER",
+          "BANK_PAYMENT_VOUCHER",
+          "CONTRA_VOUCHER"
         ],
         "title": "DocumentType"
       },

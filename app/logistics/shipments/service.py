@@ -213,15 +213,6 @@ class ShipmentService:
                 else existing.port_of_discharge,
                 etd=payload.etd if payload.etd is not None else existing.etd,
                 eta=payload.eta if payload.eta is not None else existing.eta,
-                gross_weight=payload.gross_weight
-                if payload.gross_weight is not None
-                else existing.gross_weight,
-                net_weight=payload.net_weight
-                if payload.net_weight is not None
-                else existing.net_weight,
-                total_packages=payload.total_packages
-                if payload.total_packages is not None
-                else existing.total_packages,
                 notes=payload.notes if payload.notes is not None else existing.notes,
             )
             values = await self._header_values(tenant_id, merged)
@@ -483,6 +474,7 @@ class ShipmentService:
             actual_arrival_date=row.actual_arrival_date,
             gross_weight=row.gross_weight,
             net_weight=row.net_weight,
+            total_cbm=row.total_cbm,
             total_packages=row.total_packages,
             notes=row.notes,
             available_actions=self._available_actions(status),

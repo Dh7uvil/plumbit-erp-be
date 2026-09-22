@@ -21,7 +21,7 @@ def test_unregistered_entity_type_has_no_spec() -> None:
 
 
 def test_customer_and_supplier_payments_are_registered() -> None:
-    for entity_type in ("customer_payment", "supplier_payment"):
+    for entity_type in ("customer_payment", "supplier_payment", "voucher"):
         spec = get_activity_spec(entity_type)
         assert spec is not None
         assert "status" in spec.changed_fields

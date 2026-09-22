@@ -109,6 +109,7 @@ class PackageResponse(BaseModel):
     dimension_unit: str | None
     gross_weight: Decimal | None
     net_weight: Decimal | None
+    total_cbm: Decimal | None
     weight_unit: str | None
     shipping_marks: str | None
     notes: str | None
@@ -121,7 +122,7 @@ class PackageResponse(BaseModel):
     updated_by: UUID | None = None
 
 
-class PackableLineResponse(BaseModel):
+class PackableLineResponse(PackingFields):
     sales_order_line_id: UUID
     product_id: UUID | None
     description: str

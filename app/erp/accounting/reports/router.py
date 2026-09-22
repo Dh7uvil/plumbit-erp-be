@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.auth.catalog import (
     REPORT_AR_AP,
+    REPORT_DAY_BOOK,
     REPORT_EXPORT,
     REPORT_FINANCIAL,
     REPORT_INVENTORY,
@@ -173,6 +174,38 @@ async def get_cash_book(
         side=side,
     )
     return _maybe_csv(request, export_format, data, user, filename="cash-book.csv")
+
+
+@router.get("/day-book", response_model=ApiResponse[DayBookResponse])
+async def get_day_book(
+    request: Request,
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    user: Annotated[CurrentUser, Depends(require_permission(REPORT_DAY_BOOK))],
+    from_date: Annotated[date, Query(alias="from")],
+    to_date: Annotated[date, Query(alias="to")],
+    account_id: UUID | None = None,
+    party_id: UUID | None = None,
+    branch_id: UUID | None = None,
+    cost_center_id: UUID | None = None,
+    source_type: str | None = None,
+    voucher_type: str | None = None,
+    side: str | None = None,
+    export_format: FormatQuery = None,
+) -> Any:
+    data = await service.day_book(
+        tenant.tenant_id,
+        from_date=from_date,
+        to_date=to_date,
+        account_id=account_id,
+        party_id=party_id,
+        branch_id=branch_id,
+        cost_center_id=cost_center_id,
+        source_type=source_type,
+        voucher_type=voucher_type,
+        side=side,
+    )
+    return _maybe_csv(request, export_format, data, user, filename="day-book.csv")
 
 
 @router.get("/bank-book", response_model=ApiResponse[DayBookResponse])

@@ -57,6 +57,32 @@ def compute_line_amounts(
     return qty, line_discount, tax, net
 
 
+def header_discount_share(
+    discount_amount_value: Decimal,
+    subtotal: Decimal,
+    line_amount: Decimal,
+) -> Decimal:
+    """Pro-rata share of a document-level discount allocated to one line."""
+
+    if subtotal <= _ZERO or discount_amount_value == _ZERO:
+        return quantize_money(_ZERO)
+    return quantize_money(discount_amount_value * line_amount / subtotal)
+
+
+def adjusted_line_taxes_after_header_discount(
+    line_nets: list[Decimal],
+    line_taxes: list[Decimal],
+    doc_discount: Decimal,
+) -> list[Decimal]:
+    """Reduce each line's VAT pro-rata when a header discount applies."""
+
+    subtotal = quantize_money(sum(line_nets, start=_ZERO))
+    if subtotal <= _ZERO or doc_discount == _ZERO:
+        return list(line_taxes)
+    taxable_ratio = (subtotal - doc_discount) / subtotal
+    return [quantize_money(tax * taxable_ratio) for tax in line_taxes]
+
+
 def compute_header_totals(
     *,
     line_nets: list[Decimal],
@@ -65,16 +91,27 @@ def compute_header_totals(
     discount_value: Decimal | None,
     shipping_amount: Decimal,
     adjustment_amount: Decimal,
-) -> tuple[Decimal, Decimal, Decimal, Decimal]:
-    """Return (subtotal, doc_discount, tax_total, grand_total)."""
+) -> tuple[Decimal, Decimal, Decimal, Decimal, list[Decimal]]:
+    """Return (subtotal, doc_discount, tax_total, grand_total, adjusted_line_taxes)."""
 
     subtotal = quantize_money(sum(line_nets, start=_ZERO))
-    tax_total = quantize_money(sum(line_taxes, start=_ZERO))
     doc_discount = discount_amount(subtotal, discount_type, discount_value)
+    adjusted_taxes = adjusted_line_taxes_after_header_discount(line_nets, line_taxes, doc_discount)
+    tax_total = quantize_money(sum(adjusted_taxes, start=_ZERO))
     grand = quantize_money(
         subtotal - doc_discount + tax_total + shipping_amount + adjustment_amount
     )
-    return subtotal, doc_discount, tax_total, grand
+    return subtotal, doc_discount, tax_total, grand, adjusted_taxes
+
+
+def apply_adjusted_line_taxes(
+    line_rows: list[dict[str, object]],
+    adjusted_taxes: list[Decimal],
+) -> None:
+    """Overwrite persisted line tax_amount values after header discount adjustment."""
+
+    for row, tax in zip(line_rows, adjusted_taxes, strict=True):
+        row["tax_amount"] = tax
 
 
 def resolve_line_tax_category(

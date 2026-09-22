@@ -132,6 +132,7 @@ def _register_unposted_probes() -> None:
     register_unposted("debit_note", _probe_unposted_debit_notes)
     register_unposted("customer_payment", _probe_unposted_customer_payments)
     register_unposted("supplier_payment", _probe_unposted_supplier_payments)
+    register_unposted("voucher", _probe_unposted_vouchers)
     register_unposted("landed_cost", _probe_unposted_landed_costs)
 
 
@@ -506,6 +507,33 @@ async def _probe_unposted_supplier_payments(
             document_type="supplier_payment",
             document_number=row.document_number,
             document_date=row.payment_date,
+            status=str(row.status),
+        )
+        for row in rows
+    ]
+    return documents, total
+
+
+async def _probe_unposted_vouchers(
+    session: AsyncSession,
+    tenant_id: UUID,
+    as_of: date,
+    page: PageParams,
+) -> tuple[list[UnpostedDocument], int]:
+    from app.erp.accounting.vouchers.service import VoucherService
+
+    rows, total = await VoucherService(session).list(
+        tenant_id,
+        page=page,
+        status=InvoiceDocumentStatus.DRAFT.value,
+        voucher_date_to=as_of,
+    )
+    documents = [
+        UnpostedDocument(
+            id=row.id,
+            document_type="voucher",
+            document_number=row.document_number,
+            document_date=row.voucher_date,
             status=str(row.status),
         )
         for row in rows
@@ -1009,6 +1037,8 @@ def _register_outbox_handlers() -> None:
         "purchase.supplier_payment.posted",
         "purchase.supplier_payment.cancelled",
         "purchase.supplier_payment.allocated",
+        "accounting.voucher.posted",
+        "accounting.voucher.cancelled",
         "purchase.landed_cost.posted",
         "purchase.landed_cost.cancelled",
         "identity.password_reset.requested",

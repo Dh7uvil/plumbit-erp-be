@@ -1,24 +1,24 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Plumbit ERP API \u2014 Shipments",
-    "description": "Consolidated outbound shipments. Dispatch and close are explicit actions.",
+    "title": "Plumbit ERP API \u2014 Vouchers",
+    "description": "Vouchers",
     "version": "0.1.0"
   },
   "tags": [
     {
-      "name": "Shipments",
-      "description": "Consolidated outbound shipments. Dispatch and close are explicit actions."
+      "name": "Vouchers",
+      "description": "Vouchers"
     }
   ],
   "paths": {
-    "/api/v1/shipments": {
+    "/api/v1/vouchers": {
       "get": {
         "tags": [
-          "Shipments"
+          "Vouchers"
         ],
-        "summary": "List Shipments",
-        "operationId": "list_shipments_api_v1_shipments_get",
+        "summary": "List Vouchers",
+        "operationId": "list_vouchers_api_v1_vouchers_get",
         "security": [
           {
             "HTTPBearer": []
@@ -128,7 +128,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/ShipmentStatus"
+                  "$ref": "#/components/schemas/InvoiceDocumentStatus"
                 },
                 {
                   "type": "null"
@@ -138,35 +138,103 @@
             }
           },
           {
-            "name": "shipment_type",
+            "name": "voucher_type",
             "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/ShipmentType"
+                  "$ref": "#/components/schemas/VoucherType"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "Shipment Type"
+              "title": "Voucher Type"
             }
           },
           {
-            "name": "transport_mode",
+            "name": "party_id",
             "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/TransportMode"
+                  "type": "string",
+                  "format": "uuid"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "Transport Mode"
+              "title": "Party Id"
+            }
+          },
+          {
+            "name": "currency_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency Id"
+            }
+          },
+          {
+            "name": "payment_method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PaymentMethod"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payment Method"
+            }
+          },
+          {
+            "name": "voucher_date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Voucher Date From"
+            }
+          },
+          {
+            "name": "voucher_date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Voucher Date To"
             }
           }
         ],
@@ -176,7 +244,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_list_ShipmentResponse__"
+                  "$ref": "#/components/schemas/ApiResponse_list_VoucherResponse__"
                 }
               }
             }
@@ -195,10 +263,10 @@
       },
       "post": {
         "tags": [
-          "Shipments"
+          "Vouchers"
         ],
-        "summary": "Create Shipment",
-        "operationId": "create_shipment_api_v1_shipments_post",
+        "summary": "Create Voucher",
+        "operationId": "create_voucher_api_v1_vouchers_post",
         "security": [
           {
             "HTTPBearer": []
@@ -209,7 +277,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ShipmentCreate"
+                "$ref": "#/components/schemas/VoucherCreate"
               }
             }
           }
@@ -220,7 +288,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_VoucherResponse_"
                 }
               }
             }
@@ -238,13 +306,13 @@
         }
       }
     },
-    "/api/v1/shipments/{shipment_id}": {
+    "/api/v1/vouchers/{voucher_id}": {
       "get": {
         "tags": [
-          "Shipments"
+          "Vouchers"
         ],
-        "summary": "Get Shipment",
-        "operationId": "get_shipment_api_v1_shipments__shipment_id__get",
+        "summary": "Get Voucher",
+        "operationId": "get_voucher_api_v1_vouchers__voucher_id__get",
         "security": [
           {
             "HTTPBearer": []
@@ -252,13 +320,13 @@
         ],
         "parameters": [
           {
-            "name": "shipment_id",
+            "name": "voucher_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Shipment Id"
+              "title": "Voucher Id"
             }
           }
         ],
@@ -268,7 +336,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_VoucherResponse_"
                 }
               }
             }
@@ -287,10 +355,10 @@
       },
       "patch": {
         "tags": [
-          "Shipments"
+          "Vouchers"
         ],
-        "summary": "Update Shipment",
-        "operationId": "update_shipment_api_v1_shipments__shipment_id__patch",
+        "summary": "Update Voucher",
+        "operationId": "update_voucher_api_v1_vouchers__voucher_id__patch",
         "security": [
           {
             "HTTPBearer": []
@@ -298,13 +366,13 @@
         ],
         "parameters": [
           {
-            "name": "shipment_id",
+            "name": "voucher_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Shipment Id"
+              "title": "Voucher Id"
             }
           },
           {
@@ -329,7 +397,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ShipmentUpdate"
+                "$ref": "#/components/schemas/VoucherUpdate"
               }
             }
           }
@@ -340,7 +408,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_VoucherResponse_"
                 }
               }
             }
@@ -359,10 +427,10 @@
       },
       "delete": {
         "tags": [
-          "Shipments"
+          "Vouchers"
         ],
-        "summary": "Delete Shipment",
-        "operationId": "delete_shipment_api_v1_shipments__shipment_id__delete",
+        "summary": "Delete Voucher",
+        "operationId": "delete_voucher_api_v1_vouchers__voucher_id__delete",
         "security": [
           {
             "HTTPBearer": []
@@ -370,13 +438,29 @@
         ],
         "parameters": [
           {
-            "name": "shipment_id",
+            "name": "voucher_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Shipment Id"
+              "title": "Voucher Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
             }
           },
           {
@@ -402,7 +486,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_VoucherResponse_"
                 }
               }
             }
@@ -420,13 +504,13 @@
         }
       }
     },
-    "/api/v1/shipments/{shipment_id}/dispatch": {
+    "/api/v1/vouchers/{voucher_id}/post": {
       "post": {
         "tags": [
-          "Shipments"
+          "Vouchers"
         ],
-        "summary": "Dispatch Shipment",
-        "operationId": "dispatch_shipment_api_v1_shipments__shipment_id__dispatch_post",
+        "summary": "Post Voucher",
+        "operationId": "post_voucher_api_v1_vouchers__voucher_id__post_post",
         "security": [
           {
             "HTTPBearer": []
@@ -434,13 +518,13 @@
         ],
         "parameters": [
           {
-            "name": "shipment_id",
+            "name": "voucher_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Shipment Id"
+              "title": "Voucher Id"
             }
           },
           {
@@ -458,6 +542,22 @@
               ],
               "title": "If-Match"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "responses": {
@@ -466,7 +566,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_VoucherResponse_"
                 }
               }
             }
@@ -484,13 +584,13 @@
         }
       }
     },
-    "/api/v1/shipments/{shipment_id}/arrive": {
+    "/api/v1/vouchers/{voucher_id}/cancel": {
       "post": {
         "tags": [
-          "Shipments"
+          "Vouchers"
         ],
-        "summary": "Arrive Shipment",
-        "operationId": "arrive_shipment_api_v1_shipments__shipment_id__arrive_post",
+        "summary": "Cancel Voucher",
+        "operationId": "cancel_voucher_api_v1_vouchers__voucher_id__cancel_post",
         "security": [
           {
             "HTTPBearer": []
@@ -498,13 +598,13 @@
         ],
         "parameters": [
           {
-            "name": "shipment_id",
+            "name": "voucher_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Shipment Id"
+              "title": "Voucher Id"
             }
           },
           {
@@ -522,57 +622,9 @@
               ],
               "title": "If-Match"
             }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/shipments/{shipment_id}/close": {
-      "post": {
-        "tags": [
-          "Shipments"
-        ],
-        "summary": "Close Shipment",
-        "operationId": "close_shipment_api_v1_shipments__shipment_id__close_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "shipment_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Shipment Id"
-            }
           },
           {
-            "name": "if-match",
+            "name": "Idempotency-Key",
             "in": "header",
             "required": false,
             "schema": {
@@ -584,135 +636,7 @@
                   "type": "null"
                 }
               ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/shipments/{shipment_id}/cancel": {
-      "post": {
-        "tags": [
-          "Shipments"
-        ],
-        "summary": "Cancel Shipment",
-        "operationId": "cancel_shipment_api_v1_shipments__shipment_id__cancel_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "shipment_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Shipment Id"
-            }
-          },
-          {
-            "name": "if-match",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/shipments/{shipment_id}/tracking": {
-      "patch": {
-        "tags": [
-          "Shipments"
-        ],
-        "summary": "Update Shipment Tracking",
-        "operationId": "update_shipment_tracking_api_v1_shipments__shipment_id__tracking_patch",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "shipment_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Shipment Id"
-            }
-          },
-          {
-            "name": "if-match",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
+              "title": "Idempotency-Key"
             }
           }
         ],
@@ -721,7 +645,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ShipmentTrackingUpdate"
+                "$ref": "#/components/schemas/VoucherCancelRequest"
               }
             }
           }
@@ -732,7 +656,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_VoucherResponse_"
                 }
               }
             }
@@ -750,13 +674,13 @@
         }
       }
     },
-    "/api/v1/shipments/{shipment_id}/delivery-notes": {
-      "post": {
+    "/api/v1/vouchers/{voucher_id}/allocations": {
+      "get": {
         "tags": [
-          "Shipments"
+          "Vouchers"
         ],
-        "summary": "Attach Delivery Notes",
-        "operationId": "attach_delivery_notes_api_v1_shipments__shipment_id__delivery_notes_post",
+        "summary": "List Voucher Allocations",
+        "operationId": "list_voucher_allocations_api_v1_vouchers__voucher_id__allocations_get",
         "security": [
           {
             "HTTPBearer": []
@@ -764,81 +688,13 @@
         ],
         "parameters": [
           {
-            "name": "shipment_id",
+            "name": "voucher_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Shipment Id"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ShipmentAttachNotesRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/shipments/{shipment_id}/delivery-notes/{note_id}": {
-      "delete": {
-        "tags": [
-          "Shipments"
-        ],
-        "summary": "Detach Delivery Note",
-        "operationId": "detach_delivery_note_api_v1_shipments__shipment_id__delivery_notes__note_id__delete",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "shipment_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Shipment Id"
-            }
-          },
-          {
-            "name": "note_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Note Id"
+              "title": "Voucher Id"
             }
           }
         ],
@@ -848,7 +704,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ShipmentResponse_"
+                  "$ref": "#/components/schemas/ApiResponse_list_PaymentAllocationRecordResponse__"
                 }
               }
             }
@@ -869,7 +725,7 @@
   },
   "components": {
     "schemas": {
-      "ApiResponse_ShipmentResponse_": {
+      "ApiResponse_VoucherResponse_": {
         "properties": {
           "success": {
             "type": "boolean",
@@ -878,7 +734,7 @@
             "default": true
           },
           "data": {
-            "$ref": "#/components/schemas/ShipmentResponse"
+            "$ref": "#/components/schemas/VoucherResponse"
           },
           "message": {
             "anyOf": [
@@ -901,9 +757,9 @@
         "required": [
           "data"
         ],
-        "title": "ApiResponse[ShipmentResponse]"
+        "title": "ApiResponse[VoucherResponse]"
       },
-      "ApiResponse_list_ShipmentResponse__": {
+      "ApiResponse_list_PaymentAllocationRecordResponse__": {
         "properties": {
           "success": {
             "type": "boolean",
@@ -913,7 +769,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/ShipmentResponse"
+              "$ref": "#/components/schemas/PaymentAllocationRecordResponse"
             },
             "type": "array",
             "title": "Data"
@@ -939,7 +795,45 @@
         "required": [
           "data"
         ],
-        "title": "ApiResponse[list[ShipmentResponse]]"
+        "title": "ApiResponse[list[PaymentAllocationRecordResponse]]"
+      },
+      "ApiResponse_list_VoucherResponse__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/VoucherResponse"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[list[VoucherResponse]]"
       },
       "HTTPValidationError": {
         "properties": {
@@ -954,330 +848,110 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
-      "Incoterm": {
+      "InvoiceDocumentStatus": {
         "type": "string",
         "enum": [
-          "EXW",
-          "FCA",
-          "FAS",
-          "FOB",
-          "CFR",
-          "CIF",
-          "CPT",
-          "CIP",
-          "DAP",
-          "DPU",
-          "DDP"
+          "DRAFT",
+          "POSTED",
+          "CANCELLED"
         ],
-        "title": "Incoterm"
+        "title": "InvoiceDocumentStatus"
       },
-      "RelatedDocumentRef": {
+      "OpenItemType": {
+        "type": "string",
+        "enum": [
+          "SALES_INVOICE",
+          "PURCHASE_INVOICE",
+          "CREDIT_NOTE",
+          "DEBIT_NOTE",
+          "OPENING_AR",
+          "OPENING_AP",
+          "CUSTOMER_PAYMENT",
+          "SUPPLIER_PAYMENT"
+        ],
+        "title": "OpenItemType"
+      },
+      "PaymentAllocationInput-Input": {
         "properties": {
-          "document_type": {
-            "type": "string",
-            "title": "Document Type"
+          "item_type": {
+            "$ref": "#/components/schemas/OpenItemType"
           },
-          "document_id": {
+          "item_id": {
             "type": "string",
             "format": "uuid",
-            "title": "Document Id"
+            "title": "Item Id"
           },
-          "document_number": {
-            "type": "string",
-            "title": "Document Number"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "relationship": {
-            "type": "string",
-            "title": "Relationship"
-          },
-          "document_date": {
+          "amount": {
             "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
               {
                 "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
               }
             ],
-            "title": "Document Date"
-          },
-          "quantity_summary": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Quantity Summary"
-          },
-          "amount_summary": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Amount Summary"
+            "title": "Amount"
           }
         },
         "type": "object",
         "required": [
-          "document_type",
-          "document_id",
-          "document_number",
-          "status",
-          "relationship"
+          "item_type",
+          "item_id",
+          "amount"
         ],
-        "title": "RelatedDocumentRef"
+        "title": "PaymentAllocationInput"
       },
-      "ShipmentAttachNotesRequest": {
+      "PaymentAllocationInput-Output": {
         "properties": {
-          "delivery_note_ids": {
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "type": "array",
-            "minItems": 1,
-            "title": "Delivery Note Ids"
+          "item_type": {
+            "$ref": "#/components/schemas/OpenItemType"
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Item Id"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)",
+            "title": "Amount"
           }
         },
         "type": "object",
         "required": [
-          "delivery_note_ids"
+          "item_type",
+          "item_id",
+          "amount"
         ],
-        "title": "ShipmentAttachNotesRequest"
+        "title": "PaymentAllocationInput"
       },
-      "ShipmentCreate": {
-        "properties": {
-          "shipment_type": {
-            "$ref": "#/components/schemas/ShipmentType"
-          },
-          "transport_mode": {
-            "$ref": "#/components/schemas/TransportMode"
-          },
-          "incoterm": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Incoterm"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "container_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Container Number"
-          },
-          "seal_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Seal Number"
-          },
-          "carrier_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Carrier Name"
-          },
-          "vessel_or_flight_no": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Vessel Or Flight No"
-          },
-          "voyage_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Voyage Number"
-          },
-          "bl_awb_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bl Awb Number"
-          },
-          "bl_awb_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bl Awb Date"
-          },
-          "freight_forwarder_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Freight Forwarder Id"
-          },
-          "port_of_loading": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Port Of Loading"
-          },
-          "port_of_discharge": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Port Of Discharge"
-          },
-          "etd": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Etd"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          }
-        },
-        "type": "object",
-        "required": [
-          "shipment_type",
-          "transport_mode"
-        ],
-        "title": "ShipmentCreate"
-      },
-      "ShipmentResponse": {
+      "PaymentAllocationRecordResponse": {
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid",
             "title": "Id"
           },
-          "tenant_id": {
+          "payment_type": {
+            "type": "string",
+            "title": "Payment Type"
+          },
+          "payment_id": {
             "type": "string",
             "format": "uuid",
-            "title": "Tenant Id"
+            "title": "Payment Id"
           },
-          "document_number": {
+          "item_type": {
+            "$ref": "#/components/schemas/OpenItemType"
+          },
+          "item_id": {
             "type": "string",
-            "title": "Document Number"
+            "format": "uuid",
+            "title": "Item Id"
           },
-          "status": {
-            "$ref": "#/components/schemas/ShipmentStatus"
-          },
-          "version": {
-            "type": "integer",
-            "title": "Version"
-          },
-          "shipment_type": {
-            "$ref": "#/components/schemas/ShipmentType"
-          },
-          "transport_mode": {
-            "$ref": "#/components/schemas/TransportMode"
-          },
-          "incoterm": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Incoterm"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "container_number": {
+          "item_document_number": {
             "anyOf": [
               {
                 "type": "string"
@@ -1286,76 +960,14 @@
                 "type": "null"
               }
             ],
-            "title": "Container Number"
+            "title": "Item Document Number"
           },
-          "seal_number": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Seal Number"
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
           },
-          "carrier_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Carrier Name"
-          },
-          "vessel_or_flight_no": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Vessel Or Flight No"
-          },
-          "voyage_number": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Voyage Number"
-          },
-          "bl_awb_number": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bl Awb Number"
-          },
-          "bl_awb_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bl Awb Date"
-          },
-          "freight_forwarder_id": {
+          "journal_entry_id": {
             "anyOf": [
               {
                 "type": "string",
@@ -1365,149 +977,19 @@
                 "type": "null"
               }
             ],
-            "title": "Freight Forwarder Id"
+            "title": "Journal Entry Id"
           },
-          "port_of_loading": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Port Of Loading"
-          },
-          "port_of_discharge": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Port Of Discharge"
-          },
-          "etd": {
+          "reversed_at": {
             "anyOf": [
               {
                 "type": "string",
-                "format": "date"
+                "format": "date-time"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Etd"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          },
-          "actual_departure_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actual Departure Date"
-          },
-          "actual_arrival_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actual Arrival Date"
-          },
-          "gross_weight": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gross Weight"
-          },
-          "net_weight": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Net Weight"
-          },
-          "total_cbm": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Total Cbm"
-          },
-          "total_packages": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Total Packages"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "available_actions": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Available Actions"
-          },
-          "related_documents": {
-            "items": {
-              "$ref": "#/components/schemas/RelatedDocumentRef"
-            },
-            "type": "array",
-            "title": "Related Documents"
+            "title": "Reversed At"
           },
           "created_at": {
             "type": "string",
@@ -1518,426 +1000,35 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By"
-          },
-          "updated_by": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated By"
           }
         },
         "type": "object",
         "required": [
           "id",
-          "tenant_id",
-          "document_number",
-          "status",
-          "version",
-          "shipment_type",
-          "transport_mode",
-          "incoterm",
-          "container_number",
-          "seal_number",
-          "carrier_name",
-          "vessel_or_flight_no",
-          "voyage_number",
-          "bl_awb_number",
-          "bl_awb_date",
-          "freight_forwarder_id",
-          "port_of_loading",
-          "port_of_discharge",
-          "etd",
-          "eta",
-          "actual_departure_date",
-          "actual_arrival_date",
-          "gross_weight",
-          "net_weight",
-          "total_cbm",
-          "total_packages",
-          "notes",
+          "payment_type",
+          "payment_id",
+          "item_type",
+          "item_id",
+          "amount",
           "created_at",
           "updated_at"
         ],
-        "title": "ShipmentResponse"
+        "title": "PaymentAllocationRecordResponse"
       },
-      "ShipmentStatus": {
+      "PaymentMethod": {
         "type": "string",
         "enum": [
-          "DRAFT",
-          "DISPATCHED",
-          "IN_TRANSIT",
-          "ARRIVED",
-          "CLOSED",
-          "CANCELLED"
+          "BANK",
+          "CASH",
+          "UPI",
+          "CREDIT_CARD",
+          "DEBIT_CARD",
+          "CHEQUE",
+          "ONLINE",
+          "TT",
+          "OTHER"
         ],
-        "title": "ShipmentStatus"
-      },
-      "ShipmentTrackingUpdate": {
-        "properties": {
-          "carrier_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Carrier Name"
-          },
-          "vessel_or_flight_no": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Vessel Or Flight No"
-          },
-          "voyage_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Voyage Number"
-          },
-          "bl_awb_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bl Awb Number"
-          },
-          "bl_awb_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bl Awb Date"
-          },
-          "etd": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Etd"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          },
-          "actual_departure_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actual Departure Date"
-          },
-          "actual_arrival_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actual Arrival Date"
-          },
-          "version": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Version"
-          }
-        },
-        "type": "object",
-        "title": "ShipmentTrackingUpdate"
-      },
-      "ShipmentType": {
-        "type": "string",
-        "enum": [
-          "IMPORT",
-          "EXPORT",
-          "DOMESTIC"
-        ],
-        "title": "ShipmentType"
-      },
-      "ShipmentUpdate": {
-        "properties": {
-          "shipment_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ShipmentType"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "transport_mode": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TransportMode"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "incoterm": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Incoterm"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "container_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Container Number"
-          },
-          "seal_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Seal Number"
-          },
-          "carrier_name": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Carrier Name"
-          },
-          "vessel_or_flight_no": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Vessel Or Flight No"
-          },
-          "voyage_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Voyage Number"
-          },
-          "bl_awb_number": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bl Awb Number"
-          },
-          "bl_awb_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bl Awb Date"
-          },
-          "freight_forwarder_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Freight Forwarder Id"
-          },
-          "port_of_loading": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Port Of Loading"
-          },
-          "port_of_discharge": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Port Of Discharge"
-          },
-          "etd": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Etd"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "version": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Version"
-          }
-        },
-        "type": "object",
-        "title": "ShipmentUpdate"
-      },
-      "TransportMode": {
-        "type": "string",
-        "enum": [
-          "SEA",
-          "AIR",
-          "ROAD",
-          "RAIL",
-          "COURIER"
-        ],
-        "title": "TransportMode"
+        "title": "PaymentMethod"
       },
       "ValidationError": {
         "properties": {
@@ -1978,6 +1069,905 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VoucherCancelRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "title": "VoucherCancelRequest"
+      },
+      "VoucherCreate": {
+        "properties": {
+          "voucher_type": {
+            "$ref": "#/components/schemas/VoucherType"
+          },
+          "voucher_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voucher Date"
+          },
+          "payment_account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Payment Account Id"
+          },
+          "counter_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counter Account Id"
+          },
+          "total_amount": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              }
+            ],
+            "title": "Total Amount"
+          },
+          "currency_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Id"
+          },
+          "party_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Type"
+          },
+          "party_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Id"
+          },
+          "payment_method": {
+            "$ref": "#/components/schemas/PaymentMethod",
+            "default": "CASH"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "cost_center_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Center Id"
+          },
+          "narration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Narration"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/VoucherLineInput"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentAllocationInput-Input"
+            },
+            "type": "array",
+            "title": "Allocations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "voucher_type",
+          "payment_account_id",
+          "total_amount"
+        ],
+        "title": "VoucherCreate"
+      },
+      "VoucherLineInput": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              }
+            ],
+            "title": "Amount"
+          },
+          "party_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Type"
+          },
+          "party_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Id"
+          },
+          "tax_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Id"
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "cost_center_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Center Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_id",
+          "amount"
+        ],
+        "title": "VoucherLineInput"
+      },
+      "VoucherLineResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "line_number": {
+            "type": "integer",
+            "title": "Line Number"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          },
+          "party_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Type"
+          },
+          "party_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Id"
+          },
+          "tax_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Id"
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "cost_center_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Center Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "line_number",
+          "account_id",
+          "amount",
+          "party_type",
+          "party_id",
+          "tax_id",
+          "branch_id",
+          "cost_center_id",
+          "description"
+        ],
+        "title": "VoucherLineResponse"
+      },
+      "VoucherResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tenant Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "display_number": {
+            "type": "string",
+            "title": "Display Number"
+          },
+          "voucher_type": {
+            "$ref": "#/components/schemas/VoucherType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InvoiceDocumentStatus"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "is_posted": {
+            "type": "boolean",
+            "title": "Is Posted"
+          },
+          "voucher_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Voucher Date"
+          },
+          "document_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Document Date"
+          },
+          "payment_account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Payment Account Id"
+          },
+          "counter_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counter Account Id"
+          },
+          "total_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Amount"
+          },
+          "amount_unapplied": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount Unapplied"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "base_currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Base Currency Id"
+          },
+          "exchange_rate": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Exchange Rate"
+          },
+          "foreign_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Foreign Amount"
+          },
+          "base_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Amount"
+          },
+          "party_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Type"
+          },
+          "party_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Id"
+          },
+          "payment_method": {
+            "$ref": "#/components/schemas/PaymentMethod"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "cost_center_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Center Id"
+          },
+          "narration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Narration"
+          },
+          "journal_entry_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal Entry Id"
+          },
+          "reversal_journal_entry_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reversal Journal Entry Id"
+          },
+          "posted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted At"
+          },
+          "posted_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Posted By"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "cancelled_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled By"
+          },
+          "cancel_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Reason"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/VoucherLineResponse"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentAllocationInput-Output"
+            },
+            "type": "array",
+            "title": "Allocations"
+          },
+          "available_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Actions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "document_number",
+          "display_number",
+          "voucher_type",
+          "status",
+          "version",
+          "is_posted",
+          "voucher_date",
+          "document_date",
+          "payment_account_id",
+          "counter_account_id",
+          "total_amount",
+          "amount_unapplied",
+          "currency_id",
+          "base_currency_id",
+          "exchange_rate",
+          "foreign_amount",
+          "base_amount",
+          "party_type",
+          "party_id",
+          "payment_method",
+          "reference",
+          "branch_id",
+          "cost_center_id",
+          "narration",
+          "journal_entry_id",
+          "reversal_journal_entry_id",
+          "posted_at",
+          "posted_by",
+          "cancelled_at",
+          "cancelled_by",
+          "cancel_reason"
+        ],
+        "title": "VoucherResponse"
+      },
+      "VoucherType": {
+        "type": "string",
+        "enum": [
+          "CASH_RECEIPT",
+          "CASH_PAYMENT",
+          "BANK_RECEIPT",
+          "BANK_PAYMENT",
+          "CONTRA"
+        ],
+        "title": "VoucherType"
+      },
+      "VoucherUpdate": {
+        "properties": {
+          "voucher_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voucher Date"
+          },
+          "payment_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Account Id"
+          },
+          "counter_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counter Account Id"
+          },
+          "total_amount": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Amount"
+          },
+          "currency_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Id"
+          },
+          "party_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Type"
+          },
+          "party_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Id"
+          },
+          "payment_method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaymentMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
+          },
+          "branch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Branch Id"
+          },
+          "cost_center_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Center Id"
+          },
+          "narration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Narration"
+          },
+          "lines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/VoucherLineInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lines"
+          },
+          "allocations": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PaymentAllocationInput-Input"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allocations"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "title": "VoucherUpdate"
       }
     },
     "securitySchemes": {

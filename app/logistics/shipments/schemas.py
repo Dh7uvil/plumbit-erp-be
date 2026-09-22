@@ -37,9 +37,6 @@ class ShipmentCreate(BaseModel):
     port_of_discharge: str | None = Field(default=None, max_length=120)
     etd: date | None = None
     eta: date | None = None
-    gross_weight: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
-    net_weight: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
-    total_packages: int | None = Field(default=None, ge=0)
     notes: str | None = None
 
     @field_validator(
@@ -77,9 +74,6 @@ class ShipmentUpdate(BaseModel):
     port_of_discharge: str | None = Field(default=None, max_length=120)
     etd: date | None = None
     eta: date | None = None
-    gross_weight: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
-    net_weight: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
-    total_packages: int | None = Field(default=None, ge=0)
     notes: str | None = None
     version: int | None = Field(default=None, ge=1)
 
@@ -154,6 +148,7 @@ class ShipmentResponse(BaseModel):
     actual_arrival_date: date | None
     gross_weight: Decimal | None
     net_weight: Decimal | None
+    total_cbm: Decimal | None
     total_packages: int | None
     notes: str | None
     available_actions: list[str] = Field(default_factory=list)

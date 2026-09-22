@@ -60,6 +60,7 @@ class Package(AuditUserMixin, SoftDeleteTenantModel):
     dimension_unit: Mapped[str | None] = mapped_column(String(10), nullable=True)
     gross_weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     net_weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    total_cbm: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     weight_unit: Mapped[str | None] = mapped_column(String(10), nullable=True)
     shipping_marks: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

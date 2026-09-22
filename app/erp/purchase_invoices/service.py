@@ -36,9 +36,11 @@ from app.common.utils.conversion import quantity_summary
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
+    apply_adjusted_line_taxes,
     compute_header_totals,
     compute_line_amounts,
     format_address_snapshot,
+    header_discount_share,
     place_of_supply_from_address,
     resolve_line_tax_category,
 )
@@ -929,7 +931,7 @@ class PurchaseInvoiceService:
             if index == last_index:
                 share = remaining_discount
             else:
-                share = self._header_discount_share(row, line)
+                share = header_discount_share(row.discount_amount, row.subtotal, line.amount)
                 remaining_discount = quantize_money(remaining_discount - share)
             net_amount = quantize_money(line.amount - share)
             line_type = PurchaseInvoiceLineType(line.line_type)
@@ -1165,11 +1167,6 @@ class PurchaseInvoiceService:
         code = charge_code_for_expense(ExpenseCategory(line.expense_category))
         return await self.charge_types.get_by_code(tenant_id, code)
 
-    def _header_discount_share(self, row: PurchaseInvoice, line: PurchaseInvoiceLine) -> Decimal:
-        if row.subtotal <= _ZERO or row.discount_amount == _ZERO:
-            return quantize_money(_ZERO)
-        return quantize_money(row.discount_amount * line.amount / row.subtotal)
-
     async def _build_draft(
         self, tenant_id: UUID, payload: PurchaseInvoiceCreate
     ) -> tuple[dict[str, object], builtins.list[dict[str, object]]]:
@@ -1211,7 +1208,7 @@ class PurchaseInvoiceService:
             reverse_charge=reverse_charge,
         )
         round_off = quantize_money(payload.round_off_amount)
-        subtotal, doc_discount, tax_total, grand = compute_header_totals(
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
             line_nets=line_nets,
             line_taxes=line_taxes,
             discount_type=payload.discount_type,
@@ -1219,6 +1216,7 @@ class PurchaseInvoiceService:
             shipping_amount=quantize_money(payload.shipping_amount),
             adjustment_amount=quantize_money(payload.adjustment_amount),
         )
+        apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         grand = quantize_money(grand + round_off)
         rcm_taxable = _ZERO
         rcm_tax = _ZERO

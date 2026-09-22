@@ -12,6 +12,7 @@ from app.core.enums import InvoiceDocumentStatus, PaymentAllocationSource
 from app.erp.accounting.customer_payments.models import CustomerPayment
 from app.erp.accounting.open_items.models import PaymentAllocation
 from app.erp.accounting.supplier_payments.models import SupplierPayment
+from app.erp.accounting.vouchers.models import Voucher
 
 _ZERO = Decimal("0")
 _NOTE_SOURCES = (
@@ -41,6 +42,14 @@ class PaymentAllocationRepository:
                 SupplierPayment.deleted_at.is_(None),
             )
         )
+        posted_voucher = exists(
+            select(1).where(
+                Voucher.id == PaymentAllocation.payment_id,
+                Voucher.tenant_id == tenant_id,
+                Voucher.status == InvoiceDocumentStatus.POSTED.value,
+                Voucher.deleted_at.is_(None),
+            )
+        )
         return or_(
             and_(
                 PaymentAllocation.payment_type == PaymentAllocationSource.CUSTOMER_PAYMENT.value,
@@ -49,6 +58,10 @@ class PaymentAllocationRepository:
             and_(
                 PaymentAllocation.payment_type == PaymentAllocationSource.SUPPLIER_PAYMENT.value,
                 posted_supplier,
+            ),
+            and_(
+                PaymentAllocation.payment_type == PaymentAllocationSource.VOUCHER.value,
+                posted_voucher,
             ),
             PaymentAllocation.payment_type.in_(_NOTE_SOURCES),
         )

@@ -41,6 +41,7 @@ from app.auth.catalog import (
     STOCK_ADJUSTMENT_READ,
     STOCK_TRANSFER_READ,
     SUPPLIER_PAYMENT_READ,
+    VOUCHER_READ,
     SUPPLIER_PRODUCT_READ,
     SUPPLIER_READ,
 )
@@ -574,6 +575,27 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
                 "version",
                 "currency",
                 "exchange_rate",
+            }
+        ),
+    ),
+    "voucher": ActivityEntitySpec(
+        module=ACCOUNTING_MODULE,
+        entity_type="voucher",
+        read_permission=VOUCHER_READ,
+        changed_fields=frozenset(
+            {
+                "document_number",
+                "voucher_date",
+                "voucher_type",
+                "total_amount",
+                "amount_unapplied",
+                "payment_method",
+                "reference",
+                "status",
+                "version",
+                "currency",
+                "exchange_rate",
+                "narration",
             }
         ),
     ),

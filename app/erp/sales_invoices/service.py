@@ -44,9 +44,11 @@ from app.common.utils.conversion import (
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
+    apply_adjusted_line_taxes,
     compute_header_totals,
     compute_line_amounts,
     format_address_snapshot,
+    header_discount_share,
     place_of_supply_from_address,
     resolve_line_tax_category,
 )
@@ -1228,11 +1230,13 @@ class SalesInvoiceService:
 
     async def margin(self, tenant_id: UUID, invoice_id: UUID) -> SalesInvoiceMarginResponse:
         row = await self._require(tenant_id, invoice_id)
+        base = await self.currencies.get_base(tenant_id)
+        rate = row.exchange_rate
         line_rows: list[SalesInvoiceMarginLine] = []
         revenue = _ZERO
         for line in row.lines:
-            share = self._header_discount_share(row, line)
-            line_revenue = quantize_money(line.amount - share)
+            share = header_discount_share(row.discount_amount, row.subtotal, line.amount)
+            line_revenue = quantize_money((line.amount - share) * rate)
             revenue += line_revenue
             line_rows.append(
                 SalesInvoiceMarginLine(
@@ -1245,10 +1249,12 @@ class SalesInvoiceService:
                 )
             )
         cogs = quantize_money(row.cogs_amount)
+        revenue = quantize_money(revenue)
         margin = quantize_money(revenue - cogs)
         percent = quantize_money(margin * _HUNDRED / revenue) if revenue else None
         return SalesInvoiceMarginResponse(
             invoice_id=row.id,
+            currency_code=base.code,
             revenue=revenue,
             cogs_amount=cogs,
             cogs_status=CogsStatus(row.cogs_status),
@@ -1491,7 +1497,7 @@ class SalesInvoiceService:
             if index == last_index:
                 share = remaining_discount
             else:
-                share = self._header_discount_share(row, line)
+                share = header_discount_share(row.discount_amount, row.subtotal, line.amount)
                 remaining_discount = quantize_money(remaining_discount - share)
             net_revenue = quantize_money(line.amount - share)
             if line.product_id is not None:
@@ -1555,11 +1561,6 @@ class SalesInvoiceService:
             )
         return lines
 
-    def _header_discount_share(self, row: SalesInvoice, line: SalesInvoiceLine) -> Decimal:
-        if row.subtotal <= _ZERO or row.discount_amount == _ZERO:
-            return quantize_money(_ZERO)
-        return quantize_money(row.discount_amount * line.amount / row.subtotal)
-
     async def _build_draft(
         self, tenant_id: UUID, payload: SalesInvoiceCreate
     ) -> tuple[dict[str, object], builtins.list[dict[str, object]]]:
@@ -1610,7 +1611,7 @@ class SalesInvoiceService:
             currency_id=currency_id,
         )
         round_off = quantize_money(payload.round_off_amount)
-        subtotal, doc_discount, tax_total, grand = compute_header_totals(
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
             line_nets=line_nets,
             line_taxes=line_taxes,
             discount_type=payload.discount_type,
@@ -1618,6 +1619,7 @@ class SalesInvoiceService:
             shipping_amount=quantize_money(payload.shipping_amount),
             adjustment_amount=quantize_money(payload.adjustment_amount),
         )
+        apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         grand = quantize_money(grand + round_off)
         due_date = await due_date_from_terms(
             self.session, tenant_id, payment_terms_id, invoice_date
