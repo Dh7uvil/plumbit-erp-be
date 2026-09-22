@@ -133,11 +133,13 @@ async def resolve_exchange_rate(
     service: ExchangeRateServiceDependency,
     from_currency_id: UUID,
     _: Annotated[CurrentUser, Depends(require_permission(EXCHANGE_RATE_READ))],
+    to_currency_id: Annotated[UUID | None, Query()] = None,
     on_date: Annotated[date | None, Query()] = None,
 ) -> ApiResponse[ExchangeRateResolveResponse]:
     resolved = await service.resolve(
         tenant.tenant_id,
         from_currency_id=from_currency_id,
+        to_currency_id=to_currency_id,
         on_date=on_date,
     )
     return ApiResponse(data=resolved)

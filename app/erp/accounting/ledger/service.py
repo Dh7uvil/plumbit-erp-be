@@ -25,6 +25,7 @@ from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
+from app.common.utils.currency import quantize_money
 from app.common.utils.datetime import today_in_timezone
 from app.core.enums import (
     AccountSubtype,
@@ -63,6 +64,7 @@ from app.erp.accounting.service import DocumentSequenceService
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 
 _SERIES = "JV"
+_ZERO = Decimal("0")
 _ACTION_PERMISSIONS: dict[str, str] = {
     "post": JOURNAL_ENTRY_POST,
     "cancel": JOURNAL_ENTRY_UPDATE,
@@ -349,9 +351,7 @@ class JournalEntryService:
                 return response
             self._assert_version(row, expected_version)
             next_status(JournalEntryStatus(row.status), "post")
-            posted = await self.posting.post_entry(
-                tenant_id, entry=row, actor_id=actor_user_id
-            )
+            posted = await self.posting.post_entry(tenant_id, entry=row, actor_id=actor_user_id)
             loaded = await self._require(tenant_id, posted.id)
             await self._ensure_policy(tenant_id)
             response = self._to_response(loaded)
@@ -429,9 +429,7 @@ class JournalEntryService:
     async def _build_draft(
         self, tenant_id: UUID, payload: JournalEntryCreate
     ) -> tuple[dict[str, Any], builtins.list[dict[str, Any]]]:
-        entry_date = payload.entry_date or today_in_timezone(
-            await self.org.get_timezone(tenant_id)
-        )
+        entry_date = payload.entry_date or today_in_timezone(await self.org.get_timezone(tenant_id))
         currency_id = payload.currency_id
         if currency_id is None:
             currency_id = (await self.currencies.get_base(tenant_id)).id
@@ -447,14 +445,16 @@ class JournalEntryService:
         for index, line in enumerate(payload.lines, start=1):
             line_currency = line.currency_id or currency_id
             line_rate = line.exchange_rate if line.exchange_rate is not None else rate
+            debit = quantize_money(line.debit)
+            credit = quantize_money(line.credit)
             line_rows.append(
                 {
                     "line_number": index,
                     "account_id": line.account_id,
-                    "debit": line.debit,
-                    "credit": line.credit,
-                    "debit_base": line.debit * line_rate,
-                    "credit_base": line.credit * line_rate,
+                    "debit": debit,
+                    "credit": credit,
+                    "debit_base": quantize_money(debit * line_rate),
+                    "credit_base": quantize_money(credit * line_rate),
                     "currency_id": line_currency,
                     "exchange_rate": line_rate,
                     "party_type": line.party_type.value if line.party_type else None,
@@ -467,6 +467,8 @@ class JournalEntryService:
                     "description": line.description,
                 }
             )
+        total_debit_base = quantize_money(sum((row["debit_base"] for row in line_rows), _ZERO))
+        total_credit_base = quantize_money(sum((row["credit_base"] for row in line_rows), _ZERO))
         header: dict[str, Any] = {
             "entry_date": entry_date,
             "currency_id": currency_id,
@@ -475,6 +477,8 @@ class JournalEntryService:
             "cost_center_id": payload.cost_center_id,
             "narration": payload.narration,
             "reference": payload.reference,
+            "total_debit_base": total_debit_base,
+            "total_credit_base": total_credit_base,
         }
         return header, line_rows
 
@@ -482,6 +486,11 @@ class JournalEntryService:
         status = JournalEntryStatus(row.status)
         date_locked = self._date_in_locked_period(row.entry_date)
         post_blocked = self._post_blocked(row.entry_date)
+        total_debit_base, total_credit_base = _draft_totals(row)
+        warnings: builtins.list[str] = []
+        if status == JournalEntryStatus.DRAFT and total_debit_base != total_credit_base:
+            difference = quantize_money(abs(total_debit_base - total_credit_base))
+            warnings.append(f"Draft is unbalanced by {difference} in base currency")
         return JournalEntryResponse(
             id=row.id,
             tenant_id=row.tenant_id,
@@ -503,8 +512,9 @@ class JournalEntryService:
             reference=row.reference,
             posted_at=row.posted_at,
             posted_by=row.posted_by,
-            total_debit_base=row.total_debit_base,
-            total_credit_base=row.total_credit_base,
+            total_debit_base=total_debit_base,
+            total_credit_base=total_credit_base,
+            warnings=warnings,
             available_actions=self._available_actions(status, period_locked=post_blocked),
             period_locked=date_locked,
             related_documents=[],
@@ -605,6 +615,14 @@ class JournalEntryService:
                     )
                 )
         return related
+
+
+def _draft_totals(row: JournalEntry) -> tuple[Decimal, Decimal]:
+    if row.lines:
+        debit = quantize_money(sum((line.debit_base for line in row.lines), _ZERO))
+        credit = quantize_money(sum((line.credit_base for line in row.lines), _ZERO))
+        return debit, credit
+    return quantize_money(row.total_debit_base), quantize_money(row.total_credit_base)
 
 
 def _journal_snapshot(row: JournalEntry) -> dict[str, object]:

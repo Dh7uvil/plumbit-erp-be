@@ -182,6 +182,7 @@ class JournalEntryResponse(BaseModel):
     posted_by: UUID | None
     total_debit_base: Decimal
     total_credit_base: Decimal
+    warnings: list[str] = Field(default_factory=list)
     available_actions: list[str] = Field(default_factory=list)
     period_locked: bool = False
     related_documents: list[RelatedDocumentRef] = Field(default_factory=list)

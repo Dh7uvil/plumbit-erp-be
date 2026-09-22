@@ -89,6 +89,7 @@ class ExchangeRateResponse(BaseModel):
     to_currency_id: UUID
     effective_date: date
     rate: Decimal
+    warnings: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     created_by: UUID | None = None
@@ -100,3 +101,4 @@ class ExchangeRateResolveResponse(BaseModel):
     to_currency_id: UUID
     effective_date: date
     rate: Decimal
+    is_derived_reciprocal: bool = False

@@ -115,6 +115,8 @@ class CustomerPaymentResponse(BaseModel):
     currency_id: UUID
     base_currency_id: UUID
     exchange_rate: Decimal
+    foreign_amount: Decimal
+    base_amount: Decimal
     amount_received: Decimal
     bank_charges: Decimal
     amount_unapplied: Decimal

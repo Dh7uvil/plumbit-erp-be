@@ -158,6 +158,8 @@ class DeliveryNoteResponse(BaseModel):
     currency_id: UUID
     base_currency_id: UUID
     exchange_rate: Decimal
+    foreign_amount: Decimal
+    base_amount: Decimal
     vehicle_number: str | None
     driver_name: str | None
     driver_contact: str | None

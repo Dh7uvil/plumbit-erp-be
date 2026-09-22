@@ -610,4 +610,5 @@ class SalesPurchaseAnalysisResponse(ReportCurrencyMixin):
     total_net: Decimal
     total_tax: Decimal
     total_grand: Decimal
+    warnings: list[str] = Field(default_factory=list)
     lines: list[SalesPurchaseAnalysisLine] = Field(default_factory=list)

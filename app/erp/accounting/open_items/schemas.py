@@ -10,8 +10,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app.common.utils.currency import quantize_money
 from app.core.enums import OpenItemType
 
-_ONE = Decimal("1")
-
 
 class OpenItemRow(BaseModel):
     item_type: OpenItemType
@@ -31,13 +29,14 @@ class OpenItemRow(BaseModel):
 
     @model_validator(mode="after")
     def fill_money_fields(self) -> Self:
-        rate = self.exchange_rate if self.exchange_rate is not None else _ONE
         if self.doc_amount is None:
             self.doc_amount = self.original_amount
+        if self.exchange_rate is None:
+            return self
         if self.base_amount is None:
-            self.base_amount = quantize_money(self.original_amount * rate)
+            self.base_amount = quantize_money(self.original_amount * self.exchange_rate)
         if self.base_balance is None:
-            self.base_balance = quantize_money(self.balance * rate)
+            self.base_balance = quantize_money(self.balance * self.exchange_rate)
         return self
 
 
