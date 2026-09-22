@@ -1364,7 +1364,8 @@
         "enum": [
           "VALUE",
           "WEIGHT",
-          "QUANTITY"
+          "QUANTITY",
+          "VOLUME"
         ],
         "title": "LandedCostAllocationMethod"
       },
@@ -1530,6 +1531,28 @@
           },
           "expense_category": {
             "$ref": "#/components/schemas/ExpenseCategory"
+          },
+          "charge_type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Charge Type Id"
+          },
+          "allocation_basis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LandedCostAllocationMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "bill_number": {
             "type": "string",

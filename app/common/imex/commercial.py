@@ -27,6 +27,12 @@ COMMERCIAL_EXPORT_HEADERS = [
     "line.weight",
 ]
 
+SALES_INVOICE_EXPORT_HEADERS = [
+    *COMMERCIAL_EXPORT_HEADERS,
+    "country_of_origin",
+    "line.hs_code",
+]
+
 
 def resolve_entries(mapping: Sequence[object]) -> list[ImexMappingEntry]:
     return [
@@ -83,6 +89,14 @@ def packing_kwargs(item: dict[str, str], *, sku: str) -> dict[str, object]:
         "weight": parse_optional_decimal(item.get("line.weight")),
         "item_code": (item.get("line.item_code") or sku or None),
     }
+
+
+def sales_invoice_export_row(row: object, line: object, *, party_id: UUID) -> list[object]:
+    return [
+        *commercial_export_row(row, line, party_id=party_id),
+        getattr(row, "country_of_origin", None) or "",
+        getattr(line, "hs_code", None) or "",
+    ]
 
 
 def commercial_export_row(row: object, line: object, *, party_id: UUID) -> list[object]:

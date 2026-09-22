@@ -61,6 +61,7 @@ class ErrorCode(StrEnum):
     CREDIT_LIMIT_EXCEEDED = "CREDIT_LIMIT_EXCEEDED"
     INSUFFICIENT_CASH = "INSUFFICIENT_CASH"
     LANDED_COST_WEIGHT_REQUIRED = "LANDED_COST_WEIGHT_REQUIRED"
+    LANDED_COST_VOLUME_REQUIRED = "LANDED_COST_VOLUME_REQUIRED"
     LANDED_COST_LINE_OVER_ALLOCATED = "LANDED_COST_LINE_OVER_ALLOCATED"
     LANDED_COST_CANNOT_CANCEL = "LANDED_COST_CANNOT_CANCEL"
     INTEGRATION_ERROR = "INTEGRATION_ERROR"
@@ -421,6 +422,12 @@ class LandedCostWeightRequiredError(AppError):
     default_code = ErrorCode.LANDED_COST_WEIGHT_REQUIRED
     default_status = HTTPStatus.UNPROCESSABLE_ENTITY
     default_message = "Weight allocation requires net weight on every goods receipt line"
+
+
+class LandedCostVolumeRequiredError(AppError):
+    default_code = ErrorCode.LANDED_COST_VOLUME_REQUIRED
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "Volume allocation requires volume on every goods receipt line"
 
 
 class LandedCostLineOverAllocatedError(AppError):

@@ -290,6 +290,7 @@ class CreditNoteService:
                         discount_value=line.discount_value,
                         tax_id=line.tax_id,
                         income_account_id=line.income_account_id,
+                        hs_code=line.hs_code,
                     )
                 )
             if not lines:
@@ -312,6 +313,7 @@ class CreditNoteService:
                 adjustment_amount=invoice.adjustment_amount if first_credit else _ZERO,
                 round_off_amount=invoice.round_off_amount if first_credit else _ZERO,
                 place_of_supply=PlaceOfSupply(invoice.place_of_supply),
+                country_of_origin=invoice.country_of_origin,
                 lines=lines,
             )
             response = await self._persist_composed(
@@ -1026,6 +1028,7 @@ class CreditNoteService:
             "foreign_amount": grand,
             "base_amount": quantize_money(grand * resolved.rate),
             "notes": payload.notes,
+            "country_of_origin": payload.country_of_origin,
             "amount_applied": _ZERO,
             "amount_unapplied": _ZERO,
         }
@@ -1054,6 +1057,7 @@ class CreditNoteService:
             )
             if not description:
                 raise ValidationError("Line description is required")
+            hs_code = line.hs_code or (product.hs_code if product else None)
             unit_id = line.unit_id or (product.unit_id if product else None)
             if unit_id is not None:
                 await self.units.require_id(tenant_id, unit_id)
@@ -1103,6 +1107,7 @@ class CreditNoteService:
                     "tax_amount": tax_amount,
                     "amount": net,
                     "income_account_id": line.income_account_id,
+                    "hs_code": hs_code,
                 }
             )
             nets.append(net)
@@ -1129,6 +1134,7 @@ class CreditNoteService:
                     discount_value=line.discount_value,
                     tax_id=line.tax_id,
                     income_account_id=line.income_account_id,
+                    hs_code=line.hs_code,
                 )
                 for line in existing.lines
             ]
@@ -1159,6 +1165,7 @@ class CreditNoteService:
                 if "place_of_supply" in values
                 else PlaceOfSupply(existing.place_of_supply)
             ),
+            country_of_origin=values.get("country_of_origin", existing.country_of_origin),
             lines=lines,
         )
 
@@ -1178,6 +1185,7 @@ class CreditNoteService:
             adjustment_amount=row.adjustment_amount,
             round_off_amount=row.round_off_amount,
             place_of_supply=PlaceOfSupply(row.place_of_supply),
+            country_of_origin=row.country_of_origin,
             lines=[
                 CreditNoteLineInput(
                     product_id=line.product_id,
@@ -1191,6 +1199,7 @@ class CreditNoteService:
                     discount_value=line.discount_value,
                     tax_id=line.tax_id,
                     income_account_id=line.income_account_id,
+                    hs_code=line.hs_code,
                 )
                 for line in row.lines
             ],
@@ -1255,6 +1264,7 @@ class CreditNoteService:
             foreign_amount=row.foreign_amount,
             base_amount=row.base_amount,
             notes=row.notes,
+            country_of_origin=row.country_of_origin,
             amount_applied=row.amount_applied,
             amount_unapplied=row.amount_unapplied,
             journal_entry_id=row.journal_entry_id,
@@ -1284,6 +1294,7 @@ class CreditNoteService:
                     tax_amount=line.tax_amount,
                     amount=line.amount,
                     income_account_id=line.income_account_id,
+                    hs_code=line.hs_code,
                 )
                 for line in row.lines
             ],

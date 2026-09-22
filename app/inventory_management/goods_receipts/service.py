@@ -874,6 +874,7 @@ class GoodsReceiptService:
                     "unit_id": unit_id,
                     "rate": quantize_money(line.rate),
                     "net_weight": line.net_weight,
+                    "volume": line.volume,
                     "gross_weight": line.gross_weight,
                     "qty_accepted": _ZERO,
                     "qty_rejected": _ZERO,
@@ -901,6 +902,7 @@ class GoodsReceiptService:
                     rate=line.rate,
                     net_weight=line.net_weight,
                     gross_weight=line.gross_weight,
+                    volume=line.volume,
                 )
                 for line in existing.lines
             ]

@@ -144,6 +144,7 @@ class SalesInvoice(AuditUserMixin, SoftDeleteTenantModel):
     terms_and_conditions: Mapped[str | None] = mapped_column(Text, nullable=True)
     bl_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
     container_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    country_of_origin: Mapped[str | None] = mapped_column(String(2), nullable=True)
     amount_paid: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     amount_credited: Mapped[Decimal] = mapped_column(
         _MONEY, nullable=False, server_default=text("0")
@@ -287,5 +288,6 @@ class SalesInvoiceLine(TenantModel):
     cbm: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     item_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    hs_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     sales_invoice: Mapped[SalesInvoice] = relationship(back_populates="lines")

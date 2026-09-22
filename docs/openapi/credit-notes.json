@@ -1231,6 +1231,18 @@
               }
             ]
           },
+          "country_of_origin": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Of Origin"
+          },
           "lines": {
             "items": {
               "$ref": "#/components/schemas/CreditNoteLineInput"
@@ -1469,6 +1481,18 @@
               }
             ],
             "title": "Income Account Id"
+          },
+          "hs_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hs Code"
           }
         },
         "type": "object",
@@ -1615,6 +1639,17 @@
               }
             ],
             "title": "Income Account Id"
+          },
+          "hs_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hs Code"
           }
         },
         "type": "object",
@@ -1849,6 +1884,17 @@
               }
             ],
             "title": "Notes"
+          },
+          "country_of_origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Of Origin"
           },
           "amount_applied": {
             "type": "string",
@@ -2212,6 +2258,18 @@
                 "type": "null"
               }
             ]
+          },
+          "country_of_origin": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Of Origin"
           },
           "lines": {
             "anyOf": [

@@ -80,6 +80,7 @@ class CreditNote(AuditUserMixin, SoftDeleteTenantModel):
     tax_treatment: Mapped[str] = mapped_column(String(30), nullable=False)
     place_of_supply: Mapped[str] = mapped_column(String(30), nullable=False)
     is_export: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    country_of_origin: Mapped[str | None] = mapped_column(String(2), nullable=True)
     currency_id: Mapped[UUID] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("currencies.id", ondelete="RESTRICT"),
@@ -214,5 +215,6 @@ class CreditNoteLine(TenantModel):
         ForeignKey("accounts.id", ondelete="SET NULL"),
         nullable=True,
     )
+    hs_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     credit_note: Mapped[CreditNote] = relationship(back_populates="lines")

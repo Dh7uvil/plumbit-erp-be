@@ -139,10 +139,17 @@ class ExpenseCategory(StrEnum):
     OTHER = "OTHER"
 
 
+class ChargeAppliesTo(StrEnum):
+    IMPORT = "IMPORT"
+    EXPORT = "EXPORT"
+    BOTH = "BOTH"
+
+
 class LandedCostAllocationMethod(StrEnum):
     VALUE = "VALUE"
     WEIGHT = "WEIGHT"
     QUANTITY = "QUANTITY"
+    VOLUME = "VOLUME"
 
 
 class CreditNoteReason(StrEnum):

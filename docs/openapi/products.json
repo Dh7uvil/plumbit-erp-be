@@ -1867,6 +1867,22 @@
             ],
             "title": "Hs Code"
           },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          },
           "track_inventory": {
             "type": "boolean",
             "title": "Track Inventory",
@@ -2016,6 +2032,18 @@
               }
             ],
             "title": "Hs Code"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
           },
           "track_inventory": {
             "type": "boolean",
@@ -2237,6 +2265,22 @@
               }
             ],
             "title": "Hs Code"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
           },
           "track_inventory": {
             "anyOf": [

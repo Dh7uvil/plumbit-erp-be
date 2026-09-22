@@ -41,12 +41,13 @@ async def _create_supplier(
     shipping_country_code: str = "AE",
 ) -> str:
     suffix = uuid4().hex[:8]
-    if trn is None and tax_treatment == "REGISTERED":
-        trn = unique_trn()
+    resolved_trn = trn
+    if resolved_trn is None and tax_treatment == "REGISTERED":
+        resolved_trn = f"{int(uuid4().int % (10**15 - 1)) + 1:015d}"
     payload: dict[str, object] = {
         "name": f"Supplier {suffix}",
         "tax_treatment": tax_treatment,
-        "trn": trn,
+        "trn": resolved_trn,
         "shipping_address": {
             "address_line_1": "Factory 1",
             "city": "Dubai" if shipping_country_code == "AE" else "London",
