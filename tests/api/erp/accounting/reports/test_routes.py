@@ -524,3 +524,163 @@ async def test_journal_contra_creates_draft_and_rejects_non_cash_bank(
         },
     )
     assert bad.status_code == 422, bad.text
+
+
+@pytest.mark.asyncio
+async def test_foreign_currency_aging_and_register_use_base_currency(
+    client: AsyncClient,
+) -> None:
+    from tests.api.erp.purchase_invoices.test_routes import _enable_books
+    from tests.api.erp.quotation.test_routes import (
+        _create_customer,
+        _create_product,
+        _currency_id,
+        _seeded_ids,
+    )
+
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    usd_id = await _currency_id(client, headers, "USD")
+    saved = await client.put(
+        "/api/v1/exchange-rates",
+        headers=headers,
+        json={"currency_id": usd_id, "rate_to_base": "3.672500"},
+    )
+    assert saved.status_code == 200, saved.text
+    accounts = await _accounts(client, headers)
+    ids = await _seeded_ids(client, headers)
+    customer_id = await _create_customer(client, headers, currency_id=usd_id)
+    product_id = await _create_product(client, headers, ids, selling_rate="100.0000")
+    created = await client.post(
+        "/api/v1/sales-invoices",
+        headers=headers,
+        json={
+            "customer_id": customer_id,
+            "currency_id": usd_id,
+            "lines": [{"product_id": product_id, "quantity": "1"}],
+        },
+    )
+    assert created.status_code == 201, created.text
+    invoice = created.json()["data"]
+    posted = await client.post(
+        f"/api/v1/sales-invoices/{invoice['id']}/post",
+        headers=_if_match(headers, invoice["version"], key=uuid4().hex),
+    )
+    assert posted.status_code == 200, posted.text
+    invoice = posted.json()["data"]
+    as_of = invoice["invoice_date"]
+    aging = await client.get(
+        "/api/v1/reports/ar-aging",
+        headers=headers,
+        params={"as_of": as_of},
+    )
+    assert aging.status_code == 200, aging.text
+    aging_body = aging.json()["data"]
+    assert "base_totals" not in aging_body
+    assert "currency_totals" not in aging_body
+    assert aging_body["currency_code"]
+    doc = aging_body["rows"][0]["documents"][0]
+    assert Decimal(doc["balance"]) == Decimal(invoice["base_amount"])
+    assert doc["document_balance"] == invoice["grand_total"]
+    tb = await client.get(
+        "/api/v1/reports/trial-balance",
+        headers=headers,
+        params={"from": as_of, "to": as_of},
+    )
+    assert tb.status_code == 200, tb.text
+    ar_line = next(
+        line
+        for line in tb.json()["data"]["lines"]
+        if line["account_id"] == accounts["ACCOUNTS_RECEIVABLE"]
+    )
+    ar_net = Decimal(ar_line["closing_debit"]) - Decimal(ar_line["closing_credit"])
+    assert Decimal(aging_body["totals"]["total"]) == ar_net
+    register = await client.get(
+        "/api/v1/reports/sales-register",
+        headers=headers,
+        params={"from": as_of, "to": as_of},
+    )
+    assert register.status_code == 200, register.text
+    reg_line = register.json()["data"]["lines"][0]
+    assert Decimal(reg_line["grand_total"]) == Decimal(invoice["base_amount"])
+
+
+@pytest.mark.asyncio
+async def test_foreign_currency_aging_and_register_use_base_currency(
+    client: AsyncClient,
+) -> None:
+    from tests.api.erp.purchase_invoices.test_routes import _enable_books
+    from tests.api.erp.quotation.test_routes import (
+        _create_customer,
+        _create_product,
+        _currency_id,
+        _seeded_ids,
+    )
+
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    usd_id = await _currency_id(client, headers, "USD")
+    saved = await client.put(
+        "/api/v1/exchange-rates",
+        headers=headers,
+        json={"currency_id": usd_id, "rate_to_base": "3.672500"},
+    )
+    assert saved.status_code == 200, saved.text
+    accounts = await _accounts(client, headers)
+    ids = await _seeded_ids(client, headers)
+    customer_id = await _create_customer(client, headers, currency_id=usd_id)
+    product_id = await _create_product(client, headers, ids, selling_rate="100.0000")
+    created = await client.post(
+        "/api/v1/sales-invoices",
+        headers=headers,
+        json={
+            "customer_id": customer_id,
+            "currency_id": usd_id,
+            "lines": [{"product_id": product_id, "quantity": "1"}],
+        },
+    )
+    assert created.status_code == 201, created.text
+    invoice = created.json()["data"]
+    posted = await client.post(
+        f"/api/v1/sales-invoices/{invoice['id']}/post",
+        headers=_if_match(headers, invoice["version"], key=uuid4().hex),
+    )
+    assert posted.status_code == 200, posted.text
+    invoice = posted.json()["data"]
+    as_of = invoice["invoice_date"]
+    aging = await client.get(
+        "/api/v1/reports/ar-aging",
+        headers=headers,
+        params={"as_of": as_of},
+    )
+    assert aging.status_code == 200, aging.text
+    aging_body = aging.json()["data"]
+    assert "base_totals" not in aging_body
+    assert "currency_totals" not in aging_body
+    assert aging_body["currency_code"]
+    doc = aging_body["rows"][0]["documents"][0]
+    assert Decimal(doc["balance"]) == Decimal(invoice["base_amount"])
+    assert doc["document_balance"] == invoice["grand_total"]
+    tb = await client.get(
+        "/api/v1/reports/trial-balance",
+        headers=headers,
+        params={"from": as_of, "to": as_of},
+    )
+    assert tb.status_code == 200, tb.text
+    ar_line = next(
+        line
+        for line in tb.json()["data"]["lines"]
+        if line["account_id"] == accounts["ACCOUNTS_RECEIVABLE"]
+    )
+    ar_net = Decimal(ar_line["closing_debit"]) - Decimal(ar_line["closing_credit"])
+    assert Decimal(aging_body["totals"]["total"]) == ar_net
+    register = await client.get(
+        "/api/v1/reports/sales-register",
+        headers=headers,
+        params={"from": as_of, "to": as_of},
+    )
+    assert register.status_code == 200, register.text
+    reg_line = register.json()["data"]["lines"][0]
+    assert Decimal(reg_line["grand_total"]) == Decimal(invoice["base_amount"])

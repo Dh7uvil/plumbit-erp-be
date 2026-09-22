@@ -14,6 +14,7 @@ from app.common.utils.currency import quantize_money
 from app.core.enums import InvoiceDocumentStatus
 from app.core.exceptions import ValidationError
 from app.crm.customers.models import Customer
+from app.erp.accounting.reports.amounts import document_base_net_tax
 from app.erp.accounting.reports.schemas import (
     SalesPurchaseAnalysisLine,
     SalesPurchaseAnalysisResponse,
@@ -126,17 +127,12 @@ class AnalyticalReports:
     def _accumulate_sales_invoice(
         self, buckets, invoice: SalesInvoice, *, group_by: str, names, product_names, sign: Decimal
     ) -> None:
-        net = quantize_money((invoice.base_amount or invoice.grand_total) * sign)
-        tax = quantize_money(invoice.tax_amount * (invoice.exchange_rate or Decimal("1")) * sign)
-        grand = quantize_money(net + tax)
+        net, tax, grand = document_base_net_tax(invoice, sign=sign)
+        rate = invoice.exchange_rate
         if group_by == "product":
             for line in invoice.lines:
-                line_net = quantize_money(
-                    line.amount * (invoice.exchange_rate or Decimal("1")) * sign
-                )
-                line_tax = quantize_money(
-                    line.tax_amount * (invoice.exchange_rate or Decimal("1")) * sign
-                )
+                line_net = quantize_money(line.amount * rate * sign)
+                line_tax = quantize_money(line.tax_amount * rate * sign)
                 key = str(line.product_id) if line.product_id else "unmapped"
                 label = product_names.get(line.product_id, line.description or "Unmapped")
                 self._add_bucket(
@@ -168,16 +164,12 @@ class AnalyticalReports:
         self, buckets, note: CreditNote, *, group_by: str, names, product_names
     ) -> None:
         sign = Decimal("-1")
-        net = quantize_money((note.base_amount if hasattr(note, "base_amount") else note.grand_total) * sign)
-        tax = quantize_money(note.tax_amount * (getattr(note, "exchange_rate", None) or Decimal("1")) * sign)
+        net, tax, grand = document_base_net_tax(note, sign=sign)
+        rate = note.exchange_rate
         if group_by == "product":
             for line in note.lines:
-                line_net = quantize_money(
-                    line.amount * (getattr(note, "exchange_rate", None) or Decimal("1")) * sign
-                )
-                line_tax = quantize_money(
-                    line.tax_amount * (getattr(note, "exchange_rate", None) or Decimal("1")) * sign
-                )
+                line_net = quantize_money(line.amount * rate * sign)
+                line_tax = quantize_money(line.tax_amount * rate * sign)
                 key = str(line.product_id) if line.product_id else "unmapped"
                 label = product_names.get(line.product_id, line.description or "Unmapped")
                 self._add_bucket(
@@ -219,7 +211,7 @@ class AnalyticalReports:
             label,
             net=net,
             tax=tax,
-            grand=quantize_money(net + tax),
+            grand=grand,
             party_id=party_id,
             salesperson_id=salesperson_id,
         )
@@ -227,16 +219,12 @@ class AnalyticalReports:
     def _accumulate_purchase_invoice(
         self, buckets, invoice: PurchaseInvoice, *, group_by: str, names, product_names, sign: Decimal
     ) -> None:
-        net = quantize_money((invoice.base_amount or invoice.grand_total) * sign)
-        tax = quantize_money(invoice.tax_amount * (invoice.exchange_rate or Decimal("1")) * sign)
+        net, tax, grand = document_base_net_tax(invoice, sign=sign)
+        rate = invoice.exchange_rate
         if group_by == "product":
             for line in invoice.lines:
-                line_net = quantize_money(
-                    line.amount * (invoice.exchange_rate or Decimal("1")) * sign
-                )
-                line_tax = quantize_money(
-                    line.tax_amount * (invoice.exchange_rate or Decimal("1")) * sign
-                )
+                line_net = quantize_money(line.amount * rate * sign)
+                line_tax = quantize_money(line.tax_amount * rate * sign)
                 key = str(line.product_id) if getattr(line, "product_id", None) else "unmapped"
                 label = product_names.get(getattr(line, "product_id", None), getattr(line, "description", None) or "Unmapped")
                 self._add_bucket(
@@ -267,7 +255,7 @@ class AnalyticalReports:
             label,
             net=net,
             tax=tax,
-            grand=quantize_money(net + tax),
+            grand=grand,
             party_id=party_id,
         )
 
@@ -275,12 +263,12 @@ class AnalyticalReports:
         self, buckets, note: DebitNote, *, group_by: str, names, product_names
     ) -> None:
         sign = Decimal("-1")
-        net = quantize_money(note.grand_total * sign)
-        tax = quantize_money(note.tax_amount * sign)
+        net, tax, grand = document_base_net_tax(note, sign=sign)
+        rate = note.exchange_rate
         if group_by == "product":
             for line in note.lines:
-                line_net = quantize_money(line.amount * sign)
-                line_tax = quantize_money(line.tax_amount * sign)
+                line_net = quantize_money(line.amount * rate * sign)
+                line_tax = quantize_money(line.tax_amount * rate * sign)
                 key = str(line.product_id) if getattr(line, "product_id", None) else "unmapped"
                 label = product_names.get(
                     getattr(line, "product_id", None), getattr(line, "description", None) or "Unmapped"
@@ -307,9 +295,7 @@ class AnalyticalReports:
             key = "summary"
             label = "All purchases"
             party_id = None
-        self._add_bucket(
-            buckets, key, label, net=net, tax=tax, grand=quantize_money(net + tax), party_id=party_id
-        )
+        self._add_bucket(buckets, key, label, net=net, tax=tax, grand=grand, party_id=party_id)
 
     def _sales_group(self, invoice: SalesInvoice, *, group_by: str, names) -> tuple:
         if group_by == "customer":
