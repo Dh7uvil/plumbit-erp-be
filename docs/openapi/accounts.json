@@ -906,6 +906,8 @@
           "CASH_ON_HAND",
           "BANK",
           "BANK_CHARGES",
+          "CHEQUES_RECEIVABLE",
+          "CHEQUES_PAYABLE",
           "BAD_DEBT_EXPENSE",
           "SUSPENSE"
         ],

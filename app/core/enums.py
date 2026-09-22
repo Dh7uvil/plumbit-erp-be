@@ -233,6 +233,7 @@ class DocumentType(StrEnum):
     BANK_RECEIPT_VOUCHER = "BANK_RECEIPT_VOUCHER"
     BANK_PAYMENT_VOUCHER = "BANK_PAYMENT_VOUCHER"
     CONTRA_VOUCHER = "CONTRA_VOUCHER"
+    CHEQUE = "CHEQUE"
 
 
 class VoucherType(StrEnum):
@@ -322,6 +323,8 @@ class AccountSystemRole(StrEnum):
     CASH_ON_HAND = "CASH_ON_HAND"
     BANK = "BANK"
     BANK_CHARGES = "BANK_CHARGES"
+    CHEQUES_RECEIVABLE = "CHEQUES_RECEIVABLE"
+    CHEQUES_PAYABLE = "CHEQUES_PAYABLE"
     BAD_DEBT_EXPENSE = "BAD_DEBT_EXPENSE"
     SUSPENSE = "SUSPENSE"
 
@@ -468,6 +471,33 @@ class PaymentAllocationSource(StrEnum):
     CREDIT_NOTE = "CREDIT_NOTE"
     DEBIT_NOTE = "DEBIT_NOTE"
     VOUCHER = "VOUCHER"
+    CHEQUE = "CHEQUE"
+
+
+class ChequeDirection(StrEnum):
+    INBOUND = "INBOUND"
+    OUTBOUND = "OUTBOUND"
+
+
+class ChequeStatus(StrEnum):
+    DRAFT = "DRAFT"
+    ISSUED = "ISSUED"
+    DEPOSITED = "DEPOSITED"
+    CLEARED = "CLEARED"
+    BOUNCED = "BOUNCED"
+    CANCELLED = "CANCELLED"
+
+
+class BankStatementStatus(StrEnum):
+    DRAFT = "DRAFT"
+    IMPORTED = "IMPORTED"
+    RECONCILED = "RECONCILED"
+
+
+class BankStatementMatchStatus(StrEnum):
+    UNMATCHED = "UNMATCHED"
+    MATCHED = "MATCHED"
+    EXCLUDED = "EXCLUDED"
 
 
 class StockMovementType(StrEnum):

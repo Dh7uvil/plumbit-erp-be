@@ -59,6 +59,15 @@ UAE_CHART: tuple[ChartSeedRow, ...] = (
         AccountSystemRole.ADVANCE_TO_SUPPLIER,
     ),
     ChartSeedRow(
+        "1120",
+        "Cheques Receivable",
+        AccountType.ASSET,
+        AccountSubtype.OTHER_CURRENT_ASSET,
+        "1000",
+        False,
+        AccountSystemRole.CHEQUES_RECEIVABLE,
+    ),
+    ChartSeedRow(
         "1200",
         "Inventory",
         AccountType.ASSET,
@@ -124,6 +133,15 @@ UAE_CHART: tuple[ChartSeedRow, ...] = (
         "2000",
         False,
         AccountSystemRole.ADVANCE_FROM_CUSTOMER,
+    ),
+    ChartSeedRow(
+        "2025",
+        "Cheques Payable",
+        AccountType.LIABILITY,
+        AccountSubtype.OTHER_CURRENT_LIABILITY,
+        "2000",
+        False,
+        AccountSystemRole.CHEQUES_PAYABLE,
     ),
     ChartSeedRow(
         "2030",
