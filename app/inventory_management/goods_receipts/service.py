@@ -32,7 +32,7 @@ from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
 from app.common.utils.conversion import quantity_summary
-from app.common.utils.currency import quantize_money, quantize_quantity
+from app.common.utils.currency import document_fx_amounts, quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import format_address_snapshot, place_of_supply_from_address
 from app.core.enums import (
@@ -795,6 +795,10 @@ class GoodsReceiptService:
             on_date=document_date,
         )
         line_rows = await self._build_lines(tenant_id, payload.lines)
+        foreign = quantize_money(
+            sum((quantize_money(line["quantity"] * line["rate"]) for line in line_rows), _ZERO)
+        )
+        foreign_amount, base_amount = document_fx_amounts(foreign, resolved.rate)
         header: dict[str, Any] = {
             "document_date": document_date,
             "supplier_id": payload.supplier_id,
@@ -806,6 +810,8 @@ class GoodsReceiptService:
             "currency_id": currency_id,
             "base_currency_id": base.id,
             "exchange_rate": resolved.rate,
+            "foreign_amount": foreign_amount,
+            "base_amount": base_amount,
             "supplier_invoice_number": payload.supplier_invoice_number,
             "delivery_challan_number": payload.delivery_challan_number,
             "bill_of_entry_number": payload.bill_of_entry_number,
@@ -1022,6 +1028,8 @@ class GoodsReceiptService:
             currency_id=row.currency_id,
             base_currency_id=row.base_currency_id,
             exchange_rate=row.exchange_rate,
+            foreign_amount=row.foreign_amount,
+            base_amount=row.base_amount,
             supplier_invoice_number=row.supplier_invoice_number,
             delivery_challan_number=row.delivery_challan_number,
             bill_of_entry_number=row.bill_of_entry_number,

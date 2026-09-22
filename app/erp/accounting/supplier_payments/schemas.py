@@ -110,6 +110,8 @@ class SupplierPaymentResponse(BaseModel):
     currency_id: UUID
     base_currency_id: UUID
     exchange_rate: Decimal
+    foreign_amount: Decimal
+    base_amount: Decimal
     amount_paid: Decimal
     bank_charges: Decimal
     amount_unapplied: Decimal

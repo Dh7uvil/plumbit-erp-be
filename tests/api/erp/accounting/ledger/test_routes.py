@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -86,6 +87,9 @@ async def test_unbalanced_journal_is_refused(client: AsyncClient) -> None:
     )
     assert created.status_code == 201, created.text
     row = created.json()["data"]
+    assert row["warnings"]
+    assert Decimal(row["total_debit_base"]) == Decimal("100.0000")
+    assert Decimal(row["total_credit_base"]) == Decimal("40.0000")
     posted = await client.post(
         f"/api/v1/journals/{row['id']}/post",
         headers=_if_match(headers, row["version"], key=uuid4().hex),

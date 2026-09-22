@@ -94,6 +94,10 @@ class DeliveryNote(AuditUserMixin, SoftDeleteTenantModel):
         nullable=False,
     )
     exchange_rate: Mapped[Decimal] = mapped_column(_RATE, nullable=False)
+    foreign_amount: Mapped[Decimal] = mapped_column(
+        _MONEY, nullable=False, server_default=text("0")
+    )
+    base_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     vehicle_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
     driver_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     driver_contact: Mapped[str | None] = mapped_column(String(40), nullable=True)

@@ -94,6 +94,10 @@ class GoodsReceipt(AuditUserMixin, SoftDeleteTenantModel):
         nullable=False,
     )
     exchange_rate: Mapped[Decimal] = mapped_column(_RATE, nullable=False)
+    foreign_amount: Mapped[Decimal] = mapped_column(
+        _MONEY, nullable=False, server_default=text("0")
+    )
+    base_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     supplier_invoice_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
     delivery_challan_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
     bill_of_entry_number: Mapped[str | None] = mapped_column(String(80), nullable=True)

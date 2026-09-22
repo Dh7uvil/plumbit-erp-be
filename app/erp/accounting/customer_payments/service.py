@@ -25,7 +25,7 @@ from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
-from app.common.utils.currency import quantize_money
+from app.common.utils.currency import document_fx_amounts, quantize_money
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.core.enums import (
     AccountSubtype,
@@ -1178,13 +1178,17 @@ class CustomerPaymentService:
                     "allocated": str(allocated),
                 }
             )
+        amount = quantize_money(payload.amount_received)
+        foreign_amount, base_amount = document_fx_amounts(amount, rate)
         return {
             "payment_date": payment_date,
             "customer_id": payload.customer_id,
             "currency_id": currency_id,
             "base_currency_id": base.id,
             "exchange_rate": rate,
-            "amount_received": quantize_money(payload.amount_received),
+            "foreign_amount": foreign_amount,
+            "base_amount": base_amount,
+            "amount_received": amount,
             "bank_charges": quantize_money(payload.bank_charges),
             "amount_unapplied": quantize_money(payload.amount_received - allocated),
             "payment_account_id": payload.payment_account_id,
@@ -1293,6 +1297,9 @@ class CustomerPaymentService:
                 on_date=row.payment_date,
             )
         ).rate
+        row.foreign_amount, row.base_amount = document_fx_amounts(
+            row.amount_received, row.exchange_rate
+        )
 
     async def _related_documents(
         self, tenant_id: UUID, row: CustomerPayment
@@ -1398,6 +1405,8 @@ class CustomerPaymentService:
             currency_id=row.currency_id,
             base_currency_id=row.base_currency_id,
             exchange_rate=row.exchange_rate,
+            foreign_amount=row.foreign_amount,
+            base_amount=row.base_amount,
             amount_received=row.amount_received,
             bank_charges=row.bank_charges,
             amount_unapplied=row.amount_unapplied,

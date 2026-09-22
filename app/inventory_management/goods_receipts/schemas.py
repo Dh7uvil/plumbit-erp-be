@@ -189,6 +189,8 @@ class GoodsReceiptResponse(BaseModel):
     currency_id: UUID
     base_currency_id: UUID
     exchange_rate: Decimal
+    foreign_amount: Decimal
+    base_amount: Decimal
     supplier_invoice_number: str | None
     delivery_challan_number: str | None
     bill_of_entry_number: str | None

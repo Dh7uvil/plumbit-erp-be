@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -16,6 +16,7 @@ from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
 from app.common.services.master_usage import assert_master_not_referenced
+from app.common.utils.currency import quantize_rate
 from app.common.utils.datetime import today_in_timezone
 from app.core.enums import AuditAction
 from app.core.exceptions import (
@@ -263,6 +264,13 @@ class ExchangeRateService:
             if foreign.id == base.id:
                 raise ValidationError("Cannot record an exchange rate for the base currency")
             on_date = payload.effective_date or await self._tenant_today(tenant_id)
+            warnings = await self._inverted_rate_warnings(
+                tenant_id,
+                from_currency_id=foreign.id,
+                to_currency_id=base.id,
+                entered=payload.rate_to_base,
+                on_date=on_date,
+            )
             existing = await self.repo.get_for_pair_on_date(
                 tenant_id,
                 from_currency_id=foreign.id,
@@ -306,7 +314,9 @@ class ExchangeRateService:
                     row, from_currency=foreign.code, to_currency=base.code
                 ),
             )
-            return ExchangeRateResponse.model_validate(row)
+            response = ExchangeRateResponse.model_validate(row)
+            response.warnings = warnings
+            return response
 
     async def update(
         self,
@@ -398,6 +408,7 @@ class ExchangeRateService:
                 to_currency_id=target_id,
                 effective_date=effective,
                 rate=Decimal("1"),
+                is_derived_reciprocal=False,
             )
 
         row = await self.repo.get_latest_for_pair_on_or_before(
@@ -406,7 +417,21 @@ class ExchangeRateService:
             to_currency_id=target_id,
             effective_date=effective,
         )
-        if row is None:
+        if row is not None:
+            return ExchangeRateResolveResponse(
+                from_currency_id=from_currency_id,
+                to_currency_id=target_id,
+                effective_date=row.effective_date,
+                rate=row.rate,
+                is_derived_reciprocal=False,
+            )
+        inverse = await self.repo.get_latest_for_pair_on_or_before(
+            tenant_id,
+            from_currency_id=target_id,
+            to_currency_id=from_currency_id,
+            effective_date=effective,
+        )
+        if inverse is None:
             raise ExchangeRateMissingError(
                 details={
                     "from_currency_id": str(from_currency_id),
@@ -415,12 +440,39 @@ class ExchangeRateService:
                 }
             )
         return ExchangeRateResolveResponse(
-            from_currency_id=row.from_currency_id,
-            to_currency_id=row.to_currency_id,
-            effective_date=row.effective_date,
-            rate=row.rate,
+            from_currency_id=from_currency_id,
+            to_currency_id=target_id,
+            effective_date=inverse.effective_date,
+            rate=quantize_rate(Decimal("1") / inverse.rate),
+            is_derived_reciprocal=True,
         )
+
+    async def _inverted_rate_warnings(
+        self,
+        tenant_id: UUID,
+        *,
+        from_currency_id: UUID,
+        to_currency_id: UUID,
+        entered: Decimal,
+        on_date: date,
+    ) -> list[str]:
+        prior = await self.repo.get_latest_for_pair_on_or_before(
+            tenant_id,
+            from_currency_id=from_currency_id,
+            to_currency_id=to_currency_id,
+            effective_date=on_date - timedelta(days=1),
+        )
+        if prior is None or prior.rate <= 0:
+            return []
+        if not _looks_inverted(entered, prior.rate):
+            return []
+        return ["Entered rate looks inverted relative to the prior day"]
 
     async def _tenant_today(self, tenant_id: UUID) -> date:
         timezone = await self.org.get_timezone(tenant_id)
         return today_in_timezone(timezone)
+
+
+def _looks_inverted(entered: Decimal, prior: Decimal) -> bool:
+    reciprocal = Decimal("1") / prior
+    return abs(entered - reciprocal) < abs(entered - prior)

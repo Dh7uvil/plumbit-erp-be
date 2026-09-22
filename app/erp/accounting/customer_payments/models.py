@@ -73,6 +73,10 @@ class CustomerPayment(AuditUserMixin, SoftDeleteTenantModel):
         nullable=False,
     )
     exchange_rate: Mapped[Decimal] = mapped_column(_RATE, nullable=False)
+    foreign_amount: Mapped[Decimal] = mapped_column(
+        _MONEY, nullable=False, server_default=text("0")
+    )
+    base_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     amount_received: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
     bank_charges: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     amount_unapplied: Mapped[Decimal] = mapped_column(

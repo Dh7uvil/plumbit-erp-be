@@ -173,6 +173,23 @@
             }
           },
           {
+            "name": "to_currency_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Currency Id"
+            }
+          },
+          {
             "name": "on_date",
             "in": "query",
             "required": false,
@@ -448,6 +465,11 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rate"
+          },
+          "is_derived_reciprocal": {
+            "type": "boolean",
+            "title": "Is Derived Reciprocal",
+            "default": false
           }
         },
         "type": "object",
@@ -490,6 +512,13 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Rate"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
           },
           "created_at": {
             "type": "string",

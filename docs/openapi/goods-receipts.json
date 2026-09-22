@@ -1699,6 +1699,16 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Exchange Rate"
           },
+          "foreign_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Foreign Amount"
+          },
+          "base_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Amount"
+          },
           "supplier_invoice_number": {
             "anyOf": [
               {
@@ -1918,6 +1928,8 @@
           "currency_id",
           "base_currency_id",
           "exchange_rate",
+          "foreign_amount",
+          "base_amount",
           "supplier_invoice_number",
           "delivery_challan_number",
           "bill_of_entry_number",
@@ -2284,6 +2296,13 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Credit Base"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
           },
           "available_actions": {
             "items": {

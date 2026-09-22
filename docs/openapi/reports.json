@@ -7135,6 +7135,13 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Grand"
           },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
           "lines": {
             "items": {
               "$ref": "#/components/schemas/SalesPurchaseAnalysisLine"

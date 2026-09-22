@@ -28,6 +28,41 @@ _SALES_GROUPS = frozenset({"summary", "customer", "product", "date", "salesperso
 _PURCHASE_GROUPS = frozenset({"summary", "supplier", "product", "date"})
 
 
+def _document_rate(document: object) -> Decimal | None:
+    rate = getattr(document, "exchange_rate", None)
+    if rate is None:
+        return None
+    return Decimal(rate)
+
+
+def _document_number(document: object) -> str:
+    number = getattr(document, "document_number", None)
+    return str(number) if number else "document"
+
+
+def _converted_amounts(
+    document: object, *, sign: Decimal, warnings: list[str]
+) -> tuple[Decimal, Decimal, Decimal] | None:
+    """Return (net, tax, rate) in base currency, or None when the rate is missing."""
+
+    rate = _document_rate(document)
+    if rate is None:
+        warnings.append(f"Excluded {_document_number(document)}: exchange rate missing")
+        return None
+    base = getattr(document, "base_amount", None)
+    if base is not None:
+        net = quantize_money(Decimal(base) * sign)
+    else:
+        grand = getattr(document, "grand_total", None)
+        if grand is None:
+            warnings.append(f"Excluded {_document_number(document)}: amount missing")
+            return None
+        net = quantize_money(Decimal(grand) * rate * sign)
+    tax_amount = getattr(document, "tax_amount", _ZERO) or _ZERO
+    tax = quantize_money(Decimal(tax_amount) * rate * sign)
+    return net, tax, rate
+
+
 class AnalyticalReports:
     async def sales_analysis(
         self,
@@ -43,7 +78,10 @@ class AnalyticalReports:
             raise ValidationError("Invalid sales analysis grouping", details={"group_by": group_by})
         invoices = await self._posted_sales(tenant_id, from_date, to_date)
         notes = await self._analysis_credit_notes(tenant_id, from_date, to_date)
-        buckets: dict[str, list] = defaultdict(lambda: [_ZERO, _ZERO, _ZERO, 0, "", None, None, None])
+        buckets: dict[str, list] = defaultdict(
+            lambda: [_ZERO, _ZERO, _ZERO, 0, "", None, None, None]
+        )
+        warnings: list[str] = []
         names = await self._party_names(
             tenant_id, {row.customer_id for row in invoices} | {row.customer_id for row in notes}
         )
@@ -64,6 +102,7 @@ class AnalyticalReports:
                 names=names,
                 product_names=product_names,
                 sign=Decimal("1"),
+                warnings=warnings,
             )
         for note in notes:
             self._accumulate_credit_note(
@@ -72,9 +111,10 @@ class AnalyticalReports:
                 group_by=group_by,
                 names=names,
                 product_names=product_names,
+                warnings=warnings,
             )
         return await self._analysis_response(
-            tenant_id, from_date, to_date, group_by, buckets
+            tenant_id, from_date, to_date, group_by, buckets, warnings=warnings
         )
 
     async def purchase_analysis(
@@ -93,7 +133,10 @@ class AnalyticalReports:
             )
         invoices = await self._posted_purchases(tenant_id, from_date, to_date)
         notes = await self._posted_debit_notes(tenant_id, from_date, to_date)
-        buckets: dict[str, list] = defaultdict(lambda: [_ZERO, _ZERO, _ZERO, 0, "", None, None, None])
+        buckets: dict[str, list] = defaultdict(
+            lambda: [_ZERO, _ZERO, _ZERO, 0, "", None, None, None]
+        )
+        warnings: list[str] = []
         names = await self._party_names(
             tenant_id, {row.supplier_id for row in invoices} | {row.supplier_id for row in notes}
         )
@@ -114,29 +157,41 @@ class AnalyticalReports:
                 names=names,
                 product_names=product_names,
                 sign=Decimal("1"),
+                warnings=warnings,
             )
         for note in notes:
             self._accumulate_debit_note(
-                buckets, note, group_by=group_by, names=names, product_names=product_names
+                buckets,
+                note,
+                group_by=group_by,
+                names=names,
+                product_names=product_names,
+                warnings=warnings,
             )
         return await self._analysis_response(
-            tenant_id, from_date, to_date, group_by, buckets
+            tenant_id, from_date, to_date, group_by, buckets, warnings=warnings
         )
 
     def _accumulate_sales_invoice(
-        self, buckets, invoice: SalesInvoice, *, group_by: str, names, product_names, sign: Decimal
+        self,
+        buckets,
+        invoice: SalesInvoice,
+        *,
+        group_by: str,
+        names,
+        product_names,
+        sign: Decimal,
+        warnings: list[str],
     ) -> None:
-        net = quantize_money((invoice.base_amount or invoice.grand_total) * sign)
-        tax = quantize_money(invoice.tax_amount * (invoice.exchange_rate or Decimal("1")) * sign)
+        converted = _converted_amounts(invoice, sign=sign, warnings=warnings)
+        if converted is None:
+            return
+        net, tax, rate = converted
         grand = quantize_money(net + tax)
         if group_by == "product":
             for line in invoice.lines:
-                line_net = quantize_money(
-                    line.amount * (invoice.exchange_rate or Decimal("1")) * sign
-                )
-                line_tax = quantize_money(
-                    line.tax_amount * (invoice.exchange_rate or Decimal("1")) * sign
-                )
+                line_net = quantize_money(line.amount * rate * sign)
+                line_tax = quantize_money(line.tax_amount * rate * sign)
                 key = str(line.product_id) if line.product_id else "unmapped"
                 label = product_names.get(line.product_id, line.description or "Unmapped")
                 self._add_bucket(
@@ -165,19 +220,17 @@ class AnalyticalReports:
         )
 
     def _accumulate_credit_note(
-        self, buckets, note: CreditNote, *, group_by: str, names, product_names
+        self, buckets, note: CreditNote, *, group_by: str, names, product_names, warnings: list[str]
     ) -> None:
         sign = Decimal("-1")
-        net = quantize_money((note.base_amount if hasattr(note, "base_amount") else note.grand_total) * sign)
-        tax = quantize_money(note.tax_amount * (getattr(note, "exchange_rate", None) or Decimal("1")) * sign)
+        converted = _converted_amounts(note, sign=sign, warnings=warnings)
+        if converted is None:
+            return
+        net, tax, rate = converted
         if group_by == "product":
             for line in note.lines:
-                line_net = quantize_money(
-                    line.amount * (getattr(note, "exchange_rate", None) or Decimal("1")) * sign
-                )
-                line_tax = quantize_money(
-                    line.tax_amount * (getattr(note, "exchange_rate", None) or Decimal("1")) * sign
-                )
+                line_net = quantize_money(line.amount * rate * sign)
+                line_tax = quantize_money(line.tax_amount * rate * sign)
                 key = str(line.product_id) if line.product_id else "unmapped"
                 label = product_names.get(line.product_id, line.description or "Unmapped")
                 self._add_bucket(
@@ -190,10 +243,18 @@ class AnalyticalReports:
                     product_id=line.product_id,
                 )
             return
-        key = str(note.customer_id) if group_by == "customer" else (
-            note.credit_note_date.isoformat() if group_by == "date" else
-            str(note.salesperson_id) if group_by == "salesperson" and getattr(note, "salesperson_id", None)
-            else "summary"
+        key = (
+            str(note.customer_id)
+            if group_by == "customer"
+            else (
+                note.credit_note_date.isoformat()
+                if group_by == "date"
+                else (
+                    str(note.salesperson_id)
+                    if group_by == "salesperson" and getattr(note, "salesperson_id", None)
+                    else "summary"
+                )
+            )
         )
         if group_by == "customer":
             label = names.get(note.customer_id, "")
@@ -225,20 +286,29 @@ class AnalyticalReports:
         )
 
     def _accumulate_purchase_invoice(
-        self, buckets, invoice: PurchaseInvoice, *, group_by: str, names, product_names, sign: Decimal
+        self,
+        buckets,
+        invoice: PurchaseInvoice,
+        *,
+        group_by: str,
+        names,
+        product_names,
+        sign: Decimal,
+        warnings: list[str],
     ) -> None:
-        net = quantize_money((invoice.base_amount or invoice.grand_total) * sign)
-        tax = quantize_money(invoice.tax_amount * (invoice.exchange_rate or Decimal("1")) * sign)
+        converted = _converted_amounts(invoice, sign=sign, warnings=warnings)
+        if converted is None:
+            return
+        net, tax, rate = converted
         if group_by == "product":
             for line in invoice.lines:
-                line_net = quantize_money(
-                    line.amount * (invoice.exchange_rate or Decimal("1")) * sign
-                )
-                line_tax = quantize_money(
-                    line.tax_amount * (invoice.exchange_rate or Decimal("1")) * sign
-                )
+                line_net = quantize_money(line.amount * rate * sign)
+                line_tax = quantize_money(line.tax_amount * rate * sign)
                 key = str(line.product_id) if getattr(line, "product_id", None) else "unmapped"
-                label = product_names.get(getattr(line, "product_id", None), getattr(line, "description", None) or "Unmapped")
+                label = product_names.get(
+                    getattr(line, "product_id", None),
+                    getattr(line, "description", None) or "Unmapped",
+                )
                 self._add_bucket(
                     buckets,
                     key,
@@ -272,18 +342,21 @@ class AnalyticalReports:
         )
 
     def _accumulate_debit_note(
-        self, buckets, note: DebitNote, *, group_by: str, names, product_names
+        self, buckets, note: DebitNote, *, group_by: str, names, product_names, warnings: list[str]
     ) -> None:
         sign = Decimal("-1")
-        net = quantize_money(note.grand_total * sign)
-        tax = quantize_money(note.tax_amount * sign)
+        converted = _converted_amounts(note, sign=sign, warnings=warnings)
+        if converted is None:
+            return
+        net, tax, rate = converted
         if group_by == "product":
             for line in note.lines:
-                line_net = quantize_money(line.amount * sign)
-                line_tax = quantize_money(line.tax_amount * sign)
+                line_net = quantize_money(line.amount * rate * sign)
+                line_tax = quantize_money(line.tax_amount * rate * sign)
                 key = str(line.product_id) if getattr(line, "product_id", None) else "unmapped"
                 label = product_names.get(
-                    getattr(line, "product_id", None), getattr(line, "description", None) or "Unmapped"
+                    getattr(line, "product_id", None),
+                    getattr(line, "description", None) or "Unmapped",
                 )
                 self._add_bucket(
                     buckets,
@@ -308,7 +381,13 @@ class AnalyticalReports:
             label = "All purchases"
             party_id = None
         self._add_bucket(
-            buckets, key, label, net=net, tax=tax, grand=quantize_money(net + tax), party_id=party_id
+            buckets,
+            key,
+            label,
+            net=net,
+            tax=tax,
+            grand=quantize_money(net + tax),
+            party_id=party_id,
         )
 
     def _sales_group(self, invoice: SalesInvoice, *, group_by: str, names) -> tuple:
@@ -354,7 +433,14 @@ class AnalyticalReports:
         row[7] = salesperson_id if salesperson_id is not None else row[7]
 
     async def _analysis_response(
-        self, tenant_id: UUID, from_date: date, to_date: date, group_by: str, buckets
+        self,
+        tenant_id: UUID,
+        from_date: date,
+        to_date: date,
+        group_by: str,
+        buckets,
+        *,
+        warnings: list[str],
     ) -> SalesPurchaseAnalysisResponse:
         lines = [
             SalesPurchaseAnalysisLine(
@@ -380,10 +466,13 @@ class AnalyticalReports:
             total_net=quantize_money(sum((line.net_amount for line in lines), _ZERO)),
             total_tax=quantize_money(sum((line.tax_amount for line in lines), _ZERO)),
             total_grand=quantize_money(sum((line.grand_total for line in lines), _ZERO)),
+            warnings=warnings,
             lines=lines,
         )
 
-    async def _posted_sales(self, tenant_id: UUID, from_date: date, to_date: date) -> list[SalesInvoice]:
+    async def _posted_sales(
+        self, tenant_id: UUID, from_date: date, to_date: date
+    ) -> list[SalesInvoice]:
         statement = (
             select(SalesInvoice)
             .where(
@@ -397,7 +486,9 @@ class AnalyticalReports:
         )
         return list((await self.session.execute(statement)).scalars().unique().all())
 
-    async def _analysis_credit_notes(self, tenant_id: UUID, from_date: date, to_date: date) -> list[CreditNote]:
+    async def _analysis_credit_notes(
+        self, tenant_id: UUID, from_date: date, to_date: date
+    ) -> list[CreditNote]:
         statement = (
             select(CreditNote)
             .where(
@@ -427,7 +518,9 @@ class AnalyticalReports:
         )
         return list((await self.session.execute(statement)).scalars().unique().all())
 
-    async def _posted_debit_notes(self, tenant_id: UUID, from_date: date, to_date: date) -> list[DebitNote]:
+    async def _posted_debit_notes(
+        self, tenant_id: UUID, from_date: date, to_date: date
+    ) -> list[DebitNote]:
         statement = (
             select(DebitNote)
             .where(
@@ -445,15 +538,12 @@ class AnalyticalReports:
         if not ids:
             return {}
         rows = (
-            (
-                await self.session.execute(
-                    select(Customer.id, Customer.name).where(
-                        Customer.tenant_id == tenant_id, Customer.id.in_(ids)
-                    )
+            await self.session.execute(
+                select(Customer.id, Customer.name).where(
+                    Customer.tenant_id == tenant_id, Customer.id.in_(ids)
                 )
             )
-            .all()
-        )
+        ).all()
         return {row[0]: row[1] for row in rows}
 
     async def _product_names(self, tenant_id: UUID, ids: set[UUID]) -> dict[UUID, str]:
@@ -462,13 +552,10 @@ class AnalyticalReports:
         if not ids:
             return {}
         rows = (
-            (
-                await self.session.execute(
-                    select(Product.id, Product.name).where(
-                        Product.tenant_id == tenant_id, Product.id.in_(ids)
-                    )
+            await self.session.execute(
+                select(Product.id, Product.name).where(
+                    Product.tenant_id == tenant_id, Product.id.in_(ids)
                 )
             )
-            .all()
-        )
+        ).all()
         return {row[0]: row[1] for row in rows}
