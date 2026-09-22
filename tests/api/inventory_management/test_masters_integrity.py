@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from httpx import AsyncClient
 
-from tests.conftest import login_headers, provision_admin
+from tests.conftest import login_headers, provision_admin, unique_trn
 
 
 async def _seeded(client: AsyncClient, headers: dict[str, str]) -> dict[str, str]:
@@ -56,11 +56,13 @@ async def _create_customer(
     headers: dict[str, str],
     *,
     currency_id: str,
-    trn: str | None = "100000000000003",
+    trn: str | None = None,
     tax_treatment: str = "REGISTERED",
     default_price_list_id: str | None = None,
 ) -> str:
     suffix = uuid4().hex[:8]
+    if trn is None and tax_treatment == "REGISTERED":
+        trn = unique_trn()
     payload: dict[str, object] = {
         "name": f"Customer {suffix}",
         "tax_treatment": tax_treatment,

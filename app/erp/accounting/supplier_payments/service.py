@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
@@ -699,7 +700,7 @@ class SupplierPaymentService:
 
     async def list_for_purchase_order(
         self, tenant_id: UUID, purchase_order_id: UUID
-    ) -> list[SupplierPayment]:
+    ) -> builtins.list[SupplierPayment]:
         return await self.repo.list_for_purchase_order(tenant_id, purchase_order_id)
 
     async def _fifo_debits(self, tenant_id: UUID, invoice: Any) -> list[PaymentAllocationInput]:

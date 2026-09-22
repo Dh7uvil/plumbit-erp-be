@@ -19,6 +19,7 @@ from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
 from app.common.print.schemas import PrintDocumentResponse
+from app.common.schemas.billing_queue import PurchaseOrderBillingQueueItem
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
@@ -27,6 +28,7 @@ from app.erp.purchase_orders.schemas import (
     PurchaseOrderCancelRequest,
     PurchaseOrderComposeDefaults,
     PurchaseOrderCreate,
+    PurchaseOrderCycleResponse,
     PurchaseOrderFilter,
     PurchaseOrderRejectRequest,
     PurchaseOrderResponse,
@@ -47,6 +49,17 @@ async def compose_defaults(
 ) -> ApiResponse[PurchaseOrderComposeDefaults]:
     data = await service.compose_defaults(tenant.tenant_id, supplier_id)
     return ApiResponse(data=data)
+
+
+@router.get("/billing-queue", response_model=ApiResponse[list[PurchaseOrderBillingQueueItem]])
+async def purchase_order_billing_queue(
+    tenant: TenantContextDependency,
+    page: PaginationDependency,
+    service: PurchaseOrderServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(PURCHASE_ORDER_READ))],
+) -> ApiResponse[list[PurchaseOrderBillingQueueItem]]:
+    rows, total = await service.billing_queue(tenant.tenant_id, page=page)
+    return paginated_response(rows, params=page, total=total)
 
 
 @router.get("", response_model=ApiResponse[list[PurchaseOrderResponse]])
@@ -86,6 +99,19 @@ async def create_purchase_order(
 ) -> ApiResponse[PurchaseOrderResponse]:
     row = await service.create(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Purchase order created successfully")
+
+
+@router.get(
+    "/{purchase_order_id}/cycle",
+    response_model=ApiResponse[PurchaseOrderCycleResponse],
+)
+async def get_purchase_order_cycle(
+    purchase_order_id: UUID,
+    tenant: TenantContextDependency,
+    service: PurchaseOrderServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(PURCHASE_ORDER_READ))],
+) -> ApiResponse[PurchaseOrderCycleResponse]:
+    return ApiResponse(data=await service.cycle(tenant.tenant_id, purchase_order_id))
 
 
 @router.get("/{purchase_order_id}", response_model=ApiResponse[PurchaseOrderResponse])

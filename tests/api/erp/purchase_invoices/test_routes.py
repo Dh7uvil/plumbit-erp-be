@@ -181,3 +181,54 @@ async def test_void_goods_bill_restores_qty_billed(client: AsyncClient) -> None:
     assert cancelled.status_code == 200, cancelled.text
     po = await client.get(f"/api/v1/purchase-orders/{ctx['order']['id']}", headers=headers)
     assert po.json()["data"]["billing_status"] == "NOT_INVOICED"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bill_type", ["GOODS", "EXPENSE", "IMPORT"])
+async def test_mixed_product_and_expense_lines_per_bill_type(
+    client: AsyncClient,
+    bill_type: str,
+) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    ctx = await _issue_tracked_po(client, headers, quantity="2")
+    product_id = ctx["product_id"]
+    unit_id = ctx["order"]["lines"][0]["unit_id"]
+    supplier_id = str(ctx["supplier_id"])
+
+    payload: dict[str, object] = {
+        "supplier_id": supplier_id,
+        "bill_type": bill_type,
+        "lines": [
+            {
+                "line_type": "PRODUCT",
+                "product_id": str(product_id),
+                "description": "Stock line",
+                "quantity": "1",
+                "unit_id": str(unit_id),
+                "rate": "10.0000",
+            },
+            {
+                "line_type": "EXPENSE",
+                "description": "Freight on same bill",
+                "quantity": "1",
+                "rate": "5.0000",
+                "expense_category": "FREIGHT",
+            },
+        ],
+    }
+    created = await client.post("/api/v1/purchase-invoices", headers=headers, json=payload)
+    assert created.status_code == 201, created.text
+    body = created.json()["data"]
+    assert len(body["lines"]) == 2
+    line_types = {line["line_type"] for line in body["lines"]}
+    assert line_types == {"PRODUCT", "EXPENSE"}
+
+    posted = await client.post(
+        f"/api/v1/purchase-invoices/{body['id']}/post",
+        headers=_idempotent(headers, body["version"]),
+    )
+    assert posted.status_code == 200, posted.text
+    if bill_type == "IMPORT":
+        assert posted.json()["data"]["is_reverse_charge"] is True

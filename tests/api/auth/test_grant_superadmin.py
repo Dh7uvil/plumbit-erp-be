@@ -43,7 +43,7 @@ async def test_grant_superadmin_permissions_restores_missing_catalog_grant(
         permission = await session.scalar(
             select(Permission).where(
                 Permission.tenant_id == UUID(tenant_id),
-                Permission.module == "erp",
+                Permission.module == "sales",
                 Permission.resource == "proforma_invoice",
                 Permission.action == "create",
             )
@@ -82,7 +82,7 @@ async def test_grant_superadmin_permissions_seeds_missing_catalog_row(
         permission = await session.scalar(
             select(Permission).where(
                 Permission.tenant_id == UUID(tenant_id),
-                Permission.module == "erp",
+                Permission.module == "sales",
                 Permission.resource == "quotation",
                 Permission.action == "revise",
             )

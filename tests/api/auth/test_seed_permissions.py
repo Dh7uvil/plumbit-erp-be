@@ -45,7 +45,7 @@ async def test_seed_catalog_permissions_inserts_missing_row(client: AsyncClient)
         permission = await session.scalar(
             select(Permission).where(
                 Permission.tenant_id == UUID(tenant_id),
-                Permission.module == "inventory",
+                Permission.module == "purchase",
                 Permission.resource == "goods_receipt",
                 Permission.action == "post",
             )
@@ -68,7 +68,7 @@ async def test_seed_catalog_permissions_inserts_missing_row(client: AsyncClient)
         restored = await session.scalar(
             select(Permission).where(
                 Permission.tenant_id == UUID(tenant_id),
-                Permission.module == "inventory",
+                Permission.module == "purchase",
                 Permission.resource == "goods_receipt",
                 Permission.action == "post",
             )

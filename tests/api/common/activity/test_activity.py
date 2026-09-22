@@ -73,7 +73,7 @@ async def test_activity_unregistered_entity_type_is_validation_error(
     response = await client.get(
         "/api/v1/activity",
         headers=headers,
-        params={"entity_type": "lead", "entity_id": str(uuid4())},
+        params={"entity_type": "lead_source", "entity_id": str(uuid4())},
     )
     assert response.status_code == 422, response.text
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
