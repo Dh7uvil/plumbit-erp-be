@@ -71,6 +71,8 @@ class BankStatementResponse(BaseModel):
     period_end: date
     opening_balance: Decimal
     closing_balance: Decimal
+    base_opening_balance: Decimal | None = None
+    base_closing_balance: Decimal | None = None
     status: BankStatementStatus
     import_reference: str | None
     notes: str | None

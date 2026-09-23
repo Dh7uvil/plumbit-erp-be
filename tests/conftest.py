@@ -26,10 +26,7 @@ from uuid import uuid4  # noqa: E402
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 
-from app.cli.create_tenant import provision_tenant  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
-from app.core.security import hash_password  # noqa: E402
-from app.main import create_app  # noqa: E402
 
 get_settings.cache_clear()
 _SETTINGS = get_settings()
@@ -52,6 +49,8 @@ def unique_trn(*, prefix: str = "1") -> str:
 
 @pytest.fixture
 def app():
+    from app.main import create_app
+
     return create_app()
 
 
@@ -65,6 +64,9 @@ async def client(app) -> AsyncIterator[AsyncClient]:
 
 
 async def provision_admin(*, name: str | None = None) -> tuple[str, str, str]:
+    from app.cli.create_tenant import provision_tenant
+    from app.core.security import hash_password
+
     suffix = uuid4().hex[:8]
     tenant_name = name or f"Test Tenant {suffix}"
     admin_email = f"admin-{suffix}@example.com"

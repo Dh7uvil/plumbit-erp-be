@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.core.enums import PlaceOfSupply, QcStatus, StockDocumentStatus, TaxTreatment
@@ -38,6 +39,7 @@ class GoodsReceiptFilter(BaseFilter):
 
 class GoodsReceiptLineInput(BaseModel):
     purchase_order_line_id: UUID | None = None
+    source_purchase_invoice_line_id: UUID | None = None
     product_id: UUID | None = None
     supplier_product_id: UUID | None = None
     supplier_sku: str | None = Field(default=None, max_length=80)
@@ -64,6 +66,7 @@ class GoodsReceiptLineResponse(BaseModel):
     id: UUID
     line_number: int
     purchase_order_line_id: UUID | None
+    source_purchase_invoice_line_id: UUID | None = None
     product_id: UUID | None
     supplier_product_id: UUID | None
     supplier_sku: str | None
@@ -83,6 +86,7 @@ class GoodsReceiptLineResponse(BaseModel):
 
 class GoodsReceiptCreate(BaseModel):
     supplier_id: UUID
+    source_purchase_invoice_id: UUID | None = None
     warehouse_id: UUID
     document_date: date | None = None
     purchase_order_id: UUID | None = None
@@ -118,6 +122,22 @@ class GoodsReceiptCreateFromPurchaseOrder(BaseModel):
     warehouse_id: UUID | None = None
     document_date: date | None = None
     notes: str | None = None
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_notes(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class GoodsReceiptCreateFromPurchaseInvoice(BaseModel):
+    purchase_invoice_id: UUID
+    warehouse_id: UUID | None = None
+    document_date: date | None = None
+    notes: str | None = None
+    lines: list[ConversionLineInput] | None = None
 
     @field_validator("notes")
     @classmethod
@@ -185,6 +205,7 @@ class GoodsReceiptResponse(BaseModel):
     supplier_id: UUID
     warehouse_id: UUID
     purchase_order_id: UUID | None
+    source_purchase_invoice_id: UUID | None = None
     branch_id: UUID | None
     tax_treatment: TaxTreatment
     place_of_supply: PlaceOfSupply

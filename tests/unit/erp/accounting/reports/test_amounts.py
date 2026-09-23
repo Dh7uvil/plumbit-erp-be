@@ -3,7 +3,7 @@
 from decimal import Decimal
 from types import SimpleNamespace
 
-from app.erp.accounting.reports.amounts import document_base_net_tax
+from app.erp.accounting.reports.amounts import document_base_grand, document_base_net_tax
 
 
 def test_document_base_net_tax_uses_post_discount_net() -> None:
@@ -19,3 +19,15 @@ def test_document_base_net_tax_uses_post_discount_net() -> None:
     assert net == Decimal("90.0000")
     assert tax == Decimal("4.5000")
     assert grand == Decimal("94.5000")
+
+
+def test_document_base_grand_honors_zero_base_amount() -> None:
+    doc = SimpleNamespace(
+        subtotal=Decimal("0"),
+        discount_amount=Decimal("0"),
+        tax_amount=Decimal("0"),
+        grand_total=Decimal("100.0000"),
+        exchange_rate=Decimal("3.67"),
+        base_amount=Decimal("0.0000"),
+    )
+    assert document_base_grand(doc) == Decimal("0.0000")

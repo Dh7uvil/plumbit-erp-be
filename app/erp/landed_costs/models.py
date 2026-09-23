@@ -148,6 +148,7 @@ class LandedCostCharge(TenantModel):
     allocation_basis: Mapped[str | None] = mapped_column(String(20), nullable=True)
     bill_number: Mapped[str] = mapped_column(String(40), nullable=False)
     amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    base_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
 
     landed_cost: Mapped[LandedCost] = relationship(back_populates="charges")
 

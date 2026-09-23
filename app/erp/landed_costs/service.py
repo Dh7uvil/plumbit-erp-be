@@ -595,6 +595,7 @@ class LandedCostService:
                 )
             category = ExpenseCategory(bill_line.expense_category)
             basis = await self._line_allocation_basis(tenant_id, bill_line)
+            base_amount = quantize_money(amount * bill.exchange_rate)
             built.append(
                 {
                     "line_number": index,
@@ -605,10 +606,11 @@ class LandedCostService:
                     "allocation_basis": None if basis is None else basis.value,
                     "bill_number": bill.document_number,
                     "amount": amount,
+                    "base_amount": base_amount,
                 }
             )
-            specs.append((amount, basis))
-            total += amount
+            specs.append((base_amount, basis))
+            total += base_amount
         return built, quantize_money(total), specs
 
     async def _allocation_rows(
@@ -689,7 +691,7 @@ class LandedCostService:
         self, tenant_id: UUID, row: LandedCost
     ) -> tuple[list[JournalLineInput], Decimal]:
         method = LandedCostAllocationMethod(row.allocation_method)
-        total_charges = sum((charge.amount for charge in row.charges), _ZERO)
+        total_charges = sum((charge.base_amount for charge in row.charges), _ZERO)
         await self._charge_rows(
             tenant_id,
             [
@@ -775,7 +777,7 @@ class LandedCostService:
                 tenant_id, bill_repo, charge.purchase_invoice_line_id
             )
             account = await self._clearing_account(tenant_id, charge, bill_line)
-            credits[account.id] = credits.get(account.id, _ZERO) + charge.amount
+            credits[account.id] = credits.get(account.id, _ZERO) + charge.base_amount
         for account_id, amount in credits.items():
             lines.append(
                 JournalLineInput(
@@ -1099,7 +1101,7 @@ class LandedCostService:
         status = StockDocumentStatus(row.status)
         date_locked = self._date_in_locked_period(row.document_date)
         post_blocked = self._post_blocked(row.document_date)
-        total_charges = quantize_money(sum((charge.amount for charge in row.charges), _ZERO))
+        total_charges = quantize_money(sum((charge.base_amount for charge in row.charges), _ZERO))
         return LandedCostResponse(
             id=row.id,
             tenant_id=row.tenant_id,
@@ -1137,6 +1139,7 @@ class LandedCostService:
                     ),
                     bill_number=charge.bill_number,
                     amount=charge.amount,
+                    base_amount=charge.base_amount,
                 )
                 for charge in row.charges
             ],

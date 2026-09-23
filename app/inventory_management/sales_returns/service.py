@@ -11,6 +11,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
+    CREDIT_NOTE_CREATE,
     PERIOD_OVERRIDE,
     SALES_MODULE,
     SALES_RETURN_DELETE,
@@ -371,10 +372,14 @@ class SalesReturnService:
                         )
                         if scrapped.movement.value is not None:
                             scrap_value += abs(scrapped.movement.value)
-                so_returns[dn_line.sales_order_line_id] = (
-                    so_returns.get(dn_line.sales_order_line_id, _ZERO) + line.quantity
+                if dn_line.sales_order_line_id is not None:
+                    so_returns[dn_line.sales_order_line_id] = (
+                        so_returns.get(dn_line.sales_order_line_id, _ZERO) + line.quantity
+                    )
+            if so_returns and row.sales_order_id is not None:
+                await self.sales_orders.apply_line_returns(
+                    tenant_id, row.sales_order_id, so_returns
                 )
-            await self.sales_orders.apply_line_returns(tenant_id, row.sales_order_id, so_returns)
             row.status = target.value
             row.is_posted = True
             row.posted_at = occurred_at
@@ -474,9 +479,10 @@ class SalesReturnService:
             dn_line = dn_lines.get(line.delivery_note_line_id)
             if dn_line is None:
                 raise ValidationError("Delivery note line not found on this note")
-            so_returns[dn_line.sales_order_line_id] = (
-                so_returns.get(dn_line.sales_order_line_id, _ZERO) + line.quantity
-            )
+            if dn_line.sales_order_line_id is not None:
+                so_returns[dn_line.sales_order_line_id] = (
+                    so_returns.get(dn_line.sales_order_line_id, _ZERO) + line.quantity
+                )
             stockable = await self._is_stockable(tenant_id, line.product_id)
             if not stockable or line.product_id is None:
                 continue
@@ -520,9 +526,10 @@ class SalesReturnService:
                 occurred_at=occurred_at,
                 unit_id=line.unit_id,
             )
-        await self.sales_orders.apply_line_returns(
-            tenant_id, row.sales_order_id, {key: -qty for key, qty in so_returns.items()}
-        )
+        if so_returns and row.sales_order_id is not None:
+            await self.sales_orders.apply_line_returns(
+                tenant_id, row.sales_order_id, {key: -qty for key, qty in so_returns.items()}
+            )
         await self.inventory_ledger.reverse(
             tenant_id,
             source_type=SOURCE_SALES_RETURN,
@@ -663,6 +670,10 @@ class SalesReturnService:
             self.actor_permissions, SALES_RETURN_DELETE
         ):
             actions.append("delete")
+        if status == StockDocumentStatus.POSTED and has_permission(
+            self.actor_permissions, CREDIT_NOTE_CREATE
+        ):
+            actions.append("create_credit_note")
         return actions
 
     async def _related_documents(
@@ -686,7 +697,10 @@ class SalesReturnService:
                     quantity_summary=quantity_summary([line.quantity for line in note.lines]),
                 )
             )
-        order = await SalesOrderRepository(self.session).get(tenant_id, row.sales_order_id)
+        if row.sales_order_id is not None:
+            order = await SalesOrderRepository(self.session).get(tenant_id, row.sales_order_id)
+        else:
+            order = None
         if order is not None:
             related.append(
                 RelatedDocumentRef(

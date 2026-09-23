@@ -55,10 +55,10 @@ class SalesReturn(AuditUserMixin, SoftDeleteTenantModel):
         ForeignKey("delivery_notes.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    sales_order_id: Mapped[UUID] = mapped_column(
+    sales_order_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
-        ForeignKey("sales_orders.id", ondelete="RESTRICT"),
-        nullable=False,
+        ForeignKey("sales_orders.id", ondelete="SET NULL"),
+        nullable=True,
     )
     customer_id: Mapped[UUID] = mapped_column(
         PostgreSQLUUID(as_uuid=True),

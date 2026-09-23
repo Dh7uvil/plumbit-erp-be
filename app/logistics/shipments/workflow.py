@@ -38,3 +38,7 @@ def assert_editable(status: ShipmentStatus) -> None:
 def assert_trackable(status: ShipmentStatus) -> None:
     if status not in _TRACKABLE:
         raise InvalidStatusTransitionError("Tracking can only be updated after dispatch")
+
+
+def is_trackable(status: ShipmentStatus) -> bool:
+    return status in _TRACKABLE

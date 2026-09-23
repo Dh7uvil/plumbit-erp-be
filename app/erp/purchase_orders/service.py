@@ -12,7 +12,9 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
+    COST_SHEET_CREATE,
     GOODS_RECEIPT_CREATE,
+    PURCHASE_INVOICE_CREATE,
     PURCHASE_MODULE,
     PURCHASE_ORDER_APPROVE,
     PURCHASE_ORDER_CLOSE,
@@ -20,6 +22,7 @@ from app.auth.catalog import (
     PURCHASE_ORDER_DELETE,
     PURCHASE_ORDER_ISSUE,
     PURCHASE_ORDER_UPDATE,
+    SUPPLIER_PAYMENT_CREATE,
 )
 from app.auth.org_service import OrganizationService
 from app.auth.schemas import AddressResponse
@@ -152,6 +155,7 @@ class PurchaseOrderService:
         common_filter: BaseFilter | None = None,
         status: str | None = None,
         receipt_status: str | None = None,
+        receipt_status_not: str | None = None,
         billing_status: str | None = None,
         supplier_id: UUID | None = None,
         branch_id: UUID | None = None,
@@ -165,6 +169,11 @@ class PurchaseOrderService:
             filters["status"] = status
         if receipt_status is not None:
             filters["receipt_status"] = receipt_status
+        extra_criteria = None
+        if receipt_status_not is not None:
+            from app.erp.purchase_orders.models import PurchaseOrder
+
+            extra_criteria = [PurchaseOrder.receipt_status != receipt_status_not]
         if billing_status is not None:
             filters["billing_status"] = billing_status
         if supplier_id is not None:
@@ -182,6 +191,7 @@ class PurchaseOrderService:
             page=page,
             common_filter=common_filter,
             filters=filters or None,
+            extra_criteria=extra_criteria,
         )
         return [self._to_response(row, requires_approval=requires_approval) for row in rows], total
 
@@ -1349,6 +1359,20 @@ class PurchaseOrderService:
             and has_permission(self.actor_permissions, GOODS_RECEIPT_CREATE)
         ):
             actions.append("create_goods_receipt")
+        if (
+            status in {PurchaseOrderStatus.ISSUED, PurchaseOrderStatus.CLOSED}
+            and row.billing_status != BillingStatus.INVOICED.value
+            and has_permission(self.actor_permissions, PURCHASE_INVOICE_CREATE)
+        ):
+            actions.append("create_bill")
+        if status in {PurchaseOrderStatus.ISSUED, PurchaseOrderStatus.CLOSED} and has_permission(
+            self.actor_permissions, SUPPLIER_PAYMENT_CREATE
+        ):
+            actions.append("pay_advance")
+        if status in {PurchaseOrderStatus.ISSUED, PurchaseOrderStatus.CLOSED} and has_permission(
+            self.actor_permissions, COST_SHEET_CREATE
+        ):
+            actions.append("create_cost_sheet")
         return actions
 
     def _to_response(self, row: PurchaseOrder, *, requires_approval: bool) -> PurchaseOrderResponse:

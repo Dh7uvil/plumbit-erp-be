@@ -119,6 +119,25 @@ class DebitNote(AuditUserMixin, SoftDeleteTenantModel):
     amount_unapplied: Mapped[Decimal] = mapped_column(
         _MONEY, nullable=False, server_default=text("0")
     )
+    amount_refunded: Mapped[Decimal] = mapped_column(
+        _MONEY, nullable=False, server_default=text("0")
+    )
+    refund_journal_entry_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("journal_entries.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    refund_payment_account_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    refunded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refunded_by: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     journal_entry_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("journal_entries.id", ondelete="SET NULL"),

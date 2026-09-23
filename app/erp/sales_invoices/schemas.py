@@ -120,6 +120,7 @@ class SalesInvoiceLineResponse(PackingFields):
     cogs_amount: Decimal
     cogs_status: CogsStatus
     qty_credited: Decimal
+    qty_delivered: Decimal = Decimal("0")
     hs_code: str | None = None
 
 

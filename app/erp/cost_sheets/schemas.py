@@ -128,6 +128,7 @@ class CostSheetLineResponse(BaseModel):
     target_selling_price: Decimal | None
     goods_receipt_line_id: UUID | None
     line_goods_value: Decimal
+    base_amount: Decimal | None = None
     estimated_landed_unit_cost: Decimal
     actual_landed_unit_cost: Decimal | None
     expected_margin_pct: Decimal | None
@@ -187,6 +188,7 @@ class CostSheetResponse(BaseModel):
     landed_cost_id: UUID | None
     notes: str | None
     totals: CostSheetTotals
+    base_total: Decimal | None = None
     available_actions: list[str] = Field(default_factory=list)
     lines: list[CostSheetLineResponse] = Field(default_factory=list)
     charges: list[CostSheetChargeResponse] = Field(default_factory=list)

@@ -66,6 +66,17 @@ def sum_cash_allocations(
     )
 
 
+def allocation_base_amount(
+    payment: _PaymentCurrencyRow,
+    open_row: OpenItemRow | Any,
+    amount_in_item_currency: Decimal,
+) -> Decimal:
+    """Base-currency equivalent of an allocation amount in open-item currency."""
+
+    item_rate = open_row.exchange_rate or payment.exchange_rate
+    return quantize_money(amount_in_item_currency * item_rate)
+
+
 def open_item_amount_in_payment_currency(
     payment: _PaymentCurrencyRow,
     open_row: OpenItemRow | Any,
@@ -211,6 +222,9 @@ async def record_note_allocations_on_payment(
     notes: Sequence[PaymentAllocationInput],
     *,
     receivable: bool,
+    session: AsyncSession | None = None,
+    party_id: UUID | None = None,
+    payment: _PaymentCurrencyRow | None = None,
 ) -> None:
     """Persist credit/debit note rows on a payment for allocation history (subledger only)."""
 
@@ -218,6 +232,16 @@ async def record_note_allocations_on_payment(
     for note in notes:
         if note.item_type != expected:
             continue
+        base_amount: Decimal | None = None
+        if session is not None and party_id is not None and payment is not None:
+            open_row = await open_item_row_for_allocation(
+                session,
+                tenant_id,
+                receivable=receivable,
+                party_id=party_id,
+                item=note,
+            )
+            base_amount = allocation_base_amount(payment, open_row, note.amount)
         await allocations_repo.create(
             tenant_id,
             payment_type=payment_type,
@@ -225,6 +249,7 @@ async def record_note_allocations_on_payment(
             item_type=note.item_type.value,
             item_id=note.item_id,
             amount=note.amount,
+            base_amount=base_amount,
         )
 
 

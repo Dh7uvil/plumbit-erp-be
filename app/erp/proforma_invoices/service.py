@@ -12,6 +12,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
+    COST_SHEET_CREATE,
+    CUSTOMER_PAYMENT_CREATE,
     PROFORMA_INVOICE_CONFIRM,
     PROFORMA_INVOICE_CREATE,
     PROFORMA_INVOICE_DELETE,
@@ -1449,6 +1451,20 @@ class ProformaInvoiceService:
             ProformaInvoiceStatus.PARTIALLY_CONVERTED,
         } and has_permission(self.actor_permissions, SALES_INVOICE_CREATE):
             actions.append("create_sales_invoice")
+        if status in {
+            ProformaInvoiceStatus.SENT,
+            ProformaInvoiceStatus.CONFIRMED,
+            ProformaInvoiceStatus.PARTIALLY_CONVERTED,
+            ProformaInvoiceStatus.CONVERTED,
+        } and has_permission(self.actor_permissions, CUSTOMER_PAYMENT_CREATE):
+            actions.append("record_advance")
+        if status in {
+            ProformaInvoiceStatus.SENT,
+            ProformaInvoiceStatus.CONFIRMED,
+            ProformaInvoiceStatus.PARTIALLY_CONVERTED,
+            ProformaInvoiceStatus.CONVERTED,
+        } and has_permission(self.actor_permissions, COST_SHEET_CREATE):
+            actions.append("create_cost_sheet")
         return actions
 
     def _to_response(self, row: ProformaInvoice, today: date) -> ProformaInvoiceResponse:

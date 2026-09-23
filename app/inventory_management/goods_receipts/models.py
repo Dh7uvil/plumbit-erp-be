@@ -51,6 +51,11 @@ class GoodsReceipt(AuditUserMixin, SoftDeleteTenantModel):
             "document_date",
         ),
         Index("ix_goods_receipts_purchase_order_id", "purchase_order_id"),
+        Index(
+            "ix_goods_receipts_tenant_id_source_purchase_invoice_id",
+            "tenant_id",
+            "source_purchase_invoice_id",
+        ),
     )
 
     document_number: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -73,6 +78,11 @@ class GoodsReceipt(AuditUserMixin, SoftDeleteTenantModel):
     purchase_order_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("purchase_orders.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_purchase_invoice_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("purchase_invoices.id", ondelete="SET NULL"),
         nullable=True,
     )
     branch_id: Mapped[UUID | None] = mapped_column(
@@ -141,6 +151,10 @@ class GoodsReceiptLine(TenantModel):
         ),
         Index("ix_goods_receipt_lines_goods_receipt_id", "goods_receipt_id"),
         Index("ix_goods_receipt_lines_purchase_order_line_id", "purchase_order_line_id"),
+        Index(
+            "ix_goods_receipt_lines_source_purchase_invoice_line_id",
+            "source_purchase_invoice_line_id",
+        ),
         Index("ix_goods_receipt_lines_tenant_id_product_id", "tenant_id", "product_id"),
     )
 
@@ -153,6 +167,11 @@ class GoodsReceiptLine(TenantModel):
     purchase_order_line_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("purchase_order_lines.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_purchase_invoice_line_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("purchase_invoice_lines.id", ondelete="SET NULL"),
         nullable=True,
     )
     product_id: Mapped[UUID | None] = mapped_column(

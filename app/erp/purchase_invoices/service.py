@@ -12,6 +12,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
+    DEBIT_NOTE_CREATE,
+    GOODS_RECEIPT_CREATE,
     LANDED_COST_CREATE,
     PERIOD_OVERRIDE,
     PURCHASE_INVOICE_CANCEL,
@@ -32,7 +34,7 @@ from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
-from app.common.utils.conversion import quantity_summary
+from app.common.utils.conversion import quantity_summary, remaining_qty
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import (
@@ -1574,6 +1576,21 @@ class PurchaseInvoiceService:
             and has_permission(self.actor_permissions, LANDED_COST_CREATE)
         ):
             actions.append("create_landed_cost")
+        if status == InvoiceDocumentStatus.POSTED and has_permission(
+            self.actor_permissions, DEBIT_NOTE_CREATE
+        ):
+            actions.append("create_debit_note")
+        if (
+            status == InvoiceDocumentStatus.POSTED
+            and has_permission(self.actor_permissions, GOODS_RECEIPT_CREATE)
+            and any(
+                line.product_id is not None
+                and line.line_type == "PRODUCT"
+                and remaining_qty(line.quantity, line.qty_received) > _ZERO
+                for line in row.lines
+            )
+        ):
+            actions.append("create_goods_receipt")
         return actions
 
     def _to_response(
@@ -1679,6 +1696,7 @@ class PurchaseInvoiceService:
                     purchase_account_id=line.purchase_account_id,
                     grn_unit_cost=line.grn_unit_cost,
                     qty_debited=line.qty_debited,
+                    qty_received=line.qty_received,
                 )
                 for line in row.lines
             ],
@@ -1726,6 +1744,20 @@ class PurchaseInvoiceService:
                         document_date=receipt.document_date,
                     )
                 )
+        for receipt in await GoodsReceiptRepository(self.session).list_for_purchase_invoice(
+            tenant_id, row.id
+        ):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.GOODS_RECEIPT.value,
+                    document_id=receipt.id,
+                    document_number=receipt.document_number,
+                    status=receipt.status,
+                    relationship="child",
+                    document_date=receipt.document_date,
+                    quantity_summary=quantity_summary([line.quantity for line in receipt.lines]),
+                )
+            )
         for item in await DebitNoteRepository(self.session).list_for_purchase_invoice(
             tenant_id, row.id
         ):

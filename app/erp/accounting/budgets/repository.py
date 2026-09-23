@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.repositories.base import BaseRepository
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.core.enums import BudgetStatus
 from app.erp.accounting.budgets.models import Budget, BudgetLine
 
 
@@ -70,6 +71,17 @@ class BudgetRepository:
             .order_by(BudgetLine.period_start, BudgetLine.account_id)
         )
         return list((await self.session.execute(statement)).scalars().all())
+
+    async def active_for_fiscal_year(
+        self, tenant_id: UUID, fiscal_year: int
+    ) -> Budget | None:
+        statement = select(Budget).where(
+            Budget.tenant_id == tenant_id,
+            Budget.fiscal_year == fiscal_year,
+            Budget.status == BudgetStatus.ACTIVE.value,
+            Budget.deleted_at.is_(None),
+        )
+        return (await self.session.execute(statement)).scalar_one_or_none()
 
     async def replace_lines(
         self, tenant_id: UUID, budget_id: UUID, rows: _List[dict[str, object]]

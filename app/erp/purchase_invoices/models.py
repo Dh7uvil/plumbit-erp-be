@@ -260,5 +260,6 @@ class PurchaseInvoiceLine(TenantModel):
     )
     grn_unit_cost: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     qty_debited: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
+    qty_received: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
 
     purchase_invoice: Mapped[PurchaseInvoice] = relationship(back_populates="lines")

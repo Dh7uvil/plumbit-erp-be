@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, exists
+from sqlalchemy import delete, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
@@ -138,6 +138,34 @@ class GoodsReceiptRepository:
             filters={"status": StockDocumentStatus.POSTED.value},
             extra_criteria=[self._has_outstanding_bill_clause()],
         )
+
+    async def has_live_for_purchase_invoice(
+        self, tenant_id: UUID, purchase_invoice_id: UUID
+    ) -> bool:
+        statement = (
+            select(GoodsReceipt.id)
+            .where(
+                GoodsReceipt.tenant_id == tenant_id,
+                GoodsReceipt.source_purchase_invoice_id == purchase_invoice_id,
+                GoodsReceipt.deleted_at.is_(None),
+                GoodsReceipt.status != StockDocumentStatus.CANCELLED.value,
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none() is not None
+
+    async def list_for_purchase_invoice(
+        self, tenant_id: UUID, purchase_invoice_id: UUID
+    ) -> Sequence[GoodsReceipt]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(GoodsReceipt.source_purchase_invoice_id == purchase_invoice_id)
+            .options(self._with_lines())
+            .order_by(GoodsReceipt.document_date, GoodsReceipt.created_at)
+        )
+        result = await self.session.execute(statement)
+        return result.scalars().all()
 
     async def list_for_purchase_orders(
         self, tenant_id: UUID, purchase_order_ids: Sequence[UUID]

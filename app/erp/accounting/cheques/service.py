@@ -71,8 +71,10 @@ from app.erp.accounting.open_items.repository import PaymentAllocationRepository
 from app.erp.accounting.open_items.schemas import PaymentAllocationInput
 from app.erp.accounting.payment_allocations.document_labels import allocation_item_document_number
 from app.erp.accounting.payment_allocations.helpers import (
+    allocation_base_amount,
     cash_allocation_types,
     open_item_row_for_allocation,
+    realized_fx_on_allocation,
     record_note_allocations_on_payment,
     require_single_invoice_target,
     reverse_note_netting_on_payment,
@@ -717,6 +719,8 @@ class ChequeService:
                 journal_type=JournalType.SYSTEM,
                 reference=row.document_number,
             )
+            if allocation.base_amount is None:
+                allocation.base_amount = allocation_base_amount(row, open_row, item.amount)
             allocation.journal_entry_id = journal.id
             await self._settle_allocations(
                 tenant_id, row, sign=Decimal("1"), allocations=[allocation], receivable=receivable
@@ -740,11 +744,12 @@ class ChequeService:
             else AccountSystemRole.ADVANCE_TO_SUPPLIER
         )
         advance = await self.resolver.require(tenant_id, advance_role)
+        fx_account = await self.resolver.require(tenant_id, AccountSystemRole.FX_GAIN_LOSS)
         party_type = PartyType(row.party_type) if row.party_type else None
         item_rate = open_row.exchange_rate or row.exchange_rate
         if receivable:
             ar = await self.party_accounts.resolve_receivable(tenant_id, cast(UUID, row.party_id))
-            return [
+            lines = [
                 JournalLineInput(
                     account_id=advance.id,
                     debit=item.amount,
@@ -764,8 +769,11 @@ class ChequeService:
                     description=open_row.document_number,
                 ),
             ]
+            fx_total = realized_fx_on_allocation(row, open_row, item.amount)
+            self._append_fx(lines, fx_account.id, fx_total, row)
+            return lines
         ap = await self.party_accounts.resolve_payable(tenant_id, cast(UUID, row.party_id))
-        return [
+        lines = [
             JournalLineInput(
                 account_id=ap.id,
                 debit=item.amount,
@@ -785,6 +793,40 @@ class ChequeService:
                 description=f"Apply {row.document_number}",
             ),
         ]
+        fx_total = realized_fx_on_allocation(row, open_row, item.amount, payable=True)
+        self._append_fx(lines, fx_account.id, fx_total, row)
+        return lines
+
+    def _append_fx(
+        self,
+        lines: list[JournalLineInput],
+        fx_account_id: UUID,
+        fx_total: Decimal,
+        row: Cheque,
+    ) -> None:
+        amount = quantize_money(fx_total)
+        if amount == _ZERO:
+            return
+        if amount > _ZERO:
+            lines.append(
+                JournalLineInput(
+                    account_id=fx_account_id,
+                    credit=amount,
+                    currency_id=row.base_currency_id,
+                    exchange_rate=Decimal("1"),
+                    description="Realized FX",
+                )
+            )
+            return
+        lines.append(
+            JournalLineInput(
+                account_id=fx_account_id,
+                debit=abs(amount),
+                currency_id=row.base_currency_id,
+                exchange_rate=Decimal("1"),
+                description="Realized FX",
+            )
+        )
 
     async def _settle_allocations(
         self,
@@ -882,7 +924,15 @@ class ChequeService:
             tenant_id, PaymentAllocationSource.CHEQUE.value, row.id
         )
         cash, notes = split_payment_allocations(allocations, receivable=receivable)
+        party_id = cast(UUID, row.party_id)
         for item in cash:
+            open_row = await open_item_row_for_allocation(
+                self.session,
+                tenant_id,
+                receivable=receivable,
+                party_id=party_id,
+                item=item,
+            )
             await self.allocations.create(
                 tenant_id,
                 payment_type=PaymentAllocationSource.CHEQUE.value,
@@ -890,6 +940,7 @@ class ChequeService:
                 item_type=item.item_type.value,
                 item_id=item.item_id,
                 amount=item.amount,
+                base_amount=allocation_base_amount(row, open_row, item.amount),
             )
         if notes:
             await record_note_allocations_on_payment(
@@ -899,6 +950,9 @@ class ChequeService:
                 row.id,
                 notes,
                 receivable=receivable,
+                session=self.session,
+                party_id=party_id,
+                payment=row,
             )
 
     async def _resolve_fx(

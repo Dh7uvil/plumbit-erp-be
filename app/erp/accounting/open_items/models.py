@@ -48,6 +48,7 @@ class PaymentAllocation(TenantModel):
     item_type: Mapped[str] = mapped_column(String(40), nullable=False)
     item_id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=False)
     amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    base_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     journal_entry_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         nullable=True,

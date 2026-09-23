@@ -172,6 +172,10 @@ TABLE_CATALOG: dict[str, TableCatalogEntry] = {
             *_AUDIT_ACTORS,
         ),
         _entry(
+            "erp.charge_types",
+            ("name", "is_inventoriable", "default_account_id", "allocation_basis", "is_active"),
+        ),
+        _entry(
             "erp.journals",
             (
                 "document_number",

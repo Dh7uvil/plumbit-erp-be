@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -30,6 +30,7 @@ class InvoiceWriteOff(TenantModel):
     document_kind: Mapped[str] = mapped_column(String(40), nullable=False)
     invoice_id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=False)
     amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    base_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     write_off_date: Mapped[date] = mapped_column(Date, nullable=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     expense_account_id: Mapped[UUID | None] = mapped_column(

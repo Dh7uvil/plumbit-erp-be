@@ -71,6 +71,7 @@ from app.erp.accounting.open_items.schemas import (
 from app.erp.accounting.open_items.service import OpenItemsService
 from app.erp.accounting.payment_allocations.document_labels import allocation_item_document_number
 from app.erp.accounting.payment_allocations.helpers import (
+    allocation_base_amount,
     cash_allocation_types,
     open_item_amount_in_payment_currency,
     open_item_row_for_allocation,
@@ -590,6 +591,9 @@ class SupplierPaymentService:
                     row.id,
                     notes,
                     receivable=False,
+                    session=self.session,
+                    party_id=row.supplier_id,
+                    payment=row,
                 )
             total = _ZERO
             for item in cash:
@@ -984,6 +988,7 @@ class SupplierPaymentService:
                 item_type=item.item_type.value,
                 item_id=item.item_id,
                 amount=item.amount,
+                base_amount=allocation_base_amount(row, open_row, item.amount),
             )
         journal = await self.posting.post_for_document(
             tenant_id,
@@ -1361,6 +1366,7 @@ class SupplierPaymentService:
                 item_type=item.item_type.value,
                 item_id=item.item_id,
                 amount=item.amount,
+                base_amount=allocation_base_amount(row, open_row, item.amount),
             )
 
     async def _sum_allocations_in_payment_currency(
@@ -1483,6 +1489,7 @@ class SupplierPaymentService:
             item_id=row.item_id,
             item_document_number=document_number,
             amount=row.amount,
+            base_amount=row.base_amount,
             journal_entry_id=row.journal_entry_id,
             reversed_at=row.reversed_at,
             created_at=row.created_at,

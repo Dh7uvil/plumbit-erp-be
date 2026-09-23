@@ -176,6 +176,8 @@ class CostSheetService:
                 tenant_id, cost_sheet_id, lines=lines, charges=charges
             )
             loaded = await self._require(tenant_id, cost_sheet_id)
+            await self._sync_base_amounts(loaded)
+            loaded = await self._require(tenant_id, cost_sheet_id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -391,6 +393,8 @@ class CostSheetService:
             },
         )
         await self.repo.replace_children(tenant_id, row.id, lines=lines, charges=charges)
+        loaded = await self._require(tenant_id, row.id)
+        await self._sync_base_amounts(loaded)
         loaded = await self._require(tenant_id, row.id)
         await self.audit.write(
             tenant_id=tenant_id,
@@ -724,6 +728,7 @@ class CostSheetService:
             landed_cost_id=row.landed_cost_id,
             notes=row.notes,
             totals=totals,
+            base_total=row.base_total,
             available_actions=actions,
             lines=line_responses,
             charges=charge_responses,
@@ -732,6 +737,26 @@ class CostSheetService:
             created_by=row.created_by,
             updated_by=row.updated_by,
         )
+
+    async def _sync_base_amounts(self, row: CostSheet) -> None:
+        rate = row.exchange_rate
+        line_base_total = _ZERO
+        for line in row.lines:
+            goods = quantize_money(line.quantity * line.base_rate)
+            line.base_amount = quantize_money(goods * rate)
+            line_base_total += line.base_amount
+        charges_total = _ZERO
+        for charge in row.charges:
+            amount = (
+                charge.actual_amount
+                if charge.actual_amount is not None
+                else charge.estimated_amount
+            )
+            charges_total += amount
+        row.base_total = quantize_money(
+            line_base_total + quantize_money(charges_total * rate)
+        )
+        await self.session.flush()
 
     async def _charge_type_flags(
         self, *, tenant_id: UUID, row: CostSheet
@@ -837,6 +862,11 @@ class CostSheetService:
                     margin = quantize_money(
                         (line.target_selling_price - basis) / line.target_selling_price * 100
                     )
+                line_base = (
+                    line.base_amount
+                    if line.base_amount is not None
+                    else quantize_money(goods_value * row.exchange_rate)
+                )
                 line_responses.append(
                     CostSheetLineResponse(
                         id=line.id,
@@ -848,6 +878,7 @@ class CostSheetService:
                         target_selling_price=line.target_selling_price,
                         goods_receipt_line_id=line.goods_receipt_line_id,
                         line_goods_value=goods_value,
+                        base_amount=line_base,
                         estimated_landed_unit_cost=est_landed,
                         actual_landed_unit_cost=actual_landed,
                         expected_margin_pct=margin,

@@ -29,6 +29,8 @@ from app.erp.accounting.budgets.schemas import (
     BudgetVsActualLine,
     BudgetVsActualResponse,
 )
+from app.auth.org_service import OrganizationService
+from app.core.enums import AccountType
 from app.erp.accounting.cost_centers.service import CostCenterService
 from app.erp.exchange_rates.service import CurrencyService
 
@@ -61,6 +63,7 @@ class BudgetService:
         self.accounts = AccountService(session)
         self.cost_centers = CostCenterService(session)
         self.currencies = CurrencyService(session)
+        self.org = OrganizationService(session)
         self.audit = AuditWriter(session)
 
     async def list(
@@ -108,10 +111,12 @@ class BudgetService:
         for line in await self.repo.lines_for(tenant_id, budget_id):
             if line.period_start < month_start(from_date) or line.period_start > to_date:
                 continue
-            if cost_center_id is not None and line.cost_center_id not in {None, cost_center_id}:
-                continue
-            if branch_id is not None and line.branch_id not in {None, branch_id}:
-                continue
+            if cost_center_id is not None:
+                if line.cost_center_id is None or line.cost_center_id != cost_center_id:
+                    continue
+            if branch_id is not None:
+                if line.branch_id is None or line.branch_id != branch_id:
+                    continue
             totals[line.account_id] = quantize_money(
                 totals.get(line.account_id, _ZERO) + line.amount
             )
@@ -251,6 +256,12 @@ class BudgetService:
                 tenant_id, budget_id
             ):
                 raise ValidationError("Add at least one budget line before activating")
+            if target == BudgetStatus.ACTIVE:
+                existing = await self.repo.active_for_fiscal_year(tenant_id, row.fiscal_year)
+                if existing is not None and existing.id != budget_id:
+                    raise ValidationError(
+                        "Only one active budget is allowed per fiscal year"
+                    )
             updated = await self.repo.update(
                 tenant_id,
                 budget_id,
@@ -291,6 +302,10 @@ class BudgetService:
             await self.accounts.require_postable(tenant_id, line.account_id)
             if line.cost_center_id is not None:
                 await self.cost_centers.require_id(tenant_id, line.cost_center_id)
+            if line.branch_id is not None:
+                branches = await self.org.get_branches_by_ids(tenant_id, [line.branch_id])
+                if line.branch_id not in branches:
+                    raise ValidationError("Branch not found")
             prepared.append(
                 {
                     "account_id": line.account_id,
@@ -341,8 +356,23 @@ def empty_vs_actual(
     to_date: date,
     lines: _List[BudgetVsActualLine],
 ) -> BudgetVsActualResponse:
-    total_budget = quantize_money(sum((line.budget_amount for line in lines), _ZERO))
-    total_actual = quantize_money(sum((line.actual_amount for line in lines), _ZERO))
+    total_budget_income = _ZERO
+    total_budget_expense = _ZERO
+    total_actual_income = _ZERO
+    total_actual_expense = _ZERO
+    for line in lines:
+        if line.account_type == AccountType.INCOME.value:
+            total_budget_income += line.budget_amount
+            total_actual_income += line.actual_amount
+        else:
+            total_budget_expense += line.budget_amount
+            total_actual_expense += line.actual_amount
+    total_budget_income = quantize_money(total_budget_income)
+    total_budget_expense = quantize_money(total_budget_expense)
+    total_actual_income = quantize_money(total_actual_income)
+    total_actual_expense = quantize_money(total_actual_expense)
+    total_budget = quantize_money(total_budget_income + total_budget_expense)
+    total_actual = quantize_money(total_actual_income + total_actual_expense)
     return BudgetVsActualResponse(
         budget_id=budget_id,
         budget_name=budget_name,
@@ -352,5 +382,9 @@ def empty_vs_actual(
         total_budget=total_budget,
         total_actual=total_actual,
         total_variance=line_variance(total_budget, total_actual),
+        total_budget_income=total_budget_income,
+        total_budget_expense=total_budget_expense,
+        total_actual_income=total_actual_income,
+        total_actual_expense=total_actual_expense,
         lines=lines,
     )

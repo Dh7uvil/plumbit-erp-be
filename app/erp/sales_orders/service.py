@@ -12,7 +12,9 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
+    CUSTOMER_PAYMENT_CREATE,
     PROFORMA_INVOICE_CREATE,
+    SALES_INVOICE_CREATE,
     SALES_MODULE,
     SALES_ORDER_ACKNOWLEDGE,
     SALES_ORDER_APPROVE,
@@ -1935,6 +1937,19 @@ class SalesOrderService:
             self.actor_permissions, PROFORMA_INVOICE_CREATE
         ):
             actions.append("create_proforma")
+        if status in {SalesOrderStatus.CONFIRMED, SalesOrderStatus.CLOSED} and has_permission(
+            self.actor_permissions, CUSTOMER_PAYMENT_CREATE
+        ):
+            actions.append("record_advance")
+        if (
+            status in {SalesOrderStatus.CONFIRMED, SalesOrderStatus.CLOSED}
+            and row.billing_status != BillingStatus.INVOICED.value
+            and any(
+                remaining_qty(line.quantity, line.qty_invoiced) > _ZERO for line in row.lines
+            )
+            and has_permission(self.actor_permissions, SALES_INVOICE_CREATE)
+        ):
+            actions.append("create_sales_invoice")
         return actions
 
     def _to_response(

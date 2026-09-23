@@ -30,6 +30,7 @@ from app.inventory_management.goods_receipts.dependencies import GoodsReceiptSer
 from app.inventory_management.goods_receipts.schemas import (
     GoodsReceiptCancelRequest,
     GoodsReceiptCreate,
+    GoodsReceiptCreateFromPurchaseInvoice,
     GoodsReceiptCreateFromPurchaseOrder,
     GoodsReceiptFilter,
     GoodsReceiptResponse,
@@ -100,6 +101,31 @@ async def create_goods_receipt_from_purchase_order(
         endpoint=request.url.path,
     )
     return ApiResponse(data=row, message="Goods receipt created from purchase order")
+
+
+@router.post(
+    "/from-purchase-invoice",
+    response_model=ApiResponse[GoodsReceiptResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_goods_receipt_from_purchase_invoice(
+    payload: GoodsReceiptCreateFromPurchaseInvoice,
+    request: Request,
+    tenant: TenantContextDependency,
+    service: GoodsReceiptServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(GOODS_RECEIPT_CREATE))],
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[GoodsReceiptResponse]:
+    body = await request.body()
+    row = await service.create_from_purchase_invoice(
+        tenant.tenant_id,
+        payload,
+        actor_user_id=tenant.user_id,
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(data=row, message="Goods receipt created from purchase invoice")
 
 
 @router.post(

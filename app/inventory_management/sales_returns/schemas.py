@@ -123,7 +123,7 @@ class SalesReturnResponse(BaseModel):
     is_posted: bool
     document_date: date
     delivery_note_id: UUID
-    sales_order_id: UUID
+    sales_order_id: UUID | None
     customer_id: UUID
     warehouse_id: UUID
     reason_code: SalesReturnReason

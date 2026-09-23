@@ -11,8 +11,10 @@ from app.common.schemas.warnings import DocumentWarning
 class CreditExposure(BaseModel):
     customer_id: UUID
     currency_id: UUID
+    base_currency_id: UUID | None = None
     credit_limit: Decimal | None
     exposure: Decimal
+    exposure_base: Decimal | None = None
     this_document: Decimal = Decimal("0")
     available: Decimal | None = None
     posted_ar: Decimal = Decimal("0")

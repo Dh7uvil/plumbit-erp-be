@@ -21,6 +21,7 @@ def test_catalog_covers_list_tables() -> None:
         "erp.document_sequences",
         "erp.terms_templates",
         "erp.accounts",
+        "erp.charge_types",
         "erp.journals",
         "erp.suppliers",
         "erp.supplier_products",

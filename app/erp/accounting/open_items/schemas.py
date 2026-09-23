@@ -79,6 +79,7 @@ class PaymentAllocationRecordResponse(BaseModel):
     item_id: UUID
     item_document_number: str | None = None
     amount: Decimal
+    base_amount: Decimal | None = None
     journal_entry_id: UUID | None = None
     reversed_at: datetime | None = None
     created_at: datetime

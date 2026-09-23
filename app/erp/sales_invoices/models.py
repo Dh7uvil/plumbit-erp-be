@@ -283,6 +283,7 @@ class SalesInvoiceLine(TenantModel):
         String(30), nullable=False, server_default=text("'NOT_APPLICABLE'")
     )
     qty_credited: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
+    qty_delivered: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     carton_qty: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     packing_unit: Mapped[str | None] = mapped_column(String(40), nullable=True)
     cbm: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)

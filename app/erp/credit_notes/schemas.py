@@ -195,6 +195,11 @@ class CreditNoteCreateFromSalesReturn(BaseModel):
     notes: str | None = None
 
 
+class CreditNoteRefundRequest(BaseModel):
+    payment_account_id: UUID
+    version: int | None = Field(default=None, ge=1)
+
+
 class CreditNoteResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -234,6 +239,11 @@ class CreditNoteResponse(BaseModel):
     country_of_origin: str | None = None
     amount_applied: Decimal
     amount_unapplied: Decimal
+    amount_refunded: Decimal = Decimal("0")
+    refund_journal_entry_id: UUID | None = None
+    refund_payment_account_id: UUID | None = None
+    refunded_at: datetime | None = None
+    refunded_by: UUID | None = None
     journal_entry_id: UUID | None
     reversal_journal_entry_id: UUID | None
     posted_at: datetime | None

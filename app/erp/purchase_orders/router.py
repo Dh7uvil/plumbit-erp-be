@@ -76,6 +76,9 @@ async def list_purchase_orders(
         common_filter=filters,
         status=filters.status.value if filters.status else None,
         receipt_status=filters.receipt_status.value if filters.receipt_status else None,
+        receipt_status_not=(
+            filters.receipt_status_not.value if filters.receipt_status_not else None
+        ),
         billing_status=filters.billing_status.value if filters.billing_status else None,
         supplier_id=filters.supplier_id,
         branch_id=filters.branch_id,
