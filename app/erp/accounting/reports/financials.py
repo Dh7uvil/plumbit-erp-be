@@ -15,6 +15,9 @@ from app.erp.accounting.reports.schemas import (
     BalanceSheetResponse,
     CashFlowLine,
     CashFlowResponse,
+    CostCenterProfitAndLossResponse,
+    CostCenterProfitSection,
+    PeriodAmount,
     ProfitAndLossLine,
     ProfitAndLossResponse,
 )
@@ -34,6 +37,8 @@ class FinancialReports:
         branch_id: UUID | None = None,
         cost_center_id: UUID | None = None,
         include_ytd: bool = False,
+        period_count: int = 1,
+        budget_id: UUID | None = None,
     ) -> ProfitAndLossResponse:
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
@@ -69,6 +74,35 @@ class FinancialReports:
             if ytd_from is not None
             else {}
         )
+        slices = _period_slices(from_date, to_date, period_count)
+        period_maps: list[tuple[str, date, date, dict[UUID, tuple[Decimal, Decimal]]]] = []
+        for start, end, label in slices:
+            period_maps.append(
+                (
+                    label,
+                    start,
+                    end,
+                    await self._sum_by_account(
+                        tenant_id,
+                        start=start,
+                        end=end,
+                        branch_id=branch_id,
+                        cost_center_id=cost_center_id,
+                    ),
+                )
+            )
+        budget_map: dict[UUID, Decimal] = {}
+        if budget_id is not None:
+            from app.erp.accounting.budgets.service import BudgetService
+
+            budget_map = await BudgetService(self.session).amounts_by_account(
+                tenant_id,
+                budget_id,
+                from_date=from_date,
+                to_date=to_date,
+                cost_center_id=cost_center_id,
+                branch_id=branch_id,
+            )
         accounts = await self.accounts.repo.list_all(tenant_id)
         lines: list[ProfitAndLossLine] = []
         total_income = _ZERO
@@ -94,14 +128,35 @@ class FinancialReports:
                 if include_ytd
                 else None
             )
-            if amount == _ZERO and comparative == _ZERO and (ytd is None or ytd == _ZERO):
+            periods = [
+                PeriodAmount(
+                    label=label,
+                    from_date=start,
+                    to_date=end,
+                    amount=self._signed(
+                        account.account_type, *pmap.get(account.id, (_ZERO, _ZERO))
+                    ),
+                )
+                for label, start, end, pmap in period_maps
+            ]
+            budget_amount = budget_map.get(account.id) if budget_id is not None else None
+            period_activity = any(period.amount != _ZERO for period in periods)
+            if (
+                amount == _ZERO
+                and comparative == _ZERO
+                and (ytd is None or ytd == _ZERO)
+                and not period_activity
+                and budget_amount is None
+            ):
                 continue
             if account.account_type == AccountType.INCOME.value:
+                group_label = "Income"
                 total_income += amount
                 comparative_income += comparative
                 if ytd is not None:
                     ytd_income += ytd
             elif account.account_subtype == AccountSubtype.COGS.value:
+                group_label = "Cost of goods sold"
                 total_cogs += amount
                 total_expense += amount
                 comparative_cogs += comparative
@@ -110,6 +165,7 @@ class FinancialReports:
                     ytd_cogs += ytd
                     ytd_expense += ytd
             else:
+                group_label = "Operating expenses"
                 total_expense += amount
                 comparative_expense += comparative
                 if ytd is not None:
@@ -124,6 +180,16 @@ class FinancialReports:
                     amount=amount,
                     comparative_amount=comparative,
                     ytd_amount=ytd,
+                    budget_amount=budget_amount,
+                    variance_amount=(
+                        quantize_money(amount - budget_amount)
+                        if budget_amount is not None
+                        else None
+                    ),
+                    group_label=group_label,
+                    source_type="account",
+                    source_id=account.id,
+                    periods=periods,
                 )
             )
         net_profit = quantize_money(total_income - total_expense)
@@ -146,6 +212,8 @@ class FinancialReports:
             comparative_net_profit=quantize_money(comparative_income - comparative_expense),
             ytd_gross_profit=quantize_money(ytd_income - ytd_cogs) if include_ytd else None,
             ytd_net_profit=quantize_money(ytd_income - ytd_expense) if include_ytd else None,
+            period_count=max(1, min(period_count, 12)),
+            budget_id=budget_id,
             lines=lines,
         )
 
@@ -230,6 +298,9 @@ class FinancialReports:
                     account_type=account.account_type,
                     account_subtype=account.account_subtype,
                     amount=amount,
+                    group_label=account.account_type,
+                    source_type="account",
+                    source_id=account.id,
                 )
             )
         current_earnings = quantize_money(current_earnings)
@@ -251,6 +322,9 @@ class FinancialReports:
                         account_type=AccountType.EQUITY.value,
                         account_subtype=AccountSubtype.EQUITY.value,
                         amount=current_earnings,
+                        group_label=AccountType.EQUITY.value,
+                        source_type="account",
+                        source_id=retained_earnings_id,
                     )
                 )
         total_assets = quantize_money(total_assets)
@@ -376,12 +450,16 @@ class FinancialReports:
                 label="Increase/(decrease) in customer advances",
                 amount=delta_adv_in,
                 account_id=adv_in_id,
+                source_type="account" if adv_in_id else None,
+                source_id=adv_in_id,
             ),
             CashFlowLine(
                 key="supplier_advances",
                 label="(Increase)/decrease in supplier advances",
                 amount=quantize_money(-delta_adv_out),
                 account_id=adv_out_id,
+                source_type="account" if adv_out_id else None,
+                source_id=adv_out_id,
             ),
             CashFlowLine(
                 key="other",
@@ -393,6 +471,8 @@ class FinancialReports:
                 label="Net change in cash and bank",
                 amount=net_change,
                 account_id=cash_account_id,
+                source_type="account" if cash_account_id else None,
+                source_id=cash_account_id,
             ),
         ]
         comparative_from = None
@@ -426,3 +506,126 @@ class FinancialReports:
             comparative_net_change=comparative_net_change,
             lines=lines,
         )
+
+    async def cost_center_profit_and_loss(
+        self,
+        tenant_id: UUID,
+        *,
+        from_date: date,
+        to_date: date,
+        branch_id: UUID | None = None,
+    ) -> CostCenterProfitAndLossResponse:
+        if from_date > to_date:
+            raise ValidationError("from_date must be on or before to_date")
+        from sqlalchemy import select
+
+        from app.erp.accounting.cost_centers.models import CostCenter
+
+        grouped = await self._sum_by_account_and_cost_center(
+            tenant_id, start=from_date, end=to_date, branch_id=branch_id
+        )
+        center_rows = list(
+            (
+                await self.session.execute(
+                    select(CostCenter).where(
+                        CostCenter.tenant_id == tenant_id,
+                        CostCenter.deleted_at.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        names = {row.id: row for row in center_rows}
+        accounts = {
+            account.id: account
+            for account in await self.accounts.repo.list_all(tenant_id)
+            if not account.is_group and account.account_type in _PL_TYPES
+        }
+        by_center: dict[UUID | None, list[ProfitAndLossLine]] = {}
+        for (center_id, account_id), (debit, credit) in grouped.items():
+            account = accounts.get(account_id)
+            if account is None:
+                continue
+            amount = self._signed(account.account_type, debit, credit)
+            if amount == _ZERO:
+                continue
+            if account.account_type == AccountType.INCOME.value:
+                group_label = "Income"
+            elif account.account_subtype == AccountSubtype.COGS.value:
+                group_label = "Cost of goods sold"
+            else:
+                group_label = "Operating expenses"
+            by_center.setdefault(center_id, []).append(
+                ProfitAndLossLine(
+                    account_id=account.id,
+                    account_code=account.code,
+                    account_name=account.name,
+                    account_type=account.account_type,
+                    account_subtype=account.account_subtype,
+                    amount=amount,
+                    group_label=group_label,
+                    source_type="account",
+                    source_id=account.id,
+                )
+            )
+        sections: list[CostCenterProfitSection] = []
+        ordered = sorted(by_center.items(), key=lambda item: (item[0] is None, str(item[0] or "")))
+        for center_id, section_lines in ordered:
+            center = names.get(center_id) if center_id is not None else None
+            income = quantize_money(
+                sum(
+                    (
+                        line.amount
+                        for line in section_lines
+                        if line.account_type == AccountType.INCOME.value
+                    ),
+                    _ZERO,
+                )
+            )
+            expense = quantize_money(
+                sum(
+                    (
+                        line.amount
+                        for line in section_lines
+                        if line.account_type == AccountType.EXPENSE.value
+                    ),
+                    _ZERO,
+                )
+            )
+            sections.append(
+                CostCenterProfitSection(
+                    cost_center_id=center_id,
+                    cost_center_code=center.code if center is not None else "UNASSIGNED",
+                    cost_center_name=center.name if center is not None else "Unassigned",
+                    total_income=income,
+                    total_expense=expense,
+                    net_profit=quantize_money(income - expense),
+                    lines=section_lines,
+                )
+            )
+        return CostCenterProfitAndLossResponse(
+            currency_code=await self._report_currency_code(tenant_id),
+            from_date=from_date,
+            to_date=to_date,
+            sections=sections,
+        )
+
+
+def _period_slices(from_date: date, to_date: date, count: int) -> list[tuple[date, date, str]]:
+    bounded = max(1, min(count, 12))
+    if bounded <= 1:
+        return []
+    span = (to_date - from_date).days + 1
+    bounded = min(bounded, span)
+    if bounded <= 1:
+        return []
+    base, extra = divmod(span, bounded)
+    cursor = from_date
+    slices: list[tuple[date, date, str]] = []
+    for index in range(bounded):
+        length = base + (1 if index < extra else 0)
+        end = cursor + timedelta(days=length - 1)
+        slices.append((cursor, end, f"{cursor.isoformat()} – {end.isoformat()}"))
+        cursor = end + timedelta(days=1)
+    return slices

@@ -147,6 +147,9 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
             "bounce",
             "cancel",
         ),
+        "budget": ("create", "read", "update", "delete", "activate", "close"),
+        "recurring": ("create", "read", "update", "delete", "generate"),
+        "fx_revaluation": ("read", "run", "reverse"),
     },
     REPORTS_MODULE: {
         "report": (
@@ -627,6 +630,20 @@ CHEQUE_DEPOSIT = build_permission(ACCOUNTING_MODULE, "cheque", "deposit")
 CHEQUE_CLEAR = build_permission(ACCOUNTING_MODULE, "cheque", "clear")
 CHEQUE_BOUNCE = build_permission(ACCOUNTING_MODULE, "cheque", "bounce")
 CHEQUE_CANCEL = build_permission(ACCOUNTING_MODULE, "cheque", "cancel")
+BUDGET_CREATE = build_permission(ACCOUNTING_MODULE, "budget", "create")
+BUDGET_READ = build_permission(ACCOUNTING_MODULE, "budget", "read")
+BUDGET_UPDATE = build_permission(ACCOUNTING_MODULE, "budget", "update")
+BUDGET_DELETE = build_permission(ACCOUNTING_MODULE, "budget", "delete")
+BUDGET_ACTIVATE = build_permission(ACCOUNTING_MODULE, "budget", "activate")
+BUDGET_CLOSE = build_permission(ACCOUNTING_MODULE, "budget", "close")
+RECURRING_CREATE = build_permission(ACCOUNTING_MODULE, "recurring", "create")
+RECURRING_READ = build_permission(ACCOUNTING_MODULE, "recurring", "read")
+RECURRING_UPDATE = build_permission(ACCOUNTING_MODULE, "recurring", "update")
+RECURRING_DELETE = build_permission(ACCOUNTING_MODULE, "recurring", "delete")
+RECURRING_GENERATE = build_permission(ACCOUNTING_MODULE, "recurring", "generate")
+FX_REVALUATION_READ = build_permission(ACCOUNTING_MODULE, "fx_revaluation", "read")
+FX_REVALUATION_RUN = build_permission(ACCOUNTING_MODULE, "fx_revaluation", "run")
+FX_REVALUATION_REVERSE = build_permission(ACCOUNTING_MODULE, "fx_revaluation", "reverse")
 
 SYSTEM_ADMIN_ROLE_NAME = "Superadmin"
 

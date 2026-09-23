@@ -8,7 +8,22 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.common.utils.currency import quantize_money
-from app.core.enums import OpenItemType
+from app.core.enums import OpenItemType, PartyType
+
+
+class OpenExposureItem(BaseModel):
+    """One open foreign-currency balance that period-end revaluation may adjust."""
+
+    exposure_kind: str
+    item_type: OpenItemType
+    document_id: UUID
+    document_number: str
+    party_type: PartyType
+    party_id: UUID
+    currency_id: UUID
+    balance: Decimal
+    exchange_rate: Decimal | None = None
+    is_debit: bool
 
 
 class OpenItemRow(BaseModel):

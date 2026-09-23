@@ -5,6 +5,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.auth.catalog import (
@@ -23,18 +24,22 @@ from app.common.schemas.response import ApiResponse
 from app.core.enums import PartyType
 from app.core.exceptions import PermissionDeniedError
 from app.core.permissions import has_permission
+from app.erp.accounting.fx_revaluation.dependencies import FxRevaluationServiceDependency
 from app.erp.accounting.reports.csv_export import (
-    csv_response,
     rows_from_models,
+    table_download,
     wants_csv,
-    wants_excel,
 )
-from app.erp.accounting.reports.dependencies import ReportServiceDependency
+from app.erp.accounting.reports.dependencies import (
+    ReportExportServiceDependency,
+    ReportServiceDependency,
+)
 from app.erp.accounting.reports.schemas import (
     AccountStatementResponse,
     AgingResponse,
     BalanceSheetResponse,
     CashFlowResponse,
+    CostCenterProfitAndLossResponse,
     DashboardResponse,
     DayBookResponse,
     ExportEvidenceExceptionResponse,
@@ -45,6 +50,8 @@ from app.erp.accounting.reports.schemas import (
     ProfitAndLossResponse,
     PurchaseSuggestionResponse,
     ReceivedNotBilledResponse,
+    ReportExportCreate,
+    ReportExportJobResponse,
     SalesPurchaseAnalysisResponse,
     StockAgingResponse,
     StockMovementReportResponse,
@@ -83,12 +90,13 @@ def _maybe_csv(
         fields = [key for key, value in dumped.items() if not isinstance(value, list)]
         rows = [{key: dumped.get(key) for key in fields}]
     currency_code = getattr(data, "currency_code", None)
-    return csv_response(
+    code = currency_code if isinstance(currency_code, str) else None
+    return table_download(
         filename,
         fields,
         rows,
-        excel=wants_excel(format),
-        currency_code=currency_code if isinstance(currency_code, str) else None,
+        export_format=format,
+        currency_code=code,
     )
 
 
@@ -498,6 +506,8 @@ async def get_profit_and_loss(
     branch_id: UUID | None = None,
     cost_center_id: UUID | None = None,
     include_ytd: bool = False,
+    period_count: int = Query(default=1, ge=1, le=12),
+    budget_id: UUID | None = None,
     export_format: FormatQuery = None,
 ) -> Any:
     data = await service.profit_and_loss(
@@ -507,8 +517,37 @@ async def get_profit_and_loss(
         branch_id=branch_id,
         cost_center_id=cost_center_id,
         include_ytd=include_ytd,
+        period_count=period_count,
+        budget_id=budget_id,
     )
     return _maybe_csv(request, export_format, data, user, filename="profit-and-loss.csv")
+
+
+@router.get(
+    "/cost-center-profit-and-loss",
+    response_model=ApiResponse[CostCenterProfitAndLossResponse],
+)
+async def get_cost_center_profit_and_loss(
+    request: Request,
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    user: Annotated[CurrentUser, Depends(require_permission(REPORT_FINANCIAL))],
+    from_date: Annotated[date, Query(alias="from")],
+    to_date: Annotated[date, Query(alias="to")],
+    branch_id: UUID | None = None,
+    export_format: FormatQuery = None,
+) -> Any:
+    data = await service.cost_center_profit_and_loss(
+        tenant.tenant_id, from_date=from_date, to_date=to_date, branch_id=branch_id
+    )
+    return _maybe_csv(
+        request,
+        export_format,
+        data,
+        user,
+        filename="cost-center-profit-and-loss.csv",
+        line_attr="sections",
+    )
 
 
 @router.get("/balance-sheet", response_model=ApiResponse[BalanceSheetResponse])
@@ -672,3 +711,52 @@ async def get_purchase_analysis(
         tenant.tenant_id, from_date=from_date, to_date=to_date, group_by=group_by
     )
     return _maybe_csv(request, export_format, data, user, filename="purchase-analysis.csv")
+
+
+@router.get("/fx-exposure")
+async def get_fx_exposure_report(
+    request: Request,
+    tenant: TenantContextDependency,
+    service: FxRevaluationServiceDependency,
+    user: Annotated[CurrentUser, Depends(require_permission(REPORT_FINANCIAL))],
+    as_of: date,
+    export_format: FormatQuery = None,
+) -> Any:
+    payload = await service.exposure(tenant.tenant_id, as_of=as_of)
+    return _maybe_csv(request, export_format, payload, user, filename="fx-exposure.csv")
+
+
+@router.post("/exports", response_model=ApiResponse[ReportExportJobResponse])
+async def queue_report_export(
+    payload: ReportExportCreate,
+    tenant: TenantContextDependency,
+    exports: ReportExportServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(REPORT_EXPORT))],
+) -> ApiResponse[ReportExportJobResponse]:
+    job = await exports.enqueue(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
+    return ApiResponse(data=job, message="Report export queued")
+
+
+@router.get("/exports/{job_id}", response_model=ApiResponse[ReportExportJobResponse])
+async def get_report_export(
+    job_id: UUID,
+    tenant: TenantContextDependency,
+    exports: ReportExportServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(REPORT_EXPORT))],
+) -> ApiResponse[ReportExportJobResponse]:
+    return ApiResponse(data=await exports.get(tenant.tenant_id, job_id))
+
+
+@router.get("/exports/{job_id}/download")
+async def download_report_export(
+    job_id: UUID,
+    tenant: TenantContextDependency,
+    exports: ReportExportServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(REPORT_EXPORT))],
+) -> Response:
+    filename, media, content = await exports.download(tenant.tenant_id, job_id)
+    return Response(
+        content=content,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -14,7 +15,7 @@ from app.erp.accounting.customer_payments.models import CustomerPayment
 from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
 from app.erp.accounting.ledger.posting import SOURCE_OPENING_BALANCE
 from app.erp.accounting.open_items.repository import PaymentAllocationRepository
-from app.erp.accounting.open_items.schemas import OpenItemRow
+from app.erp.accounting.open_items.schemas import OpenExposureItem, OpenItemRow
 from app.erp.accounting.supplier_payments.models import SupplierPayment
 from app.erp.credit_notes.models import CreditNote
 from app.erp.debit_notes.models import DebitNote
@@ -257,3 +258,243 @@ class OpenItemsService:
             )
             for row in notes
         ]
+
+    async def list_revaluation_items(
+        self, tenant_id: UUID, *, as_of: date | None = None
+    ) -> list[OpenExposureItem]:
+        """Open AR/AP balances dated on or before ``as_of``, including openings."""
+
+        items: list[OpenExposureItem] = []
+        items.extend(await self._revalue_sales_invoices(tenant_id, as_of=as_of))
+        items.extend(await self._revalue_credit_notes(tenant_id, as_of=as_of))
+        items.extend(await self._revalue_customer_advances(tenant_id, as_of=as_of))
+        items.extend(await self._revalue_purchase_invoices(tenant_id, as_of=as_of))
+        items.extend(await self._revalue_debit_notes(tenant_id, as_of=as_of))
+        items.extend(await self._revalue_supplier_advances(tenant_id, as_of=as_of))
+        items.extend(await self._revalue_openings(tenant_id, as_of=as_of))
+        return items
+
+    async def _revalue_sales_invoices(
+        self, tenant_id: UUID, *, as_of: date | None
+    ) -> list[OpenExposureItem]:
+        statement = select(SalesInvoice).where(
+            SalesInvoice.tenant_id == tenant_id,
+            SalesInvoice.deleted_at.is_(None),
+            SalesInvoice.status == InvoiceDocumentStatus.POSTED.value,
+            SalesInvoice.balance_due > _ZERO,
+        )
+        if as_of is not None:
+            statement = statement.where(SalesInvoice.invoice_date <= as_of)
+        rows = list((await self.session.execute(statement)).scalars().all())
+        return [
+            OpenExposureItem(
+                exposure_kind="AR",
+                item_type=OpenItemType.SALES_INVOICE,
+                document_id=row.id,
+                document_number=row.document_number,
+                party_type=PartyType.CUSTOMER,
+                party_id=row.customer_id,
+                currency_id=row.currency_id,
+                balance=row.balance_due,
+                exchange_rate=row.exchange_rate,
+                is_debit=True,
+            )
+            for row in rows
+        ]
+
+    async def _revalue_purchase_invoices(
+        self, tenant_id: UUID, *, as_of: date | None
+    ) -> list[OpenExposureItem]:
+        statement = select(PurchaseInvoice).where(
+            PurchaseInvoice.tenant_id == tenant_id,
+            PurchaseInvoice.deleted_at.is_(None),
+            PurchaseInvoice.status == InvoiceDocumentStatus.POSTED.value,
+            PurchaseInvoice.balance_due > _ZERO,
+        )
+        if as_of is not None:
+            statement = statement.where(PurchaseInvoice.invoice_date <= as_of)
+        rows = list((await self.session.execute(statement)).scalars().all())
+        return [
+            OpenExposureItem(
+                exposure_kind="AP",
+                item_type=OpenItemType.PURCHASE_INVOICE,
+                document_id=row.id,
+                document_number=row.document_number,
+                party_type=PartyType.SUPPLIER,
+                party_id=row.supplier_id,
+                currency_id=row.currency_id,
+                balance=row.balance_due,
+                exchange_rate=row.exchange_rate,
+                is_debit=False,
+            )
+            for row in rows
+        ]
+
+    async def _revalue_credit_notes(
+        self, tenant_id: UUID, *, as_of: date | None
+    ) -> list[OpenExposureItem]:
+        statement = select(CreditNote).where(
+            CreditNote.tenant_id == tenant_id,
+            CreditNote.deleted_at.is_(None),
+            CreditNote.status == InvoiceDocumentStatus.POSTED.value,
+            CreditNote.amount_unapplied > _ZERO,
+        )
+        if as_of is not None:
+            statement = statement.where(CreditNote.credit_note_date <= as_of)
+        rows = list((await self.session.execute(statement)).scalars().all())
+        return [
+            OpenExposureItem(
+                exposure_kind="AR",
+                item_type=OpenItemType.CREDIT_NOTE,
+                document_id=row.id,
+                document_number=row.document_number,
+                party_type=PartyType.CUSTOMER,
+                party_id=row.customer_id,
+                currency_id=row.currency_id,
+                balance=row.amount_unapplied,
+                exchange_rate=row.exchange_rate,
+                is_debit=False,
+            )
+            for row in rows
+        ]
+
+    async def _revalue_debit_notes(
+        self, tenant_id: UUID, *, as_of: date | None
+    ) -> list[OpenExposureItem]:
+        statement = select(DebitNote).where(
+            DebitNote.tenant_id == tenant_id,
+            DebitNote.deleted_at.is_(None),
+            DebitNote.status == InvoiceDocumentStatus.POSTED.value,
+            DebitNote.amount_unapplied > _ZERO,
+        )
+        if as_of is not None:
+            statement = statement.where(DebitNote.debit_note_date <= as_of)
+        rows = list((await self.session.execute(statement)).scalars().all())
+        return [
+            OpenExposureItem(
+                exposure_kind="AP",
+                item_type=OpenItemType.DEBIT_NOTE,
+                document_id=row.id,
+                document_number=row.document_number,
+                party_type=PartyType.SUPPLIER,
+                party_id=row.supplier_id,
+                currency_id=row.currency_id,
+                balance=row.amount_unapplied,
+                exchange_rate=row.exchange_rate,
+                is_debit=True,
+            )
+            for row in rows
+        ]
+
+    async def _revalue_customer_advances(
+        self, tenant_id: UUID, *, as_of: date | None
+    ) -> list[OpenExposureItem]:
+        statement = select(CustomerPayment).where(
+            CustomerPayment.tenant_id == tenant_id,
+            CustomerPayment.deleted_at.is_(None),
+            CustomerPayment.status == InvoiceDocumentStatus.POSTED.value,
+            CustomerPayment.amount_unapplied > _ZERO,
+        )
+        if as_of is not None:
+            statement = statement.where(CustomerPayment.payment_date <= as_of)
+        rows = list((await self.session.execute(statement)).scalars().all())
+        return [
+            OpenExposureItem(
+                exposure_kind="AR",
+                item_type=OpenItemType.CUSTOMER_PAYMENT,
+                document_id=row.id,
+                document_number=row.document_number,
+                party_type=PartyType.CUSTOMER,
+                party_id=row.customer_id,
+                currency_id=row.currency_id,
+                balance=row.amount_unapplied,
+                exchange_rate=row.exchange_rate,
+                is_debit=False,
+            )
+            for row in rows
+        ]
+
+    async def _revalue_supplier_advances(
+        self, tenant_id: UUID, *, as_of: date | None
+    ) -> list[OpenExposureItem]:
+        statement = select(SupplierPayment).where(
+            SupplierPayment.tenant_id == tenant_id,
+            SupplierPayment.deleted_at.is_(None),
+            SupplierPayment.status == InvoiceDocumentStatus.POSTED.value,
+            SupplierPayment.amount_unapplied > _ZERO,
+        )
+        if as_of is not None:
+            statement = statement.where(SupplierPayment.payment_date <= as_of)
+        rows = list((await self.session.execute(statement)).scalars().all())
+        return [
+            OpenExposureItem(
+                exposure_kind="AP",
+                item_type=OpenItemType.SUPPLIER_PAYMENT,
+                document_id=row.id,
+                document_number=row.document_number,
+                party_type=PartyType.SUPPLIER,
+                party_id=row.supplier_id,
+                currency_id=row.currency_id,
+                balance=row.amount_unapplied,
+                exchange_rate=row.exchange_rate,
+                is_debit=True,
+            )
+            for row in rows
+        ]
+
+    async def _revalue_openings(
+        self, tenant_id: UUID, *, as_of: date | None
+    ) -> list[OpenExposureItem]:
+        statement = (
+            select(JournalEntryLine, JournalEntry)
+            .join(JournalEntry, JournalEntryLine.journal_entry_id == JournalEntry.id)
+            .where(
+                JournalEntryLine.tenant_id == tenant_id,
+                JournalEntry.tenant_id == tenant_id,
+                JournalEntry.source_type == SOURCE_OPENING_BALANCE,
+                JournalEntry.status == JournalEntryStatus.POSTED.value,
+                JournalEntry.deleted_at.is_(None),
+                JournalEntryLine.party_id.is_not(None),
+                JournalEntryLine.party_type.in_(
+                    [PartyType.CUSTOMER.value, PartyType.SUPPLIER.value]
+                ),
+            )
+        )
+        if as_of is not None:
+            statement = statement.where(JournalEntry.entry_date <= as_of)
+        pairs = list((await self.session.execute(statement)).all())
+        if not pairs:
+            return []
+        ar_ids = [line.id for line, _entry in pairs if line.party_type == PartyType.CUSTOMER.value]
+        ap_ids = [line.id for line, _entry in pairs if line.party_type == PartyType.SUPPLIER.value]
+        ar_allocated = await self.allocations.allocated_for_items(
+            tenant_id, OpenItemType.OPENING_AR.value, ar_ids
+        )
+        ap_allocated = await self.allocations.allocated_for_items(
+            tenant_id, OpenItemType.OPENING_AP.value, ap_ids
+        )
+        items: list[OpenExposureItem] = []
+        for line, entry in pairs:
+            is_ar = line.party_type == PartyType.CUSTOMER.value
+            original = line.debit if is_ar else line.credit
+            if original <= _ZERO or line.party_id is None:
+                continue
+            allocated = (ar_allocated if is_ar else ap_allocated).get(line.id, _ZERO)
+            remaining = quantize_money(original - allocated)
+            if remaining <= _ZERO:
+                continue
+            items.append(
+                OpenExposureItem(
+                    exposure_kind="AR" if is_ar else "AP",
+                    item_type=OpenItemType.OPENING_AR if is_ar else OpenItemType.OPENING_AP,
+                    document_id=line.id,
+                    document_number=entry.reference or entry.document_number,
+                    party_type=PartyType(line.party_type),
+                    party_id=line.party_id,
+                    currency_id=line.currency_id,
+                    balance=remaining,
+                    exchange_rate=line.exchange_rate,
+                    is_debit=is_ar,
+                )
+            )
+        return items

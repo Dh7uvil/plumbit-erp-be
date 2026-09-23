@@ -2454,6 +2454,35 @@
             }
           },
           {
+            "name": "period_count",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 12,
+              "minimum": 1,
+              "default": 1,
+              "title": "Period Count"
+            }
+          },
+          {
+            "name": "budget_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Budget Id"
+            }
+          },
+          {
             "name": "format",
             "in": "query",
             "required": false,
@@ -2477,6 +2506,97 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_ProfitAndLossResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/cost-center-profit-and-loss": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Cost Center Profit And Loss",
+        "operationId": "get_cost_center_profit_and_loss_api_v1_reports_cost_center_profit_and_loss_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "To"
+            }
+          },
+          {
+            "name": "branch_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Branch Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CostCenterProfitAndLossResponse_"
                 }
               }
             }
@@ -3320,6 +3440,210 @@
           }
         }
       }
+    },
+    "/api/v1/reports/fx-exposure": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Fx Exposure Report",
+        "operationId": "get_fx_exposure_report_api_v1_reports_fx_exposure_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "as_of",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "As Of"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Fx Exposure Report Api V1 Reports Fx Exposure Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/exports": {
+      "post": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Queue Report Export",
+        "operationId": "queue_report_export_api_v1_reports_exports_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportExportCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ReportExportJobResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/reports/exports/{job_id}": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Report Export",
+        "operationId": "get_report_export_api_v1_reports_exports__job_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ReportExportJobResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/reports/exports/{job_id}/download": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Download Report Export",
+        "operationId": "download_report_export_api_v1_reports_exports__job_id__download_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3839,6 +4163,40 @@
         ],
         "title": "ApiResponse[CashFlowResponse]"
       },
+      "ApiResponse_CostCenterProfitAndLossResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/CostCenterProfitAndLossResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[CostCenterProfitAndLossResponse]"
+      },
       "ApiResponse_CrmDashboardResponse_": {
         "properties": {
           "success": {
@@ -4246,6 +4604,40 @@
           "data"
         ],
         "title": "ApiResponse[ReceivedNotBilledResponse]"
+      },
+      "ApiResponse_ReportExportJobResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReportExportJobResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[ReportExportJobResponse]"
       },
       "ApiResponse_SalesActivityResponse_": {
         "properties": {
@@ -4769,6 +5161,40 @@
               }
             ],
             "title": "Comparative Amount"
+          },
+          "group_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Label"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
           }
         },
         "type": "object",
@@ -4923,6 +5349,29 @@
               }
             ],
             "title": "Account Id"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
           }
         },
         "type": "object",
@@ -5025,6 +5474,94 @@
           "net_change"
         ],
         "title": "CashFlowResponse"
+      },
+      "CostCenterProfitAndLossResponse": {
+        "properties": {
+          "currency_code": {
+            "type": "string",
+            "title": "Currency Code",
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
+          },
+          "from_date": {
+            "type": "string",
+            "format": "date",
+            "title": "From Date"
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "title": "To Date"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/CostCenterProfitSection"
+            },
+            "type": "array",
+            "title": "Sections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "currency_code",
+          "from_date",
+          "to_date"
+        ],
+        "title": "CostCenterProfitAndLossResponse"
+      },
+      "CostCenterProfitSection": {
+        "properties": {
+          "cost_center_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Center Id"
+          },
+          "cost_center_code": {
+            "type": "string",
+            "title": "Cost Center Code"
+          },
+          "cost_center_name": {
+            "type": "string",
+            "title": "Cost Center Name"
+          },
+          "total_income": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Income"
+          },
+          "total_expense": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Expense"
+          },
+          "net_profit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Net Profit"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/ProfitAndLossLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cost_center_code",
+          "cost_center_name",
+          "total_income",
+          "total_expense",
+          "net_profit"
+        ],
+        "title": "CostCenterProfitSection"
       },
       "CrmDashboardResponse": {
         "properties": {
@@ -6311,6 +6848,37 @@
         ],
         "title": "PartyType"
       },
+      "PeriodAmount": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "from_date": {
+            "type": "string",
+            "format": "date",
+            "title": "From Date"
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "title": "To Date"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "from_date",
+          "to_date",
+          "amount"
+        ],
+        "title": "PeriodAmount"
+      },
       "ProfitAndLossLine": {
         "properties": {
           "account_id": {
@@ -6362,6 +6930,71 @@
               }
             ],
             "title": "Ytd Amount"
+          },
+          "budget_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Amount"
+          },
+          "variance_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variance Amount"
+          },
+          "group_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Label"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/PeriodAmount"
+            },
+            "type": "array",
+            "title": "Periods"
           }
         },
         "type": "object",
@@ -6508,6 +7141,23 @@
               }
             ],
             "title": "Ytd Net Profit"
+          },
+          "period_count": {
+            "type": "integer",
+            "title": "Period Count",
+            "default": 1
+          },
+          "budget_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Id"
           },
           "lines": {
             "items": {
@@ -6764,6 +7414,91 @@
           "currency_code"
         ],
         "title": "ReceivedNotBilledResponse"
+      },
+      "ReportExportCreate": {
+        "properties": {
+          "report": {
+            "type": "string",
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Report"
+          },
+          "export_format": {
+            "type": "string",
+            "pattern": "^(csv|xlsx|pdf)$",
+            "title": "Export Format"
+          },
+          "params": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Params"
+          }
+        },
+        "type": "object",
+        "required": [
+          "report",
+          "export_format"
+        ],
+        "title": "ReportExportCreate"
+      },
+      "ReportExportJobResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "report_key": {
+            "type": "string",
+            "title": "Report Key"
+          },
+          "export_format": {
+            "type": "string",
+            "title": "Export Format"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "report_key",
+          "export_format",
+          "status",
+          "created_at"
+        ],
+        "title": "ReportExportJobResponse"
       },
       "ReportWarning": {
         "properties": {
