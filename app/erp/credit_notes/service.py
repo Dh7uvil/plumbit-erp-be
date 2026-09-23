@@ -17,6 +17,7 @@ from app.auth.catalog import (
     CREDIT_NOTE_CANCEL,
     CREDIT_NOTE_DELETE,
     CREDIT_NOTE_POST,
+    CUSTOMER_PAYMENT_CREATE,
     PERIOD_OVERRIDE,
     SALES_MODULE,
 )
@@ -59,6 +60,7 @@ from app.core.exceptions import (
     DocumentStaleError,
     InvoiceCannotVoidError,
     InvoiceQtyExceededError,
+    PaymentNothingToApplyError,
     ResourceNotFoundError,
     ValidationError,
 )
@@ -66,6 +68,7 @@ from app.core.permissions import has_permission
 from app.crm.customers.service import CustomerService
 from app.db.session import transaction
 from app.erp.accounting.accounts.service import AccountResolver, AccountService
+from app.erp.accounting.ledger.cash_guard import assert_cash_available
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.posting import LedgerPostingService
 from app.erp.accounting.ledger.schemas import JournalEntryResponse, JournalLineInput
@@ -78,6 +81,7 @@ from app.erp.credit_notes.schemas import (
     CreditNoteCreateFromSalesInvoice,
     CreditNoteCreateFromSalesReturn,
     CreditNoteLineInput,
+    CreditNoteRefundRequest,
     CreditNoteLineResponse,
     CreditNoteResponse,
     CreditNoteUpdate,
@@ -97,6 +101,7 @@ _ACTION_PERMISSIONS: dict[str, str] = {
     "cancel": CREDIT_NOTE_CANCEL,
 }
 SOURCE_CREDIT_NOTE = "credit_note"
+SOURCE_CREDIT_NOTE_REFUND = "credit_note_refund"
 
 
 class CreditNoteService:
@@ -620,6 +625,91 @@ class CreditNoteService:
                 await self.idempotency.store(
                     tenant_id, idempotency_key, response.model_dump(mode="json")
                 )
+            return response
+
+    async def refund(
+        self,
+        tenant_id: UUID,
+        credit_note_id: UUID,
+        payload: CreditNoteRefundRequest,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> CreditNoteResponse:
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return CreditNoteResponse.model_validate(replay)
+            row = await self._require(tenant_id, credit_note_id, for_update=True)
+            self._assert_version(row, expected_version)
+            if InvoiceDocumentStatus(row.status) != InvoiceDocumentStatus.POSTED:
+                raise ValidationError("Only posted credit notes can be refunded")
+            if row.refund_journal_entry_id is not None:
+                response = self._to_response(row)
+                await self.idempotency.store(
+                    tenant_id, idempotency_key, response.model_dump(mode="json")
+                )
+                return response
+            if row.amount_unapplied <= _ZERO:
+                raise PaymentNothingToApplyError()
+            await self.accounts.require_postable(tenant_id, payload.payment_account_id)
+            policy = await self._ensure_policy(tenant_id)
+            policy.assert_open(row.credit_note_date, can_override=self._can_override)
+            settings = await self.org.get_money_movement_settings(tenant_id)
+            outflow = quantize_money(row.amount_unapplied * row.exchange_rate)
+            await assert_cash_available(
+                self.session,
+                tenant_id,
+                account_id=payload.payment_account_id,
+                outflow_base=outflow,
+                allow_negative_cash=settings.allow_negative_cash,
+                as_of=row.credit_note_date,
+            )
+            old_values = await self._snapshot(tenant_id, row)
+            lines = await self._refund_journal_lines(tenant_id, row, payload.payment_account_id)
+            journal = await self.posting.post_for_document(
+                tenant_id,
+                source_type=SOURCE_CREDIT_NOTE_REFUND,
+                source_id=row.id,
+                entry_date=row.credit_note_date,
+                lines=lines,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                narration=f"Refund credit note {row.document_number}",
+                branch_id=row.branch_id,
+                actor_id=actor_user_id,
+                journal_type=JournalType.SYSTEM,
+                reference=row.document_number,
+            )
+            row.refund_journal_entry_id = journal.id
+            row.refund_payment_account_id = payload.payment_account_id
+            row.amount_refunded = quantize_money(row.amount_refunded + row.amount_unapplied)
+            row.amount_unapplied = _ZERO
+            row.refunded_at = utcnow()
+            row.refunded_by = actor_user_id
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            loaded = await self._require(tenant_id, credit_note_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.REVERSE,
+                module=SALES_MODULE,
+                entity_type="credit_note",
+                entity_id=credit_note_id,
+                old_values=old_values,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            response = self._to_response(loaded)
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
             return response
 
     async def journal(self, tenant_id: UUID, credit_note_id: UUID) -> JournalEntryResponse:
@@ -1223,7 +1313,38 @@ class CreditNoteService:
             self.actor_permissions, CREDIT_NOTE_DELETE
         ):
             actions.append("delete")
+        if (
+            status == InvoiceDocumentStatus.POSTED
+            and row.amount_unapplied > _ZERO
+            and row.refund_journal_entry_id is None
+            and has_permission(self.actor_permissions, CUSTOMER_PAYMENT_CREATE)
+        ):
+            actions.append("refund")
         return actions
+
+    async def _refund_journal_lines(
+        self, tenant_id: UUID, row: CreditNote, payment_account_id: UUID
+    ) -> list[JournalLineInput]:
+        ar = await self.accounts.party_resolver.resolve_receivable(tenant_id, row.customer_id)
+        amount = row.amount_unapplied
+        return [
+            JournalLineInput(
+                account_id=ar.id,
+                debit=amount,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                party_type=PartyType.CUSTOMER,
+                party_id=row.customer_id,
+                description=f"Refund {row.document_number}",
+            ),
+            JournalLineInput(
+                account_id=payment_account_id,
+                credit=amount,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                description=f"Refund {row.document_number}",
+            ),
+        ]
 
     def _to_response(self, row: CreditNote) -> CreditNoteResponse:
         status = InvoiceDocumentStatus(row.status)
@@ -1265,6 +1386,11 @@ class CreditNoteService:
             country_of_origin=row.country_of_origin,
             amount_applied=row.amount_applied,
             amount_unapplied=row.amount_unapplied,
+            amount_refunded=row.amount_refunded,
+            refund_journal_entry_id=row.refund_journal_entry_id,
+            refund_payment_account_id=row.refund_payment_account_id,
+            refunded_at=row.refunded_at,
+            refunded_by=row.refunded_by,
             journal_entry_id=row.journal_entry_id,
             reversal_journal_entry_id=row.reversal_journal_entry_id,
             posted_at=row.posted_at,

@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.core.enums import PlaceOfSupply, StockDocumentStatus, TaxTreatment
@@ -38,8 +39,15 @@ class DeliveryNoteFilter(BaseFilter):
 
 
 class DeliveryNoteLineInput(BaseModel):
-    sales_order_line_id: UUID
+    sales_order_line_id: UUID | None = None
+    source_sales_invoice_line_id: UUID | None = None
     product_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def validate_source_line(self) -> "DeliveryNoteLineInput":
+        if self.sales_order_line_id is None and self.source_sales_invoice_line_id is None:
+            raise ValueError("A delivery note line requires a source document line")
+        return self
     description: str | None = None
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
     unit_id: UUID | None = None
@@ -59,7 +67,8 @@ class DeliveryNoteLineResponse(BaseModel):
 
     id: UUID
     line_number: int
-    sales_order_line_id: UUID
+    sales_order_line_id: UUID | None
+    source_sales_invoice_line_id: UUID | None = None
     product_id: UUID | None
     description: str
     quantity: Decimal
@@ -69,7 +78,8 @@ class DeliveryNoteLineResponse(BaseModel):
 
 
 class DeliveryNoteCreate(BaseModel):
-    sales_order_id: UUID
+    sales_order_id: UUID | None = None
+    source_sales_invoice_id: UUID | None = None
     warehouse_id: UUID | None = None
     document_date: date | None = None
     branch_id: UUID | None = None
@@ -94,6 +104,22 @@ class DeliveryNoteCreateFromSalesOrder(BaseModel):
     warehouse_id: UUID | None = None
     document_date: date | None = None
     notes: str | None = None
+
+    @field_validator("notes")
+    @classmethod
+    def normalize_notes(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class DeliveryNoteCreateFromSalesInvoice(BaseModel):
+    sales_invoice_id: UUID
+    warehouse_id: UUID | None = None
+    document_date: date | None = None
+    notes: str | None = None
+    lines: list[ConversionLineInput] | None = None
 
     @field_validator("notes")
     @classmethod
@@ -148,7 +174,8 @@ class DeliveryNoteResponse(BaseModel):
     version: int
     is_posted: bool
     document_date: date
-    sales_order_id: UUID
+    sales_order_id: UUID | None
+    source_sales_invoice_id: UUID | None = None
     customer_id: UUID
     warehouse_id: UUID
     branch_id: UUID | None

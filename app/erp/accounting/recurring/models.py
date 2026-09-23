@@ -25,6 +25,7 @@ class RecurringTemplate(AuditUserMixin, SoftDeleteTenantModel):
     document_kind: Mapped[str] = mapped_column(String(30), nullable=False)
     frequency: Mapped[str] = mapped_column(String(20), nullable=False)
     interval: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    schedule_day: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     next_run_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     max_occurrences: Mapped[int | None] = mapped_column(Integer, nullable=True)

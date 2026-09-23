@@ -113,9 +113,12 @@ class ReportExportService:
         data: BaseModel
         if row.report_key == "profit-and-loss":
             raw_count = params.get("period_count")
-            period_count = (
-                int(raw_count) if isinstance(raw_count, str) and raw_count.isdigit() else 1
-            )
+            if isinstance(raw_count, int) and raw_count >= 1:
+                period_count = raw_count
+            elif isinstance(raw_count, str) and raw_count.isdigit():
+                period_count = int(raw_count)
+            else:
+                period_count = 1
             data = await reports.profit_and_loss(
                 tenant_id,
                 from_date=_date(params, "from"),

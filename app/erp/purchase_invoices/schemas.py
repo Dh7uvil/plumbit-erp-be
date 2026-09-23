@@ -124,6 +124,7 @@ class PurchaseInvoiceLineResponse(BaseModel):
     purchase_account_id: UUID | None
     grn_unit_cost: Decimal
     qty_debited: Decimal
+    qty_received: Decimal = Decimal("0")
     landed_cost_allocated: Decimal = Decimal("0")
     landed_cost_remaining: Decimal | None = None
 

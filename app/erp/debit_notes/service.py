@@ -19,6 +19,7 @@ from app.auth.catalog import (
     DEBIT_NOTE_POST,
     PERIOD_OVERRIDE,
     PURCHASE_MODULE,
+    SUPPLIER_PAYMENT_CREATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
@@ -60,6 +61,7 @@ from app.core.exceptions import (
     DocumentStaleError,
     InvoiceCannotVoidError,
     InvoiceQtyExceededError,
+    PaymentNothingToApplyError,
     ResourceNotFoundError,
     ValidationError,
 )
@@ -79,6 +81,7 @@ from app.erp.debit_notes.schemas import (
     DebitNoteCreateFromPurchaseReturn,
     DebitNoteLineInput,
     DebitNoteLineResponse,
+    DebitNoteRefundRequest,
     DebitNoteResponse,
     DebitNoteUpdate,
 )
@@ -97,6 +100,7 @@ _ACTION_PERMISSIONS: dict[str, str] = {
     "cancel": DEBIT_NOTE_CANCEL,
 }
 SOURCE_DEBIT_NOTE = "debit_note"
+SOURCE_DEBIT_NOTE_REFUND = "debit_note_refund"
 
 
 class DebitNoteService:
@@ -599,6 +603,81 @@ class DebitNoteService:
                 await self.idempotency.store(
                     tenant_id, idempotency_key, response.model_dump(mode="json")
                 )
+            return response
+
+    async def refund(
+        self,
+        tenant_id: UUID,
+        debit_note_id: UUID,
+        payload: DebitNoteRefundRequest,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> DebitNoteResponse:
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return DebitNoteResponse.model_validate(replay)
+            row = await self._require(tenant_id, debit_note_id, for_update=True)
+            self._assert_version(row, expected_version)
+            if InvoiceDocumentStatus(row.status) != InvoiceDocumentStatus.POSTED:
+                raise ValidationError("Only posted debit notes can be refunded")
+            if row.refund_journal_entry_id is not None:
+                response = self._to_response(row)
+                await self.idempotency.store(
+                    tenant_id, idempotency_key, response.model_dump(mode="json")
+                )
+                return response
+            if row.amount_unapplied <= _ZERO:
+                raise PaymentNothingToApplyError()
+            await self.accounts.require_postable(tenant_id, payload.payment_account_id)
+            policy = await self._ensure_policy(tenant_id)
+            policy.assert_open(row.debit_note_date, can_override=self._can_override)
+            old_values = await self._snapshot(tenant_id, row)
+            lines = await self._refund_journal_lines(tenant_id, row, payload.payment_account_id)
+            journal = await self.posting.post_for_document(
+                tenant_id,
+                source_type=SOURCE_DEBIT_NOTE_REFUND,
+                source_id=row.id,
+                entry_date=row.debit_note_date,
+                lines=lines,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                narration=f"Refund debit note {row.document_number}",
+                branch_id=row.branch_id,
+                actor_id=actor_user_id,
+                journal_type=JournalType.SYSTEM,
+                reference=row.document_number,
+            )
+            row.refund_journal_entry_id = journal.id
+            row.refund_payment_account_id = payload.payment_account_id
+            row.amount_refunded = quantize_money(row.amount_refunded + row.amount_unapplied)
+            row.amount_unapplied = _ZERO
+            row.refunded_at = utcnow()
+            row.refunded_by = actor_user_id
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            loaded = await self._require(tenant_id, debit_note_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.REVERSE,
+                module=PURCHASE_MODULE,
+                entity_type="debit_note",
+                entity_id=debit_note_id,
+                old_values=old_values,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            response = self._to_response(loaded)
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
             return response
 
     async def journal(self, tenant_id: UUID, debit_note_id: UUID) -> JournalEntryResponse:
@@ -1198,7 +1277,38 @@ class DebitNoteService:
             self.actor_permissions, DEBIT_NOTE_DELETE
         ):
             actions.append("delete")
+        if (
+            status == InvoiceDocumentStatus.POSTED
+            and row.amount_unapplied > _ZERO
+            and row.refund_journal_entry_id is None
+            and has_permission(self.actor_permissions, SUPPLIER_PAYMENT_CREATE)
+        ):
+            actions.append("refund")
         return actions
+
+    async def _refund_journal_lines(
+        self, tenant_id: UUID, row: DebitNote, payment_account_id: UUID
+    ) -> list[JournalLineInput]:
+        ap = await self.accounts.party_resolver.resolve_payable(tenant_id, row.supplier_id)
+        amount = row.amount_unapplied
+        return [
+            JournalLineInput(
+                account_id=payment_account_id,
+                debit=amount,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                description=f"Refund {row.document_number}",
+            ),
+            JournalLineInput(
+                account_id=ap.id,
+                credit=amount,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                party_type=PartyType.SUPPLIER,
+                party_id=row.supplier_id,
+                description=f"Refund {row.document_number}",
+            ),
+        ]
 
     def _to_response(self, row: DebitNote) -> DebitNoteResponse:
         status = InvoiceDocumentStatus(row.status)
@@ -1238,6 +1348,11 @@ class DebitNoteService:
             notes=row.notes,
             amount_applied=row.amount_applied,
             amount_unapplied=row.amount_unapplied,
+            amount_refunded=row.amount_refunded,
+            refund_journal_entry_id=row.refund_journal_entry_id,
+            refund_payment_account_id=row.refund_payment_account_id,
+            refunded_at=row.refunded_at,
+            refunded_by=row.refunded_by,
             journal_entry_id=row.journal_entry_id,
             reversal_journal_entry_id=row.reversal_journal_entry_id,
             posted_at=row.posted_at,

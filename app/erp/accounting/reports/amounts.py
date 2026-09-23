@@ -32,7 +32,7 @@ def open_item_base_amount(item) -> Decimal | None:
 def document_base_grand(doc: _CommercialDoc, *, sign: Decimal = Decimal("1")) -> Decimal:
     """Grand total in base currency from stored base_amount or document rate."""
 
-    if doc.base_amount is not None and doc.base_amount != _ZERO:
+    if doc.base_amount is not None:
         return quantize_money(doc.base_amount * sign)
     return quantize_money(doc.grand_total * doc.exchange_rate * sign)
 

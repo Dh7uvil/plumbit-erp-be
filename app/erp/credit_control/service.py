@@ -26,7 +26,7 @@ from app.core.permissions import has_permission
 from app.crm.customers.service import CustomerService
 from app.erp.accounting.open_items.service import OpenItemsService
 from app.erp.credit_control.schemas import CreditExposure
-from app.erp.exchange_rates.service import ExchangeRateService
+from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 from app.erp.sales_orders.models import SalesOrder
 
 _ZERO = Decimal("0")
@@ -46,6 +46,7 @@ class CreditControlService:
         self.customers = CustomerService(session)
         self.open_items = OpenItemsService(session)
         self.fx = ExchangeRateService(session)
+        self.currencies = CurrencyService(session)
         self.audit = AuditWriter(session)
 
     async def evaluate(
@@ -90,14 +91,24 @@ class CreditControlService:
         exposure = quantize_money(
             posted_ar + opening_ar + open_orders - unapplied_receipts - unapplied_credits
         )
+        base_currency = await self.currencies.get_base(tenant_id)
+        exposure_base = await self._to_currency(
+            tenant_id,
+            exposure,
+            from_currency_id=customer.currency_id,
+            to_currency_id=base_currency.id,
+            on_date=today,
+        )
         available = None
         if customer.credit_limit is not None:
             available = quantize_money(customer.credit_limit - exposure)
         return CreditExposure(
             customer_id=customer_id,
             currency_id=customer.currency_id,
+            base_currency_id=base_currency.id,
             credit_limit=customer.credit_limit,
             exposure=exposure,
+            exposure_base=exposure_base,
             this_document=additional,
             available=available,
             posted_ar=quantize_money(posted_ar),

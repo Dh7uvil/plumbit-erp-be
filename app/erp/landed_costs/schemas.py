@@ -55,6 +55,7 @@ class LandedCostChargeResponse(BaseModel):
     allocation_basis: LandedCostAllocationMethod | None = None
     bill_number: str
     amount: Decimal
+    base_amount: Decimal
 
 
 class LandedCostAllocationResponse(BaseModel):

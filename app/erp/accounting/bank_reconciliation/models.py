@@ -43,6 +43,8 @@ class BankStatement(AuditUserMixin, SoftDeleteTenantModel):
     period_end: Mapped[date] = mapped_column(Date, nullable=False)
     opening_balance: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
     closing_balance: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    base_opening_balance: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
+    base_closing_balance: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, server_default=text("'DRAFT'"))
     import_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

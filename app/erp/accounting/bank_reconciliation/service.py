@@ -6,6 +6,7 @@ import builtins
 from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -23,6 +24,7 @@ from app.core.enums import AuditAction, BankStatementMatchStatus, BankStatementS
 from app.core.exceptions import DocumentStaleError, ResourceNotFoundError, ValidationError
 from app.db.session import transaction
 from app.erp.accounting.bank_accounts.service import BankAccountService
+from app.erp.exchange_rates.service import ExchangeRateService
 from app.erp.accounting.bank_reconciliation.models import BankStatement, BankStatementLine
 from app.erp.accounting.bank_reconciliation.repository import BankStatementRepository
 from app.erp.accounting.bank_reconciliation.schemas import (
@@ -48,6 +50,7 @@ class BankReconciliationService:
         self.session = session
         self.repo = BankStatementRepository(session)
         self.bank_accounts = BankAccountService(session)
+        self.fx = ExchangeRateService(session)
         self.audit = AuditWriter(session)
 
     async def list(
@@ -95,6 +98,7 @@ class BankReconciliationService:
                 updated_by=actor_user_id,
             )
             self._replace_lines(row, payload.lines)
+            await self._apply_base_balances(tenant_id, row, bank)
             self.session.add(row)
             await self.session.flush()
             loaded = await self._require(tenant_id, row.id)
@@ -137,6 +141,9 @@ class BankReconciliationService:
             if updated is None:
                 raise ResourceNotFoundError("Bank statement not found")
             loaded = await self._require(tenant_id, statement_id)
+            bank = await self.bank_accounts.require(tenant_id, loaded.bank_account_id)
+            await self._apply_base_balances(tenant_id, loaded, bank)
+            await self.session.flush()
             return _to_response(loaded)
 
     async def delete(
@@ -499,6 +506,18 @@ class BankReconciliationService:
                     match_status=BankStatementMatchStatus.UNMATCHED.value,
                 )
             )
+
+    async def _apply_base_balances(
+        self, tenant_id: UUID, row: BankStatement, bank: Any
+    ) -> None:
+        resolved = await self.fx.resolve(
+            tenant_id,
+            from_currency_id=bank.currency_id,
+            on_date=row.period_end,
+        )
+        rate = resolved.rate
+        row.base_opening_balance = quantize_money(row.opening_balance * rate)
+        row.base_closing_balance = quantize_money(row.closing_balance * rate)
 
     async def _require(self, tenant_id: UUID, statement_id: UUID) -> BankStatement:
         row = await self.repo.get(tenant_id, statement_id)

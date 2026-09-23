@@ -180,6 +180,7 @@ class PaymentAllocationRepository:
         item_id: UUID,
         amount: Decimal,
         journal_entry_id: UUID | None = None,
+        base_amount: Decimal | None = None,
     ) -> PaymentAllocation:
         row = PaymentAllocation(
             tenant_id=tenant_id,
@@ -188,6 +189,7 @@ class PaymentAllocationRepository:
             item_type=item_type,
             item_id=item_id,
             amount=amount,
+            base_amount=base_amount,
             journal_entry_id=journal_entry_id,
         )
         self.session.add(row)

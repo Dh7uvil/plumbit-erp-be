@@ -175,6 +175,11 @@ class DebitNoteCreateFromPurchaseReturn(BaseModel):
     notes: str | None = None
 
 
+class DebitNoteRefundRequest(BaseModel):
+    payment_account_id: UUID
+    version: int | None = Field(default=None, ge=1)
+
+
 class DebitNoteResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -212,6 +217,11 @@ class DebitNoteResponse(BaseModel):
     notes: str | None
     amount_applied: Decimal
     amount_unapplied: Decimal
+    amount_refunded: Decimal = Decimal("0")
+    refund_journal_entry_id: UUID | None = None
+    refund_payment_account_id: UUID | None = None
+    refunded_at: datetime | None = None
+    refunded_by: UUID | None = None
     journal_entry_id: UUID | None
     reversal_journal_entry_id: UUID | None
     posted_at: datetime | None

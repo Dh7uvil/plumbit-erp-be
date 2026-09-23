@@ -46,6 +46,11 @@ class DeliveryNote(AuditUserMixin, SoftDeleteTenantModel):
         Index("ix_delivery_notes_tenant_id_customer_id", "tenant_id", "customer_id"),
         Index("ix_delivery_notes_sales_order_id", "sales_order_id"),
         Index("ix_delivery_notes_shipment_id", "shipment_id"),
+        Index(
+            "ix_delivery_notes_tenant_id_source_sales_invoice_id",
+            "tenant_id",
+            "source_sales_invoice_id",
+        ),
     )
 
     document_number: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -53,10 +58,15 @@ class DeliveryNote(AuditUserMixin, SoftDeleteTenantModel):
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     is_posted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     document_date: Mapped[date] = mapped_column(Date, nullable=False)
-    sales_order_id: Mapped[UUID] = mapped_column(
+    sales_order_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("sales_orders.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
+    )
+    source_sales_invoice_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("sales_invoices.id", ondelete="SET NULL"),
+        nullable=True,
     )
     customer_id: Mapped[UUID] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
@@ -135,6 +145,10 @@ class DeliveryNoteLine(TenantModel):
         ),
         Index("ix_delivery_note_lines_delivery_note_id", "delivery_note_id"),
         Index("ix_delivery_note_lines_sales_order_line_id", "sales_order_line_id"),
+        Index(
+            "ix_delivery_note_lines_source_sales_invoice_line_id",
+            "source_sales_invoice_line_id",
+        ),
         Index("ix_delivery_note_lines_tenant_id_product_id", "tenant_id", "product_id"),
     )
 
@@ -144,10 +158,15 @@ class DeliveryNoteLine(TenantModel):
         nullable=False,
     )
     line_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    sales_order_line_id: Mapped[UUID] = mapped_column(
+    sales_order_line_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("sales_order_lines.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
+    )
+    source_sales_invoice_line_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("sales_invoice_lines.id", ondelete="SET NULL"),
+        nullable=True,
     )
     product_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),

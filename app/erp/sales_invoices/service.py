@@ -13,7 +13,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
+    CREDIT_NOTE_CREATE,
     CUSTOMER_PAYMENT_CREATE,
+    DELIVERY_NOTE_CREATE,
     DUNNING_SEND,
     PERIOD_OVERRIDE,
     SALES_INVOICE_CANCEL,
@@ -40,6 +42,7 @@ from app.common.utils.conversion import (
     allocate_conversion_qty,
     copy_source_commercial_header,
     quantity_summary,
+    remaining_qty,
 )
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
@@ -1927,6 +1930,20 @@ class SalesInvoiceService:
             and has_permission(self.actor_permissions, DUNNING_SEND)
         ):
             actions.append("send_reminder")
+        if status == InvoiceDocumentStatus.POSTED and has_permission(
+            self.actor_permissions, CREDIT_NOTE_CREATE
+        ):
+            actions.append("create_credit_note")
+        if (
+            status == InvoiceDocumentStatus.POSTED
+            and has_permission(self.actor_permissions, DELIVERY_NOTE_CREATE)
+            and any(
+                line.product_id is not None
+                and remaining_qty(line.quantity, line.qty_delivered) > _ZERO
+                for line in row.lines
+            )
+        ):
+            actions.append("create_delivery_note")
         return actions
 
     def _to_response(
@@ -2039,6 +2056,7 @@ class SalesInvoiceService:
                     cogs_amount=line.cogs_amount,
                     cogs_status=CogsStatus(line.cogs_status),
                     qty_credited=line.qty_credited,
+                    qty_delivered=line.qty_delivered,
                     hs_code=line.hs_code,
                     carton_qty=line.carton_qty,
                     packing_unit=line.packing_unit,
@@ -2123,6 +2141,18 @@ class SalesInvoiceService:
                         quantity_summary=quantity_summary([line.quantity for line in note.lines]),
                     )
                 )
+        for note in await dn_repo.list_for_sales_invoice(tenant_id, row.id):
+            related.append(
+                RelatedDocumentRef(
+                    document_type=DocumentType.DELIVERY_NOTE.value,
+                    document_id=note.id,
+                    document_number=note.document_number,
+                    status=note.status,
+                    relationship="child",
+                    document_date=note.document_date,
+                    quantity_summary=quantity_summary([line.quantity for line in note.lines]),
+                )
+            )
         for item in await CreditNoteRepository(self.session).list_for_sales_invoice(
             tenant_id, row.id
         ):

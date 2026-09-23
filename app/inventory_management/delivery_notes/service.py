@@ -16,7 +16,10 @@ from app.auth.catalog import (
     DELIVERY_NOTE_POST,
     DELIVERY_NOTE_UPDATE,
     PERIOD_OVERRIDE,
+    SALES_INVOICE_CREATE,
     SALES_MODULE,
+    SALES_RETURN_CREATE,
+    SHIPMENT_UPDATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
@@ -29,13 +32,15 @@ from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
-from app.common.utils.conversion import quantity_summary
+from app.common.schemas.conversion import ConversionLineInput
+from app.common.utils.conversion import allocate_conversion_qty, quantity_summary, remaining_qty
 from app.common.utils.currency import document_fx_amounts, quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import format_address_snapshot
 from app.core.enums import (
     AuditAction,
     DocumentType,
+    InvoiceDocumentStatus,
     ItemType,
     PlaceOfSupply,
     SalesOrderStatus,
@@ -64,6 +69,7 @@ from app.inventory_management.delivery_notes.repository import DeliveryNoteRepos
 from app.inventory_management.delivery_notes.schemas import (
     DeliverableLineResponse,
     DeliveryNoteCreate,
+    DeliveryNoteCreateFromSalesInvoice,
     DeliveryNoteCreateFromSalesOrder,
     DeliveryNoteLineInput,
     DeliveryNoteLineResponse,
@@ -102,6 +108,7 @@ class DeliveryNoteService:
         self.warehouses = WarehouseService(session)
         self.org = OrganizationService(session)
         self.sales_orders = SalesOrderService(session, actor_permissions=actor_permissions)
+        self._sales_invoices = None
         self.currencies = CurrencyService(session)
         self.fx = ExchangeRateService(session)
         self.sequences = DocumentSequenceService(session)
@@ -111,6 +118,16 @@ class DeliveryNoteService:
         self.inventory_ledger = InventoryLedgerService(session, actor_permissions=actor_permissions)
         self._can_override = has_permission(actor_permissions, PERIOD_OVERRIDE)
         self._period_policy: PeriodLockPolicy | None = None
+
+    @property
+    def sales_invoices(self):
+        if self._sales_invoices is None:
+            from app.erp.sales_invoices.service import SalesInvoiceService
+
+            self._sales_invoices = SalesInvoiceService(
+                self.session, actor_permissions=self.actor_permissions
+            )
+        return self._sales_invoices
 
     async def list(
         self,
@@ -349,6 +366,112 @@ class DeliveryNoteService:
             )
             return response
 
+    async def create_from_sales_invoice(
+        self,
+        tenant_id: UUID,
+        payload: DeliveryNoteCreateFromSalesInvoice,
+        *,
+        actor_user_id: UUID,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> DeliveryNoteResponse:
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return DeliveryNoteResponse.model_validate(replay)
+            invoice = await self.sales_invoices._require(tenant_id, payload.sales_invoice_id)
+            if InvoiceDocumentStatus(invoice.status) != InvoiceDocumentStatus.POSTED:
+                raise ValidationError("Delivery notes can only be created from a posted sales invoice")
+            requested = (
+                [(item.source_line_id, item.quantity) for item in payload.lines]
+                if payload.lines is not None
+                else None
+            )
+            product_lines = [line for line in invoice.lines if line.product_id is not None]
+            allocations = allocate_conversion_qty(
+                lines=[
+                    (line.id, line.quantity, line.qty_delivered) for line in product_lines
+                ],
+                requested=requested,
+                empty_message="This sales invoice has no remaining quantity to deliver",
+            )
+            by_id = {line.id: line for line in invoice.lines}
+            lines = [
+                DeliveryNoteLineInput(
+                    source_sales_invoice_line_id=line_id,
+                    sales_order_line_id=by_id[line_id].sales_order_line_id,
+                    product_id=by_id[line_id].product_id,
+                    description=by_id[line_id].description,
+                    quantity=qty,
+                    unit_id=by_id[line_id].unit_id,
+                    rate=by_id[line_id].rate,
+                )
+                for line_id, qty in allocations
+            ]
+            warehouse_id = payload.warehouse_id
+            if warehouse_id is None and invoice.sales_order_id is not None:
+                order = await self.sales_orders.get(tenant_id, invoice.sales_order_id)
+                warehouse_id = order.warehouse_id if order is not None else None
+            if warehouse_id is None:
+                default_warehouse = await self.warehouses.get_default(tenant_id)
+                if default_warehouse is None:
+                    raise ValidationError("A warehouse is required to create a delivery note")
+                warehouse_id = default_warehouse.id
+            create_payload = DeliveryNoteCreate(
+                source_sales_invoice_id=invoice.id,
+                sales_order_id=invoice.sales_order_id,
+                warehouse_id=warehouse_id,
+                document_date=payload.document_date,
+                branch_id=invoice.branch_id,
+                currency_id=invoice.currency_id,
+                notes=payload.notes,
+                lines=lines,
+            )
+            header, line_rows = await self._build_draft_from_invoice(tenant_id, create_payload, invoice)
+            policy = await self._ensure_policy(tenant_id)
+            policy.assert_open(header["document_date"], can_override=self._can_override)
+            number = await self.sequences.allocate(
+                tenant_id,
+                document_type=DocumentType.DELIVERY_NOTE,
+                series=_SERIES,
+                fiscal_year=await year_for(
+                    self.session, tenant_id, cast(date, header["document_date"])
+                ),
+                prefix=_SERIES,
+                party_id=cast(UUID, header["customer_id"]),
+            )
+            row = await self.repo.create(
+                tenant_id,
+                {
+                    **header,
+                    "document_number": number,
+                    "status": StockDocumentStatus.DRAFT.value,
+                    "version": 1,
+                    "is_posted": False,
+                    "created_by": actor_user_id,
+                    "updated_by": actor_user_id,
+                },
+            )
+            await self.repo.replace_lines(tenant_id, row.id, line_rows)
+            loaded = await self._require(tenant_id, row.id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.CREATE,
+                module=SALES_MODULE,
+                entity_type="delivery_note",
+                entity_id=row.id,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            response = self._to_response(loaded)
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
+            return response
+
     async def update(
         self,
         tenant_id: UUID,
@@ -364,14 +487,23 @@ class DeliveryNoteService:
             assert_editable(StockDocumentStatus(existing.status))
             self._assert_version(existing, expected_version)
             create_payload = await self._update_to_create(existing, payload)
-            header, line_rows = await self._build_draft(tenant_id, create_payload)
+            if existing.source_sales_invoice_id is not None:
+                invoice = await self.sales_invoices._require(
+                    tenant_id, existing.source_sales_invoice_id
+                )
+                header, line_rows = await self._build_draft_from_invoice(
+                    tenant_id, create_payload, invoice
+                )
+            else:
+                header, line_rows = await self._build_draft(tenant_id, create_payload)
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(header["document_date"], can_override=self._can_override)
             header["updated_by"] = actor_user_id
             header["version"] = existing.version + 1
             await self.repo.update(tenant_id, note_id, header)
             await self.repo.replace_lines(tenant_id, note_id, line_rows)
-            loaded = await self._require(tenant_id, note_id)
+            await self.session.flush()
+            await self.session.refresh(existing)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -380,9 +512,9 @@ class DeliveryNoteService:
                 entity_type="delivery_note",
                 entity_id=note_id,
                 old_values=old_values,
-                new_values=await self._snapshot(tenant_id, loaded),
+                new_values=await self._snapshot(tenant_id, existing),
             )
-            return self._to_response(loaded)
+            return self._to_response(existing)
 
     async def delete(
         self,
@@ -445,21 +577,48 @@ class DeliveryNoteService:
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(row.document_date, can_override=self._can_override)
             old_values = await self._snapshot(tenant_id, row)
-            order = await self.sales_orders._require(tenant_id, row.sales_order_id, for_update=True)
-            so_lines = {line.id: line for line in order.lines}
+            order = None
+            so_lines: dict[UUID, Any] = {}
+            if row.sales_order_id is not None:
+                order = await self.sales_orders._require(
+                    tenant_id, row.sales_order_id, for_update=True
+                )
+                so_lines = {line.id: line for line in order.lines}
+            invoice = None
+            si_lines: dict[UUID, Any] = {}
+            if row.source_sales_invoice_id is not None:
+                invoice = await self.sales_invoices._require(
+                    tenant_id, row.source_sales_invoice_id, for_update=True
+                )
+                si_lines = {line.id: line for line in invoice.lines}
             occurred_at = utcnow()
             movement_type = self._movement_type(row)
             deliveries: dict[UUID, Decimal] = {}
+            invoice_deliveries: dict[UUID, Decimal] = {}
             cogs_value = _ZERO
             for line in row.lines:
-                so_line = so_lines.get(line.sales_order_line_id)
-                if so_line is None:
-                    raise ValidationError("Sales order line not found on this order")
-                outstanding = self.sales_orders.outstanding_delivery(so_line)
-                if line.quantity > outstanding:
-                    raise ValidationError(
-                        "Delivery quantity exceeds outstanding quantity on the sales order line"
-                    )
+                if line.source_sales_invoice_line_id is not None:
+                    si_line = si_lines.get(line.source_sales_invoice_line_id)
+                    if si_line is None:
+                        raise ValidationError("Sales invoice line not found on this invoice")
+                    outstanding = remaining_qty(si_line.quantity, si_line.qty_delivered)
+                    if line.quantity > outstanding:
+                        raise ValidationError(
+                            "Delivery quantity exceeds outstanding quantity on the sales invoice line"
+                        )
+                    release_qty = _ZERO
+                elif line.sales_order_line_id is not None:
+                    so_line = so_lines.get(line.sales_order_line_id)
+                    if so_line is None:
+                        raise ValidationError("Sales order line not found on this order")
+                    outstanding = self.sales_orders.outstanding_delivery(so_line)
+                    if line.quantity > outstanding:
+                        raise ValidationError(
+                            "Delivery quantity exceeds outstanding quantity on the sales order line"
+                        )
+                    release_qty = min(quantize_quantity(so_line.qty_reserved), line.quantity)
+                else:
+                    raise ValidationError("Delivery note line is missing a source document line")
                 if line.quantity > _ZERO and line.product_id is None:
                     raise ValidationError("Stock-moving delivery note lines require a product")
                 stockable = await self._is_stockable(tenant_id, line.product_id)
@@ -471,8 +630,8 @@ class DeliveryNoteService:
                         document_date=row.document_date,
                         can_override_soft_lock=self._can_override,
                     )
-                    release_qty = min(quantize_quantity(so_line.qty_reserved), line.quantity)
-                    if release_qty > _ZERO:
+                    if line.sales_order_line_id is not None and release_qty > _ZERO:
+                        so_line = so_lines[line.sales_order_line_id]
                         await self.stock.release_reserved_locked(locked, qty=release_qty)
                         so_line.qty_reserved = quantize_quantity(so_line.qty_reserved - release_qty)
                     result = await self.stock.apply_locked(
@@ -490,10 +649,21 @@ class DeliveryNoteService:
                     )
                     if result.movement.value is not None:
                         cogs_value += abs(result.movement.value)
-                deliveries[line.sales_order_line_id] = (
-                    deliveries.get(line.sales_order_line_id, _ZERO) + line.quantity
+                if line.sales_order_line_id is not None:
+                    deliveries[line.sales_order_line_id] = (
+                        deliveries.get(line.sales_order_line_id, _ZERO) + line.quantity
+                    )
+                if line.source_sales_invoice_line_id is not None:
+                    invoice_deliveries[line.source_sales_invoice_line_id] = (
+                        invoice_deliveries.get(line.source_sales_invoice_line_id, _ZERO)
+                        + line.quantity
+                    )
+            if deliveries and row.sales_order_id is not None:
+                await self.sales_orders.apply_line_deliveries(
+                    tenant_id, row.sales_order_id, deliveries
                 )
-            await self.sales_orders.apply_line_deliveries(tenant_id, row.sales_order_id, deliveries)
+            if invoice_deliveries and row.source_sales_invoice_id is not None:
+                await self._apply_invoice_line_deliveries(invoice, invoice_deliveries)
             row.status = target.value
             row.is_posted = True
             row.posted_at = occurred_at
@@ -699,9 +869,23 @@ class DeliveryNoteService:
                     occurred_at=occurred_at,
                     unit_id=line.unit_id,
                 )
-        await self.sales_orders.apply_line_deliveries(
-            tenant_id, row.sales_order_id, {key: -qty for key, qty in reversals.items()}
-        )
+        if row.sales_order_id is not None and reversals:
+            await self.sales_orders.apply_line_deliveries(
+                tenant_id, row.sales_order_id, {key: -qty for key, qty in reversals.items()}
+            )
+        if row.source_sales_invoice_id is not None:
+            invoice = await self.sales_invoices._require(
+                tenant_id, row.source_sales_invoice_id, for_update=True
+            )
+            invoice_reversals = {
+                line.source_sales_invoice_line_id: line.quantity
+                for line in row.lines
+                if line.source_sales_invoice_line_id is not None
+            }
+            if invoice_reversals:
+                await self._apply_invoice_line_deliveries(
+                    invoice, {key: -qty for key, qty in invoice_reversals.items()}
+                )
         await self.inventory_ledger.reverse(
             tenant_id,
             source_type=SOURCE_DELIVERY_NOTE,
@@ -764,6 +948,90 @@ class DeliveryNoteService:
         }
         return header, line_rows
 
+    async def _build_draft_from_invoice(
+        self,
+        tenant_id: UUID,
+        payload: DeliveryNoteCreate,
+        invoice: Any,
+    ) -> tuple[dict[str, Any], builtins.list[dict[str, Any]]]:
+        warehouse_id = payload.warehouse_id
+        if warehouse_id is None:
+            raise ValidationError("A warehouse is required to create a delivery note")
+        await self.warehouses.require_id(tenant_id, warehouse_id)
+        if payload.branch_id is not None:
+            await self.org.require_branch(tenant_id, payload.branch_id)
+        document_date = payload.document_date or today_in_timezone(
+            await self.org.get_timezone(tenant_id)
+        )
+        currency_id = payload.currency_id or invoice.currency_id
+        await self.currencies.require_id(tenant_id, currency_id)
+        base = await self.currencies.get_base(tenant_id)
+        resolved = await self.fx.resolve(
+            tenant_id,
+            from_currency_id=currency_id,
+            to_currency_id=base.id,
+            on_date=document_date,
+        )
+        si_lines = {line.id: line for line in invoice.lines}
+        built: builtins.list[dict[str, Any]] = []
+        for index, line in enumerate(payload.lines, start=1):
+            if line.source_sales_invoice_line_id is None:
+                raise ValidationError("Invoice-sourced delivery note lines require a source line")
+            si_line = si_lines.get(line.source_sales_invoice_line_id)
+            if si_line is None:
+                raise ValidationError("Sales invoice line not found on this invoice")
+            quantity = quantize_quantity(line.quantity)
+            outstanding = remaining_qty(si_line.quantity, si_line.qty_delivered)
+            if quantity > outstanding:
+                raise ValidationError(
+                    "Delivery quantity exceeds outstanding quantity on the sales invoice line"
+                )
+            description = line.description or si_line.description
+            product_id = line.product_id if line.product_id is not None else si_line.product_id
+            unit_id = line.unit_id if line.unit_id is not None else si_line.unit_id
+            if product_id is not None:
+                product = await self.products.require_active(tenant_id, product_id)
+                description = description or product.name
+                unit_id = unit_id if unit_id is not None else product.unit_id
+            if not description:
+                raise ValidationError("Line description is required")
+            built.append(
+                {
+                    "line_number": index,
+                    "sales_order_line_id": line.sales_order_line_id,
+                    "source_sales_invoice_line_id": line.source_sales_invoice_line_id,
+                    "product_id": product_id,
+                    "description": description,
+                    "quantity": quantity,
+                    "unit_id": unit_id,
+                    "rate": quantize_money(line.rate if line.rate else si_line.rate),
+                }
+            )
+        foreign = quantize_money(
+            sum((quantize_money(line["quantity"] * line["rate"]) for line in built), _ZERO)
+        )
+        foreign_amount, base_amount = document_fx_amounts(foreign, resolved.rate)
+        header: dict[str, Any] = {
+            "document_date": document_date,
+            "sales_order_id": payload.sales_order_id,
+            "source_sales_invoice_id": payload.source_sales_invoice_id,
+            "customer_id": invoice.customer_id,
+            "warehouse_id": warehouse_id,
+            "branch_id": payload.branch_id if payload.branch_id is not None else invoice.branch_id,
+            "tax_treatment": invoice.tax_treatment,
+            "place_of_supply": invoice.place_of_supply,
+            "currency_id": currency_id,
+            "base_currency_id": base.id,
+            "exchange_rate": resolved.rate,
+            "foreign_amount": foreign_amount,
+            "base_amount": base_amount,
+            "vehicle_number": payload.vehicle_number,
+            "driver_name": payload.driver_name,
+            "driver_contact": payload.driver_contact,
+            "notes": payload.notes,
+        }
+        return header, built
+
     async def _build_lines(
         self,
         tenant_id: UUID,
@@ -807,6 +1075,21 @@ class DeliveryNoteService:
             )
         return built
 
+    async def has_live_for_sales_invoice(self, tenant_id: UUID, sales_invoice_id: UUID) -> bool:
+        return await self.repo.has_live_for_sales_invoice(tenant_id, sales_invoice_id)
+
+    async def _apply_invoice_line_deliveries(
+        self, invoice: Any, deliveries: Mapping[UUID, Decimal]
+    ) -> None:
+        by_id = {line.id: line for line in invoice.lines}
+        for line_id, qty in deliveries.items():
+            line = by_id.get(line_id)
+            if line is None:
+                raise ValidationError("Sales invoice line not found on this invoice")
+            line.qty_delivered = quantize_quantity(line.qty_delivered + qty)
+            if line.qty_delivered < _ZERO:
+                raise ValidationError("Delivered quantity cannot be negative")
+
     async def _update_to_create(
         self, existing: DeliveryNote, payload: DeliveryNoteUpdate
     ) -> DeliveryNoteCreate:
@@ -817,6 +1100,7 @@ class DeliveryNoteService:
             lines = [
                 DeliveryNoteLineInput(
                     sales_order_line_id=line.sales_order_line_id,
+                    source_sales_invoice_line_id=line.source_sales_invoice_line_id,
                     product_id=line.product_id,
                     description=line.description,
                     quantity=line.quantity,
@@ -827,6 +1111,7 @@ class DeliveryNoteService:
             ]
         return DeliveryNoteCreate(
             sales_order_id=existing.sales_order_id,
+            source_sales_invoice_id=existing.source_sales_invoice_id,
             warehouse_id=values.get("warehouse_id", existing.warehouse_id),
             document_date=values.get("document_date", existing.document_date),
             branch_id=values.get("branch_id", existing.branch_id),
@@ -866,6 +1151,15 @@ class DeliveryNoteService:
             self.actor_permissions, DELIVERY_NOTE_DELETE
         ):
             actions.append("delete")
+        if status == StockDocumentStatus.POSTED:
+            if has_permission(self.actor_permissions, SALES_RETURN_CREATE):
+                actions.append("create_return")
+            if has_permission(self.actor_permissions, SALES_INVOICE_CREATE):
+                actions.append("create_sales_invoice")
+            if row.shipment_id is None and has_permission(
+                self.actor_permissions, SHIPMENT_UPDATE
+            ):
+                actions.append("add_to_shipment")
         return actions
 
     def _to_response(self, row: DeliveryNote) -> DeliveryNoteResponse:
@@ -881,6 +1175,7 @@ class DeliveryNoteService:
             is_posted=status == StockDocumentStatus.POSTED,
             document_date=row.document_date,
             sales_order_id=row.sales_order_id,
+            source_sales_invoice_id=row.source_sales_invoice_id,
             customer_id=row.customer_id,
             warehouse_id=row.warehouse_id,
             branch_id=row.branch_id,
@@ -919,7 +1214,26 @@ class DeliveryNoteService:
         from app.logistics.shipments.repository import ShipmentRepository
 
         related: builtins.list[RelatedDocumentRef] = []
-        order = await SalesOrderRepository(self.session).get(tenant_id, row.sales_order_id)
+        if row.source_sales_invoice_id is not None:
+            source_invoice = await SalesInvoiceRepository(self.session).get(
+                tenant_id, row.source_sales_invoice_id
+            )
+            if source_invoice is not None:
+                related.append(
+                    RelatedDocumentRef(
+                        document_type=DocumentType.SALES_INVOICE.value,
+                        document_id=source_invoice.id,
+                        document_number=source_invoice.document_number,
+                        status=source_invoice.status,
+                        relationship="source",
+                        document_date=source_invoice.invoice_date,
+                    )
+                )
+        order = (
+            await SalesOrderRepository(self.session).get(tenant_id, row.sales_order_id)
+            if row.sales_order_id is not None
+            else None
+        )
         if order is not None:
             related.append(
                 RelatedDocumentRef(

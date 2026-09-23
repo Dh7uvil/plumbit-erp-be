@@ -16,6 +16,7 @@ from app.auth.catalog import ACCOUNTING_MODULE
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
+from app.common.utils.due_date import due_date_from_terms
 from app.common.utils.datetime import utcnow
 from app.core.enums import (
     AuditAction,
@@ -58,7 +59,7 @@ _LINE_LINKS = (
 )
 
 
-def advance_date(current: date, frequency: str, interval: int) -> date:
+def advance_date(current: date, frequency: str, interval: int, *, schedule_day: int) -> date:
     step = max(interval, 1)
     if frequency == RecurringFrequency.WEEKLY.value:
         return current + timedelta(days=7 * step)
@@ -67,14 +68,14 @@ def advance_date(current: date, frequency: str, interval: int) -> date:
         months = 3 * step
     elif frequency == RecurringFrequency.YEARLY.value:
         months = 12 * step
-    return _add_months(current, months)
+    return _add_months_from_anchor(current, months, schedule_day)
 
 
-def _add_months(value: date, months: int) -> date:
-    month_index = value.month - 1 + months
-    year = value.year + month_index // 12
+def _add_months_from_anchor(current: date, months: int, schedule_day: int) -> date:
+    month_index = current.month - 1 + months
+    year = current.year + month_index // 12
     month = month_index % 12 + 1
-    day = min(value.day, calendar.monthrange(year, month)[1])
+    day = min(schedule_day, calendar.monthrange(year, month)[1])
     return date(year, month, day)
 
 
@@ -141,6 +142,7 @@ class RecurringService:
                     "document_kind": payload.document_kind.value,
                     "frequency": payload.frequency.value,
                     "interval": payload.interval,
+                    "schedule_day": payload.next_run_date.day,
                     "next_run_date": payload.next_run_date,
                     "end_date": payload.end_date,
                     "max_occurrences": payload.max_occurrences,
@@ -190,6 +192,12 @@ class RecurringService:
                 data["status"] = data["status"].value
             if "frequency" in data and data["frequency"] is not None:
                 data["frequency"] = data["frequency"].value
+            if "next_run_date" in data and data["next_run_date"] is not None:
+                data["schedule_day"] = data["next_run_date"].day
+            end_date = data.get("end_date", row.end_date)
+            next_run = data.get("next_run_date", row.next_run_date)
+            if end_date is not None and end_date < next_run:
+                raise ValidationError("end_date must be on or after next_run_date")
             values.update(data)
             updated = await self.repo.update(tenant_id, template_id, values)
             if updated is None:
@@ -244,6 +252,17 @@ class RecurringService:
         if reserved is None:
             return await self.get(tenant_id, template_id)
         run_date, kind = reserved
+        existing_generation = await self.repo.generation_for_run(tenant_id, template_id, run_date)
+        if existing_generation is not None and existing_generation.document_id is not None:
+            await self._finish_run(
+                tenant_id,
+                template_id,
+                run_date,
+                document_id=existing_generation.document_id,
+                document_number=existing_generation.document_number or "",
+                actor_user_id=actor_user_id,
+            )
+            return await self.get(tenant_id, template_id)
         document_id, document_number = await self._find_marked(
             tenant_id, template_id, run_date, kind
         )
@@ -292,6 +311,8 @@ class RecurringService:
                 return None
             existing = await self.repo.generation_for_run(tenant_id, template_id, row.next_run_date)
             if existing is not None and existing.document_id is not None:
+                if row.next_run_date == existing.run_date:
+                    return row.next_run_date, RecurringDocumentKind(row.document_kind)
                 return None
             if existing is None:
                 generation = RecurringGeneration(
@@ -319,7 +340,7 @@ class RecurringService:
         actor_user_id: UUID,
     ) -> tuple[UUID, str]:
         row = await self._require(tenant_id, template_id)
-        payload = self._payload_for_run(row, run_date)
+        payload = await self._payload_for_run(tenant_id, row, run_date)
         if kind == RecurringDocumentKind.SALES_INVOICE:
             body = SalesInvoiceCreate.model_validate(payload)
             created_invoice = await SalesInvoiceService(
@@ -364,7 +385,9 @@ class RecurringService:
                 row.last_document_id = document_id
                 row.last_document_number = document_number
                 row.last_run_at = utcnow()
-                row.next_run_date = advance_date(run_date, row.frequency, row.interval)
+                row.next_run_date = advance_date(
+                    run_date, row.frequency, row.interval, schedule_day=row.schedule_day
+                )
                 if self._is_finished(row):
                     row.status = RecurringTemplateStatus.COMPLETED.value
                 row.version += 1
@@ -422,7 +445,9 @@ class RecurringService:
             return None, None
         return bill.id, bill.document_number
 
-    def _payload_for_run(self, row: RecurringTemplate, run_date: date) -> dict[str, Any]:
+    async def _payload_for_run(
+        self, tenant_id: UUID, row: RecurringTemplate, run_date: date
+    ) -> dict[str, Any]:
         payload = copy.deepcopy(dict(row.template_payload))
         for key in _HEADER_LINKS:
             payload.pop(key, None)
@@ -437,6 +462,18 @@ class RecurringService:
         if marker not in notes:
             payload["notes"] = f"{marker} {notes}".strip()
         payload["invoice_date"] = run_date.isoformat()
+        payment_terms_id = payload.get("payment_terms_id")
+        if payment_terms_id is not None:
+            payload["due_date"] = (
+                await due_date_from_terms(
+                    self.session,
+                    tenant_id,
+                    UUID(str(payment_terms_id)),
+                    run_date,
+                )
+            ).isoformat()
+        else:
+            payload.pop("due_date", None)
         return payload
 
     def _validate_payload(self, kind: RecurringDocumentKind, payload: dict[str, Any]) -> None:

@@ -67,6 +67,7 @@ from app.erp.accounting.open_items.schemas import (
 from app.erp.accounting.open_items.service import OpenItemsService
 from app.erp.accounting.payment_allocations.document_labels import allocation_item_document_number
 from app.erp.accounting.payment_allocations.helpers import (
+    allocation_base_amount,
     cash_allocation_types,
     open_item_amount_in_payment_currency,
     open_item_row_for_allocation,
@@ -470,6 +471,7 @@ class VoucherService:
             item_id=row.item_id,
             item_document_number=item_document_number,
             amount=row.amount,
+            base_amount=row.base_amount,
             journal_entry_id=row.journal_entry_id,
             reversed_at=row.reversed_at,
             created_at=row.created_at,
@@ -905,6 +907,7 @@ class VoucherService:
                 item_type=item.item_type.value,
                 item_id=item.item_id,
                 amount=item.amount,
+                base_amount=allocation_base_amount(row, open_row, item.amount),
             )
         journal = await self.posting.post_for_document(
             tenant_id,
@@ -1093,7 +1096,15 @@ class VoucherService:
             tenant_id, PaymentAllocationSource.VOUCHER.value, row.id
         )
         cash, notes = split_payment_allocations(allocations, receivable=receivable)
+        party_id = cast(UUID, row.party_id)
         for item in cash:
+            open_row = await open_item_row_for_allocation(
+                self.session,
+                tenant_id,
+                receivable=receivable,
+                party_id=party_id,
+                item=item,
+            )
             await self.allocations.create(
                 tenant_id,
                 payment_type=PaymentAllocationSource.VOUCHER.value,
@@ -1101,6 +1112,7 @@ class VoucherService:
                 item_type=item.item_type.value,
                 item_id=item.item_id,
                 amount=item.amount,
+                base_amount=allocation_base_amount(row, open_row, item.amount),
             )
         if notes:
             await record_note_allocations_on_payment(
@@ -1110,6 +1122,9 @@ class VoucherService:
                 row.id,
                 notes,
                 receivable=receivable,
+                session=self.session,
+                party_id=party_id,
+                payment=row,
             )
 
     async def _draft_allocations(

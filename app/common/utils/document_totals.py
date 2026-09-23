@@ -80,7 +80,13 @@ def adjusted_line_taxes_after_header_discount(
     if subtotal <= _ZERO or doc_discount == _ZERO:
         return list(line_taxes)
     taxable_ratio = (subtotal - doc_discount) / subtotal
-    return [quantize_money(tax * taxable_ratio) for tax in line_taxes]
+    adjusted = [quantize_money(tax * taxable_ratio) for tax in line_taxes]
+    expected_total = quantize_money(sum(line_taxes, start=_ZERO) * taxable_ratio)
+    drift = quantize_money(expected_total - sum(adjusted, start=_ZERO))
+    if drift != _ZERO and adjusted:
+        largest = max(range(len(adjusted)), key=lambda index: adjusted[index])
+        adjusted[largest] = quantize_money(adjusted[largest] + drift)
+    return adjusted
 
 
 def compute_header_totals(

@@ -12,6 +12,7 @@ from app.auth.catalog import (
     DEBIT_NOTE_POST,
     DEBIT_NOTE_READ,
     DEBIT_NOTE_UPDATE,
+    SUPPLIER_PAYMENT_CREATE,
 )
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
@@ -30,6 +31,7 @@ from app.erp.debit_notes.schemas import (
     DebitNoteCreateFromPurchaseInvoice,
     DebitNoteCreateFromPurchaseReturn,
     DebitNoteFilter,
+    DebitNoteRefundRequest,
     DebitNoteResponse,
     DebitNoteUpdate,
 )
@@ -238,6 +240,33 @@ async def cancel_debit_note(
         endpoint=request.url.path,
     )
     return ApiResponse(data=row, message="Debit note cancelled")
+
+
+@router.post("/{note_id}/refund", response_model=ApiResponse[DebitNoteResponse])
+async def refund_debit_note(
+    note_id: UUID,
+    payload: DebitNoteRefundRequest,
+    request: Request,
+    tenant: TenantContextDependency,
+    service: DebitNoteServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_CREATE))],
+    if_match: IfMatch = None,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[DebitNoteResponse]:
+    body = await request.body()
+    row = await service.refund(
+        tenant.tenant_id,
+        note_id,
+        payload,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(
+            if_match=if_match, body_version=payload.version
+        ),
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(data=row, message="Unapplied debit refunded")
 
 
 @router.get("/{note_id}/journal", response_model=ApiResponse[JournalEntryResponse])

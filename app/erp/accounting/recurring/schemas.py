@@ -76,6 +76,7 @@ class RecurringTemplateResponse(BaseModel):
     document_kind: RecurringDocumentKind
     frequency: RecurringFrequency
     interval: int
+    schedule_day: int
     next_run_date: date
     end_date: date | None
     max_occurrences: int | None

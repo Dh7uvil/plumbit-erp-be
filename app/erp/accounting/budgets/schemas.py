@@ -107,4 +107,8 @@ class BudgetVsActualResponse(BaseModel):
     total_budget: Decimal
     total_actual: Decimal
     total_variance: Decimal
+    total_budget_income: Decimal = Decimal("0")
+    total_budget_expense: Decimal = Decimal("0")
+    total_actual_income: Decimal = Decimal("0")
+    total_actual_expense: Decimal = Decimal("0")
     lines: list[BudgetVsActualLine] = Field(default_factory=list)

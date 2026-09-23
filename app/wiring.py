@@ -1113,6 +1113,7 @@ async def _probe_sales_invoice_for_delivery_note(
 def _register_sales_invoice_dependents() -> None:
     register_sales_invoice_dependent("credit_note", _probe_credit_note_for_sales_invoice)
     register_sales_invoice_dependent("customer_payment", _probe_customer_payment_for_sales_invoice)
+    register_sales_invoice_dependent("delivery_note", _probe_delivery_note_for_sales_invoice)
 
 
 async def _probe_credit_note_for_sales_invoice(
@@ -1133,11 +1134,22 @@ async def _probe_customer_payment_for_sales_invoice(
     )
 
 
+async def _probe_delivery_note_for_sales_invoice(
+    session: AsyncSession, tenant_id: UUID, sales_invoice_id: UUID
+) -> bool:
+    from app.inventory_management.delivery_notes.service import DeliveryNoteService
+
+    return await DeliveryNoteService(session).has_live_for_sales_invoice(
+        tenant_id, sales_invoice_id
+    )
+
+
 def _register_purchase_invoice_dependents() -> None:
     register_purchase_invoice_dependent("debit_note", _probe_debit_note_for_purchase_invoice)
     register_purchase_invoice_dependent(
         "supplier_payment", _probe_supplier_payment_for_purchase_invoice
     )
+    register_purchase_invoice_dependent("goods_receipt", _probe_goods_receipt_for_purchase_invoice)
 
 
 async def _probe_debit_note_for_purchase_invoice(
@@ -1156,6 +1168,16 @@ async def _probe_supplier_payment_for_purchase_invoice(
     from app.erp.accounting.supplier_payments.service import SupplierPaymentService
 
     return await SupplierPaymentService(session).has_live_for_purchase_invoice(
+        tenant_id, purchase_invoice_id
+    )
+
+
+async def _probe_goods_receipt_for_purchase_invoice(
+    session: AsyncSession, tenant_id: UUID, purchase_invoice_id: UUID
+) -> bool:
+    from app.inventory_management.goods_receipts.service import GoodsReceiptService
+
+    return await GoodsReceiptService(session).has_live_for_purchase_invoice(
         tenant_id, purchase_invoice_id
     )
 

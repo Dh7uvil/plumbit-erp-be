@@ -27,6 +27,7 @@ from app.inventory_management.delivery_notes.dependencies import DeliveryNoteSer
 from app.inventory_management.delivery_notes.schemas import (
     DeliveryNoteCancelRequest,
     DeliveryNoteCreate,
+    DeliveryNoteCreateFromSalesInvoice,
     DeliveryNoteCreateFromSalesOrder,
     DeliveryNoteFilter,
     DeliveryNoteResponse,
@@ -89,6 +90,31 @@ async def create_delivery_note_from_sales_order(
         endpoint=request.url.path,
     )
     return ApiResponse(data=row, message="Delivery note created from sales order")
+
+
+@router.post(
+    "/from-sales-invoice",
+    response_model=ApiResponse[DeliveryNoteResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_delivery_note_from_sales_invoice(
+    payload: DeliveryNoteCreateFromSalesInvoice,
+    request: Request,
+    tenant: TenantContextDependency,
+    service: DeliveryNoteServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(DELIVERY_NOTE_CREATE))],
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[DeliveryNoteResponse]:
+    body = await request.body()
+    row = await service.create_from_sales_invoice(
+        tenant.tenant_id,
+        payload,
+        actor_user_id=tenant.user_id,
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(data=row, message="Delivery note created from sales invoice")
 
 
 @router.post(

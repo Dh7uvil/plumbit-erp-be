@@ -33,6 +33,7 @@ class PurchaseOrderFilter(BaseFilter):
     )
     status: PurchaseOrderStatus | None = None
     receipt_status: ReceiptStatus | None = None
+    receipt_status_not: ReceiptStatus | None = None
     billing_status: BillingStatus | None = None
     supplier_id: UUID | None = None
     branch_id: UUID | None = None

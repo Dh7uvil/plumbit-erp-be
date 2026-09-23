@@ -5,12 +5,13 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, exists
+from sqlalchemy import delete, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
+from app.core.enums import StockDocumentStatus
 from app.common.repositories.search import (
     line_search,
     party_search,
@@ -120,6 +121,32 @@ class DeliveryNoteRepository:
         statement = (
             self._repo.base_query(tenant_id)
             .where(DeliveryNote.sales_order_id == sales_order_id)
+            .options(self._with_lines())
+            .order_by(DeliveryNote.document_date, DeliveryNote.created_at)
+        )
+        result = await self.session.execute(statement)
+        return result.scalars().all()
+
+    async def has_live_for_sales_invoice(self, tenant_id: UUID, sales_invoice_id: UUID) -> bool:
+        statement = (
+            select(DeliveryNote.id)
+            .where(
+                DeliveryNote.tenant_id == tenant_id,
+                DeliveryNote.source_sales_invoice_id == sales_invoice_id,
+                DeliveryNote.deleted_at.is_(None),
+                DeliveryNote.status != StockDocumentStatus.CANCELLED.value,
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none() is not None
+
+    async def list_for_sales_invoice(
+        self, tenant_id: UUID, sales_invoice_id: UUID
+    ) -> Sequence[DeliveryNote]:
+        statement = (
+            self._repo.base_query(tenant_id)
+            .where(DeliveryNote.source_sales_invoice_id == sales_invoice_id)
             .options(self._with_lines())
             .order_by(DeliveryNote.document_date, DeliveryNote.created_at)
         )

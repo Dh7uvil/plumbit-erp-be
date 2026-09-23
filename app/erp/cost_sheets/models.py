@@ -90,6 +90,7 @@ class CostSheet(AuditUserMixin, SoftDeleteTenantModel):
         nullable=False,
     )
     exchange_rate: Mapped[Decimal] = mapped_column(Numeric(MONEY_PRECISION, 6), nullable=False)
+    base_total: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     incoterm: Mapped[str | None] = mapped_column(String(10), nullable=True)
     port_of_loading: Mapped[str | None] = mapped_column(String(120), nullable=True)
     port_of_discharge: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -144,6 +145,7 @@ class CostSheetLine(TenantModel):
     )
     quantity: Mapped[Decimal] = mapped_column(_QTY, nullable=False)
     base_rate: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    base_amount: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     target_selling_price: Mapped[Decimal | None] = mapped_column(_MONEY, nullable=True)
     goods_receipt_line_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),

@@ -12,6 +12,7 @@ from app.auth.catalog import (
     CREDIT_NOTE_POST,
     CREDIT_NOTE_READ,
     CREDIT_NOTE_UPDATE,
+    CUSTOMER_PAYMENT_CREATE,
 )
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
@@ -30,6 +31,7 @@ from app.erp.credit_notes.schemas import (
     CreditNoteCreateFromSalesInvoice,
     CreditNoteCreateFromSalesReturn,
     CreditNoteFilter,
+    CreditNoteRefundRequest,
     CreditNoteResponse,
     CreditNoteUpdate,
 )
@@ -238,6 +240,33 @@ async def cancel_credit_note(
         endpoint=request.url.path,
     )
     return ApiResponse(data=row, message="Credit note cancelled")
+
+
+@router.post("/{note_id}/refund", response_model=ApiResponse[CreditNoteResponse])
+async def refund_credit_note(
+    note_id: UUID,
+    payload: CreditNoteRefundRequest,
+    request: Request,
+    tenant: TenantContextDependency,
+    service: CreditNoteServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_CREATE))],
+    if_match: IfMatch = None,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[CreditNoteResponse]:
+    body = await request.body()
+    row = await service.refund(
+        tenant.tenant_id,
+        note_id,
+        payload,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(
+            if_match=if_match, body_version=payload.version
+        ),
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(data=row, message="Unapplied credit refunded")
 
 
 @router.get("/{note_id}/journal", response_model=ApiResponse[JournalEntryResponse])
