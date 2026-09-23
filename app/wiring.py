@@ -1047,6 +1047,15 @@ def _register_outbox_handlers() -> None:
             continue
         register_outbox(event_type, _log_outbox_event)
 
+    from app.erp.accounting.recurring.worker import (
+        RECURRING_GENERATE_EVENT,
+        handle_recurring_generate,
+    )
+    from app.erp.accounting.reports.exports import REPORT_EXPORT_EVENT, handle_report_export
+
+    register_outbox(RECURRING_GENERATE_EVENT, handle_recurring_generate)
+    register_outbox(REPORT_EXPORT_EVENT, handle_report_export)
+
 
 async def _log_outbox_event(event: OutboxEvent) -> None:
     logger.info(

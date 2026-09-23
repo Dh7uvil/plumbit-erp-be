@@ -31,6 +31,7 @@ from app.core.enums import (
 from app.core.exceptions import ValidationError
 from app.crm.customers.models import Customer
 from app.erp.accounting.accounts.service import AccountService
+from app.erp.accounting.budgets.schemas import BudgetVsActualResponse
 from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
 from app.erp.accounting.reports.amounts import (
     document_base_grand,
@@ -1149,6 +1150,113 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 quantize_money(Decimal(credit)),
             )
         return result
+
+    async def _sum_by_account_and_cost_center(
+        self,
+        tenant_id: UUID,
+        *,
+        start: date,
+        end: date,
+        branch_id: UUID | None = None,
+    ) -> dict[tuple[UUID | None, UUID], tuple[Decimal, Decimal]]:
+        center = func.coalesce(JournalEntryLine.cost_center_id, JournalEntry.cost_center_id)
+        statement = (
+            select(
+                center,
+                JournalEntryLine.account_id,
+                func.coalesce(func.sum(JournalEntryLine.debit_base), 0),
+                func.coalesce(func.sum(JournalEntryLine.credit_base), 0),
+            )
+            .join(JournalEntry, _posted_join())
+            .where(
+                JournalEntryLine.tenant_id == tenant_id,
+                JournalEntry.entry_date >= start,
+                JournalEntry.entry_date <= end,
+            )
+            .group_by(center, JournalEntryLine.account_id)
+        )
+        if branch_id is not None:
+            statement = statement.where(
+                (JournalEntryLine.branch_id == branch_id) | (JournalEntry.branch_id == branch_id)
+            )
+        rows = (await self.session.execute(statement)).all()
+        result: dict[tuple[UUID | None, UUID], tuple[Decimal, Decimal]] = {}
+        for center_id, account_id_row, debit, credit in rows:
+            result[(center_id, account_id_row)] = (
+                quantize_money(Decimal(debit)),
+                quantize_money(Decimal(credit)),
+            )
+        return result
+
+    async def budget_vs_actual(
+        self,
+        tenant_id: UUID,
+        budget_id: UUID,
+        *,
+        from_date: date,
+        to_date: date,
+    ) -> BudgetVsActualResponse:
+        from app.erp.accounting.budgets.schemas import BudgetVsActualLine
+        from app.erp.accounting.budgets.service import (
+            BudgetService,
+            empty_vs_actual,
+            line_variance,
+            month_end,
+            month_start,
+        )
+
+        if from_date > to_date:
+            raise ValidationError("from_date must be on or before to_date")
+        budget = await BudgetService(self.session).get(tenant_id, budget_id)
+        accounts = {account.id: account for account in await self.accounts.repo.list_all(tenant_id)}
+        actual_cache: dict[
+            tuple[date, date, UUID | None, UUID | None], dict[UUID, tuple[Decimal, Decimal]]
+        ] = {}
+        lines: list[BudgetVsActualLine] = []
+        for line in budget.lines:
+            if line.period_start < month_start(from_date) or line.period_start > to_date:
+                continue
+            account = accounts.get(line.account_id)
+            if account is None:
+                continue
+            end = min(month_end(line.period_start), to_date)
+            cache_key = (line.period_start, end, line.cost_center_id, line.branch_id)
+            actual_map = actual_cache.get(cache_key)
+            if actual_map is None:
+                actual_map = await self._sum_by_account(
+                    tenant_id,
+                    start=line.period_start,
+                    end=end,
+                    branch_id=line.branch_id,
+                    cost_center_id=line.cost_center_id,
+                )
+                actual_cache[cache_key] = actual_map
+            actual = self._signed(
+                account.account_type, *actual_map.get(line.account_id, (_ZERO, _ZERO))
+            )
+            lines.append(
+                BudgetVsActualLine(
+                    account_id=account.id,
+                    account_code=account.code,
+                    account_name=account.name,
+                    account_type=account.account_type,
+                    period_start=line.period_start,
+                    cost_center_id=line.cost_center_id,
+                    branch_id=line.branch_id,
+                    budget_amount=line.amount,
+                    actual_amount=actual,
+                    variance_amount=line_variance(line.amount, actual),
+                    source_id=account.id,
+                )
+            )
+        return empty_vs_actual(
+            budget_id=budget.id,
+            budget_name=budget.name,
+            currency_code=await self._report_currency_code(tenant_id),
+            from_date=from_date,
+            to_date=to_date,
+            lines=lines,
+        )
 
     async def _sum_party(
         self,

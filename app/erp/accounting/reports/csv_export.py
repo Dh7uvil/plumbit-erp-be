@@ -122,14 +122,27 @@ _MONEY_SUFFIXES = (
 
 
 def wants_csv(request: Request, format: str | None) -> bool:
-    if format is not None and format.strip().lower() in {"csv", "xlsx", "xls"}:
+    if format is not None and format.strip().lower() in {"csv", "xlsx", "xls", "pdf"}:
         return True
     accept = (request.headers.get("accept") or "").lower()
-    return _CSV_ACCEPT in accept or "application/vnd.ms-excel" in accept
+    return (
+        _CSV_ACCEPT in accept
+        or "application/vnd.ms-excel" in accept
+        or "spreadsheetml" in accept
+        or "application/pdf" in accept
+    )
 
 
 def wants_excel(format: str | None) -> bool:
     return format is not None and format.strip().lower() in {"xlsx", "xls"}
+
+
+def wants_pdf(format: str | None) -> bool:
+    return format is not None and format.strip().lower() == "pdf"
+
+
+def wants_xlsx(format: str | None) -> bool:
+    return format is not None and format.strip().lower() == "xlsx"
 
 
 def csv_field_class(field: str) -> CsvFieldClass:
@@ -204,6 +217,125 @@ def csv_response(
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
     )
+
+
+def table_download(
+    filename: str,
+    fieldnames: list[str],
+    rows: list[dict[str, Any]],
+    *,
+    export_format: str | None,
+    currency_code: str | None = None,
+) -> Response:
+    """CSV, real xlsx, legacy xls (CSV), or a text PDF of the same rows."""
+
+    kind = (export_format or "csv").strip().lower()
+    if kind == "pdf":
+        return pdf_response(filename, fieldnames, rows, currency_code=currency_code)
+    if kind == "xlsx":
+        return xlsx_response(filename, fieldnames, rows, currency_code=currency_code)
+    return csv_response(
+        filename,
+        fieldnames,
+        rows,
+        excel=kind == "xls",
+        currency_code=currency_code,
+    )
+
+
+def xlsx_response(
+    filename: str,
+    fieldnames: list[str],
+    rows: list[dict[str, Any]],
+    *,
+    currency_code: str | None = None,
+) -> Response:
+    from app.common.imex.parser import write_xlsx
+
+    header = list(fieldnames)
+    body = [[csv_cell(row.get(key), key) for key in fieldnames] for row in rows]
+    if currency_code:
+        header = ["currency", *header]
+        body = [[currency_code, *row] for row in body]
+    download_name = filename.rsplit(".", 1)[0] + ".xlsx"
+    return Response(
+        content=write_xlsx(header, body),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
+    )
+
+
+def pdf_response(
+    filename: str,
+    fieldnames: list[str],
+    rows: list[dict[str, Any]],
+    *,
+    currency_code: str | None = None,
+) -> Response:
+    lines = []
+    if currency_code:
+        lines.append(f"Monetary amounts in {currency_code}")
+    lines.append(" | ".join(fieldnames))
+    for row in rows:
+        lines.append(" | ".join(csv_cell(row.get(key), key) for key in fieldnames))
+    download_name = filename.rsplit(".", 1)[0] + ".pdf"
+    return Response(
+        content=simple_pdf(lines),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
+    )
+
+
+def simple_pdf(lines: list[str]) -> bytes:
+    """Minimal single-font PDF so report exports do not need another library."""
+
+    escaped = [_pdf_escape(line[:200]) for line in lines] or [""]
+    commands = ["BT", "/F1 9 Tf", "40 800 Td", "14 TL"]
+    for index, line in enumerate(escaped):
+        if index and index % 50 == 0:
+            commands.append("ET")
+            commands.append("BT")
+            commands.append("/F1 9 Tf")
+            commands.append("40 800 Td")
+            commands.append("14 TL")
+        commands.append(f"({line}) Tj")
+        commands.append("T*")
+    commands.append("ET")
+    stream = "\n".join(commands).encode("latin-1", errors="replace")
+    objects = [
+        b"1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n",
+        b"2 0 obj<< /Type /Pages /Count 1 /Kids [3 0 R] >>endobj\n",
+        (
+            b"3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+            b"/Contents 4 0 R /Resources<< /Font<< /F1 5 0 R >> >> >>endobj\n"
+        ),
+        (
+            b"4 0 obj<< /Length "
+            + str(len(stream)).encode()
+            + b" >>stream\n"
+            + stream
+            + b"\nendstream\nendobj\n"
+        ),
+        b"5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n",
+    ]
+    content = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for obj in objects:
+        offsets.append(len(content))
+        content.extend(obj)
+    xref = len(content)
+    content.extend(f"xref\n0 {len(offsets)}\n".encode())
+    content.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        content.extend(f"{offset:010d} 00000 n \n".encode())
+    content.extend(
+        (f"trailer<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n").encode()
+    )
+    return bytes(content)
+
+
+def _pdf_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
 def _format_decimal_cell(value: object, kind: CsvFieldClass) -> str | None:

@@ -1,10 +1,10 @@
 """Ledger report request/response schemas."""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ReportWarning(BaseModel):
@@ -369,6 +369,13 @@ class PurchaseSuggestionResponse(ReportCurrencyMixin):
     lines: list[PurchaseSuggestionLine] = Field(default_factory=list)
 
 
+class PeriodAmount(BaseModel):
+    label: str
+    from_date: date
+    to_date: date
+    amount: Decimal
+
+
 class ProfitAndLossLine(BaseModel):
     account_id: UUID
     account_code: str
@@ -378,6 +385,12 @@ class ProfitAndLossLine(BaseModel):
     amount: Decimal
     comparative_amount: Decimal | None = None
     ytd_amount: Decimal | None = None
+    budget_amount: Decimal | None = None
+    variance_amount: Decimal | None = None
+    group_label: str | None = None
+    source_type: str | None = None
+    source_id: UUID | None = None
+    periods: list[PeriodAmount] = Field(default_factory=list)
 
 
 class ProfitAndLossResponse(ReportCurrencyMixin):
@@ -396,7 +409,43 @@ class ProfitAndLossResponse(ReportCurrencyMixin):
     comparative_net_profit: Decimal | None = None
     ytd_gross_profit: Decimal | None = None
     ytd_net_profit: Decimal | None = None
+    period_count: int = 1
+    budget_id: UUID | None = None
     lines: list[ProfitAndLossLine] = Field(default_factory=list)
+
+
+class CostCenterProfitSection(BaseModel):
+    cost_center_id: UUID | None = None
+    cost_center_code: str
+    cost_center_name: str
+    total_income: Decimal
+    total_expense: Decimal
+    net_profit: Decimal
+    lines: list[ProfitAndLossLine] = Field(default_factory=list)
+
+
+class CostCenterProfitAndLossResponse(ReportCurrencyMixin):
+    from_date: date
+    to_date: date
+    sections: list[CostCenterProfitSection] = Field(default_factory=list)
+
+
+class ReportExportCreate(BaseModel):
+    report: str = Field(min_length=1, max_length=60)
+    export_format: str = Field(pattern="^(csv|xlsx|pdf)$")
+    params: dict[str, str] = Field(default_factory=dict)
+
+
+class ReportExportJobResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    report_key: str
+    export_format: str
+    status: str
+    filename: str | None = None
+    error: str | None = None
+    created_at: datetime
 
 
 class BalanceSheetLine(BaseModel):
@@ -407,6 +456,9 @@ class BalanceSheetLine(BaseModel):
     account_subtype: str
     amount: Decimal
     comparative_amount: Decimal | None = None
+    group_label: str | None = None
+    source_type: str | None = None
+    source_id: UUID | None = None
 
 
 class BalanceSheetResponse(ReportCurrencyMixin):
@@ -429,6 +481,8 @@ class CashFlowLine(BaseModel):
     amount: Decimal
     comparative_amount: Decimal | None = None
     account_id: UUID | None = None
+    source_type: str | None = None
+    source_id: UUID | None = None
 
 
 class CashFlowResponse(ReportCurrencyMixin):

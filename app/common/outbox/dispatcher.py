@@ -54,9 +54,12 @@ async def run_forever(*, batch: int, interval: float, worker_id: str) -> None:
 
     After-commit sets ``_wake`` so a pending event is claimed without waiting
     out ``interval``. The poller is still the source of truth: if the nudge is
-    missed, the next interval tick picks the row up.
+    missed, the next interval tick picks the row up. Due recurring templates
+    are enqueued about once a minute; the handler creates drafts only.
     """
 
+    last_recurring = 0.0
+    loop = asyncio.get_running_loop()
     while True:
         try:
             await process_batch(batch=batch, worker_id=worker_id)
@@ -64,6 +67,15 @@ async def run_forever(*, batch: int, interval: float, worker_id: str) -> None:
             raise
         except Exception:
             logger.exception("outbox_batch_failed")
+        now = loop.time()
+        if now - last_recurring >= 60:
+            last_recurring = now
+            try:
+                from app.erp.accounting.recurring.worker import enqueue_due_recurring
+
+                await enqueue_due_recurring()
+            except Exception:
+                logger.exception("recurring_scan_failed")
         _wake.clear()
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(_wake.wait(), timeout=interval)

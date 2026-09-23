@@ -347,6 +347,47 @@ class PartyType(StrEnum):
     SUPPLIER = "SUPPLIER"
 
 
+class BudgetStatus(StrEnum):
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+    CLOSED = "CLOSED"
+
+
+class RecurringDocumentKind(StrEnum):
+    SALES_INVOICE = "SALES_INVOICE"
+    PURCHASE_INVOICE = "PURCHASE_INVOICE"
+
+
+class RecurringFrequency(StrEnum):
+    WEEKLY = "WEEKLY"
+    MONTHLY = "MONTHLY"
+    QUARTERLY = "QUARTERLY"
+    YEARLY = "YEARLY"
+
+
+class RecurringTemplateStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    PAUSED = "PAUSED"
+    COMPLETED = "COMPLETED"
+
+
+class FxExposureKind(StrEnum):
+    AR = "AR"
+    AP = "AP"
+    BANK = "BANK"
+
+
+class FxRevaluationStatus(StrEnum):
+    POSTED = "POSTED"
+    REVERSED = "REVERSED"
+
+
+class ReportExportStatus(StrEnum):
+    PENDING = "PENDING"
+    READY = "READY"
+    FAILED = "FAILED"
+
+
 class QualityInspectionStatus(StrEnum):
     DRAFT = "DRAFT"
     APPROVED = "APPROVED"

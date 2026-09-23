@@ -5,13 +5,16 @@ from fastapi import APIRouter
 from app.erp.accounting.accounts.router import router as accounts_router
 from app.erp.accounting.bank_accounts.router import router as bank_accounts_router
 from app.erp.accounting.bank_reconciliation.router import router as bank_reconciliation_router
+from app.erp.accounting.budgets.router import router as budgets_router
 from app.erp.accounting.charge_types.router import router as charge_types_router
 from app.erp.accounting.cheques.router import router as cheques_router
 from app.erp.accounting.cost_centers.router import router as cost_centers_router
 from app.erp.accounting.customer_payments.router import router as customer_payments_router
 from app.erp.accounting.dunning.router import router as dunning_rules_router
+from app.erp.accounting.fx_revaluation.router import router as fx_revaluation_router
 from app.erp.accounting.ledger.router import router as journals_router
 from app.erp.accounting.opening_balances.router import router as opening_balances_router
+from app.erp.accounting.recurring.router import router as recurring_router
 from app.erp.accounting.reports.router import router as reports_router
 from app.erp.accounting.router import router as accounting_router
 from app.erp.accounting.supplier_payments.router import router as supplier_payments_router
@@ -60,3 +63,6 @@ router.include_router(vouchers_router)
 router.include_router(bank_accounts_router)
 router.include_router(bank_reconciliation_router)
 router.include_router(cheques_router)
+router.include_router(budgets_router)
+router.include_router(recurring_router)
+router.include_router(fx_revaluation_router)
