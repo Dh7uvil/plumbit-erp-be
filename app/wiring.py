@@ -66,6 +66,8 @@ from app.auth.catalog import (
     SUPPLIER_PAYMENT_UPDATE,
     SUPPLIER_READ,
     SUPPLIER_UPDATE,
+    TASK_READ,
+    TASK_UPDATE,
 )
 from app.common.attachments.entities import AttachmentEntitySpec, EntityRef, Probe, register
 from app.common.outbox.models import OutboxEvent
@@ -108,6 +110,7 @@ def wire_platform() -> None:
         return
     _register_unposted_probes()
     _register_attachment_entities()
+    _register_task_related_entities()
     _register_outbox_handlers()
     _register_quotation_dependents()
     _register_delivery_note_dependents()
@@ -793,6 +796,70 @@ def _register_attachment_entities() -> None:
             _probe_via_get(_landed_cost_get),
         )
     )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.TASK,
+            TASK_READ,
+            TASK_UPDATE,
+            _probe_via_get(_task_get),
+        )
+    )
+
+
+def _register_task_related_entities() -> None:
+    from app.core.enums import TaskRelatedEntityType
+    from app.task_management.tasks.related import TaskRelatedEntitySpec
+    from app.task_management.tasks.related import register as register_related
+
+    register_related(
+        TaskRelatedEntitySpec(TaskRelatedEntityType.CUSTOMER, _probe_task_related(_customer_get))
+    )
+    register_related(
+        TaskRelatedEntitySpec(TaskRelatedEntityType.CONTACT, _probe_task_related(_contact_get))
+    )
+    register_related(
+        TaskRelatedEntitySpec(TaskRelatedEntityType.LEAD, _probe_task_related(_lead_get))
+    )
+    register_related(
+        TaskRelatedEntitySpec(
+            TaskRelatedEntityType.OPPORTUNITY, _probe_task_related(_opportunity_get)
+        )
+    )
+    register_related(
+        TaskRelatedEntitySpec(TaskRelatedEntityType.PRODUCT, _probe_task_related(_product_get))
+    )
+    register_related(
+        TaskRelatedEntitySpec(
+            TaskRelatedEntityType.QUOTATION, _probe_task_related(_quotation_get)
+        )
+    )
+    register_related(
+        TaskRelatedEntitySpec(
+            TaskRelatedEntityType.SALES_ORDER, _probe_task_related(_sales_order_get)
+        )
+    )
+    register_related(
+        TaskRelatedEntitySpec(
+            TaskRelatedEntityType.PURCHASE_ORDER, _probe_task_related(_purchase_order_get)
+        )
+    )
+    register_related(
+        TaskRelatedEntitySpec(
+            TaskRelatedEntityType.GOODS_RECEIPT, _probe_task_related(_goods_receipt_get)
+        )
+    )
+    register_related(
+        TaskRelatedEntitySpec(TaskRelatedEntityType.SUPPLIER, _probe_task_related(_supplier_get))
+    )
+
+
+def _probe_task_related(
+    getter: Callable[[AsyncSession, UUID, UUID], Awaitable[object]],
+) -> Callable[[AsyncSession, UUID, UUID], Awaitable[None]]:
+    async def probe(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> None:
+        await getter(session, tenant_id, entity_id)
+
+    return probe
 
 
 def _probe_via_get(
@@ -839,6 +906,36 @@ async def _probe_employee(session: AsyncSession, tenant_id: UUID, entity_id: UUI
 
     exists = await OrganizationService(session).employee_exists(tenant_id, entity_id)
     return EntityRef(exists=exists)
+
+
+async def _task_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.task_management.tasks.service import TaskService
+
+    return await TaskService(session).get(tenant_id, entity_id)
+
+
+async def _customer_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.crm.customers.service import CustomerService
+
+    return await CustomerService(session).get(tenant_id, entity_id)
+
+
+async def _lead_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.crm.leads.service import LeadService
+
+    return await LeadService(session).get(tenant_id, entity_id)
+
+
+async def _opportunity_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.crm.opportunities.service import OpportunityService
+
+    return await OpportunityService(session).get(tenant_id, entity_id)
+
+
+async def _supplier_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
+    from app.erp.suppliers.service import SupplierService
+
+    return await SupplierService(session).get(tenant_id, entity_id)
 
 
 async def _contact_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:

@@ -1645,8 +1645,15 @@
             "title": "Delivery Note Id"
           },
           "sales_order_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Sales Order Id"
           },
           "customer_id": {

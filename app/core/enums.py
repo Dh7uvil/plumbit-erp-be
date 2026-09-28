@@ -684,6 +684,7 @@ class AttachmentEntityType(StrEnum):
     CUSTOMER_PAYMENT = "CUSTOMER_PAYMENT"
     SUPPLIER_PAYMENT = "SUPPLIER_PAYMENT"
     LANDED_COST = "LANDED_COST"
+    TASK = "TASK"
 
 
 class AttachmentCategory(StrEnum):
@@ -761,6 +762,42 @@ class ActivityPriority(StrEnum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
+
+
+class TaskStatus(StrEnum):
+    TODO = "TODO"
+    IN_PROGRESS = "IN_PROGRESS"
+    IN_REVIEW = "IN_REVIEW"
+    BLOCKED = "BLOCKED"
+    DONE = "DONE"
+    CANCELLED = "CANCELLED"
+
+
+class TaskPriority(StrEnum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    URGENT = "URGENT"
+
+
+class TaskType(StrEnum):
+    TASK = "TASK"
+    BUG = "BUG"
+    STORY = "STORY"
+    EPIC = "EPIC"
+
+
+class TaskRelatedEntityType(StrEnum):
+    CUSTOMER = "customer"
+    CONTACT = "contact"
+    LEAD = "lead"
+    OPPORTUNITY = "opportunity"
+    PRODUCT = "product"
+    QUOTATION = "quotation"
+    SALES_ORDER = "sales_order"
+    PURCHASE_ORDER = "purchase_order"
+    GOODS_RECEIPT = "goods_receipt"
+    SUPPLIER = "supplier"
 
 
 class CampaignType(StrEnum):

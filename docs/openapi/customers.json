@@ -2102,6 +2102,18 @@
             "format": "uuid",
             "title": "Currency Id"
           },
+          "base_currency_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Currency Id"
+          },
           "credit_limit": {
             "anyOf": [
               {
@@ -2118,6 +2130,18 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Exposure"
+          },
+          "exposure_base": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exposure Base"
           },
           "this_document": {
             "type": "string",

@@ -41,9 +41,12 @@ from app.auth.catalog import (
     STOCK_ADJUSTMENT_READ,
     STOCK_TRANSFER_READ,
     SUPPLIER_PAYMENT_READ,
-    VOUCHER_READ,
     SUPPLIER_PRODUCT_READ,
     SUPPLIER_READ,
+    TASK_COMMENT_READ,
+    TASK_READ,
+    TASKS_MODULE,
+    VOUCHER_READ,
 )
 
 _DOCUMENT_MONEY_FIELDS: frozenset[str] = frozenset(
@@ -614,6 +617,41 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
                 "allocation_count",
             }
         ),
+    ),
+    "task": ActivityEntitySpec(
+        module=TASKS_MODULE,
+        entity_type="task",
+        read_permission=TASK_READ,
+        changed_fields=frozenset(
+            {
+                "task_number",
+                "title",
+                "description",
+                "status",
+                "priority",
+                "due_at",
+                "started_at",
+                "completed_at",
+                "assignee_id",
+                "sort_order",
+                "related_entity_type",
+                "related_entity_id",
+                "label_ids",
+                "watcher_ids",
+            }
+        ),
+    ),
+    "task_comment": ActivityEntitySpec(
+        module=TASKS_MODULE,
+        entity_type="task_comment",
+        read_permission=TASK_COMMENT_READ,
+        changed_fields=frozenset({"body", "task_id"}),
+    ),
+    "task_label": ActivityEntitySpec(
+        module=TASKS_MODULE,
+        entity_type="task_label",
+        read_permission=TASK_READ,
+        changed_fields=frozenset({"name", "color", "is_active"}),
     ),
 }
 

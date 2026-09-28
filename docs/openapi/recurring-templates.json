@@ -781,6 +781,10 @@
             "type": "integer",
             "title": "Interval"
           },
+          "schedule_day": {
+            "type": "integer",
+            "title": "Schedule Day"
+          },
           "next_run_date": {
             "type": "string",
             "format": "date",
@@ -928,6 +932,7 @@
           "document_kind",
           "frequency",
           "interval",
+          "schedule_day",
           "next_run_date",
           "end_date",
           "max_occurrences",

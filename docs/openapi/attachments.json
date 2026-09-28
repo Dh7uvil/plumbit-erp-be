@@ -667,7 +667,8 @@
           "ACCOUNT",
           "CUSTOMER_PAYMENT",
           "SUPPLIER_PAYMENT",
-          "LANDED_COST"
+          "LANDED_COST",
+          "TASK"
         ],
         "title": "AttachmentEntityType"
       },

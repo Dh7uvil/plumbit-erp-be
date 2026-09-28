@@ -1,0 +1,1 @@
+"""Task label master slice."""

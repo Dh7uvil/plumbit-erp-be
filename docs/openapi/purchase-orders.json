@@ -262,6 +262,22 @@
             }
           },
           {
+            "name": "receipt_status_not",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReceiptStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Receipt Status Not"
+            }
+          },
+          {
             "name": "billing_status",
             "in": "query",
             "required": false,
