@@ -1179,6 +1179,30 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Variance"
           },
+          "total_budget_income": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Budget Income",
+            "default": "0"
+          },
+          "total_budget_expense": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Budget Expense",
+            "default": "0"
+          },
+          "total_actual_income": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Actual Income",
+            "default": "0"
+          },
+          "total_actual_expense": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Actual Expense",
+            "default": "0"
+          },
           "lines": {
             "items": {
               "$ref": "#/components/schemas/BudgetVsActualLine"

@@ -1886,7 +1886,7 @@
           "track_inventory": {
             "type": "boolean",
             "title": "Track Inventory",
-            "default": false
+            "default": true
           },
           "requires_qc": {
             "anyOf": [

@@ -66,8 +66,8 @@ class Product(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
     track_inventory: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        default=False,
-        server_default=text("false"),
+        default=True,
+        server_default=text("true"),
     )
     requires_qc: Mapped[bool] = mapped_column(
         Boolean,

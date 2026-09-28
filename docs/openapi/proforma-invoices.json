@@ -5425,6 +5425,12 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Qty Credited"
           },
+          "qty_delivered": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Qty Delivered",
+            "default": "0"
+          },
           "hs_code": {
             "anyOf": [
               {

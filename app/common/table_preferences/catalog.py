@@ -25,6 +25,7 @@ class TableCatalogEntry:
 
     table_key: str
     columns: tuple[TableColumnSpec, ...]
+    pinned_count: int = PINNED_COLUMN_COUNT
 
     def effective_columns(self, permissions: frozenset[str]) -> tuple[TableColumnSpec, ...]:
         return tuple(
@@ -46,7 +47,7 @@ class TableCatalogEntry:
 
     def pinned_keys(self, permissions: frozenset[str]) -> tuple[str, ...]:
         """Identifier and primary label: always visible and always first."""
-        return tuple(self.default_visible(permissions)[:PINNED_COLUMN_COUNT])
+        return tuple(self.default_visible(permissions)[: self.pinned_count])
 
 
 def _cols(*keys: str) -> tuple[TableColumnSpec, ...]:
@@ -560,6 +561,36 @@ TABLE_CATALOG: dict[str, TableCatalogEntry] = {
             ("document_number", "warehouse", "document_date", "reason", "status"),
             *_hidden("is_posted", "reference", "notes"),
             *_AUDIT_ACTORS,
+        ),
+        _entry(
+            "tasks.tasks",
+            (
+                "task_number",
+                "title",
+                "status",
+                "priority",
+                "due_at",
+                "assignee_id",
+                "related",
+            ),
+            *_hidden("created_at", "updated_at", "created_by", "updated_by"),
+        ),
+        _entry(
+            "tasks.labels",
+            ("name", "color", "is_active"),
+            *_AUDIT_ACTORS,
+        ),
+        TableCatalogEntry(
+            table_key="tasks.board",
+            columns=_cols(
+                "todo",
+                "in_progress",
+                "in_review",
+                "blocked",
+                "done",
+                "cancelled",
+            ),
+            pinned_count=0,
         ),
     )
 }

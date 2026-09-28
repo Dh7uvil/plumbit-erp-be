@@ -36,7 +36,7 @@ class ProductCreate(BaseModel):
     tax_id: UUID | None = None
     hs_code: str | None = Field(default=None, max_length=20)
     volume: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
-    track_inventory: bool = False
+    track_inventory: bool = True
     requires_qc: bool | None = None
     income_account_id: UUID | None = None
     purchase_account_id: UUID | None = None

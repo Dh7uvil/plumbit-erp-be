@@ -448,6 +448,70 @@
         }
       }
     },
+    "/api/v1/goods-receipts/from-purchase-invoice": {
+      "post": {
+        "tags": [
+          "Goods Receipts"
+        ],
+        "summary": "Create Goods Receipt From Purchase Invoice",
+        "operationId": "create_goods_receipt_from_purchase_invoice_api_v1_goods_receipts_from_purchase_invoice_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoodsReceiptCreateFromPurchaseInvoice"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_GoodsReceiptResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/goods-receipts/{receipt_id}": {
       "get": {
         "tags": [
@@ -1176,6 +1240,34 @@
         ],
         "title": "ApiResponse[list[GoodsReceiptResponse]]"
       },
+      "ConversionLineInput": {
+        "properties": {
+          "source_line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Source Line Id"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              }
+            ],
+            "title": "Quantity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_line_id",
+          "quantity"
+        ],
+        "title": "ConversionLineInput"
+      },
       "GoodsReceiptBillingQueueItem": {
         "properties": {
           "id": {
@@ -1281,6 +1373,18 @@
             "type": "string",
             "format": "uuid",
             "title": "Supplier Id"
+          },
+          "source_purchase_invoice_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Purchase Invoice Id"
           },
           "warehouse_id": {
             "type": "string",
@@ -1435,6 +1539,69 @@
         ],
         "title": "GoodsReceiptCreate"
       },
+      "GoodsReceiptCreateFromPurchaseInvoice": {
+        "properties": {
+          "purchase_invoice_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Purchase Invoice Id"
+          },
+          "warehouse_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warehouse Id"
+          },
+          "document_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Date"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "lines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ConversionLineInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "purchase_invoice_id"
+        ],
+        "title": "GoodsReceiptCreateFromPurchaseInvoice"
+      },
       "GoodsReceiptCreateFromPurchaseOrder": {
         "properties": {
           "purchase_order_id": {
@@ -1497,6 +1664,18 @@
               }
             ],
             "title": "Purchase Order Line Id"
+          },
+          "source_purchase_invoice_line_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Purchase Invoice Line Id"
           },
           "product_id": {
             "anyOf": [
@@ -1661,6 +1840,18 @@
               }
             ],
             "title": "Purchase Order Line Id"
+          },
+          "source_purchase_invoice_line_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Purchase Invoice Line Id"
           },
           "product_id": {
             "anyOf": [
@@ -1860,6 +2051,18 @@
               }
             ],
             "title": "Purchase Order Id"
+          },
+          "source_purchase_invoice_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Purchase Invoice Id"
           },
           "branch_id": {
             "anyOf": [

@@ -1523,6 +1523,18 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Line Goods Value"
           },
+          "base_amount": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Amount"
+          },
           "estimated_landed_unit_cost": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -1737,6 +1749,18 @@
           },
           "totals": {
             "$ref": "#/components/schemas/CostSheetTotals"
+          },
+          "base_total": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Total"
           },
           "available_actions": {
             "items": {
@@ -2357,6 +2381,11 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount"
+          },
+          "base_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Amount"
           }
         },
         "type": "object",
@@ -2367,7 +2396,8 @@
           "purchase_invoice_line_id",
           "expense_category",
           "bill_number",
-          "amount"
+          "amount",
+          "base_amount"
         ],
         "title": "LandedCostChargeResponse"
       },

@@ -98,3 +98,5 @@ import app.inventory_management.stock_transfers.models as _stock_transfers  # no
 import app.inventory_management.units.models as _units  # noqa: E402, F401
 import app.inventory_management.warehouses.models as _warehouses  # noqa: E402, F401
 import app.logistics.shipments.models as _shipments  # noqa: E402, F401
+import app.task_management.task_labels.models as _task_labels  # noqa: E402, F401
+import app.task_management.tasks.models as _tasks  # noqa: E402, F401

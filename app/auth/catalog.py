@@ -18,6 +18,7 @@ INVENTORY_MODULE = "inventory"
 ACCOUNTING_MODULE = "accounting"
 REPORTS_MODULE = "reports"
 MASTERS_MODULE = "masters"
+TASKS_MODULE = "tasks"
 
 _IMEX_ACTIONS: tuple[str, ...] = ("import", "export")
 
@@ -172,6 +173,13 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "document_sequence": ('create', 'read', 'update', 'delete'),
         "cost_center": ('create', 'read', 'update', 'delete'),
     },
+    TASKS_MODULE: {
+        "task": ('create', 'read', 'update', 'delete', 'assign', 'move'),
+        "checklist": ('create', 'read', 'update', 'delete'),
+        "comment": ('create', 'read', 'update', 'delete'),
+        "label": ('create', 'read', 'update', 'delete'),
+        "watcher": ('create', 'read', 'delete'),
+    },
 }
 
 
@@ -228,6 +236,7 @@ INVENTORY_PERMISSIONS: tuple[str, ...] = _permissions_for(INVENTORY_MODULE)
 ACCOUNTING_PERMISSIONS: tuple[str, ...] = _permissions_for(ACCOUNTING_MODULE)
 REPORTS_PERMISSIONS: tuple[str, ...] = _permissions_for(REPORTS_MODULE)
 MASTERS_PERMISSIONS: tuple[str, ...] = _permissions_for(MASTERS_MODULE)
+TASKS_PERMISSIONS: tuple[str, ...] = _permissions_for(TASKS_MODULE)
 CATALOG_PERMISSIONS: tuple[str, ...] = (
     IDENTITY_PERMISSIONS +
     CRM_PERMISSIONS +
@@ -237,7 +246,8 @@ CATALOG_PERMISSIONS: tuple[str, ...] = (
     INVENTORY_PERMISSIONS +
     ACCOUNTING_PERMISSIONS +
     REPORTS_PERMISSIONS +
-    MASTERS_PERMISSIONS
+    MASTERS_PERMISSIONS +
+    TASKS_PERMISSIONS
 )
 
 
@@ -644,6 +654,28 @@ RECURRING_GENERATE = build_permission(ACCOUNTING_MODULE, "recurring", "generate"
 FX_REVALUATION_READ = build_permission(ACCOUNTING_MODULE, "fx_revaluation", "read")
 FX_REVALUATION_RUN = build_permission(ACCOUNTING_MODULE, "fx_revaluation", "run")
 FX_REVALUATION_REVERSE = build_permission(ACCOUNTING_MODULE, "fx_revaluation", "reverse")
+
+TASK_CREATE = build_permission(TASKS_MODULE, "task", "create")
+TASK_READ = build_permission(TASKS_MODULE, "task", "read")
+TASK_UPDATE = build_permission(TASKS_MODULE, "task", "update")
+TASK_DELETE = build_permission(TASKS_MODULE, "task", "delete")
+TASK_ASSIGN = build_permission(TASKS_MODULE, "task", "assign")
+TASK_MOVE = build_permission(TASKS_MODULE, "task", "move")
+TASK_CHECKLIST_CREATE = build_permission(TASKS_MODULE, "checklist", "create")
+TASK_CHECKLIST_READ = build_permission(TASKS_MODULE, "checklist", "read")
+TASK_CHECKLIST_UPDATE = build_permission(TASKS_MODULE, "checklist", "update")
+TASK_CHECKLIST_DELETE = build_permission(TASKS_MODULE, "checklist", "delete")
+TASK_COMMENT_CREATE = build_permission(TASKS_MODULE, "comment", "create")
+TASK_COMMENT_READ = build_permission(TASKS_MODULE, "comment", "read")
+TASK_COMMENT_UPDATE = build_permission(TASKS_MODULE, "comment", "update")
+TASK_COMMENT_DELETE = build_permission(TASKS_MODULE, "comment", "delete")
+TASK_LABEL_CREATE = build_permission(TASKS_MODULE, "label", "create")
+TASK_LABEL_READ = build_permission(TASKS_MODULE, "label", "read")
+TASK_LABEL_UPDATE = build_permission(TASKS_MODULE, "label", "update")
+TASK_LABEL_DELETE = build_permission(TASKS_MODULE, "label", "delete")
+TASK_WATCHER_CREATE = build_permission(TASKS_MODULE, "watcher", "create")
+TASK_WATCHER_READ = build_permission(TASKS_MODULE, "watcher", "read")
+TASK_WATCHER_DELETE = build_permission(TASKS_MODULE, "watcher", "delete")
 
 SYSTEM_ADMIN_ROLE_NAME = "Superadmin"
 

@@ -315,6 +315,17 @@ OPENAPI_TAGS: list[dict[str, str]] = [
             "export-evidence exceptions, and invoiced-not-dispatched."
         ),
     },
+    {
+        "name": "Tasks",
+        "description": (
+            "Org-wide tasks with kanban statuses, assignees, labels, watchers, "
+            "checklists, comments, and optional links to CRM or ERP records."
+        ),
+    },
+    {
+        "name": "Task Labels",
+        "description": "Tenant-scoped labels used to categorize tasks.",
+    },
 ]
 APP_DESCRIPTION = "Multi-tenant ERP backend API."
 

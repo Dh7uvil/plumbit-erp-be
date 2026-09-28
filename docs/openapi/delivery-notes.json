@@ -405,6 +405,70 @@
         }
       }
     },
+    "/api/v1/delivery-notes/from-sales-invoice": {
+      "post": {
+        "tags": [
+          "Delivery Notes"
+        ],
+        "summary": "Create Delivery Note From Sales Invoice",
+        "operationId": "create_delivery_note_from_sales_invoice_api_v1_delivery_notes_from_sales_invoice_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeliveryNoteCreateFromSalesInvoice"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DeliveryNoteResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/delivery-notes/{note_id}": {
       "get": {
         "tags": [
@@ -1163,6 +1227,34 @@
         ],
         "title": "ApiResponse[list[DeliveryNoteResponse]]"
       },
+      "ConversionLineInput": {
+        "properties": {
+          "source_line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Source Line Id"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              }
+            ],
+            "title": "Quantity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_line_id",
+          "quantity"
+        ],
+        "title": "ConversionLineInput"
+      },
       "DeliveryNoteCancelRequest": {
         "properties": {
           "reason": {
@@ -1196,9 +1288,28 @@
       "DeliveryNoteCreate": {
         "properties": {
           "sales_order_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Sales Order Id"
+          },
+          "source_sales_invoice_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sales Invoice Id"
           },
           "warehouse_id": {
             "anyOf": [
@@ -1306,10 +1417,72 @@
         },
         "type": "object",
         "required": [
-          "sales_order_id",
           "lines"
         ],
         "title": "DeliveryNoteCreate"
+      },
+      "DeliveryNoteCreateFromSalesInvoice": {
+        "properties": {
+          "sales_invoice_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sales Invoice Id"
+          },
+          "warehouse_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warehouse Id"
+          },
+          "document_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Date"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "lines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ConversionLineInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sales_invoice_id"
+        ],
+        "title": "DeliveryNoteCreateFromSalesInvoice"
       },
       "DeliveryNoteCreateFromSalesOrder": {
         "properties": {
@@ -1363,9 +1536,28 @@
       "DeliveryNoteLineInput": {
         "properties": {
           "sales_order_line_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Sales Order Line Id"
+          },
+          "source_sales_invoice_line_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sales Invoice Line Id"
           },
           "product_id": {
             "anyOf": [
@@ -1432,7 +1624,6 @@
         },
         "type": "object",
         "required": [
-          "sales_order_line_id",
           "quantity"
         ],
         "title": "DeliveryNoteLineInput"
@@ -1449,9 +1640,28 @@
             "title": "Line Number"
           },
           "sales_order_line_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Sales Order Line Id"
+          },
+          "source_sales_invoice_line_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sales Invoice Line Id"
           },
           "product_id": {
             "anyOf": [
@@ -1544,9 +1754,28 @@
             "title": "Document Date"
           },
           "sales_order_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Sales Order Id"
+          },
+          "source_sales_invoice_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sales Invoice Id"
           },
           "customer_id": {
             "type": "string",

@@ -56,6 +56,9 @@ def test_catalog_covers_list_tables() -> None:
         "inventory.quality_inspections",
         "inventory.stock_transfers",
         "inventory.stock_adjustments",
+        "tasks.tasks",
+        "tasks.labels",
+        "tasks.board",
     }
     assert set(TABLE_CATALOG) == expected
     for entry in TABLE_CATALOG.values():
