@@ -65,5 +65,15 @@ def format_quantity_display(
     return _format_display(value, rounding=rounding)
 
 
+def format_rate_display(
+    value: Decimal,
+    *,
+    rounding: str = ROUND_HALF_UP,
+) -> str:
+    """Format exchange rates for CSV/print: two fraction digits, no grouping."""
+
+    return _format_display(value, rounding=rounding)
+
+
 def _format_display(value: Decimal, *, rounding: str) -> str:
     return format(value.quantize(DISPLAY_QUANTUM, rounding=rounding), "f")

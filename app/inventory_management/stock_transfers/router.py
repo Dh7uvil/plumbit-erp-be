@@ -119,6 +119,52 @@ async def delete_stock_transfer(
     return ApiResponse(data=row, message="Stock transfer deleted successfully")
 
 
+@router.post("/{transfer_id}/ship", response_model=ApiResponse[StockTransferResponse])
+async def ship_stock_transfer(
+    transfer_id: UUID,
+    request: Request,
+    tenant: TenantContextDependency,
+    service: StockTransferServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(STOCK_TRANSFER_POST))],
+    if_match: IfMatch = None,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[StockTransferResponse]:
+    body = await request.body()
+    row = await service.ship(
+        tenant.tenant_id,
+        transfer_id,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(if_match=if_match),
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(data=row, message="Stock transfer shipped successfully")
+
+
+@router.post("/{transfer_id}/receive", response_model=ApiResponse[StockTransferResponse])
+async def receive_stock_transfer(
+    transfer_id: UUID,
+    request: Request,
+    tenant: TenantContextDependency,
+    service: StockTransferServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(STOCK_TRANSFER_POST))],
+    if_match: IfMatch = None,
+    idempotency_key: IdempotencyKeyHeader = None,
+) -> ApiResponse[StockTransferResponse]:
+    body = await request.body()
+    row = await service.receive(
+        tenant.tenant_id,
+        transfer_id,
+        actor_user_id=tenant.user_id,
+        expected_version=require_document_version(if_match=if_match),
+        idempotency_key=require_idempotency_key(idempotency_key),
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body),
+        endpoint=request.url.path,
+    )
+    return ApiResponse(data=row, message="Stock transfer received successfully")
+
+
 @router.post("/{transfer_id}/post", response_model=ApiResponse[StockTransferResponse])
 async def post_stock_transfer(
     transfer_id: UUID,

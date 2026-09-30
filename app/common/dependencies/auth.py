@@ -9,8 +9,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.repository import AccessRepository
+from app.common.repositories.scoping import Actor, effective_record_scope
 from app.core.config import get_settings
-from app.core.enums import TenantStatus, UserStatus
+from app.core.enums import RecordScope, TenantStatus, UserStatus
 from app.core.exceptions import InvalidCredentialsError, InvalidTokenError, TenantAccessDeniedError
 from app.core.middleware import set_tenant_id, set_user_id
 from app.core.security import decode_access_token
@@ -26,6 +27,13 @@ class CurrentUser:
     user_id: UUID
     tenant_id: UUID | None
     permissions: frozenset[str] = frozenset()
+    record_scope: RecordScope = RecordScope.ALL
+
+    @property
+    def actor(self) -> Actor:
+        if self.tenant_id is None:
+            return Actor(user_id=self.user_id, record_scope=self.record_scope)
+        return Actor(user_id=self.user_id, record_scope=self.record_scope)
 
 
 def _parse_claim_uuid(value: str | None) -> UUID | None:
@@ -54,6 +62,8 @@ async def get_current_user(
         credentials.credentials,
         secret=settings.jwt_secret.get_secret_value(),
         algorithm=settings.jwt_algorithm,
+        issuer=settings.jwt_issuer,
+        audience=settings.jwt_audience,
     )
     user_id = _parse_claim_uuid(claims.subject)
     if user_id is None:
@@ -64,6 +74,8 @@ async def get_current_user(
     user = await repo.get_user_by_id(user_id)
     if user is None or token_tenant_id != user.tenant_id:
         raise InvalidTokenError()
+    if claims.token_version != user.token_version:
+        raise InvalidTokenError()
     if user.status != UserStatus.ACTIVE:
         raise InvalidCredentialsError()
 
@@ -72,12 +84,14 @@ async def get_current_user(
         raise TenantAccessDeniedError()
 
     permissions = await repo.list_user_permission_strings(user.tenant_id, user.id)
+    record_scopes = await repo.list_user_record_scopes(user.tenant_id, user.id)
     set_user_id(str(user.id))
     set_tenant_id(str(user.tenant_id))
     return CurrentUser(
         user_id=user.id,
         tenant_id=user.tenant_id,
         permissions=permissions,
+        record_scope=effective_record_scope(record_scopes),
     )
 
 

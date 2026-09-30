@@ -18,7 +18,6 @@ from app.common.utils.currency import quantize_money
 from tests.api.erp.customer_payments.test_routes import (
     _enable_books as _enable_books_payment,
 )
-from tests.api.erp.landed_costs.test_routes import _post_expense_bill
 from tests.api.erp.purchase_invoices.test_routes import _enable_books
 from tests.api.erp.purchase_orders.test_routes import (
     _create_product as _create_purchase_product,
@@ -177,7 +176,14 @@ async def test_baseline_purchase_invoice_post_journal_in_document_and_base_curre
 
 
 @pytest.mark.asyncio
-async def test_baseline_grn_fifo_layer_and_landed_cost_clears_parked_account(
+async def _freight_charge_type_id(client: AsyncClient, headers: dict[str, str]) -> str:
+    listed = await client.get("/api/v1/charge-types?search=FREIGHT", headers=headers)
+    assert listed.status_code == 200, listed.text
+    return next(item["id"] for item in listed.json()["data"] if item["code"] == "FREIGHT")
+
+
+@pytest.mark.asyncio
+async def test_baseline_grn_charges_capitalize_into_inventory(
     client: AsyncClient,
 ) -> None:
     tenant_id, email, password = await provision_admin()
@@ -215,42 +221,38 @@ async def test_baseline_grn_fifo_layer_and_landed_cost_clears_parked_account(
     assert receipt["status_code"] == 201, receipt["text"]
     grn_row = receipt["body"]["data"]
     assert Decimal(grn_row["exchange_rate"]) == fx_rate
-    posted_grn = await _post_grn(client, headers, grn_row["id"], grn_row["version"])
+    freight_id = await _freight_charge_type_id(client, headers)
+    patched = await client.patch(
+        f"/api/v1/goods-receipts/{grn_row['id']}",
+        headers=_if_match(headers, grn_row["version"]),
+        json={
+            "version": grn_row["version"],
+            "charges": [{"charge_type_id": freight_id, "amount": "20.0000"}],
+        },
+    )
+    assert patched.status_code == 200, patched.text
+    posted_grn = await _post_grn(
+        client, headers, grn_row["id"], patched.json()["data"]["version"]
+    )
     assert posted_grn.status_code == 200, posted_grn.text
     grn = posted_grn.json()["data"]
     stock = await client.get(f"/api/v1/stock?product_id={product_id}", headers=headers)
     row = stock.json()["data"][0]
     layers = await client.get(f"/api/v1/stock/{row['id']}/layers", headers=headers)
     expected_unit_cost = quantize_money(Decimal("40.0000") * fx_rate)
-    assert Decimal(layers.json()["data"][0]["unit_cost"]) == expected_unit_cost
+    charge_base = quantize_money(Decimal("20.0000") * fx_rate)
+    layer = layers.json()["data"][0]
+    assert Decimal(layer["unit_cost"]) == expected_unit_cost
+    assert Decimal(layer["landed_unit_cost"]) == quantize_money(expected_unit_cost + charge_base)
 
-    freight = await _post_expense_bill(
-        client, headers, supplier_id=supplier_id, grn_id=grn["id"], rate="20.0000"
-    )
-    lc_created = await client.post(
-        "/api/v1/landed-costs",
-        headers=headers,
-        json={
-            "allocation_method": "VALUE",
-            "charges": [{"purchase_invoice_line_id": freight["lines"][0]["id"]}],
-            "allocations": [{"goods_receipt_line_id": grn["lines"][0]["id"]}],
-        },
-    )
-    assert lc_created.status_code == 201, lc_created.text
-    lc = lc_created.json()["data"]
-    lc_posted = await client.post(
-        f"/api/v1/landed-costs/{lc['id']}/post",
-        headers=_idempotent(headers, lc["version"]),
-    )
-    assert lc_posted.status_code == 200, lc_posted.text
     roles = await _system_roles(client, headers)
-    lc_journal = await client.get(
-        f"/api/v1/landed-costs/{lc['id']}/journal", headers=headers
+    grn_journal = await client.get(f"/api/v1/goods-receipts/{grn['id']}/journal", headers=headers)
+    assert grn_journal.status_code == 200, grn_journal.text
+    by_account = {line["account_id"]: line for line in grn_journal.json()["data"]["lines"]}
+    assert Decimal(by_account[roles["FREIGHT_IN"]]["credit"]) == charge_base
+    assert Decimal(by_account[roles["INVENTORY"]]["debit"]) == quantize_money(
+        expected_unit_cost + charge_base
     )
-    assert lc_journal.status_code == 200, lc_journal.text
-    by_account = {line["account_id"]: line for line in lc_journal.json()["data"]["lines"]}
-    assert Decimal(by_account[roles["FREIGHT_IN"]]["credit"]) == Decimal("20.0000")
-    assert Decimal(by_account[roles["INVENTORY"]]["debit"]) == Decimal("20.0000")
 
 
 def quantize_money(value: Decimal) -> Decimal:
@@ -427,3 +429,141 @@ async def test_baseline_allocate_rejects_over_allocation_and_currency_mismatch(
     assert journal.status_code == 200, journal.text
     settled = await client.get(f"/api/v1/sales-invoices/{invoice['id']}", headers=headers)
     assert Decimal(settled.json()["data"]["balance_due"]) == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_baseline_credit_apply_rejects_over_settlement(client: AsyncClient) -> None:
+    """Credit note application must respect the same settled <= grand_total cap as payments (S1)."""
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books_payment(client, headers)
+    accounts = await _system_roles(client, headers)
+    ids = await _seeded_ids(client, headers)
+    customer_id = await _create_customer(client, headers)
+    product_id = await _create_product(client, headers, ids, selling_rate="100.0000")
+    created = await client.post(
+        "/api/v1/sales-invoices",
+        headers=headers,
+        json={
+            "customer_id": customer_id,
+            "lines": [{"product_id": product_id, "quantity": "1"}],
+        },
+    )
+    assert created.status_code == 201, created.text
+    invoice = created.json()["data"]
+    posted = await client.post(
+        f"/api/v1/sales-invoices/{invoice['id']}/post",
+        headers=_idempotent(headers, invoice["version"]),
+    )
+    assert posted.status_code == 200, posted.text
+    invoice_body = posted.json()["data"]
+    grand_total = Decimal(str(invoice_body["grand_total"]))
+    partial_paid = quantize_money(grand_total * Decimal("0.60"))
+    receipt = await client.post(
+        "/api/v1/customer-payments",
+        headers=headers,
+        json={
+            "customer_id": customer_id,
+            "amount_received": str(partial_paid),
+            "payment_account_id": accounts["BANK"],
+            "allocations": [
+                {
+                    "item_type": "SALES_INVOICE",
+                    "item_id": invoice["id"],
+                    "amount": str(partial_paid),
+                }
+            ],
+        },
+    )
+    assert receipt.status_code == 201, receipt.text
+    payment = receipt.json()["data"]
+    posted_payment = await client.post(
+        f"/api/v1/customer-payments/{payment['id']}/post",
+        headers=_idempotent(headers, payment["version"]),
+    )
+    assert posted_payment.status_code == 200, posted_payment.text
+
+    credit_product_id = await _create_product(client, headers, ids, selling_rate="50.0000")
+    note_created = await client.post(
+        "/api/v1/credit-notes",
+        headers=headers,
+        json={
+            "customer_id": customer_id,
+            "reason_code": "PRICE_ADJUSTMENT",
+            "lines": [{"product_id": credit_product_id, "quantity": "1", "rate": "50.0000"}],
+        },
+    )
+    assert note_created.status_code == 201, note_created.text
+    note = note_created.json()["data"]
+    posted_note = await client.post(
+        f"/api/v1/credit-notes/{note['id']}/post",
+        headers=_idempotent(headers, note["version"]),
+    )
+    assert posted_note.status_code == 200, posted_note.text
+    note_body = posted_note.json()["data"]
+    credit_amount = Decimal(str(note_body["grand_total"]))
+
+    over = await client.post(
+        f"/api/v1/sales-invoices/{invoice['id']}/apply-credits",
+        headers={**headers, "If-Match": str(invoice_body["version"])},
+        json={
+            "allocations": [
+                {
+                    "item_type": "CREDIT_NOTE",
+                    "item_id": note["id"],
+                    "amount": str(credit_amount),
+                }
+            ]
+        },
+    )
+    assert over.status_code == 422, over.text
+    assert over.json()["error"]["code"] == "PAYMENT_OVER_ALLOCATED"
+    assert partial_paid + credit_amount > grand_total
+
+    settled = await client.get(f"/api/v1/sales-invoices/{invoice['id']}", headers=headers)
+    assert Decimal(settled.json()["data"]["amount_credited"]) == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_baseline_journal_voucher_balanced_via_vouchers(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    roles = await _system_roles(client, headers)
+    created = await client.post(
+        "/api/v1/vouchers",
+        headers=headers,
+        json={
+            "voucher_type": "JOURNAL",
+            "narration": "Baseline standing entry",
+            "lines": [
+                {"account_id": roles["CASH_ON_HAND"], "debit": "30.0000", "credit": "0"},
+                {"account_id": roles["SALES_REVENUE"], "debit": "0", "credit": "30.0000"},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    voucher = created.json()["data"]
+    posted = await client.post(
+        f"/api/v1/vouchers/{voucher['id']}/post",
+        headers=_idempotent(headers, voucher["version"]),
+    )
+    assert posted.status_code == 200, posted.text
+    detail = await client.get(f"/api/v1/vouchers/{voucher['id']}", headers=headers)
+    journal_id = detail.json()["data"]["journal_entry_id"]
+    assert journal_id is not None
+    journal = await client.get(f"/api/v1/journals/{journal_id}", headers=headers)
+    assert journal.status_code == 200, journal.text
+    _assert_journal_balanced(journal.json()["data"])
+
+
+async def _enable_books(client: AsyncClient, headers: dict[str, str]) -> None:
+    from datetime import UTC, datetime
+
+    today = datetime.now(UTC).date().isoformat()
+    updated = await client.patch(
+        "/api/v1/tenants/current",
+        headers=headers,
+        json={"books_start_date": today},
+    )
+    assert updated.status_code == 200, updated.text

@@ -86,6 +86,7 @@ class MoneyMovementSettings:
     auto_apply_advances_on_invoice: bool
     credit_limit_policy: CreditLimitPolicy
     credit_limit_include_open_orders: bool
+    overdue_days_threshold: int | None
     allow_negative_cash: bool
 
 
@@ -178,8 +179,15 @@ class OrganizationService:
                 and values["credit_limit_include_open_orders"] is not None
             ):
                 tenant.credit_limit_include_open_orders = values["credit_limit_include_open_orders"]
+            if "overdue_days_threshold" in values:
+                tenant.overdue_days_threshold = values["overdue_days_threshold"]
             if "allow_negative_cash" in values and values["allow_negative_cash"] is not None:
                 tenant.allow_negative_cash = values["allow_negative_cash"]
+            if (
+                "prices_include_tax_default" in values
+                and values["prices_include_tax_default"] is not None
+            ):
+                tenant.prices_include_tax_default = values["prices_include_tax_default"]
             new_month = values.get("fiscal_year_start_month", tenant.fiscal_year_start_month)
             new_day = values.get("fiscal_year_start_day", tenant.fiscal_year_start_day)
             if "fiscal_year_start_month" in values or "fiscal_year_start_day" in values:
@@ -652,7 +660,9 @@ class OrganizationService:
             auto_apply_advances_on_invoice=tenant.auto_apply_advances_on_invoice,
             credit_limit_policy=CreditLimitPolicy(tenant.credit_limit_policy),
             credit_limit_include_open_orders=tenant.credit_limit_include_open_orders,
+            overdue_days_threshold=tenant.overdue_days_threshold,
             allow_negative_cash=tenant.allow_negative_cash,
+            prices_include_tax_default=tenant.prices_include_tax_default,
             lock_date=tenant.lock_date,
             hard_lock_date=tenant.hard_lock_date,
             headquarters=settings.headquarters,
@@ -678,7 +688,9 @@ class OrganizationService:
             "auto_apply_advances_on_invoice": tenant.auto_apply_advances_on_invoice,
             "credit_limit_policy": tenant.credit_limit_policy,
             "credit_limit_include_open_orders": tenant.credit_limit_include_open_orders,
+            "overdue_days_threshold": tenant.overdue_days_threshold,
             "allow_negative_cash": tenant.allow_negative_cash,
+            "prices_include_tax_default": tenant.prices_include_tax_default,
             "fiscal_year_start_month": tenant.fiscal_year_start_month,
             "fiscal_year_start_day": tenant.fiscal_year_start_day,
             "books_start_date": tenant.books_start_date,
@@ -875,6 +887,7 @@ class OrganizationService:
             auto_apply_advances_on_invoice=tenant.auto_apply_advances_on_invoice,
             credit_limit_policy=CreditLimitPolicy(tenant.credit_limit_policy),
             credit_limit_include_open_orders=tenant.credit_limit_include_open_orders,
+            overdue_days_threshold=tenant.overdue_days_threshold,
             allow_negative_cash=tenant.allow_negative_cash,
         )
 

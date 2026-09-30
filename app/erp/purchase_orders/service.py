@@ -24,6 +24,7 @@ from app.auth.catalog import (
     PURCHASE_ORDER_UPDATE,
     SUPPLIER_PAYMENT_CREATE,
 )
+from app.auth.models import Tenant
 from app.auth.org_service import OrganizationService
 from app.auth.schemas import AddressResponse
 from app.common.idempotency.service import IdempotencyService
@@ -72,6 +73,7 @@ from app.core.exceptions import (
 from app.core.permissions import has_permission
 from app.crm.contacts.service import ContactService
 from app.db.session import transaction
+from app.erp.accounting.accounts.service import AccountService
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import (
     DocumentSequenceService,
@@ -144,6 +146,7 @@ class PurchaseOrderService:
         self.sequences = DocumentSequenceService(session)
         self.currencies = CurrencyService(session)
         self.fx = ExchangeRateService(session)
+        self.accounts = AccountService(session)
         self.audit = AuditWriter(session)
         self.idempotency = IdempotencyService(session)
 
@@ -285,9 +288,22 @@ class PurchaseOrderService:
         )
 
     async def create(
-        self, tenant_id: UUID, payload: PurchaseOrderCreate, *, actor_user_id: UUID
+        self,
+        tenant_id: UUID,
+        payload: PurchaseOrderCreate,
+        *,
+        actor_user_id: UUID,
+        idempotency_key: str | None = None,
+        request_hash: str | None = None,
+        endpoint: str | None = None,
     ) -> PurchaseOrderResponse:
         async with transaction(self.session):
+            if idempotency_key and request_hash and endpoint:
+                replay = await self.idempotency.begin(
+                    tenant_id, idempotency_key, request_hash, endpoint=endpoint
+                )
+                if replay is not None:
+                    return PurchaseOrderResponse.model_validate(replay)
             header, line_rows = await self._build_draft(tenant_id, payload)
             order_date = cast(date, header["order_date"])
             number = await self.sequences.allocate(
@@ -321,7 +337,12 @@ class PurchaseOrderService:
             )
             loaded = await self._require(tenant_id, row.id)
             requires_approval = await self.org.purchase_order_requires_approval(tenant_id)
-            return self._to_response(loaded, requires_approval=requires_approval)
+            response = self._to_response(loaded, requires_approval=requires_approval)
+            if idempotency_key and request_hash and endpoint:
+                await self.idempotency.store(
+                    tenant_id, idempotency_key, response.model_dump(mode="json")
+                )
+            return response
 
     async def update(
         self,
@@ -911,6 +932,8 @@ class PurchaseOrderService:
             line.qty_received = quantize_quantity(line.qty_received + qty)
             if line.qty_received < _ZERO:
                 raise ValidationError("Received quantity cannot be negative")
+            if line.qty_received > line.quantity:
+                raise ValidationError("Received quantity cannot exceed ordered quantity")
         self._refresh_receipt_status(row)
         await self.session.flush()
 
@@ -931,6 +954,8 @@ class PurchaseOrderService:
             line.qty_returned = quantize_quantity(line.qty_returned + qty)
             if line.qty_returned < _ZERO:
                 raise ValidationError("Returned quantity cannot be negative")
+            if line.qty_returned > line.qty_received:
+                raise ValidationError("Returned quantity cannot exceed received quantity")
         self._refresh_receipt_status(row)
         await self.session.flush()
 
@@ -984,6 +1009,8 @@ class PurchaseOrderService:
             line.qty_billed = quantize_quantity(line.qty_billed + qty)
             if line.qty_billed < _ZERO:
                 raise ValidationError("Billed quantity cannot be negative")
+            if line.qty_billed > line.quantity:
+                raise ValidationError("Billed quantity cannot exceed ordered quantity")
         self._refresh_billing_status(row)
         await self.session.flush()
 
@@ -1083,7 +1110,12 @@ class PurchaseOrderService:
     async def _build_draft(
         self, tenant_id: UUID, payload: PurchaseOrderCreate
     ) -> tuple[dict[str, object], builtins.list[dict[str, object]]]:
-        supplier = await self.suppliers.get(tenant_id, payload.supplier_id)
+        from app.common.schemas.discount_fields import assert_discount_bounds
+
+        assert_discount_bounds(payload.discount_type, payload.discount_value)
+        for line in payload.lines:
+            assert_discount_bounds(line.discount_type, line.discount_value)
+        supplier = await self.suppliers.require_party(tenant_id, payload.supplier_id)
         if payload.branch_id is not None:
             await self.org.require_branch(tenant_id, payload.branch_id)
         if payload.contact_id is not None:
@@ -1117,6 +1149,9 @@ class PurchaseOrderService:
             default_terms = await self.terms.get_default(tenant_id)
             terms_body = default_terms.body if default_terms else None
 
+        prices_include_tax = await self._resolve_prices_include_tax(
+            tenant_id, payload.prices_include_tax
+        )
         line_rows, line_nets, line_taxes = await self._build_lines(
             tenant_id,
             payload.lines,
@@ -1124,14 +1159,17 @@ class PurchaseOrderService:
             currency_id=currency_id,
             tax_treatment=supplier.tax_treatment,
             place_of_supply=place,
+            prices_include_tax=prices_include_tax,
         )
-        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
-            line_nets=line_nets,
-            line_taxes=line_taxes,
-            discount_type=payload.discount_type,
-            discount_value=payload.discount_value,
-            shipping_amount=quantize_money(payload.shipping_amount),
-            adjustment_amount=quantize_money(payload.adjustment_amount),
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes, adjustment_amount = (
+            compute_header_totals(
+                line_nets=line_nets,
+                line_taxes=line_taxes,
+                discount_type=payload.discount_type,
+                discount_value=payload.discount_value,
+                shipping_amount=quantize_money(payload.shipping_amount),
+                adjustment_amount=quantize_money(payload.adjustment_amount),
+            )
         )
         apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         header: dict[str, object] = {
@@ -1159,16 +1197,25 @@ class PurchaseOrderService:
             "discount_value": payload.discount_value,
             "discount_amount": doc_discount,
             "shipping_amount": quantize_money(payload.shipping_amount),
-            "adjustment_amount": quantize_money(payload.adjustment_amount),
+            "adjustment_amount": adjustment_amount,
             "subtotal": subtotal,
             "tax_amount": tax_total,
             "grand_total": grand,
+            "prices_include_tax": prices_include_tax,
             "foreign_amount": grand,
             "base_amount": quantize_money(grand * resolved.rate),
             "receipt_status": ReceiptStatus.NOT_RECEIVED.value,
             "billing_status": BillingStatus.NOT_INVOICED.value,
         }
         return header, line_rows
+
+    async def _resolve_prices_include_tax(
+        self, tenant_id: UUID, explicit: bool | None
+    ) -> bool:
+        if explicit is not None:
+            return explicit
+        tenant = await self.session.get(Tenant, tenant_id)
+        return bool(tenant and tenant.prices_include_tax_default)
 
     async def _build_lines(
         self,
@@ -1179,6 +1226,7 @@ class PurchaseOrderService:
         currency_id: UUID,
         tax_treatment: TaxTreatment,
         place_of_supply: PlaceOfSupply,
+        prices_include_tax: bool = False,
     ) -> tuple[builtins.list[dict[str, object]], builtins.list[Decimal], builtins.list[Decimal]]:
         built: builtins.list[dict[str, object]] = []
         nets: builtins.list[Decimal] = []
@@ -1229,6 +1277,9 @@ class PurchaseOrderService:
                 rate = quantize_money(product.purchase_rate)
             else:
                 raise ValidationError("Custom lines require a rate")
+            volume = line.volume
+            if volume is None and product is not None and product.volume is not None:
+                volume = product.volume
 
             item_category: TaxCategory | None = None
             chosen_tax = default_tax
@@ -1250,6 +1301,7 @@ class PurchaseOrderService:
                 discount_type=line.discount_type,
                 discount_value=line.discount_value,
                 tax_rate=chosen_tax.rate,
+                prices_include_tax=prices_include_tax,
             )
             built.append(
                 {
@@ -1261,6 +1313,9 @@ class PurchaseOrderService:
                     "quantity": qty,
                     "unit_id": unit_id,
                     "rate": rate,
+                    "net_weight": line.net_weight,
+                    "gross_weight": line.gross_weight,
+                    "volume": volume,
                     "discount_type": line.discount_type.value if line.discount_type else None,
                     "discount_value": line.discount_value,
                     "discount_amount": line_discount,
@@ -1481,7 +1536,6 @@ class PurchaseOrderService:
     ) -> builtins.list[OrderTrackerRow]:
         from app.erp.accounting.supplier_payments.service import SupplierPaymentService
         from app.erp.debit_notes.repository import DebitNoteRepository
-        from app.erp.landed_costs.repository import LandedCostRepository
         from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
         from app.inventory_management.goods_receipts.repository import GoodsReceiptRepository
 
@@ -1517,29 +1571,6 @@ class PurchaseOrderService:
                 )
         else:
             rows.append(self._cycle_pending("goods_receipt", DocumentType.GOODS_RECEIPT.value))
-
-        lc_repo = LandedCostRepository(self.session)
-        landed_rows: builtins.list[OrderTrackerRow] = []
-        for receipt in receipts:
-            for landed in await lc_repo.list_for_goods_receipt(tenant_id, receipt.id):
-                landed_rows.append(
-                    self._cycle_row(
-                        stage="landed_cost",
-                        document_type=DocumentType.LANDED_COST.value,
-                        document_id=landed.id,
-                        document_number=landed.document_number,
-                        status=landed.status,
-                        document_date=landed.document_date,
-                        quantity_summary=None,
-                        amount_summary=str(
-                            sum((charge.amount for charge in landed.charges), _ZERO)
-                        ),
-                    )
-                )
-        if landed_rows:
-            rows.extend(landed_rows)
-        elif receipts:
-            rows.append(self._cycle_pending("landed_cost", DocumentType.LANDED_COST.value))
 
         pi_repo = PurchaseInvoiceRepository(self.session)
         dn_repo = DebitNoteRepository(self.session)

@@ -23,7 +23,9 @@ from app.auth.catalog import (
     SALES_MODULE,
     SALES_ORDER_CREATE,
 )
+from app.auth.models import Tenant
 from app.auth.org_service import OrganizationService
+from app.common.idempotency.service import IdempotencyService
 from app.common.outbox.service import OutboxService
 from app.common.print.schemas import PrintDocumentResponse
 from app.common.print.service import PrintService
@@ -141,6 +143,7 @@ class QuotationService:
         self.fx = ExchangeRateService(session)
         self.audit = AuditWriter(session)
         self.outbox = OutboxService(session)
+        self.idempotency = IdempotencyService(session)
 
     async def list(
         self,
@@ -228,7 +231,41 @@ class QuotationService:
         content: bytes,
         mapping: builtins.list[object],
         actor_user_id: UUID,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
     ) -> object:
+        from app.common.imex.http import mapping_or_suggested
+        from app.common.imex.schemas import ImexMappingEntry, ImportResult, ImportRowError
+        from app.common.imex.service import mapped_rows, parse_optional_date, parse_optional_decimal
+
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return ImportResult.model_validate(replay)
+            result = await self._import_drafts(
+                tenant_id,
+                filename=filename,
+                content=content,
+                mapping=mapping,
+                actor_user_id=actor_user_id,
+            )
+            await self.idempotency.store(
+                tenant_id, idempotency_key, result.model_dump(mode="json")
+            )
+            return result
+
+    async def _import_drafts(
+        self,
+        tenant_id: UUID,
+        *,
+        filename: str | None,
+        content: bytes,
+        mapping: builtins.list[object],
+        actor_user_id: UUID,
+    ) -> ImportResult:
         from app.common.imex.http import mapping_or_suggested
         from app.common.imex.schemas import ImexMappingEntry, ImportResult, ImportRowError
         from app.common.imex.service import mapped_rows, parse_optional_date, parse_optional_decimal
@@ -387,10 +424,29 @@ class QuotationService:
         )
 
     async def create(
-        self, tenant_id: UUID, payload: QuotationCreate, *, actor_user_id: UUID
+        self,
+        tenant_id: UUID,
+        payload: QuotationCreate,
+        *,
+        actor_user_id: UUID,
+        idempotency_key: str | None = None,
+        request_hash: str | None = None,
+        endpoint: str | None = None,
     ) -> QuotationResponse:
         async with transaction(self.session):
+            if idempotency_key and request_hash and endpoint:
+                replay = await self.idempotency.begin(
+                    tenant_id, idempotency_key, request_hash, endpoint=endpoint
+                )
+                if replay is not None:
+                    return QuotationResponse.model_validate(replay)
             header, line_rows = await self._build_draft(tenant_id, payload)
+            warnings = await self._enforce_credit(
+                tenant_id,
+                cast(UUID, header["customer_id"]),
+                cast(Decimal, header["grand_total"]),
+                actor_user_id=actor_user_id,
+            )
             quote_date = cast(date, header["quote_date"])
             number = await self.sequences.allocate(
                 tenant_id,
@@ -423,7 +479,14 @@ class QuotationService:
             )
             loaded = await self._require(tenant_id, row.id)
             today, requires_approval = await self._response_context(tenant_id)
-            return self._to_response(loaded, today, requires_approval=requires_approval)
+            response = self._to_response(
+                loaded, today, requires_approval=requires_approval, warnings=warnings
+            )
+            if idempotency_key and request_hash and endpoint:
+                await self.idempotency.store(
+                    tenant_id, idempotency_key, response.model_dump(mode="json")
+                )
+            return response
 
     async def update(
         self,
@@ -511,6 +574,9 @@ class QuotationService:
                 raise ValidationError(
                     "This organization requires approval before a quotation can be sent"
                 )
+            warnings = await self._enforce_credit(
+                tenant_id, row.customer_id, row.grand_total, actor_user_id=actor_user_id
+            )
             target = next_status(current, "send")
             row.status = target.value
             row.version += 1
@@ -527,7 +593,9 @@ class QuotationService:
                 old_values=old_values,
                 new_values=await self._quotation_snapshot(tenant_id, row),
             )
-            return self._to_response(row, today, requires_approval=requires_approval)
+            return self._to_response(
+                row, today, requires_approval=requires_approval, warnings=warnings
+            )
 
     async def accept(
         self, tenant_id: UUID, quotation_id: UUID, *, actor_user_id: UUID, expected_version: int
@@ -664,6 +732,7 @@ class QuotationService:
                 shipping_amount=source.shipping_amount,
                 adjustment_amount=source.adjustment_amount,
                 place_of_supply=PlaceOfSupply(source.place_of_supply),
+                prices_include_tax=source.prices_include_tax,
                 lines=[
                     QuotationLineInput(
                         product_id=line.product_id,
@@ -923,7 +992,12 @@ class QuotationService:
     async def _build_draft(
         self, tenant_id: UUID, payload: QuotationCreate
     ) -> tuple[dict[str, object], builtins.list[dict[str, object]]]:
-        customer = await self.customers.get(tenant_id, payload.customer_id)
+        from app.common.schemas.discount_fields import assert_discount_bounds
+
+        assert_discount_bounds(payload.discount_type, payload.discount_value)
+        for line in payload.lines:
+            assert_discount_bounds(line.discount_type, line.discount_value)
+        customer = await self.customers.require_party(tenant_id, payload.customer_id)
         if payload.branch_id is not None:
             await self.org.require_branch(tenant_id, payload.branch_id)
         if payload.contact_id is not None:
@@ -966,6 +1040,9 @@ class QuotationService:
             terms_body = default_terms.body if default_terms else None
 
         price_list_id = payload.price_list_id or customer.default_price_list_id
+        prices_include_tax = await self._resolve_prices_include_tax(
+            tenant_id, payload.prices_include_tax
+        )
         line_rows, line_nets, line_taxes = await self._build_lines(
             tenant_id,
             payload.lines,
@@ -973,14 +1050,17 @@ class QuotationService:
             place_of_supply=place,
             price_list_id=price_list_id,
             currency_id=currency_id,
+            prices_include_tax=prices_include_tax,
         )
-        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
-            line_nets=line_nets,
-            line_taxes=line_taxes,
-            discount_type=payload.discount_type,
-            discount_value=payload.discount_value,
-            shipping_amount=quantize_money(payload.shipping_amount),
-            adjustment_amount=quantize_money(payload.adjustment_amount),
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes, adjustment_amount = (
+            compute_header_totals(
+                line_nets=line_nets,
+                line_taxes=line_taxes,
+                discount_type=payload.discount_type,
+                discount_value=payload.discount_value,
+                shipping_amount=quantize_money(payload.shipping_amount),
+                adjustment_amount=quantize_money(payload.adjustment_amount),
+            )
         )
         apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         header: dict[str, object] = {
@@ -1009,14 +1089,23 @@ class QuotationService:
             "discount_value": payload.discount_value,
             "discount_amount": doc_discount,
             "shipping_amount": quantize_money(payload.shipping_amount),
-            "adjustment_amount": quantize_money(payload.adjustment_amount),
+            "adjustment_amount": adjustment_amount,
             "subtotal": subtotal,
             "tax_amount": tax_total,
             "grand_total": grand,
+            "prices_include_tax": prices_include_tax,
             "foreign_amount": grand,
             "base_amount": quantize_money(grand * resolved.rate),
         }
         return header, line_rows
+
+    async def _resolve_prices_include_tax(
+        self, tenant_id: UUID, explicit: bool | None
+    ) -> bool:
+        if explicit is not None:
+            return explicit
+        tenant = await self.session.get(Tenant, tenant_id)
+        return bool(tenant and tenant.prices_include_tax_default)
 
     async def _build_lines(
         self,
@@ -1027,6 +1116,7 @@ class QuotationService:
         place_of_supply: PlaceOfSupply,
         price_list_id: UUID | None,
         currency_id: UUID,
+        prices_include_tax: bool = False,
     ) -> tuple[builtins.list[dict[str, object]], builtins.list[Decimal], builtins.list[Decimal]]:
         built: builtins.list[dict[str, object]] = []
         nets: builtins.list[Decimal] = []
@@ -1080,6 +1170,7 @@ class QuotationService:
                 discount_type=line.discount_type,
                 discount_value=line.discount_value,
                 tax_rate=chosen_tax.rate,
+                prices_include_tax=prices_include_tax,
             )
             built.append(
                 {
@@ -1155,6 +1246,7 @@ class QuotationService:
             shipping_amount=values.get("shipping_amount", existing.shipping_amount),
             adjustment_amount=values.get("adjustment_amount", existing.adjustment_amount),
             place_of_supply=values.get("place_of_supply", PlaceOfSupply(existing.place_of_supply)),
+            prices_include_tax=values.get("prices_include_tax", existing.prices_include_tax),
             lines=line_inputs,
         )
 
@@ -1195,8 +1287,33 @@ class QuotationService:
             actions.append("create_sales_invoice")
         return actions
 
+    async def _enforce_credit(
+        self,
+        tenant_id: UUID,
+        customer_id: UUID,
+        amount: Decimal,
+        *,
+        actor_user_id: UUID,
+    ) -> builtins.list:
+        from app.erp.credit_control.service import CreditControlService
+
+        return await CreditControlService(
+            self.session, actor_permissions=self.actor_permissions
+        ).enforce(
+            tenant_id,
+            customer_id,
+            amount,
+            actor_user_id=actor_user_id,
+            include_open_orders=False,
+        )
+
     def _to_response(
-        self, row: Quotation, today: date, *, requires_approval: bool
+        self,
+        row: Quotation,
+        today: date,
+        *,
+        requires_approval: bool,
+        warnings: builtins.list | None = None,
     ) -> QuotationResponse:
         status = self._effective_status(row, today)
         return QuotationResponse(
@@ -1247,6 +1364,7 @@ class QuotationService:
             display_number=_display_number(row.quote_number, row.revision_number),
             available_actions=self._available_actions(status, requires_approval=requires_approval),
             related_documents=[],
+            warnings=warnings or [],
             lines=[QuotationLineResponse.model_validate(line) for line in row.lines],
             created_at=row.created_at,
             updated_at=row.updated_at,

@@ -11,7 +11,6 @@ from app.auth.catalog import (
     GOODS_RECEIPT_POST,
     GOODS_RECEIPT_READ,
     GOODS_RECEIPT_UPDATE,
-    LANDED_COST_READ,
 )
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
@@ -23,9 +22,8 @@ from app.common.schemas.billing_queue import GoodsReceiptBillingQueueItem
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
+from app.erp.accounting.charge_types.schemas import ChargeTypeResponse
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
-from app.erp.landed_costs.dependencies import LandedCostServiceDependency
-from app.erp.landed_costs.schemas import LandedCostEligibleResponse
 from app.inventory_management.goods_receipts.dependencies import GoodsReceiptServiceDependency
 from app.inventory_management.goods_receipts.schemas import (
     GoodsReceiptCancelRequest,
@@ -141,6 +139,17 @@ async def create_goods_receipt(
 ) -> ApiResponse[GoodsReceiptResponse]:
     row = await service.create(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Goods receipt created successfully")
+
+
+@router.get("/charge-types", response_model=ApiResponse[list[ChargeTypeResponse]])
+async def list_goods_receipt_charge_types(
+    tenant: TenantContextDependency,
+    page: PaginationDependency,
+    service: GoodsReceiptServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(GOODS_RECEIPT_READ))],
+) -> ApiResponse[list[ChargeTypeResponse]]:
+    rows, total = await service.list_grn_charge_types(tenant.tenant_id, page=page)
+    return paginated_response(rows, params=page, total=total)
 
 
 @router.get("/{receipt_id}", response_model=ApiResponse[GoodsReceiptResponse])
@@ -264,17 +273,3 @@ async def get_goods_receipt_journal(
 ) -> ApiResponse[JournalEntryResponse]:
     return ApiResponse(data=await service.journal(tenant.tenant_id, receipt_id))
 
-
-@router.get(
-    "/{receipt_id}/landed-cost-eligible",
-    response_model=ApiResponse[LandedCostEligibleResponse],
-)
-async def get_landed_cost_eligible(
-    receipt_id: UUID,
-    tenant: TenantContextDependency,
-    landed_costs: LandedCostServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(LANDED_COST_READ))],
-) -> ApiResponse[LandedCostEligibleResponse]:
-    return ApiResponse(
-        data=await landed_costs.eligible_for_goods_receipt(tenant.tenant_id, receipt_id)
-    )

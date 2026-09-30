@@ -23,6 +23,7 @@ from app.auth.catalog import (
     SALES_MODULE,
     SALES_ORDER_CREATE,
 )
+from app.auth.models import Tenant
 from app.auth.org_service import OrganizationService
 from app.common.outbox.service import OutboxService
 from app.common.print.schemas import PrintDocumentResponse
@@ -467,6 +468,12 @@ class ProformaInvoiceService:
     ) -> ProformaInvoiceResponse:
         async with transaction(self.session):
             header, line_rows, milestone_rows = await self._build_draft(tenant_id, payload)
+            warnings = await self._enforce_credit(
+                tenant_id,
+                cast(UUID, header["customer_id"]),
+                cast(Decimal, header["grand_total"]),
+                actor_user_id=actor_user_id,
+            )
             proforma_date = cast(date, header["proforma_date"])
             number = await self.sequences.allocate(
                 tenant_id,
@@ -499,7 +506,9 @@ class ProformaInvoiceService:
                 entity_id=row.id,
                 new_values=await self._snapshot(tenant_id, loaded),
             )
-            return self._to_response(loaded, await self._today(tenant_id))
+            return self._to_response(
+                loaded, await self._today(tenant_id), warnings=warnings
+            )
 
     async def create_from_quotation(
         self,
@@ -535,6 +544,7 @@ class ProformaInvoiceService:
                 shipping_amount=quotation.shipping_amount,
                 adjustment_amount=quotation.adjustment_amount,
                 place_of_supply=quotation.place_of_supply,
+                prices_include_tax=quotation.prices_include_tax,
                 source_quotation_id=quotation.id,
                 incoterm=incoterm,
                 incoterm_place=incoterm_place,
@@ -649,6 +659,7 @@ class ProformaInvoiceService:
                 shipping_amount=order.shipping_amount,
                 adjustment_amount=order.adjustment_amount,
                 place_of_supply=PlaceOfSupply(order.place_of_supply),
+                prices_include_tax=order.prices_include_tax,
                 source_quotation_id=order.source_quotation_id,
                 source_sales_order_id=order.id,
                 lines=[
@@ -1149,7 +1160,12 @@ class ProformaInvoiceService:
         builtins.list[dict[str, object]],
         builtins.list[dict[str, object]],
     ]:
-        customer = await self.customers.get(tenant_id, payload.customer_id)
+        from app.common.schemas.discount_fields import assert_discount_bounds
+
+        assert_discount_bounds(payload.discount_type, payload.discount_value)
+        for line in payload.lines:
+            assert_discount_bounds(line.discount_type, line.discount_value)
+        customer = await self.customers.require_party(tenant_id, payload.customer_id)
         if payload.branch_id is not None:
             await self.org.require_branch(tenant_id, payload.branch_id)
         if payload.contact_id is not None:
@@ -1184,6 +1200,9 @@ class ProformaInvoiceService:
             terms_body = default_terms.body if default_terms else None
 
         price_list_id = payload.price_list_id or customer.default_price_list_id
+        prices_include_tax = await self._resolve_prices_include_tax(
+            tenant_id, payload.prices_include_tax
+        )
         line_rows, line_nets, line_taxes = await self._build_lines(
             tenant_id,
             payload.lines,
@@ -1191,14 +1210,17 @@ class ProformaInvoiceService:
             place_of_supply=place,
             price_list_id=price_list_id,
             currency_id=currency_id,
+            prices_include_tax=prices_include_tax,
         )
-        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
-            line_nets=line_nets,
-            line_taxes=line_taxes,
-            discount_type=payload.discount_type,
-            discount_value=payload.discount_value,
-            shipping_amount=quantize_money(payload.shipping_amount),
-            adjustment_amount=quantize_money(payload.adjustment_amount),
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes, adjustment_amount = (
+            compute_header_totals(
+                line_nets=line_nets,
+                line_taxes=line_taxes,
+                discount_type=payload.discount_type,
+                discount_value=payload.discount_value,
+                shipping_amount=quantize_money(payload.shipping_amount),
+                adjustment_amount=quantize_money(payload.adjustment_amount),
+            )
         )
         apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         milestone_rows = compute_milestone_amounts(payload.milestones, grand)
@@ -1225,10 +1247,11 @@ class ProformaInvoiceService:
             "discount_value": payload.discount_value,
             "discount_amount": doc_discount,
             "shipping_amount": quantize_money(payload.shipping_amount),
-            "adjustment_amount": quantize_money(payload.adjustment_amount),
+            "adjustment_amount": adjustment_amount,
             "subtotal": subtotal,
             "tax_amount": tax_total,
             "grand_total": grand,
+            "prices_include_tax": prices_include_tax,
             "foreign_amount": grand,
             "base_amount": quantize_money(grand * resolved.rate),
             "source_quotation_id": payload.source_quotation_id,
@@ -1246,6 +1269,14 @@ class ProformaInvoiceService:
         }
         return header, line_rows, milestone_rows
 
+    async def _resolve_prices_include_tax(
+        self, tenant_id: UUID, explicit: bool | None
+    ) -> bool:
+        if explicit is not None:
+            return explicit
+        tenant = await self.session.get(Tenant, tenant_id)
+        return bool(tenant and tenant.prices_include_tax_default)
+
     async def _build_lines(
         self,
         tenant_id: UUID,
@@ -1255,6 +1286,7 @@ class ProformaInvoiceService:
         place_of_supply: PlaceOfSupply,
         price_list_id: UUID | None,
         currency_id: UUID,
+        prices_include_tax: bool = False,
     ) -> tuple[builtins.list[dict[str, object]], builtins.list[Decimal], builtins.list[Decimal]]:
         built: builtins.list[dict[str, object]] = []
         nets: builtins.list[Decimal] = []
@@ -1308,6 +1340,7 @@ class ProformaInvoiceService:
                 discount_type=line.discount_type,
                 discount_value=line.discount_value,
                 tax_rate=chosen_tax.rate,
+                prices_include_tax=prices_include_tax,
             )
             hs_code = line.hs_code or (product.hs_code if product else None)
             built.append(
@@ -1398,6 +1431,7 @@ class ProformaInvoiceService:
             shipping_amount=values.get("shipping_amount", existing.shipping_amount),
             adjustment_amount=values.get("adjustment_amount", existing.adjustment_amount),
             place_of_supply=values.get("place_of_supply", PlaceOfSupply(existing.place_of_supply)),
+            prices_include_tax=values.get("prices_include_tax", existing.prices_include_tax),
             source_quotation_id=existing.source_quotation_id,
             source_sales_order_id=existing.source_sales_order_id,
             incoterm=values.get(
@@ -1467,7 +1501,33 @@ class ProformaInvoiceService:
             actions.append("create_cost_sheet")
         return actions
 
-    def _to_response(self, row: ProformaInvoice, today: date) -> ProformaInvoiceResponse:
+    async def _enforce_credit(
+        self,
+        tenant_id: UUID,
+        customer_id: UUID,
+        amount: Decimal,
+        *,
+        actor_user_id: UUID,
+    ) -> builtins.list:
+        from app.erp.credit_control.service import CreditControlService
+
+        return await CreditControlService(
+            self.session, actor_permissions=self.actor_permissions
+        ).enforce(
+            tenant_id,
+            customer_id,
+            amount,
+            actor_user_id=actor_user_id,
+            include_open_orders=False,
+        )
+
+    def _to_response(
+        self,
+        row: ProformaInvoice,
+        today: date,
+        *,
+        warnings: builtins.list | None = None,
+    ) -> ProformaInvoiceResponse:
         status = self._effective_status(row, today)
         advance = sum(
             (
@@ -1543,6 +1603,7 @@ class ProformaInvoiceService:
             advance_outstanding=quantize_money(_ZERO),
             available_actions=self._available_actions(status),
             related_documents=[],
+            warnings=warnings or [],
             lines=[ProformaInvoiceLineResponse.model_validate(line) for line in row.lines],
             milestones=[
                 ProformaInvoiceMilestoneResponse.model_validate(item) for item in row.milestones

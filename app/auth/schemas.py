@@ -26,6 +26,20 @@ MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 72
 
 
+def validate_password_strength(password: str) -> str:
+    """Enforce minimum complexity for create, change, and reset flows."""
+
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
+    if not any(character.isupper() for character in password):
+        raise ValueError("Password must contain at least one uppercase letter")
+    if not any(character.islower() for character in password):
+        raise ValueError("Password must contain at least one lowercase letter")
+    if not any(character.isdigit() for character in password):
+        raise ValueError("Password must contain at least one digit")
+    return password
+
+
 def _normalize_email(value: str) -> str:
     normalized = value.strip().lower()
     if not normalized or "@" not in normalized:
@@ -73,9 +87,19 @@ class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=1)
     new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
 
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, value: str) -> str:
+        return validate_password_strength(value)
+
 
 class AdminResetUserPasswordRequest(BaseModel):
     new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, value: str) -> str:
+        return validate_password_strength(value)
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -98,6 +122,11 @@ class ForgotPasswordResponse(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str = Field(min_length=1, max_length=255)
     new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, value: str) -> str:
+        return validate_password_strength(value)
 
 
 class TokenPairResponse(BaseModel):
@@ -298,6 +327,11 @@ class UserCreate(BaseModel):
     def normalize_phone(cls, value: str | None) -> str | None:
         return _normalize_optional_phone(value)
 
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_password_strength(value)
+
 
 class UserUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
@@ -452,6 +486,7 @@ class RoleResponse(BaseModel):
     name: str
     description: str | None
     is_system_role: bool
+    record_scope: str
     user_count: int = 0
     created_at: datetime
     updated_at: datetime
@@ -482,6 +517,7 @@ class RoleDetailResponse(RoleResponse):
 class RoleCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     description: str | None = None
+    record_scope: str = Field(default="all", pattern="^(all|branch|team|own)$")
     permission_ids: list[UUID] = Field(default_factory=list)
 
     @field_validator("name")
@@ -501,6 +537,7 @@ class RoleCreate(BaseModel):
 class RoleUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = None
+    record_scope: str | None = Field(default=None, pattern="^(all|branch|team|own)$")
 
     @field_validator("name")
     @classmethod
@@ -633,7 +670,9 @@ class TenantCurrentResponse(BaseModel):
     auto_apply_advances_on_invoice: bool = True
     credit_limit_policy: CreditLimitPolicy = CreditLimitPolicy.WARN
     credit_limit_include_open_orders: bool = True
+    overdue_days_threshold: int | None = None
     allow_negative_cash: bool = False
+    prices_include_tax_default: bool = False
     lock_date: date | None = None
     hard_lock_date: date | None = None
     headquarters: AddressPayload | None = None
@@ -673,7 +712,9 @@ class TenantCurrentUpdate(BaseModel):
     auto_apply_advances_on_invoice: bool | None = None
     credit_limit_policy: CreditLimitPolicy | None = None
     credit_limit_include_open_orders: bool | None = None
+    overdue_days_threshold: int | None = None
     allow_negative_cash: bool | None = None
+    prices_include_tax_default: bool | None = None
     headquarters: AddressPayload | None = None
 
     @field_validator(

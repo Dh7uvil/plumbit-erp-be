@@ -29,7 +29,6 @@ PARTY_DOCUMENT_TYPES = frozenset(
         "SUPPLIER_PAYMENT",
         "PURCHASE_RETURN",
         "QUALITY_INSPECTION",
-        "LANDED_COST",
         "COST_SHEET_IMPORT",
         "COST_SHEET_EXPORT",
         "COST_SHEET_OTHER",

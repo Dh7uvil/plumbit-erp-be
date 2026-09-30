@@ -34,6 +34,9 @@ from app.erp.accounting.recurring.schemas import (
     RecurringTemplateResponse,
     RecurringTemplateUpdate,
 )
+from app.erp.accounting.vouchers.models import Voucher
+from app.erp.accounting.vouchers.schemas import VoucherCreate
+from app.erp.accounting.vouchers.service import VoucherService
 from app.erp.purchase_invoices.models import PurchaseInvoice
 from app.erp.purchase_invoices.schemas import PurchaseInvoiceCreate
 from app.erp.purchase_invoices.service import PurchaseInvoiceService
@@ -349,6 +352,14 @@ class RecurringService:
             if created_invoice.status != "DRAFT":
                 raise ValidationError("Recurring generation must leave the document as a draft")
             return created_invoice.id, created_invoice.document_number
+        if kind == RecurringDocumentKind.STANDING_JOURNAL:
+            body = VoucherCreate.model_validate(payload)
+            created_voucher = await VoucherService(
+                self.session, actor_permissions=self.actor_permissions
+            ).create(tenant_id, body, actor_user_id=actor_user_id)
+            if created_voucher.status != "DRAFT":
+                raise ValidationError("Recurring generation must leave the document as a draft")
+            return created_voucher.id, created_voucher.document_number
         body_bill = PurchaseInvoiceCreate.model_validate(payload)
         created_bill = await PurchaseInvoiceService(
             self.session, actor_permissions=self.actor_permissions
@@ -428,6 +439,23 @@ class RecurringService:
             if invoice is None:
                 return None, None
             return invoice.id, invoice.document_number
+        if kind == RecurringDocumentKind.STANDING_JOURNAL:
+            voucher = (
+                (
+                    await self.session.execute(
+                        select(Voucher).where(
+                            Voucher.tenant_id == tenant_id,
+                            Voucher.deleted_at.is_(None),
+                            Voucher.narration.contains(marker),
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if voucher is None:
+                return None, None
+            return voucher.id, voucher.document_number
         bill = (
             (
                 await self.session.execute(
@@ -461,25 +489,36 @@ class RecurringService:
         notes = str(payload.get("notes") or "")
         if marker not in notes:
             payload["notes"] = f"{marker} {notes}".strip()
-        payload["invoice_date"] = run_date.isoformat()
-        payment_terms_id = payload.get("payment_terms_id")
-        if payment_terms_id is not None:
-            payload["due_date"] = (
-                await due_date_from_terms(
-                    self.session,
-                    tenant_id,
-                    UUID(str(payment_terms_id)),
-                    run_date,
-                )
-            ).isoformat()
+        if RecurringDocumentKind(row.document_kind) == RecurringDocumentKind.STANDING_JOURNAL:
+            payload["voucher_type"] = "JOURNAL"
+            payload["voucher_date"] = run_date.isoformat()
+            narration = str(payload.get("narration") or "")
+            if marker not in narration:
+                payload["narration"] = f"{marker} {narration}".strip()
         else:
-            payload.pop("due_date", None)
+            payload["invoice_date"] = run_date.isoformat()
+            payment_terms_id = payload.get("payment_terms_id")
+            if payment_terms_id is not None:
+                payload["due_date"] = (
+                    await due_date_from_terms(
+                        self.session,
+                        tenant_id,
+                        UUID(str(payment_terms_id)),
+                        run_date,
+                    )
+                ).isoformat()
+            else:
+                payload.pop("due_date", None)
         return payload
 
     def _validate_payload(self, kind: RecurringDocumentKind, payload: dict[str, Any]) -> None:
         try:
             if kind == RecurringDocumentKind.SALES_INVOICE:
                 SalesInvoiceCreate.model_validate(payload)
+            elif kind == RecurringDocumentKind.STANDING_JOURNAL:
+                body = dict(payload)
+                body.setdefault("voucher_type", "JOURNAL")
+                VoucherCreate.model_validate(body)
             else:
                 PurchaseInvoiceCreate.model_validate(payload)
         except Exception as exc:

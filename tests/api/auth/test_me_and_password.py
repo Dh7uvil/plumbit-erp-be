@@ -16,7 +16,7 @@ async def _create_peer_user(
 ) -> tuple[str, str]:
     suffix = uuid4().hex[:8]
     email = f"peer-{suffix}@example.com"
-    password = "password12"
+    password = "Password12"
     user = await client.post(
         "/api/v1/users",
         headers=headers,

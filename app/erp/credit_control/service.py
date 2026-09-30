@@ -21,7 +21,7 @@ from app.core.enums import (
     OpenItemType,
     SalesOrderStatus,
 )
-from app.core.exceptions import CreditLimitExceededError
+from app.core.exceptions import CreditHoldError, CreditLimitExceededError, CreditOverdueError
 from app.core.permissions import has_permission
 from app.crm.customers.service import CustomerService
 from app.erp.accounting.open_items.service import OpenItemsService
@@ -129,7 +129,65 @@ class CreditControlService:
         override_reason: str | None = None,
         include_open_orders: bool | None = None,
     ) -> list[DocumentWarning]:
+        customer = await self.customers.get(tenant_id, customer_id)
+        if customer.credit_hold:
+            details = {"customer_id": str(customer_id), "customer_code": customer.code}
+            warning = DocumentWarning(
+                code="CREDIT_HOLD",
+                message="Customer is on credit hold",
+                details=details,
+            )
+            reason = (override_reason or "").strip()
+            can_override = has_permission(self.actor_permissions, CREDIT_CONTROL_OVERRIDE)
+            if can_override and reason:
+                await self.audit.write(
+                    tenant_id=tenant_id,
+                    user_id=actor_user_id,
+                    action=AuditAction.OVERRIDE,
+                    module=ACCOUNTING_MODULE,
+                    entity_type="credit_hold",
+                    entity_id=customer_id,
+                    new_values={"reason": reason, **details},
+                )
+                return [warning]
+            raise CreditHoldError(details=details)
+
         settings = await self.org.get_money_movement_settings(tenant_id)
+        if settings.overdue_days_threshold is not None:
+            today = today_in_timezone(await self.org.get_timezone(tenant_id))
+            overdue_issue = await self._overdue_beyond_threshold(
+                tenant_id,
+                customer_id,
+                threshold=settings.overdue_days_threshold,
+                as_of=today,
+            )
+            if overdue_issue is not None:
+                details = {
+                    "customer_id": str(customer_id),
+                    "customer_code": customer.code,
+                    "threshold_days": settings.overdue_days_threshold,
+                    **overdue_issue,
+                }
+                warning = DocumentWarning(
+                    code="CREDIT_OVERDUE",
+                    message="Customer has overdue receivables beyond the allowed threshold",
+                    details=details,
+                )
+                reason = (override_reason or "").strip()
+                can_override = has_permission(self.actor_permissions, CREDIT_CONTROL_OVERRIDE)
+                if can_override and reason:
+                    await self.audit.write(
+                        tenant_id=tenant_id,
+                        user_id=actor_user_id,
+                        action=AuditAction.OVERRIDE,
+                        module=ACCOUNTING_MODULE,
+                        entity_type="credit_overdue",
+                        entity_id=customer_id,
+                        new_values={"reason": reason, **details},
+                    )
+                    return [warning]
+                raise CreditOverdueError(details=details)
+
         exposure = await self.evaluate(
             tenant_id,
             customer_id,
@@ -177,6 +235,29 @@ class CreditControlService:
             )
             return [warning]
         raise CreditLimitExceededError(details=details)
+
+    async def _overdue_beyond_threshold(
+        self,
+        tenant_id: UUID,
+        customer_id: UUID,
+        *,
+        threshold: int,
+        as_of,
+    ) -> dict[str, str] | None:
+        for item in await self.open_items.list_ar_open_items(tenant_id, customer_id):
+            if item.item_type not in {OpenItemType.SALES_INVOICE, OpenItemType.OPENING_AR}:
+                continue
+            if item.balance <= _ZERO:
+                continue
+            due = item.due_date or item.document_date
+            overdue_days = (as_of - due).days
+            if overdue_days >= threshold:
+                return {
+                    "document_number": item.document_number,
+                    "overdue_days": str(overdue_days),
+                    "balance": str(item.balance),
+                }
+        return None
 
     async def _open_order_value(
         self,

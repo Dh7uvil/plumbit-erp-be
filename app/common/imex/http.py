@@ -9,13 +9,36 @@ from fastapi import UploadFile
 from app.common.imex.parser import suggest_mapping
 from app.common.imex.schemas import ImexMappingEntry
 from app.common.imex.service import catalog_for, parse_tabular
+from app.common.utils.files import ensure_within_size_limit, max_upload_bytes
+from app.core.config import get_settings
 from app.core.exceptions import ValidationError
+
+_READ_CHUNK_SIZE = 1024 * 1024
 
 
 async def read_upload(file: UploadFile) -> tuple[str | None, bytes]:
-    content = await file.read()
-    if not content:
-        raise ValidationError("File is empty")
+    settings = get_settings()
+    max_bytes = max_upload_bytes(settings.max_upload_size_mb)
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(_READ_CHUNK_SIZE)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise ValidationError(
+                f"File exceeds the maximum size of {settings.max_upload_size_mb} MB",
+                details={
+                    "max_upload_size_mb": settings.max_upload_size_mb,
+                    "size_bytes": total,
+                },
+            )
+        chunks.append(chunk)
+    content = b"".join(chunks)
+    ensure_within_size_limit(
+        len(content), max_upload_size_mb=settings.max_upload_size_mb
+    )
     return file.filename, content
 
 

@@ -19,6 +19,7 @@ ACCOUNTING_MODULE = "accounting"
 REPORTS_MODULE = "reports"
 MASTERS_MODULE = "masters"
 TASKS_MODULE = "tasks"
+AI_MODULE = "ai"
 
 _IMEX_ACTIONS: tuple[str, ...] = ("import", "export")
 
@@ -73,14 +74,6 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "purchase_invoice": _with_imex('create', 'read', 'update', 'delete', 'post', 'cancel'),
         "debit_note": _with_imex('create', 'read', 'update', 'delete', 'post', 'cancel'),
         "supplier_payment": _with_imex('create', 'read', 'update', 'delete', 'post', 'cancel'),
-        "landed_cost": (
-            "read",
-            "create",
-            "update",
-            "delete",
-            "post",
-            "cancel",
-        ),
         "purchase_return": _with_imex('create', 'read', 'update', 'delete', 'post', 'cancel'),
     },
     LOGISTICS_MODULE: {
@@ -109,6 +102,13 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
             "delete",
             "post",
         ),
+        "grn_charge_adjustment": (
+            "create",
+            "read",
+            "update",
+            "delete",
+            "post",
+        ),
     },
     ACCOUNTING_MODULE: {
         "account": ('create', 'read', 'update', 'delete'),
@@ -120,7 +120,9 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
             "post",
             "reverse",
         ),
+        "journal": ("post_control",),
         "opening_balance": ('manage',),
+        "year_end": ('manage',),
         "period": ('lock', 'override'),
         "credit_control": ('override',),
         "write_off": ('create', 'reverse'),
@@ -180,6 +182,9 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "label": ('create', 'read', 'update', 'delete'),
         "watcher": ('create', 'read', 'delete'),
     },
+    AI_MODULE: {
+        "assistant": ("use",),
+    },
 }
 
 
@@ -201,7 +206,6 @@ _RESOURCE_MODULE_REMAP: dict[tuple[str, str], str] = {
     ("erp", "purchase_invoice"): PURCHASE_MODULE,
     ("erp", "debit_note"): PURCHASE_MODULE,
     ("erp", "supplier_payment"): PURCHASE_MODULE,
-    ("erp", "landed_cost"): PURCHASE_MODULE,
     ("inventory", "package"): LOGISTICS_MODULE,
     ("inventory", "shipment"): LOGISTICS_MODULE,
     ("erp", "account"): ACCOUNTING_MODULE,
@@ -237,6 +241,7 @@ ACCOUNTING_PERMISSIONS: tuple[str, ...] = _permissions_for(ACCOUNTING_MODULE)
 REPORTS_PERMISSIONS: tuple[str, ...] = _permissions_for(REPORTS_MODULE)
 MASTERS_PERMISSIONS: tuple[str, ...] = _permissions_for(MASTERS_MODULE)
 TASKS_PERMISSIONS: tuple[str, ...] = _permissions_for(TASKS_MODULE)
+AI_PERMISSIONS: tuple[str, ...] = _permissions_for(AI_MODULE)
 CATALOG_PERMISSIONS: tuple[str, ...] = (
     IDENTITY_PERMISSIONS +
     CRM_PERMISSIONS +
@@ -247,7 +252,8 @@ CATALOG_PERMISSIONS: tuple[str, ...] = (
     ACCOUNTING_PERMISSIONS +
     REPORTS_PERMISSIONS +
     MASTERS_PERMISSIONS +
-    TASKS_PERMISSIONS
+    TASKS_PERMISSIONS +
+    AI_PERMISSIONS
 )
 
 
@@ -444,6 +450,17 @@ GOODS_RECEIPT_DELETE = build_permission(PURCHASE_MODULE, "goods_receipt", "delet
 GOODS_RECEIPT_POST = build_permission(PURCHASE_MODULE, "goods_receipt", "post")
 GOODS_RECEIPT_IMPORT = build_permission(PURCHASE_MODULE, "goods_receipt", "import")
 GOODS_RECEIPT_EXPORT = build_permission(PURCHASE_MODULE, "goods_receipt", "export")
+GRN_CHARGE_ADJUSTMENT_CREATE = build_permission(
+    INVENTORY_MODULE, "grn_charge_adjustment", "create"
+)
+GRN_CHARGE_ADJUSTMENT_READ = build_permission(INVENTORY_MODULE, "grn_charge_adjustment", "read")
+GRN_CHARGE_ADJUSTMENT_UPDATE = build_permission(
+    INVENTORY_MODULE, "grn_charge_adjustment", "update"
+)
+GRN_CHARGE_ADJUSTMENT_DELETE = build_permission(
+    INVENTORY_MODULE, "grn_charge_adjustment", "delete"
+)
+GRN_CHARGE_ADJUSTMENT_POST = build_permission(INVENTORY_MODULE, "grn_charge_adjustment", "post")
 QUALITY_INSPECTION_CREATE = build_permission(PURCHASE_MODULE, "quality_inspection", "create")
 QUALITY_INSPECTION_READ = build_permission(PURCHASE_MODULE, "quality_inspection", "read")
 QUALITY_INSPECTION_UPDATE = build_permission(PURCHASE_MODULE, "quality_inspection", "update")
@@ -472,12 +489,6 @@ SUPPLIER_PAYMENT_POST = build_permission(PURCHASE_MODULE, "supplier_payment", "p
 SUPPLIER_PAYMENT_CANCEL = build_permission(PURCHASE_MODULE, "supplier_payment", "cancel")
 SUPPLIER_PAYMENT_IMPORT = build_permission(PURCHASE_MODULE, "supplier_payment", "import")
 SUPPLIER_PAYMENT_EXPORT = build_permission(PURCHASE_MODULE, "supplier_payment", "export")
-LANDED_COST_READ = build_permission(PURCHASE_MODULE, "landed_cost", "read")
-LANDED_COST_CREATE = build_permission(PURCHASE_MODULE, "landed_cost", "create")
-LANDED_COST_UPDATE = build_permission(PURCHASE_MODULE, "landed_cost", "update")
-LANDED_COST_DELETE = build_permission(PURCHASE_MODULE, "landed_cost", "delete")
-LANDED_COST_POST = build_permission(PURCHASE_MODULE, "landed_cost", "post")
-LANDED_COST_CANCEL = build_permission(PURCHASE_MODULE, "landed_cost", "cancel")
 PURCHASE_RETURN_CREATE = build_permission(PURCHASE_MODULE, "purchase_return", "create")
 PURCHASE_RETURN_READ = build_permission(PURCHASE_MODULE, "purchase_return", "read")
 PURCHASE_RETURN_UPDATE = build_permission(PURCHASE_MODULE, "purchase_return", "update")
@@ -553,7 +564,9 @@ JOURNAL_ENTRY_UPDATE = build_permission(ACCOUNTING_MODULE, "journal_entry", "upd
 JOURNAL_ENTRY_DELETE = build_permission(ACCOUNTING_MODULE, "journal_entry", "delete")
 JOURNAL_ENTRY_POST = build_permission(ACCOUNTING_MODULE, "journal_entry", "post")
 JOURNAL_ENTRY_REVERSE = build_permission(ACCOUNTING_MODULE, "journal_entry", "reverse")
+JOURNAL_POST_CONTROL = build_permission(ACCOUNTING_MODULE, "journal", "post_control")
 OPENING_BALANCE_MANAGE = build_permission(ACCOUNTING_MODULE, "opening_balance", "manage")
+YEAR_END_MANAGE = build_permission(ACCOUNTING_MODULE, "year_end", "manage")
 PERIOD_LOCK = build_permission(ACCOUNTING_MODULE, "period", "lock")
 PERIOD_OVERRIDE = build_permission(ACCOUNTING_MODULE, "period", "override")
 WRITE_OFF_CREATE = build_permission(ACCOUNTING_MODULE, "write_off", "create")
@@ -676,6 +689,8 @@ TASK_LABEL_DELETE = build_permission(TASKS_MODULE, "label", "delete")
 TASK_WATCHER_CREATE = build_permission(TASKS_MODULE, "watcher", "create")
 TASK_WATCHER_READ = build_permission(TASKS_MODULE, "watcher", "read")
 TASK_WATCHER_DELETE = build_permission(TASKS_MODULE, "watcher", "delete")
+
+AI_ASSISTANT_USE = build_permission(AI_MODULE, "assistant", "use")
 
 SYSTEM_ADMIN_ROLE_NAME = "Superadmin"
 

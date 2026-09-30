@@ -110,6 +110,9 @@ class CreditNote(AuditUserMixin, SoftDeleteTenantModel):
         _MONEY, nullable=False, server_default=text("0")
     )
     grand_total: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
+    prices_include_tax: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     foreign_amount: Mapped[Decimal] = mapped_column(
         _MONEY, nullable=False, server_default=text("0")
     )

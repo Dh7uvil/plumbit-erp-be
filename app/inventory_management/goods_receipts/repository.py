@@ -3,7 +3,7 @@
 import builtins
 from collections.abc import Mapping, Sequence
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import delete, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,11 @@ from app.common.repositories.search import (
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.core.enums import StockDocumentStatus
-from app.inventory_management.goods_receipts.models import GoodsReceipt, GoodsReceiptLine
+from app.inventory_management.goods_receipts.models import (
+    GoodsReceipt,
+    GoodsReceiptCharge,
+    GoodsReceiptLine,
+)
 
 
 class GoodsReceiptRepository:
@@ -67,7 +71,10 @@ class GoodsReceiptRepository:
         )
 
     def _with_lines(self) -> Any:
-        return selectinload(GoodsReceipt.lines)
+        return (
+            selectinload(GoodsReceipt.lines),
+            selectinload(GoodsReceipt.charges),
+        )
 
     def has_product_clause(self, product_id: UUID) -> ColumnElement[bool]:
         return exists().where(
@@ -82,7 +89,7 @@ class GoodsReceiptRepository:
         statement = (
             self._repo.base_query(tenant_id)
             .where(GoodsReceipt.id == receipt_id)
-            .options(self._with_lines())
+            .options(*self._with_lines())
         )
         if for_update:
             statement = statement.with_for_update()
@@ -111,7 +118,7 @@ class GoodsReceiptRepository:
         statement = (
             self._repo.base_query(tenant_id)
             .where(GoodsReceipt.id.in_(ids))
-            .options(self._with_lines())
+            .options(*self._with_lines())
         )
         loaded = {item.id: item for item in (await self.session.execute(statement)).scalars().all()}
         ordered = [loaded[row.id] for row in rows if row.id in loaded]
@@ -161,7 +168,7 @@ class GoodsReceiptRepository:
         statement = (
             self._repo.base_query(tenant_id)
             .where(GoodsReceipt.source_purchase_invoice_id == purchase_invoice_id)
-            .options(self._with_lines())
+            .options(*self._with_lines())
             .order_by(GoodsReceipt.document_date, GoodsReceipt.created_at)
         )
         result = await self.session.execute(statement)
@@ -175,7 +182,7 @@ class GoodsReceiptRepository:
         statement = (
             self._repo.base_query(tenant_id)
             .where(GoodsReceipt.purchase_order_id.in_(list(purchase_order_ids)))
-            .options(self._with_lines())
+            .options(*self._with_lines())
             .order_by(GoodsReceipt.document_date, GoodsReceipt.created_at)
         )
         result = await self.session.execute(statement)
@@ -207,6 +214,30 @@ class GoodsReceiptRepository:
         created: builtins.list[GoodsReceiptLine] = []
         for values in lines:
             row = GoodsReceiptLine(tenant_id=tenant_id, goods_receipt_id=receipt_id)
+            for name, value in values.items():
+                setattr(row, name, value)
+            self.session.add(row)
+            created.append(row)
+        await self.session.flush()
+        return created
+
+    async def replace_charges(
+        self,
+        tenant_id: UUID,
+        receipt_id: UUID,
+        charges: Sequence[Mapping[str, object]],
+    ) -> builtins.list[GoodsReceiptCharge]:
+        await self.session.execute(
+            delete(GoodsReceiptCharge).where(
+                GoodsReceiptCharge.tenant_id == tenant_id,
+                GoodsReceiptCharge.goods_receipt_id == receipt_id,
+            )
+        )
+        created: builtins.list[GoodsReceiptCharge] = []
+        for values in charges:
+            row = GoodsReceiptCharge(
+                id=uuid4(), tenant_id=tenant_id, goods_receipt_id=receipt_id
+            )
             for name, value in values.items():
                 setattr(row, name, value)
             self.session.add(row)

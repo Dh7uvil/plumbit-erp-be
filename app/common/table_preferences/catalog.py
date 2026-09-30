@@ -212,12 +212,6 @@ TABLE_CATALOG: dict[str, TableCatalogEntry] = {
             *_AUDIT_ACTORS,
         ),
         _entry(
-            "erp.landed_costs",
-            ("document_number", "method", "document_date", "charges", "status"),
-            *_hidden("is_posted", "notes", "posted_at"),
-            *_AUDIT_ACTORS,
-        ),
-        _entry(
             "erp.quotations",
             ("document_number", "customer", "document_date", "status", "grand_total"),
             *_hidden(

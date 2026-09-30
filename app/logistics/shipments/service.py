@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
     COST_SHEET_CREATE,
-    LANDED_COST_CREATE,
     LOGISTICS_MODULE,
     SHIPMENT_CLOSE,
     SHIPMENT_DELETE,
@@ -518,11 +517,6 @@ class ShipmentService:
             actions.append("create_cost_sheet")
         if is_trackable(status) and has_permission(self.actor_permissions, SHIPMENT_UPDATE):
             actions.append("tracking")
-        if (
-            status not in {ShipmentStatus.DRAFT, ShipmentStatus.CANCELLED}
-            and has_permission(self.actor_permissions, LANDED_COST_CREATE)
-        ):
-            actions.append("create_landed_cost")
         return actions
 
     def _assert_version(self, row: Shipment, expected_version: int) -> None:

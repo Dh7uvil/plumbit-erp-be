@@ -1,4 +1,4 @@
-"""Cost sheet planning, actuals pull, and landed-cost handoff (no GL)."""
+"""Cost sheet planning and actuals pull (no GL)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ from app.auth.catalog import (
     COST_SHEET_CONFIRM,
     COST_SHEET_DELETE,
     COST_SHEET_UPDATE,
-    LANDED_COST_CREATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
@@ -31,9 +30,8 @@ from app.core.enums import (
     CostSheetStatus,
     CostSheetType,
     DocumentType,
-    InvoiceDocumentStatus,
-    LandedCostAllocationMethod,
-    PurchaseInvoiceLineType,
+    ChargeAllocationMethod,
+    StockDocumentStatus,
 )
 from app.core.exceptions import DocumentStaleError, ResourceNotFoundError, ValidationError
 from app.core.permissions import has_permission
@@ -47,7 +45,6 @@ from app.erp.cost_sheets.schemas import (
     CostSheetChargeInput,
     CostSheetChargeResponse,
     CostSheetCreate,
-    CostSheetCreateLandedCostRequest,
     CostSheetLineInput,
     CostSheetLineResponse,
     CostSheetResponse,
@@ -56,12 +53,13 @@ from app.erp.cost_sheets.schemas import (
 )
 from app.erp.cost_sheets.workflow import assert_editable, next_status, transition_actions
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
-from app.erp.landed_costs.schemas import LandedCostCreateFromBills, LandedCostResponse
-from app.erp.landed_costs.service import LandedCostService
 from app.erp.proforma_invoices.models import ProformaInvoice
-from app.erp.purchase_invoices.models import PurchaseInvoice, PurchaseInvoiceLine
 from app.inventory_management.costing.service import CostingService
-from app.inventory_management.goods_receipts.models import GoodsReceiptLine
+from app.inventory_management.goods_receipts.models import (
+    GoodsReceipt,
+    GoodsReceiptCharge,
+    GoodsReceiptLine,
+)
 from app.inventory_management.stock.service import SOURCE_GOODS_RECEIPT
 
 _ZERO = Decimal("0")
@@ -73,7 +71,6 @@ _ACTION_PERMISSIONS: dict[str, str] = {
     "close": COST_SHEET_CLOSE,
     "reopen": COST_SHEET_UPDATE,
     "pull_actuals": COST_SHEET_UPDATE,
-    "create_landed_cost": LANDED_COST_CREATE,
 }
 
 
@@ -89,7 +86,6 @@ class CostSheetService:
         self.repo = CostSheetRepository(session)
         self.charge_types = ChargeTypeRepository(session)
         self.costing = CostingService(session)
-        self.landed_costs = LandedCostService(session, actor_permissions=actor_permissions)
         self.currencies = CurrencyService(session)
         self.fx = ExchangeRateService(session)
         self.org = OrganizationService(session)
@@ -292,74 +288,6 @@ class CostSheetService:
             loaded = await self._require(tenant_id, cost_sheet_id)
             return await self._to_response(loaded)
 
-    async def create_landed_cost(
-        self,
-        tenant_id: UUID,
-        cost_sheet_id: UUID,
-        payload: CostSheetCreateLandedCostRequest,
-        *,
-        actor_user_id: UUID,
-        expected_version: int | None,
-        idempotency_key: str,
-        request_hash: str,
-        endpoint: str,
-    ) -> LandedCostResponse:
-        if not has_permission(self.actor_permissions, LANDED_COST_CREATE):
-            raise ValidationError("Missing permission to create landed costs")
-        async with transaction(self.session):
-            row = await self._require(tenant_id, cost_sheet_id, for_update=True)
-            self._assert_version(row, expected_version, payload.version)
-            if row.sheet_type != CostSheetType.IMPORT.value:
-                raise ValidationError("Landed costs can only be created from import cost sheets")
-            if row.status != CostSheetStatus.CONFIRMED.value:
-                raise ValidationError("Confirm the cost sheet before creating a landed cost")
-            if row.landed_cost_id is not None:
-                raise ValidationError("This cost sheet already generated a landed cost")
-            line_ids = [
-                charge.purchase_invoice_line_id
-                for charge in row.charges
-                if charge.purchase_invoice_line_id is not None
-            ]
-            if not line_ids:
-                raise ValidationError(
-                    "Pull actuals first so charge rows reference posted bill lines"
-                )
-            grn_line_ids = [
-                line.goods_receipt_line_id
-                for line in row.lines
-                if line.goods_receipt_line_id is not None
-            ]
-            if not grn_line_ids:
-                raise ValidationError("Link goods lines to posted GRN lines before creating LC")
-            goods_receipt_ids = await self._goods_receipt_ids_for_lines(tenant_id, grn_line_ids)
-            document_date = payload.document_date or row.document_date
-            lc_payload = LandedCostCreateFromBills(
-                purchase_invoice_line_ids=line_ids,
-                goods_receipt_ids=goods_receipt_ids,
-                shipment_id=row.shipment_id,
-                allocation_method=LandedCostAllocationMethod(row.allocation_method),
-                document_date=document_date,
-                notes=f"From cost sheet {row.document_number}",
-            )
-            lc = await self.landed_costs.create_from_bills(
-                tenant_id,
-                lc_payload,
-                actor_user_id=actor_user_id,
-                idempotency_key=idempotency_key,
-                request_hash=request_hash,
-                endpoint=endpoint,
-            )
-            await self.repo.update(
-                tenant_id,
-                cost_sheet_id,
-                {
-                    "landed_cost_id": lc.id,
-                    "version": row.version + 1,
-                    "updated_by": actor_user_id,
-                },
-            )
-            return lc
-
     async def _persist_create(
         self, tenant_id: UUID, payload: CostSheetCreate, *, actor_user_id: UUID
     ) -> CostSheetResponse:
@@ -423,10 +351,6 @@ class CostSheetService:
         async with transaction(self.session):
             row = await self._require(tenant_id, cost_sheet_id, for_update=True)
             self._assert_version(row, expected_version, version)
-            if action == "reopen" and row.landed_cost_id is not None:
-                raise ValidationError(
-                    "Cannot reopen a cost sheet that already generated a landed cost"
-                )
             current = CostSheetStatus(row.status)
             target = next_status(current, action)
             await self.repo.update(
@@ -614,21 +538,19 @@ class CostSheetService:
         }
 
     async def _refresh_actuals(self, tenant_id: UUID, row: CostSheet) -> None:
-        bill_lines = await self._posted_expense_lines(tenant_id, row)
-        by_charge: dict[UUID, PurchaseInvoiceLine] = {}
-        for bill_line in bill_lines:
-            if bill_line.charge_type_id is None:
-                continue
-            existing = by_charge.get(bill_line.charge_type_id)
-            if existing is None or bill_line.amount > existing.amount:
-                by_charge[bill_line.charge_type_id] = bill_line
+        grn_charges = await self._posted_grn_charges(tenant_id, row)
+        by_charge: dict[UUID, GoodsReceiptCharge] = {}
+        for grn_charge in grn_charges:
+            existing = by_charge.get(grn_charge.charge_type_id)
+            if existing is None or grn_charge.amount > existing.amount:
+                by_charge[grn_charge.charge_type_id] = grn_charge
         for charge in row.charges:
-            matched_bill_line = by_charge.get(charge.charge_type_id)
-            if matched_bill_line is None:
+            matched_grn_charge = by_charge.get(charge.charge_type_id)
+            if matched_grn_charge is None:
                 continue
-            charge.actual_amount = quantize_money(matched_bill_line.amount)
-            charge.purchase_invoice_id = matched_bill_line.purchase_invoice_id
-            charge.purchase_invoice_line_id = matched_bill_line.id
+            charge.actual_amount = quantize_money(matched_grn_charge.amount)
+            charge.purchase_invoice_id = None
+            charge.purchase_invoice_line_id = None
         for sheet_line in row.lines:
             if sheet_line.goods_receipt_line_id is None:
                 continue
@@ -645,23 +567,23 @@ class CostSheetService:
                 sheet_line.base_rate = layers[0].landed_unit_cost
         await self.session.flush()
 
-    async def _posted_expense_lines(
+    async def _posted_grn_charges(
         self, tenant_id: UUID, row: CostSheet
-    ) -> builtins.list[PurchaseInvoiceLine]:
+    ) -> builtins.list[GoodsReceiptCharge]:
         criteria = [
-            PurchaseInvoiceLine.tenant_id == tenant_id,
-            PurchaseInvoiceLine.line_type == PurchaseInvoiceLineType.EXPENSE.value,
-            PurchaseInvoice.deleted_at.is_(None),
-            PurchaseInvoice.status == InvoiceDocumentStatus.POSTED.value,
-            PurchaseInvoiceLine.charge_type_id.is_not(None),
+            GoodsReceiptCharge.tenant_id == tenant_id,
+            GoodsReceipt.deleted_at.is_(None),
+            GoodsReceipt.status == StockDocumentStatus.POSTED.value,
         ]
         if row.purchase_order_id is not None:
-            criteria.append(PurchaseInvoice.purchase_order_id == row.purchase_order_id)
+            criteria.append(GoodsReceipt.purchase_order_id == row.purchase_order_id)
         elif row.supplier_id is not None:
-            criteria.append(PurchaseInvoice.supplier_id == row.supplier_id)
+            criteria.append(GoodsReceipt.supplier_id == row.supplier_id)
+        else:
+            return []
         statement = (
-            select(PurchaseInvoiceLine)
-            .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.purchase_invoice_id)
+            select(GoodsReceiptCharge)
+            .join(GoodsReceipt, GoodsReceipt.id == GoodsReceiptCharge.goods_receipt_id)
             .where(*criteria)
         )
         return list((await self.session.execute(statement)).scalars().all())
@@ -689,18 +611,9 @@ class CostSheetService:
         )
         status = CostSheetStatus(row.status)
         actions = transition_actions(status)
-        if status == CostSheetStatus.CONFIRMED and row.landed_cost_id is not None:
-            actions = [item for item in actions if item != "reopen"]
         if status != CostSheetStatus.CLOSED:
             if has_permission(self.actor_permissions, COST_SHEET_UPDATE):
                 actions = [*actions, "pull_actuals"]
-            if (
-                status == CostSheetStatus.CONFIRMED
-                and row.sheet_type == CostSheetType.IMPORT.value
-                and row.landed_cost_id is None
-                and has_permission(self.actor_permissions, LANDED_COST_CREATE)
-            ):
-                actions.append("create_landed_cost")
         if status == CostSheetStatus.DRAFT and has_permission(
             self.actor_permissions, COST_SHEET_DELETE
         ):
@@ -724,8 +637,7 @@ class CostSheetService:
             incoterm=row.incoterm,
             port_of_loading=row.port_of_loading,
             port_of_discharge=row.port_of_discharge,
-            allocation_method=LandedCostAllocationMethod(row.allocation_method),
-            landed_cost_id=row.landed_cost_id,
+            allocation_method=ChargeAllocationMethod(row.allocation_method),
             notes=row.notes,
             totals=totals,
             base_total=row.base_total,
@@ -805,7 +717,7 @@ class CostSheetService:
                     actual_amount=charge.actual_amount,
                     variance_amount=variance,
                     allocation_basis=(
-                        LandedCostAllocationMethod(charge.allocation_basis)
+                        ChargeAllocationMethod(charge.allocation_basis)
                         if charge.allocation_basis
                         else None
                     ),

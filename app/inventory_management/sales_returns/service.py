@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any, cast
 from uuid import UUID
 
@@ -20,6 +21,9 @@ from app.auth.catalog import (
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
+from app.common.print.schemas import PrintDocumentResponse
+from app.common.print.service import PrintService
+from app.common.utils.document_totals import format_address_snapshot
 from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
 from app.common.schemas.filters import BaseFilter
@@ -158,6 +162,65 @@ class SalesReturnService:
         response = self._to_response(row)
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
+
+    async def print_document(
+        self,
+        tenant_id: UUID,
+        return_id: UUID,
+        *,
+        template_family: str = "uae",
+    ) -> PrintDocumentResponse:
+        from app.crm.customers.service import CustomerService
+        from app.erp.exchange_rates.service import CurrencyService
+
+        row = await self.get(tenant_id, return_id)
+        note = await self.delivery_notes.get(tenant_id, row.delivery_note_id)
+        order = (
+            await self.sales_orders.get(tenant_id, row.sales_order_id)
+            if row.sales_order_id is not None
+            else None
+        )
+        customer = await CustomerService(self.session).get(tenant_id, row.customer_id)
+        currency = await CurrencyService(self.session).get(
+            tenant_id, order.currency_id if order is not None else note.currency_id
+        )
+        printer = PrintService(self.session)
+        family = template_family if template_family in {"uae", "china"} else "uae"
+        print_lines = []
+        for index, line in enumerate(row.lines, start=1):
+            description = "Returned item"
+            if line.product_id is not None:
+                product = await self.products.get(tenant_id, line.product_id)
+                description = product.name
+            print_lines.append(
+                printer.commercial_line(
+                    SimpleNamespace(
+                        line_number=line.line_number,
+                        description=description,
+                        quantity=line.quantity,
+                        rate=line.rate,
+                        amount=quantize_money(line.quantity * line.rate),
+                    ),
+                    index=index,
+                )
+            )
+        return await printer.assemble(
+            tenant_id,
+            document_type=DocumentType.SALES_RETURN.value,
+            document_id=row.id,
+            document_number=row.document_number,
+            document_date=row.document_date,
+            template_family=family,
+            customer_code=customer.code,
+            customer_name=customer.name,
+            customer_address=format_address_snapshot(customer.billing_address),
+            customer_trn=customer.trn,
+            lpo_number=order.customer_po_number if order is not None else None,
+            delivery_note_number=note.document_number,
+            currency_code=currency.code,
+            notes=row.notes,
+            lines=print_lines,
+        )
 
     async def journal(self, tenant_id: UUID, return_id: UUID) -> JournalEntryResponse:
         await self._require(tenant_id, return_id)

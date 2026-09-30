@@ -167,12 +167,12 @@ async def test_convert_requires_sales_order_create(client: AsyncClient) -> None:
         json={
             "name": "Quote Updater",
             "email": limited_email,
-            "password": "password12",
+            "password": "Password12",
             "role_ids": [role.json()["data"]["id"]],
         },
     )
     assert user.status_code == 201, user.text
-    limited_headers = await login_headers(client, tenant_id, limited_email, "password12")
+    limited_headers = await login_headers(client, tenant_id, limited_email, "Password12")
     denied = await client.post(
         f"/api/v1/quotations/{quote['id']}/convert-to-sales-order",
         headers=_convert_headers(limited_headers, quote["version"]),

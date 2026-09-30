@@ -20,6 +20,7 @@ from app.erp.accounting.accounts.schemas import (
     AccountBalanceResponse,
     AccountCreate,
     AccountFilter,
+    AccountPeriodBalancesResponse,
     AccountResponse,
     AccountTreeNode,
     AccountUpdate,
@@ -102,6 +103,24 @@ async def get_account_balance(
     as_of: date | None = None,
 ) -> ApiResponse[AccountBalanceResponse]:
     return ApiResponse(data=await service.get_balance(tenant.tenant_id, account_id, as_of=as_of))
+
+
+@router.get(
+    "/{account_id}/period-balances",
+    response_model=ApiResponse[AccountPeriodBalancesResponse],
+)
+async def get_account_period_balances(
+    account_id: UUID,
+    tenant: TenantContextDependency,
+    service: AccountServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(ACCOUNT_READ))],
+    fiscal_year: int | None = None,
+) -> ApiResponse[AccountPeriodBalancesResponse]:
+    return ApiResponse(
+        data=await service.get_period_balances(
+            tenant.tenant_id, account_id, fiscal_year=fiscal_year
+        )
+    )
 
 
 @router.get("/{account_id}", response_model=ApiResponse[AccountResponse])

@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.schemas.conversion import ConversionLineInput
+from app.common.schemas.discount_fields import DiscountFieldsMixin
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.packing import PackingFields
 from app.common.schemas.related_documents import RelatedDocumentRef
@@ -57,7 +58,7 @@ class SalesInvoiceFilter(BaseFilter):
         return self
 
 
-class SalesInvoiceLineInput(PackingFields):
+class SalesInvoiceLineInput(PackingFields, DiscountFieldsMixin):
     product_id: UUID | None = None
     description: str | None = None
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
@@ -68,8 +69,6 @@ class SalesInvoiceLineInput(PackingFields):
     source_proforma_invoice_line_id: UUID | None = None
     delivery_note_id: UUID | None = None
     delivery_note_line_id: UUID | None = None
-    discount_type: DiscountType | None = None
-    discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     tax_id: UUID | None = None
     hs_code: str | None = Field(default=None, max_length=20)
 
@@ -124,13 +123,14 @@ class SalesInvoiceLineResponse(PackingFields):
     hs_code: str | None = None
 
 
-class SalesInvoiceCreate(BaseModel):
+class SalesInvoiceCreate(DiscountFieldsMixin):
     customer_id: UUID
     contact_id: UUID | None = None
     branch_id: UUID | None = None
     invoice_date: date | None = None
     salesperson_id: UUID | None = None
     sales_order_id: UUID | None = None
+    opportunity_id: UUID | None = None
     source_quotation_id: UUID | None = None
     source_proforma_invoice_id: UUID | None = None
     payment_terms_id: UUID | None = None
@@ -141,12 +141,11 @@ class SalesInvoiceCreate(BaseModel):
     container_number: str | None = Field(default=None, max_length=80)
     country_of_origin: str | None = Field(default=None, max_length=2)
     terms_template_id: UUID | None = None
-    discount_type: DiscountType | None = None
-    discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     shipping_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     round_off_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    prices_include_tax: bool | None = None
     lines: list[SalesInvoiceLineInput] = Field(min_length=1)
 
     @field_validator("notes", "terms_and_conditions")
@@ -165,7 +164,7 @@ class SalesInvoiceCreate(BaseModel):
         return value.strip().upper() or None
 
 
-class SalesInvoiceUpdate(BaseModel):
+class SalesInvoiceUpdate(DiscountFieldsMixin):
     contact_id: UUID | None = None
     branch_id: UUID | None = None
     invoice_date: date | None = None
@@ -178,12 +177,11 @@ class SalesInvoiceUpdate(BaseModel):
     bl_number: str | None = Field(default=None, max_length=80)
     container_number: str | None = Field(default=None, max_length=80)
     country_of_origin: str | None = Field(default=None, max_length=2)
-    discount_type: DiscountType | None = None
-    discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     shipping_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     round_off_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    prices_include_tax: bool | None = None
     lines: list[SalesInvoiceLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
@@ -247,6 +245,7 @@ class SalesInvoiceResponse(BaseModel):
     branch_id: UUID | None
     salesperson_id: UUID | None
     sales_order_id: UUID | None
+    opportunity_id: UUID | None = None
     source_quotation_id: UUID | None = None
     source_proforma_invoice_id: UUID | None = None
     payment_terms_id: UUID | None
@@ -266,6 +265,7 @@ class SalesInvoiceResponse(BaseModel):
     subtotal: Decimal
     tax_amount: Decimal
     grand_total: Decimal
+    prices_include_tax: bool = False
     foreign_amount: Decimal
     base_amount: Decimal
     bill_to_snapshot: str | None

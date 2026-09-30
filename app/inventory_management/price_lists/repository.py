@@ -1,9 +1,10 @@
 """Price-list queries."""
 
 from collections.abc import Mapping, Sequence
+from datetime import date
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.repositories.base import BaseRepository
@@ -61,6 +62,43 @@ class PriceListRepository:
 
     async def soft_delete(self, tenant_id: UUID, price_list_id: UUID) -> PriceList | None:
         return await self._repo.soft_delete(tenant_id, price_list_id)
+
+    async def list_overlapping_validity(
+        self,
+        tenant_id: UUID,
+        *,
+        valid_from: date | None,
+        valid_to: date | None,
+        exclude_id: UUID | None = None,
+    ) -> Sequence[PriceList]:
+        """Active price lists whose validity window overlaps the given range."""
+
+        criteria: list[object] = [
+            PriceList.tenant_id == tenant_id,
+            PriceList.deleted_at.is_(None),
+            PriceList.is_active.is_(True),
+        ]
+        if valid_to is not None:
+            criteria.append(
+                or_(
+                    PriceList.valid_from.is_(None),
+                    PriceList.valid_to.is_(None),
+                    PriceList.valid_from <= valid_to,
+                )
+            )
+        if valid_from is not None:
+            criteria.append(
+                or_(
+                    PriceList.valid_from.is_(None),
+                    PriceList.valid_to.is_(None),
+                    PriceList.valid_to >= valid_from,
+                )
+            )
+        if exclude_id is not None:
+            criteria.append(PriceList.id != exclude_id)
+        statement = select(PriceList).where(*criteria)
+        result = await self.session.execute(statement)
+        return result.scalars().all()
 
     async def get_item(
         self, tenant_id: UUID, price_list_id: UUID, product_id: UUID

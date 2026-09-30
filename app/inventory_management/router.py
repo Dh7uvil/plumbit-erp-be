@@ -4,6 +4,9 @@ from fastapi import APIRouter
 
 from app.inventory_management.categories.router import router as categories_router
 from app.inventory_management.delivery_notes.router import router as delivery_notes_router
+from app.inventory_management.goods_receipt_charge_adjustments.router import (
+    router as goods_receipt_charge_adjustments_router,
+)
 from app.inventory_management.goods_receipts.router import router as goods_receipts_router
 from app.inventory_management.packages.router import router as packages_router
 from app.inventory_management.price_lists.router import router as price_lists_router
@@ -29,6 +32,7 @@ router.include_router(stock_router)
 router.include_router(stock_transfers_router)
 router.include_router(stock_adjustments_router)
 router.include_router(goods_receipts_router)
+router.include_router(goods_receipt_charge_adjustments_router)
 router.include_router(quality_inspections_router)
 router.include_router(delivery_notes_router)
 router.include_router(packages_router)

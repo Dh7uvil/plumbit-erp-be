@@ -32,8 +32,6 @@ from app.auth.catalog import (
     GOODS_RECEIPT_UPDATE,
     JOURNAL_ENTRY_READ,
     JOURNAL_ENTRY_UPDATE,
-    LANDED_COST_READ,
-    LANDED_COST_UPDATE,
     PACKAGE_READ,
     PACKAGE_UPDATE,
     PRODUCT_READ,
@@ -136,8 +134,6 @@ def _register_unposted_probes() -> None:
     register_unposted("customer_payment", _probe_unposted_customer_payments)
     register_unposted("supplier_payment", _probe_unposted_supplier_payments)
     register_unposted("voucher", _probe_unposted_vouchers)
-    register_unposted("landed_cost", _probe_unposted_landed_costs)
-
 
 async def _probe_unposted_adjustments(
     session: AsyncSession,
@@ -544,33 +540,6 @@ async def _probe_unposted_vouchers(
     return documents, total
 
 
-async def _probe_unposted_landed_costs(
-    session: AsyncSession,
-    tenant_id: UUID,
-    as_of: date,
-    page: PageParams,
-) -> tuple[list[UnpostedDocument], int]:
-    from app.erp.landed_costs.service import LandedCostService
-
-    rows, total = await LandedCostService(session).list(
-        tenant_id,
-        page=page,
-        status=StockDocumentStatus.DRAFT.value,
-        document_date_to=as_of,
-    )
-    documents = [
-        UnpostedDocument(
-            id=row.id,
-            document_type="landed_cost",
-            document_number=row.document_number,
-            document_date=row.document_date,
-            status=str(row.status),
-        )
-        for row in rows
-    ]
-    return documents, total
-
-
 def _register_attachment_entities() -> None:
     register(
         AttachmentEntitySpec(
@@ -786,14 +755,6 @@ def _register_attachment_entities() -> None:
             SUPPLIER_PAYMENT_READ,
             SUPPLIER_PAYMENT_UPDATE,
             _probe_via_get(_supplier_payment_get),
-        )
-    )
-    register(
-        AttachmentEntitySpec(
-            AttachmentEntityType.LANDED_COST,
-            LANDED_COST_READ,
-            LANDED_COST_UPDATE,
-            _probe_via_get(_landed_cost_get),
         )
     )
     register(
@@ -1084,24 +1045,28 @@ async def _supplier_payment_get(session: AsyncSession, tenant_id: UUID, entity_i
     return await SupplierPaymentService(session).get(tenant_id, entity_id)
 
 
-async def _landed_cost_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
-    from app.erp.landed_costs.service import LandedCostService
-
-    return await LandedCostService(session).get(tenant_id, entity_id)
-
-
 def _register_outbox_handlers() -> None:
     from app.common.outbox.handlers import register as register_outbox
     from app.integrations.email.outbox_handlers import (
         EMAIL_EVENT_TYPES,
+        NOTIFICATION_EVENT_TYPES,
+        handle_cheque_due,
         handle_email_outbox_event,
         handle_password_reset_requested,
+        handle_quotation_revised,
+        handle_sales_invoice_posted,
+        handle_task_assigned,
     )
 
     register_outbox("identity.password_reset.requested", handle_password_reset_requested)
     register_outbox("sales.payment_reminder.requested", handle_email_outbox_event)
+    register_outbox("tasks.assigned", handle_task_assigned)
+    register_outbox("sales.quotation.revised", handle_quotation_revised)
+    register_outbox("sales.sales_invoice.posted", handle_sales_invoice_posted)
+    register_outbox("cheque.due", handle_cheque_due)
 
     for event_type in (
+        "tasks.assigned",
         "sales.quotation.revised",
         "sales.proforma_invoice.sent",
         "sales.proforma_invoice.confirmed",
@@ -1119,6 +1084,7 @@ def _register_outbox_handlers() -> None:
         "purchase.purchase_return.cancelled",
         "accounting.journal_entry.posted",
         "accounting.journal_entry.reversed",
+        "cheque.due",
         "sales.sales_invoice.posted",
         "sales.sales_invoice.cancelled",
         "erp.einvoice.submit_requested",
@@ -1136,11 +1102,9 @@ def _register_outbox_handlers() -> None:
         "purchase.supplier_payment.allocated",
         "accounting.voucher.posted",
         "accounting.voucher.cancelled",
-        "purchase.landed_cost.posted",
-        "purchase.landed_cost.cancelled",
         "identity.password_reset.requested",
     ):
-        if event_type in EMAIL_EVENT_TYPES:
+        if event_type in EMAIL_EVENT_TYPES or event_type in NOTIFICATION_EVENT_TYPES:
             continue
         register_outbox(event_type, _log_outbox_event)
 

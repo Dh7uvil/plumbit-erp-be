@@ -332,15 +332,26 @@ class StockAdjustmentService:
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
-            await self.inventory_ledger.post_stock_adjustment(
-                tenant_id,
-                source_id=row.id,
-                entry_date=row.document_date,
-                inventory_delta=inventory_delta,
-                actor_id=actor_user_id,
-                branch_id=row.branch_id,
-                document_number=row.document_number,
-            )
+            if reason == StockAdjustmentReason.DAMAGE and inventory_delta < _ZERO:
+                await self.inventory_ledger.post_stock_adjustment_damage(
+                    tenant_id,
+                    source_id=row.id,
+                    entry_date=row.document_date,
+                    scrap_amount=-inventory_delta,
+                    actor_id=actor_user_id,
+                    branch_id=row.branch_id,
+                    document_number=row.document_number,
+                )
+            else:
+                await self.inventory_ledger.post_stock_adjustment(
+                    tenant_id,
+                    source_id=row.id,
+                    entry_date=row.document_date,
+                    inventory_delta=inventory_delta,
+                    actor_id=actor_user_id,
+                    branch_id=row.branch_id,
+                    document_number=row.document_number,
+                )
             await self.session.refresh(row, attribute_names=["updated_at"])
             loaded = await self._require(tenant_id, adjustment_id)
             await self._ensure_policy(tenant_id)
@@ -475,6 +486,8 @@ class StockAdjustmentService:
                 if line.qty_delta is None or line.qty_delta == _ZERO:
                     raise ValidationError("qty_delta must be non-zero")
                 qty_delta = line.qty_delta
+                if qty_delta > _ZERO and line.unit_cost is None:
+                    raise ValidationError("unit_cost is required for positive adjustments")
             built.append(
                 {
                     "line_number": index,

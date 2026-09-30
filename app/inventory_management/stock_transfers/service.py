@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,6 +39,7 @@ from app.db.session import transaction
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import DocumentSequenceService
 from app.inventory_management.products.service import ProductService
+from app.inventory_management.costing.service import CostConsumption
 from app.inventory_management.stock.service import (
     SOURCE_STOCK_TRANSFER,
     LockedBalance,
@@ -55,6 +56,7 @@ from app.inventory_management.stock_transfers.schemas import (
 )
 from app.inventory_management.stock_transfers.workflow import (
     assert_editable,
+    is_completed,
     next_status,
     transition_actions,
 )
@@ -64,6 +66,8 @@ _ZERO = Decimal("0")
 _SERIES = "STR"
 _ACTION_PERMISSIONS: dict[str, str] = {
     "post": STOCK_TRANSFER_POST,
+    "ship": STOCK_TRANSFER_POST,
+    "receive": STOCK_TRANSFER_POST,
     "cancel": STOCK_TRANSFER_UPDATE,
 }
 
@@ -255,7 +259,8 @@ class StockTransferService:
             if replay is not None:
                 return StockTransferResponse.model_validate(replay)
             row = await self._require(tenant_id, transfer_id, for_update=True)
-            if StockDocumentStatus(row.status) == StockDocumentStatus.POSTED:
+            status = StockDocumentStatus(row.status)
+            if is_completed(status):
                 await self._ensure_policy(tenant_id)
                 response = self._to_response(row)
                 await self.idempotency.store(
@@ -263,56 +268,14 @@ class StockTransferService:
                 )
                 return response
             self._assert_version(row, expected_version)
-            target = next_status(StockDocumentStatus(row.status), "post")
+            target = next_status(status, "post")
             if not row.lines:
                 raise ValidationError("At least one line is required to post")
             old_values = await self._snapshot(tenant_id, row)
             occurred_at = utcnow()
-            first_wh, second_wh = sorted(
-                (row.from_warehouse_id, row.to_warehouse_id), key=lambda value: str(value)
+            await self._apply_transfer_movements(
+                tenant_id, row, occurred_at=occurred_at, phase="full"
             )
-            for line in row.lines:
-                locked_by_warehouse: dict[UUID, LockedBalance] = {}
-                for warehouse_id in (first_wh, second_wh):
-                    locked_by_warehouse[warehouse_id] = await self.stock.lock_balance(
-                        tenant_id,
-                        warehouse_id=warehouse_id,
-                        product_id=line.product_id,
-                        document_date=row.document_date,
-                        can_override_soft_lock=self._can_override,
-                    )
-                source = locked_by_warehouse[row.from_warehouse_id]
-                dest = locked_by_warehouse[row.to_warehouse_id]
-                line.qty_source_before = source.row.qty_on_hand
-                line.qty_dest_before = dest.row.qty_on_hand
-                line.qty_transferred = line.qty
-                out_result = await self.stock.apply_locked(
-                    tenant_id,
-                    source,
-                    qty=-line.qty,
-                    movement_type=StockMovementType.TRANSFER_OUT,
-                    source_type=SOURCE_STOCK_TRANSFER,
-                    source_id=row.id,
-                    source_line_id=line.id,
-                    document_date=row.document_date,
-                    notes=line.notes or row.notes or row.reason,
-                    occurred_at=occurred_at,
-                    unit_id=line.unit_id,
-                )
-                await self.stock.apply_locked(
-                    tenant_id,
-                    dest,
-                    qty=line.qty,
-                    movement_type=StockMovementType.TRANSFER_IN,
-                    source_type=SOURCE_STOCK_TRANSFER,
-                    source_id=row.id,
-                    source_line_id=line.id,
-                    document_date=row.document_date,
-                    notes=line.notes or row.notes or row.reason,
-                    occurred_at=occurred_at,
-                    unit_id=line.unit_id,
-                    inbound_layers=out_result.consumptions,
-                )
             row.status = target.value
             row.is_posted = True
             row.posted_at = occurred_at
@@ -320,7 +283,6 @@ class StockTransferService:
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
-            # Stock transfers are GL-neutral: one inventory account per tenant.
             await self.session.refresh(row, attribute_names=["updated_at"])
             loaded = await self._require(tenant_id, transfer_id)
             await self._ensure_policy(tenant_id)
@@ -341,6 +303,133 @@ class StockTransferService:
                 aggregate_id=transfer_id,
                 payload={"stock_transfer_id": str(transfer_id)},
                 dedupe_key=f"stock-transfer-posted:{transfer_id}",
+            )
+            response = self._to_response(loaded)
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
+            return response
+
+    async def ship(
+        self,
+        tenant_id: UUID,
+        transfer_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> StockTransferResponse:
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return StockTransferResponse.model_validate(replay)
+            row = await self._require(tenant_id, transfer_id, for_update=True)
+            status = StockDocumentStatus(row.status)
+            if status in {StockDocumentStatus.SHIPPED, StockDocumentStatus.RECEIVED} or is_completed(
+                status
+            ):
+                response = self._to_response(row)
+                await self.idempotency.store(
+                    tenant_id, idempotency_key, response.model_dump(mode="json")
+                )
+                return response
+            self._assert_version(row, expected_version)
+            target = next_status(status, "ship")
+            if not row.lines:
+                raise ValidationError("At least one line is required to ship")
+            old_values = await self._snapshot(tenant_id, row)
+            occurred_at = utcnow()
+            await self._apply_transfer_movements(
+                tenant_id, row, occurred_at=occurred_at, phase="out"
+            )
+            row.status = target.value
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            await self.session.refresh(row, attribute_names=["updated_at"])
+            loaded = await self._require(tenant_id, transfer_id)
+            await self._ensure_policy(tenant_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.DISPATCH,
+                module=INVENTORY_MODULE,
+                entity_type="stock_transfer",
+                entity_id=transfer_id,
+                old_values=old_values,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            response = self._to_response(loaded)
+            await self.idempotency.store(
+                tenant_id, idempotency_key, response.model_dump(mode="json")
+            )
+            return response
+
+    async def receive(
+        self,
+        tenant_id: UUID,
+        transfer_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> StockTransferResponse:
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return StockTransferResponse.model_validate(replay)
+            row = await self._require(tenant_id, transfer_id, for_update=True)
+            status = StockDocumentStatus(row.status)
+            if is_completed(status):
+                response = self._to_response(row)
+                await self.idempotency.store(
+                    tenant_id, idempotency_key, response.model_dump(mode="json")
+                )
+                return response
+            self._assert_version(row, expected_version)
+            target = next_status(status, "receive")
+            if not row.lines:
+                raise ValidationError("At least one line is required to receive")
+            old_values = await self._snapshot(tenant_id, row)
+            occurred_at = utcnow()
+            await self._apply_transfer_movements(
+                tenant_id, row, occurred_at=occurred_at, phase="in"
+            )
+            row.status = target.value
+            row.is_posted = True
+            row.posted_at = occurred_at
+            row.posted_by = actor_user_id
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            await self.session.refresh(row, attribute_names=["updated_at"])
+            loaded = await self._require(tenant_id, transfer_id)
+            await self._ensure_policy(tenant_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.ARRIVE,
+                module=INVENTORY_MODULE,
+                entity_type="stock_transfer",
+                entity_id=transfer_id,
+                old_values=old_values,
+                new_values=await self._snapshot(tenant_id, loaded),
+            )
+            await self.outbox.enqueue(
+                tenant_id,
+                event_type="inventory.stock_transfer.received",
+                aggregate_type="stock_transfer",
+                aggregate_id=transfer_id,
+                payload={"stock_transfer_id": str(transfer_id)},
+                dedupe_key=f"stock-transfer-received:{transfer_id}",
             )
             response = self._to_response(loaded)
             await self.idempotency.store(
@@ -499,12 +588,102 @@ class StockTransferService:
             lines=lines,
         )
 
+    async def _apply_transfer_movements(
+        self,
+        tenant_id: UUID,
+        row: StockTransfer,
+        *,
+        occurred_at: datetime,
+        phase: Literal["full", "out", "in"],
+    ) -> None:
+        first_wh, second_wh = sorted(
+            (row.from_warehouse_id, row.to_warehouse_id), key=lambda value: str(value)
+        )
+        notes = row.notes or row.reason
+        for line in row.lines:
+            locked_by_warehouse: dict[UUID, LockedBalance] = {}
+            for warehouse_id in (first_wh, second_wh):
+                locked_by_warehouse[warehouse_id] = await self.stock.lock_balance(
+                    tenant_id,
+                    warehouse_id=warehouse_id,
+                    product_id=line.product_id,
+                    document_date=row.document_date,
+                    can_override_soft_lock=self._can_override,
+                )
+            source = locked_by_warehouse[row.from_warehouse_id]
+            dest = locked_by_warehouse[row.to_warehouse_id]
+            line_notes = line.notes or notes
+            inbound_layers: Sequence[CostConsumption] | None = None
+            if phase in {"full", "out"}:
+                line.qty_source_before = source.row.qty_on_hand
+                out_result = await self.stock.apply_locked(
+                    tenant_id,
+                    source,
+                    qty=-line.qty,
+                    movement_type=StockMovementType.TRANSFER_OUT,
+                    source_type=SOURCE_STOCK_TRANSFER,
+                    source_id=row.id,
+                    source_line_id=line.id,
+                    document_date=row.document_date,
+                    notes=line_notes,
+                    occurred_at=occurred_at,
+                    unit_id=line.unit_id,
+                )
+                line.qty_transferred = line.qty
+                if phase == "full":
+                    inbound_layers = out_result.consumptions
+            if phase == "in":
+                inbound_layers = await self._inbound_layers_for_line(tenant_id, row.id, line.id)
+            if phase in {"full", "in"}:
+                line.qty_dest_before = dest.row.qty_on_hand
+                await self.stock.apply_locked(
+                    tenant_id,
+                    dest,
+                    qty=line.qty,
+                    movement_type=StockMovementType.TRANSFER_IN,
+                    source_type=SOURCE_STOCK_TRANSFER,
+                    source_id=row.id,
+                    source_line_id=line.id,
+                    document_date=row.document_date,
+                    notes=line_notes,
+                    occurred_at=occurred_at,
+                    unit_id=line.unit_id,
+                    inbound_layers=inbound_layers,
+                )
+
+    async def _inbound_layers_for_line(
+        self, tenant_id: UUID, transfer_id: UUID, line_id: UUID
+    ) -> tuple[CostConsumption, ...]:
+        movements = await self.stock.movements.list_for_source(
+            tenant_id,
+            source_type=SOURCE_STOCK_TRANSFER,
+            source_id=transfer_id,
+            source_line_id=line_id,
+        )
+        out_movements = [
+            movement
+            for movement in movements
+            if movement.movement_type == StockMovementType.TRANSFER_OUT.value
+        ]
+        if not out_movements:
+            raise ValidationError("Transfer line has not been shipped yet")
+        out_movement = out_movements[-1]
+        rows = await self.stock.costing.repo.list_consumptions_for_movement(
+            tenant_id, out_movement.id
+        )
+        if not rows:
+            raise ValidationError("Shipped transfer line is missing cost consumptions")
+        return tuple(
+            CostConsumption(layer_id=row.layer_id, qty=row.qty, unit_cost=row.unit_cost)
+            for row in rows
+        )
+
     def _available_actions(
         self, status: StockDocumentStatus, *, period_locked: bool
     ) -> builtins.list[str]:
         actions: builtins.list[str] = []
         for action in transition_actions(status):
-            if action == "post" and period_locked:
+            if action in {"post", "ship", "receive"} and period_locked:
                 continue
             required = _ACTION_PERMISSIONS[action]
             if has_permission(self.actor_permissions, required):
@@ -527,7 +706,7 @@ class StockTransferService:
             document_number=row.document_number,
             status=status,
             version=row.version,
-            is_posted=status == StockDocumentStatus.POSTED,
+            is_posted=is_completed(status),
             document_date=row.document_date,
             from_warehouse_id=row.from_warehouse_id,
             to_warehouse_id=row.to_warehouse_id,

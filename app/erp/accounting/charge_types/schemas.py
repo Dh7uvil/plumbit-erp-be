@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.common.schemas.filters import BaseFilter
-from app.core.enums import ChargeAppliesTo, LandedCostAllocationMethod
+from app.core.enums import ChargeAllocationMethod, ChargeAppliesTo
 
 
 class ChargeTypeFilter(BaseFilter):
@@ -24,7 +24,7 @@ class ChargeTypeCreate(BaseModel):
     sort_order: int = Field(default=0, ge=0)
     is_inventoriable: bool
     default_account_id: UUID
-    allocation_basis: LandedCostAllocationMethod | None = None
+    allocation_basis: ChargeAllocationMethod | None = None
     default_tax_id: UUID | None = None
     applies_to: ChargeAppliesTo = ChargeAppliesTo.BOTH
 
@@ -42,7 +42,7 @@ class ChargeTypeUpdate(BaseModel):
     sort_order: int | None = Field(default=None, ge=0)
     is_inventoriable: bool | None = None
     default_account_id: UUID | None = None
-    allocation_basis: LandedCostAllocationMethod | None = None
+    allocation_basis: ChargeAllocationMethod | None = None
     default_tax_id: UUID | None = None
     applies_to: ChargeAppliesTo | None = None
     is_active: bool | None = None
@@ -58,7 +58,7 @@ class ChargeTypeResponse(BaseModel):
     sort_order: int
     is_inventoriable: bool
     default_account_id: UUID
-    allocation_basis: LandedCostAllocationMethod | None
+    allocation_basis: ChargeAllocationMethod | None
     default_tax_id: UUID | None
     applies_to: ChargeAppliesTo
     is_active: bool

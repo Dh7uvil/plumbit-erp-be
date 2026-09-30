@@ -38,7 +38,18 @@ if _SETTINGS.database_name != "plumb_it_test":
         "set DATABASE_NAME=plumb_it_test in .env.test"
     )
 
-ADMIN_PASSWORD = "password12"
+ADMIN_PASSWORD = "Password12"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def ensure_test_db_migrated() -> None:
+    """Apply Alembic migrations to the test database before any tests run."""
+
+    from alembic import command
+    from alembic.config import Config
+
+    alembic_cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    command.upgrade(alembic_cfg, "head")
 
 
 def unique_trn(*, prefix: str = "1") -> str:

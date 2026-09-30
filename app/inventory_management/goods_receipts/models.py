@@ -137,6 +137,11 @@ class GoodsReceipt(AuditUserMixin, SoftDeleteTenantModel):
         cascade="all, delete-orphan",
         order_by="GoodsReceiptLine.line_number",
     )
+    charges: Mapped[list["GoodsReceiptCharge"]] = relationship(
+        back_populates="goods_receipt",
+        cascade="all, delete-orphan",
+        order_by="GoodsReceiptCharge.line_number",
+    )
 
 
 class GoodsReceiptLine(TenantModel):
@@ -202,5 +207,48 @@ class GoodsReceiptLine(TenantModel):
     qty_on_hold: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     qty_billed: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     qty_returned: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
+    incoming_consumed: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
+    allocated_charge_amount: Mapped[Decimal] = mapped_column(
+        _MONEY, nullable=False, server_default=text("0")
+    )
 
     goods_receipt: Mapped[GoodsReceipt] = relationship(back_populates="lines")
+
+
+class GoodsReceiptCharge(TenantModel):
+    """Inventoriable import charges capitalized into stock when the GRN is posted."""
+
+    __tablename__ = "goods_receipt_charges"
+    __table_args__ = (
+        UniqueConstraint(
+            "goods_receipt_id",
+            "line_number",
+            name="uq_goods_receipt_charges_header_line_number",
+        ),
+        Index("ix_goods_receipt_charges_goods_receipt_id", "goods_receipt_id"),
+        Index("ix_goods_receipt_charges_charge_type_id", "charge_type_id"),
+    )
+
+    goods_receipt_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("goods_receipts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    charge_type_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("charge_types.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    base_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
+    allocation_basis: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    supplier_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    goods_receipt: Mapped[GoodsReceipt] = relationship(back_populates="charges")

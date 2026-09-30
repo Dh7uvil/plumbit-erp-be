@@ -11,7 +11,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.catalog import PERIOD_OVERRIDE
+from app.auth.catalog import JOURNAL_POST_CONTROL, PERIOD_OVERRIDE
 from app.auth.org_service import OrganizationService
 from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
@@ -50,6 +50,7 @@ _CONTROL_SUBTYPES = frozenset(
 SOURCE_OPENING_BALANCE = "OPENING_BALANCE"
 SOURCE_JOURNAL_ENTRY = "journal_entry"
 SOURCE_INVENTORY_CATCH_UP = "INVENTORY_CATCH_UP"
+SOURCE_YEAR_END_CLOSING = "year_end_closing"
 _SOURCE_POSTED_CONSTRAINT = "uq_journal_entries_tenant_source_posted"
 
 
@@ -98,6 +99,7 @@ class LedgerPostingService:
             header_currency_id=entry.currency_id,
             header_rate=entry.exchange_rate,
             entry_date=entry.entry_date,
+            journal_type=JournalType(entry.journal_type),
         )
         await self._replace_prepared(tenant_id, entry, prepared)
         await self._mark_posted(tenant_id, entry, actor_id=actor_id, totals=_totals(prepared))
@@ -143,6 +145,7 @@ class LedgerPostingService:
             header_currency_id=currency_id,
             header_rate=exchange_rate,
             entry_date=entry_date,
+            journal_type=journal_type,
         )
         number = await self.sequences.allocate(
             tenant_id,
@@ -288,6 +291,7 @@ class LedgerPostingService:
         header_currency_id: UUID,
         header_rate: Decimal,
         entry_date: date,
+        journal_type: JournalType = JournalType.MANUAL,
     ) -> list[PreparedLine]:
         if len(lines) < 2:
             raise JournalLineInvalidError(details={"reason": "at_least_two_lines"})
@@ -301,6 +305,7 @@ class LedgerPostingService:
                     header_currency_id=header_currency_id,
                     header_rate=header_rate,
                     entry_date=entry_date,
+                    journal_type=journal_type,
                 )
             )
         debit_base, credit_base = _totals(prepared)
@@ -319,6 +324,7 @@ class LedgerPostingService:
         header_currency_id: UUID,
         header_rate: Decimal,
         entry_date: date,
+        journal_type: JournalType = JournalType.MANUAL,
     ) -> PreparedLine:
         if isinstance(line, JournalEntryLine):
             account_id = line.account_id
@@ -353,10 +359,24 @@ class LedgerPostingService:
         if debit_nonzero == credit_nonzero:
             raise JournalLineInvalidError(details={"line_number": line_number})
         account = await self.accounts.require_postable(tenant_id, account_id)
-        if account.account_subtype in _CONTROL_SUBTYPES and party_id is None:
-            raise PartyRequiredForControlAccountError(
-                details={"account_id": str(account_id), "line_number": line_number}
-            )
+        if account.account_subtype in _CONTROL_SUBTYPES:
+            if party_id is None:
+                raise PartyRequiredForControlAccountError(
+                    details={"account_id": str(account_id), "line_number": line_number}
+                )
+            if (
+                journal_type == JournalType.MANUAL
+                and not has_permission(self.actor_permissions, JOURNAL_POST_CONTROL)
+            ):
+                raise ValidationError(
+                    "Manual journal entries cannot post to AR/AP control accounts "
+                    "without journal post_control permission",
+                    details={
+                        "account_id": str(account_id),
+                        "line_number": line_number,
+                        "permission": JOURNAL_POST_CONTROL,
+                    },
+                )
         rate = await self._resolve_rate(
             tenant_id,
             currency_id=currency_id,

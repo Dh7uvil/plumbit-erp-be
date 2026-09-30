@@ -122,8 +122,17 @@ class DayBookResponse(ReportCurrencyMixin):
     lines: list[DayBookLine] = Field(default_factory=list)
 
 
+class AccountStatementOpening(BaseModel):
+    entry_date: date
+    debit: Decimal = Decimal("0")
+    credit: Decimal = Decimal("0")
+    running_balance: Decimal
+    balance_side: str
+    description: str | None = "Opening balance"
+
+
 class AccountStatementLine(BaseModel):
-    journal_entry_id: UUID
+    journal_entry_id: UUID | None = None
     document_number: str
     entry_date: date
     due_date: date | None
@@ -132,15 +141,28 @@ class AccountStatementLine(BaseModel):
     credit: Decimal
     running_balance: Decimal
     description: str | None
+    voucher_code: str | None = None
+    source_type: str | None = None
+    source_id: UUID | None = None
+    cheque_number: str | None = None
+    cheque_clearing_date: date | None = None
+    balance_side: str | None = None
+    narration: str | None = None
 
 
 class AccountStatementResponse(ReportCurrencyMixin):
-    party_type: str
-    party_id: UUID
+    party_type: str | None = None
+    party_id: UUID | None = None
+    account_id: UUID | None = None
+    account_code: str | None = None
+    account_name: str | None = None
     from_date: date
     to_date: date
     opening_balance: Decimal
     closing_balance: Decimal
+    total_debit: Decimal = Decimal("0")
+    total_credit: Decimal = Decimal("0")
+    opening: AccountStatementOpening | None = None
     lines: list[AccountStatementLine] = Field(default_factory=list)
 
 
@@ -412,6 +434,45 @@ class ProfitAndLossResponse(ReportCurrencyMixin):
     period_count: int = 1
     budget_id: UUID | None = None
     lines: list[ProfitAndLossLine] = Field(default_factory=list)
+
+
+class RatioAnalysisLine(BaseModel):
+    key: str
+    label: str
+    numerator: Decimal
+    denominator: Decimal
+    value: Decimal | None = None
+
+
+class RatioAnalysisResponse(ReportCurrencyMixin):
+    from_date: date
+    to_date: date
+    as_of: date
+    lines: list[RatioAnalysisLine] = Field(default_factory=list)
+
+
+class PdcRegisterLine(BaseModel):
+    cheque_id: UUID
+    document_number: str
+    cheque_number: str
+    direction: str
+    status: str
+    cheque_date: date
+    due_date: date | None
+    amount: Decimal
+    party_type: str | None = None
+    party_id: UUID | None = None
+    party_name: str | None = None
+    bank_account_id: UUID
+    bank_name: str | None = None
+
+
+class PdcRegisterResponse(ReportCurrencyMixin):
+    from_date: date | None = None
+    to_date: date | None = None
+    total_inbound: Decimal = Decimal("0")
+    total_outbound: Decimal = Decimal("0")
+    lines: list[PdcRegisterLine] = Field(default_factory=list)
 
 
 class CostCenterProfitSection(BaseModel):

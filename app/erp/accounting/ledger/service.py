@@ -43,7 +43,7 @@ from app.core.exceptions import (
 from app.core.permissions import has_permission
 from app.db.session import transaction
 from app.erp.accounting.accounts.service import AccountService
-from app.erp.accounting.fiscal import year_for
+from app.erp.accounting.fiscal import FiscalYearConfig, year_for
 from app.erp.accounting.ledger.models import JournalEntry
 from app.erp.accounting.ledger.posting import LedgerPostingService
 from app.erp.accounting.ledger.repository import JournalEntryRepository
@@ -92,6 +92,7 @@ class JournalEntryService:
         self.accounts = AccountService(session)
         self._can_override = has_permission(actor_permissions, PERIOD_OVERRIDE)
         self._period_policy: PeriodLockPolicy | None = None
+        self._fiscal: FiscalYearConfig | None = None
 
     async def list(
         self,
@@ -256,6 +257,11 @@ class JournalEntryService:
                         ),
                         narration=payload.narration if "narration" in values else row.narration,
                         reference=payload.reference if "reference" in values else row.reference,
+                        external_reference=(
+                            payload.external_reference
+                            if "external_reference" in values
+                            else row.external_reference
+                        ),
                         lines=payload.lines
                         or [
                             JournalLineInput(
@@ -477,6 +483,7 @@ class JournalEntryService:
             "cost_center_id": payload.cost_center_id,
             "narration": payload.narration,
             "reference": payload.reference,
+            "external_reference": payload.external_reference,
             "total_debit_base": total_debit_base,
             "total_credit_base": total_credit_base,
         }
@@ -510,6 +517,10 @@ class JournalEntryService:
             cost_center_id=row.cost_center_id,
             narration=row.narration,
             reference=row.reference,
+            external_reference=row.external_reference,
+            period=(
+                self._fiscal.fiscal_period_for(row.entry_date) if self._fiscal is not None else None
+            ),
             posted_at=row.posted_at,
             posted_by=row.posted_by,
             total_debit_base=total_debit_base,
@@ -544,6 +555,8 @@ class JournalEntryService:
     async def _ensure_policy(self, tenant_id: UUID) -> PeriodLockPolicy:
         if self._period_policy is None:
             _, self._period_policy = await self.org.get_inventory_controls(tenant_id)
+        if self._fiscal is None:
+            self._fiscal = await FiscalYearConfig.load(self.session, tenant_id)
         return self._period_policy
 
     def _date_in_locked_period(self, document_date: date) -> bool:

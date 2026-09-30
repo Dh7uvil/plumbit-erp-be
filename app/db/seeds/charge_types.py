@@ -7,14 +7,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import AccountSystemRole, ChargeAppliesTo, LandedCostAllocationMethod
+from app.core.enums import AccountSystemRole, ChargeAllocationMethod, ChargeAppliesTo
 from app.erp.accounting.accounts.models import Account
 from app.erp.accounting.charge_types.models import ChargeType
 
 # (code, name, sort_order, is_inventoriable, system_role, allocation_basis, applies_to)
 _CHARGE_SEED: tuple[
     tuple[
-        str, str, int, bool, AccountSystemRole, LandedCostAllocationMethod | None, ChargeAppliesTo
+        str, str, int, bool, AccountSystemRole, ChargeAllocationMethod | None, ChargeAppliesTo
     ],
     ...,
 ] = (
@@ -69,7 +69,7 @@ _CHARGE_SEED: tuple[
         60,
         True,
         AccountSystemRole.OTHER_CHARGES,
-        LandedCostAllocationMethod.QUANTITY,
+        ChargeAllocationMethod.QUANTITY,
         ChargeAppliesTo.IMPORT,
     ),
     (
@@ -87,7 +87,7 @@ _CHARGE_SEED: tuple[
         80,
         True,
         AccountSystemRole.OTHER_CHARGES,
-        LandedCostAllocationMethod.QUANTITY,
+        ChargeAllocationMethod.QUANTITY,
         ChargeAppliesTo.BOTH,
     ),
     (
@@ -96,7 +96,7 @@ _CHARGE_SEED: tuple[
         90,
         True,
         AccountSystemRole.OTHER_CHARGES,
-        LandedCostAllocationMethod.QUANTITY,
+        ChargeAllocationMethod.QUANTITY,
         ChargeAppliesTo.BOTH,
     ),
     (
@@ -105,7 +105,7 @@ _CHARGE_SEED: tuple[
         100,
         True,
         AccountSystemRole.OTHER_CHARGES,
-        LandedCostAllocationMethod.VOLUME,
+        ChargeAllocationMethod.VOLUME,
         ChargeAppliesTo.BOTH,
     ),
     (

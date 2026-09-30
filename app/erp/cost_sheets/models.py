@@ -97,12 +97,6 @@ class CostSheet(AuditUserMixin, SoftDeleteTenantModel):
     allocation_method: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'VALUE'")
     )
-    landed_cost_id: Mapped[UUID | None] = mapped_column(
-        PostgreSQLUUID(as_uuid=True),
-        ForeignKey("landed_costs.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     lines: Mapped[list["CostSheetLine"]] = relationship(

@@ -18,6 +18,7 @@ from app.auth.catalog import (
 )
 from app.auth.models import User
 from app.common.idempotency.service import IdempotencyService
+from app.common.repositories.scoping import Actor, record_scope_criteria
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
@@ -46,6 +47,7 @@ from app.crm.leads.workflow import (
     assert_editable,
     assert_status_transition,
 )
+from app.crm.lost_reasons.service import LostReasonService
 from app.crm.opportunities.schemas import OpportunityCreate
 from app.crm.opportunities.service import OpportunityService
 from app.db.session import transaction
@@ -58,15 +60,18 @@ class LeadService:
         session: AsyncSession,
         *,
         actor_permissions: frozenset[str] = frozenset(),
+        actor: Actor | None = None,
         repo: LeadRepository | None = None,
     ) -> None:
         self.session = session
         self.actor_permissions = actor_permissions
+        self.actor = actor
         self.repo = repo or LeadRepository(session)
         self.lead_sources = LeadSourceService(session)
         self.customers = CustomerService(session)
         self.contacts = ContactService(session)
         self.opportunities = OpportunityService(session, actor_permissions=actor_permissions)
+        self.lost_reasons = LostReasonService(session)
         self.currencies = CurrencyService(session)
         self.idempotency = IdempotencyService(session)
         self.audit = AuditWriter(session)
@@ -94,8 +99,13 @@ class LeadService:
             filters["rating"] = rating
         if campaign_id is not None:
             filters["campaign_id"] = campaign_id
+        extra = record_scope_criteria(self.actor, Lead) if self.actor is not None else []
         rows, total = await self.repo.list(
-            tenant_id, page=page, common_filter=common_filter, filters=filters or None
+            tenant_id,
+            page=page,
+            common_filter=common_filter,
+            filters=filters or None,
+            extra_criteria=extra or None,
         )
         return [self._to_response(row) for row in rows], total
 
@@ -234,15 +244,23 @@ class LeadService:
             current = LeadStatus(row.status)
             self._assert_version(row, expected_version)
             assert_status_transition(current, payload.status)
+            update_values: dict[str, object] = {
+                "status": payload.status.value,
+                "version": row.version + 1,
+                "updated_by": actor_user_id,
+            }
+            if payload.status == LeadStatus.LOST:
+                if payload.lost_reason_id is None:
+                    raise ValidationError("lost_reason_id is required when marking a lead as lost")
+                await self.lost_reasons.require_id(tenant_id, payload.lost_reason_id)
+                update_values["lost_reason_id"] = payload.lost_reason_id
+            elif current == LeadStatus.LOST:
+                update_values["lost_reason_id"] = None
             old_values = await self._snapshot(row)
             updated = await self.repo.update(
                 tenant_id,
                 lead_id,
-                {
-                    "status": payload.status.value,
-                    "version": row.version + 1,
-                    "updated_by": actor_user_id,
-                },
+                update_values,
             )
             if updated is None:
                 raise ResourceNotFoundError("Lead not found")
@@ -301,17 +319,33 @@ class LeadService:
                 )
                 customer_id = created_customer.id
 
-            created_contact = await self.contacts.create_record(
-                tenant_id,
-                ContactCreate(
-                    customer_id=customer_id,
-                    name=payload.contact.name,
-                    email=payload.contact.email,
-                    phone=payload.contact.phone,
-                    is_primary=payload.contact.is_primary,
-                ),
-                actor_user_id=actor_user_id,
-            )
+            if payload.contact_id is not None:
+                existing_contact = await self.contacts.get(tenant_id, payload.contact_id)
+                if existing_contact.customer_id != customer_id:
+                    raise ValidationError("Contact does not belong to the selected customer")
+                created_contact = existing_contact
+            else:
+                assert payload.contact is not None
+                contact_payload = payload.contact
+                existing_by_email = None
+                if contact_payload.email:
+                    existing_by_email = await self.contacts.find_by_email_for_customer(
+                        tenant_id, customer_id, contact_payload.email
+                    )
+                if existing_by_email is not None:
+                    created_contact = existing_by_email
+                else:
+                    created_contact = await self.contacts.create_record(
+                        tenant_id,
+                        ContactCreate(
+                            customer_id=customer_id,
+                            name=contact_payload.name,
+                            email=contact_payload.email,
+                            phone=contact_payload.phone,
+                            is_primary=contact_payload.is_primary,
+                        ),
+                        actor_user_id=actor_user_id,
+                    )
 
             opportunity_id: UUID | None = None
             opportunity_payload = payload.opportunity
@@ -470,6 +504,7 @@ class LeadService:
             ),
             "currency_id": str(row.currency_id) if row.currency_id else None,
             "notes": row.notes,
+            "lost_reason_id": str(row.lost_reason_id) if row.lost_reason_id else None,
             "version": row.version,
         }
 

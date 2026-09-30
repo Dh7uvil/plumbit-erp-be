@@ -107,7 +107,23 @@ def _role_snapshot(role: Role) -> dict[str, object]:
         "name": role.name,
         "description": role.description,
         "is_system_role": role.is_system_role,
+        "record_scope": role.record_scope,
     }
+
+
+def validate_permission_grant_subset(
+    granted_codes: set[str],
+    actor_permissions: frozenset[str],
+    *,
+    actor_is_superadmin: bool,
+) -> None:
+    """Ensure an actor only grants permissions they already hold."""
+
+    if actor_is_superadmin:
+        return
+    excess = granted_codes - actor_permissions
+    if excess:
+        raise ValidationError("Cannot grant permissions you do not hold")
 
 
 class AuthService:
@@ -248,6 +264,19 @@ class AuthService:
                 entity_id=user_id,
             )
 
+    async def logout_all(self, *, tenant_id: UUID, user_id: UUID) -> None:
+        async with transaction(self.session):
+            await self._revoke_all_sessions(tenant_id, user_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                action=AuditAction.LOGOUT,
+                module=IDENTITY_MODULE,
+                entity_type="user",
+                entity_id=user_id,
+                new_values={"logout_all": True},
+            )
+
     async def me(self, *, tenant_id: UUID, user_id: UUID) -> MeResponse:
         try:
             async with transaction(self.session):
@@ -297,7 +326,7 @@ class AuthService:
             ):
                 raise InvalidCredentialsError()
             user.password_hash = new_hash
-            await self.repo.revoke_user_refresh_tokens(tenant_id, user_id)
+            await self._revoke_all_sessions(tenant_id, user_id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=user_id,
@@ -391,7 +420,7 @@ class AuthService:
                 raise InvalidTokenError("Invalid or expired password reset token")
             user.password_hash = new_hash
             stored.used_at = utcnow()
-            await self.repo.revoke_user_refresh_tokens(user.tenant_id, user.id)
+            await self._revoke_all_sessions(user.tenant_id, user.id)
             await self.audit.write(
                 tenant_id=user.tenant_id,
                 user_id=user.id,
@@ -520,6 +549,8 @@ class AuthService:
                 await self.session.flush()
             except IntegrityError as exc:
                 raise DuplicateResourceError("A user with this email already exists") from exc
+            if status == UserStatus.DISABLED:
+                await self._revoke_all_sessions(tenant_id, user_id)
             if employee_payload is not None:
                 await self._upsert_employee(
                     tenant_id,
@@ -554,7 +585,7 @@ class AuthService:
             await self._ensure_not_last_active_superadmin(tenant_id, user)
             old_status = user.status
             user.status = UserStatus.DISABLED
-            await self.repo.revoke_user_refresh_tokens(tenant_id, user_id)
+            await self._revoke_all_sessions(tenant_id, user_id)
             await self.session.flush()
             await self.audit.write(
                 tenant_id=tenant_id,
@@ -608,7 +639,7 @@ class AuthService:
         async with transaction(self.session):
             user = await self._require_user(tenant_id, user_id)
             user.password_hash = new_hash
-            await self.repo.revoke_user_refresh_tokens(tenant_id, user_id)
+            await self._revoke_all_sessions(tenant_id, user_id)
             await self.session.flush()
             await self.audit.write(
                 tenant_id=tenant_id,
@@ -683,6 +714,7 @@ class AuthService:
         payload: RoleCreate,
         *,
         actor_user_id: UUID,
+        actor_permissions: frozenset[str],
     ) -> RoleDetailResponse:
         async with transaction(self.session):
             try:
@@ -692,11 +724,18 @@ class AuthService:
                         "name": payload.name,
                         "description": payload.description,
                         "is_system_role": False,
+                        "record_scope": payload.record_scope,
                     },
                 )
             except IntegrityError as exc:
                 raise DuplicateResourceError("A role with this name already exists") from exc
-            await self._replace_role_permissions(tenant_id, role.id, payload.permission_ids)
+            await self._replace_role_permissions(
+                tenant_id,
+                role.id,
+                payload.permission_ids,
+                actor_user_id=actor_user_id,
+                actor_permissions=actor_permissions,
+            )
             permissions = await self.repo.list_role_permissions(tenant_id, role.id)
             await self.audit.write(
                 tenant_id=tenant_id,
@@ -781,6 +820,7 @@ class AuthService:
         payload: SetRolePermissionsRequest,
         *,
         actor_user_id: UUID,
+        actor_permissions: frozenset[str],
     ) -> RoleDetailResponse:
         async with transaction(self.session):
             role = await self._require_role(tenant_id, role_id)
@@ -789,7 +829,13 @@ class AuthService:
                     "Superadmin permissions cannot be edited manually; reset them to the catalog"
                 )
             old_permissions = await self.repo.list_role_permissions(tenant_id, role.id)
-            await self._replace_role_permissions(tenant_id, role.id, payload.permission_ids)
+            await self._replace_role_permissions(
+                tenant_id,
+                role.id,
+                payload.permission_ids,
+                actor_user_id=actor_user_id,
+                actor_permissions=actor_permissions,
+            )
             new_permissions = await self.repo.list_role_permissions(tenant_id, role.id)
             old_values: dict[str, object] = {"permissions": _permission_codes(old_permissions)}
             new_values: dict[str, object] = {"permissions": _permission_codes(new_permissions)}
@@ -1145,12 +1191,29 @@ class AuthService:
         tenant_id: UUID,
         role_id: UUID,
         permission_ids: Sequence[UUID],
+        *,
+        actor_user_id: UUID,
+        actor_permissions: frozenset[str],
     ) -> None:
         unique_ids = list(dict.fromkeys(permission_ids))
         permissions = await self.repo.get_permissions_by_ids(tenant_id, unique_ids)
         if len(permissions) != len(unique_ids):
             raise ResourceNotFoundError("Permission not found")
+        actor_is_superadmin = await self._actor_is_system_admin(tenant_id, actor_user_id)
+        granted_codes = {
+            build_permission(permission.module, permission.resource, permission.action)
+            for permission in permissions
+        }
+        validate_permission_grant_subset(
+            granted_codes,
+            actor_permissions,
+            actor_is_superadmin=actor_is_superadmin,
+        )
         await self.repo.replace_role_permissions(tenant_id, role_id, unique_ids)
+
+    async def _revoke_all_sessions(self, tenant_id: UUID, user_id: UUID) -> None:
+        await self.repo.bump_token_version(tenant_id, user_id)
+        await self.repo.revoke_user_refresh_tokens(tenant_id, user_id)
 
     def _decode_refresh(self, refresh_token: str) -> TokenClaims:
         settings = get_settings()
@@ -1158,6 +1221,8 @@ class AuthService:
             refresh_token,
             secret=settings.jwt_secret.get_secret_value(),
             algorithm=settings.jwt_algorithm,
+            issuer=settings.jwt_issuer,
+            audience=settings.jwt_audience,
         )
 
     def _hash_password(self, password: str) -> str:
@@ -1186,6 +1251,9 @@ class AuthService:
             expires_delta=access_delta,
             tenant_id=tenant_id,
             algorithm=algorithm,
+            issuer=settings.jwt_issuer,
+            audience=settings.jwt_audience,
+            token_version=user.token_version,
         )
         refresh_token = create_refresh_token(
             subject=subject,
@@ -1193,11 +1261,15 @@ class AuthService:
             expires_delta=refresh_delta,
             tenant_id=tenant_id,
             algorithm=algorithm,
+            issuer=settings.jwt_issuer,
+            audience=settings.jwt_audience,
         )
         refresh_claims = decode_refresh_token(
             refresh_token,
             secret=secret,
             algorithm=algorithm,
+            issuer=settings.jwt_issuer,
+            audience=settings.jwt_audience,
         )
         await self.repo.create_refresh_token(
             tenant_id=user.tenant_id,

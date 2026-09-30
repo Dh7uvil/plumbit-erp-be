@@ -125,8 +125,6 @@ class PurchaseInvoiceLineResponse(BaseModel):
     grn_unit_cost: Decimal
     qty_debited: Decimal
     qty_received: Decimal = Decimal("0")
-    landed_cost_allocated: Decimal = Decimal("0")
-    landed_cost_remaining: Decimal | None = None
 
 
 class PurchaseInvoiceCreate(BaseModel):
@@ -149,6 +147,7 @@ class PurchaseInvoiceCreate(BaseModel):
     round_off_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
     is_reverse_charge: bool | None = None
+    prices_include_tax: bool | None = None
     lines: list[PurchaseInvoiceLineInput] = Field(min_length=1)
 
     @field_validator("notes", "supplier_invoice_number")
@@ -248,6 +247,7 @@ class PurchaseInvoiceResponse(BaseModel):
     subtotal: Decimal
     tax_amount: Decimal
     grand_total: Decimal
+    prices_include_tax: bool = False
     foreign_amount: Decimal
     base_amount: Decimal
     notes: str | None

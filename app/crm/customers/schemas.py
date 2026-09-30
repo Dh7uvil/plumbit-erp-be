@@ -1,5 +1,6 @@
 """Customer schemas."""
 
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import ClassVar
@@ -12,6 +13,19 @@ from app.common.schemas.filters import BaseFilter
 from app.common.utils.validators import blank_to_none, normalize_required_text
 from app.core.enums import CompanyType, TaxTreatment
 from app.crm.customers.codes import is_valid_party_code
+
+_TRN_PATTERN = re.compile(r"^\d{15}$")
+
+
+def validate_trn_digits(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if not _TRN_PATTERN.fullmatch(normalized):
+        raise ValueError("TRN must be exactly 15 digits")
+    return normalized
 
 
 class CustomerFilter(BaseFilter):
@@ -42,6 +56,7 @@ class CustomerCreate(BaseModel):
     default_price_list_id: UUID | None = None
     payment_terms_id: UUID | None = None
     credit_limit: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
+    credit_hold: bool = False
     salesperson_id: UUID | None = None
     receivable_account_id: UUID | None = None
     payable_account_id: UUID | None = None
@@ -72,10 +87,7 @@ class CustomerCreate(BaseModel):
     @field_validator("trn")
     @classmethod
     def normalize_trn(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        return normalized or None
+        return validate_trn_digits(value)
 
     @model_validator(mode="after")
     def require_trn_when_registered(self) -> "CustomerCreate":
@@ -93,6 +105,7 @@ class CustomerUpdate(BaseModel):
     default_price_list_id: UUID | None = None
     payment_terms_id: UUID | None = None
     credit_limit: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
+    credit_hold: bool | None = None
     salesperson_id: UUID | None = None
     receivable_account_id: UUID | None = None
     payable_account_id: UUID | None = None
@@ -111,10 +124,7 @@ class CustomerUpdate(BaseModel):
     @field_validator("trn")
     @classmethod
     def normalize_trn(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        return normalized or None
+        return validate_trn_digits(value)
 
 
 class CustomerExtraAddressCreate(BaseModel):
@@ -146,6 +156,7 @@ class CustomerResponse(BaseModel):
     default_price_list_id: UUID | None
     payment_terms_id: UUID | None
     credit_limit: Decimal | None
+    credit_hold: bool = False
     salesperson_id: UUID | None
     receivable_account_id: UUID | None = None
     payable_account_id: UUID | None = None

@@ -14,7 +14,11 @@ def get_opportunity_service(
     session: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUserDependency,
 ) -> OpportunityService:
-    return OpportunityService(session, actor_permissions=current_user.permissions)
+    return OpportunityService(
+        session,
+        actor_permissions=current_user.permissions,
+        actor=current_user.actor,
+    )
 
 
 OpportunityServiceDependency = Annotated[OpportunityService, Depends(get_opportunity_service)]

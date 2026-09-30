@@ -13,13 +13,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
     ACCOUNTING_MODULE,
+    JOURNAL_ENTRY_CREATE,
+    JOURNAL_ENTRY_DELETE,
+    JOURNAL_ENTRY_POST,
+    JOURNAL_ENTRY_UPDATE,
     PERIOD_OVERRIDE,
     VOUCHER_CANCEL,
+    VOUCHER_CREATE,
     VOUCHER_DELETE,
     VOUCHER_POST,
+    VOUCHER_UPDATE,
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
+from app.common.print.schemas import PrintJournalLine
+from app.common.print.service import PrintService
 from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
 from app.common.schemas.filters import BaseFilter
@@ -31,6 +39,7 @@ from app.core.enums import (
     AccountSubtype,
     AccountSystemRole,
     AuditAction,
+    ChequeDirection,
     DocumentType,
     InvoiceDocumentStatus,
     JournalType,
@@ -44,6 +53,7 @@ from app.core.exceptions import (
     DocumentStaleError,
     PaymentAccountInvalidError,
     PaymentOverAllocatedError,
+    PermissionDeniedError,
     ResourceNotFoundError,
     ValidationError,
 )
@@ -54,7 +64,11 @@ from app.erp.accounting.accounts.service import (
     AccountService,
     PartyAccountResolver,
 )
-from app.erp.accounting.fiscal import year_for
+from app.erp.accounting.bank_accounts.repository import BankAccountRepository
+from app.erp.accounting.cheques.models import Cheque
+from app.erp.accounting.cheques.schemas import ChequeCreate
+from app.erp.accounting.cheques.service import ChequeService
+from app.erp.accounting.fiscal import FiscalYearConfig, year_for
 from app.erp.accounting.ledger.cash_guard import assert_cash_available
 from app.erp.accounting.ledger.posting import LedgerPostingService
 from app.erp.accounting.ledger.schemas import JournalLineInput
@@ -100,9 +114,18 @@ _CONTROL_SUBTYPES = frozenset(
     {AccountSubtype.ACCOUNTS_RECEIVABLE.value, AccountSubtype.ACCOUNTS_PAYABLE.value}
 )
 _ACTION_PERMISSIONS: dict[str, str] = {
+    "create": VOUCHER_CREATE,
+    "update": VOUCHER_UPDATE,
     "post": VOUCHER_POST,
     "cancel": VOUCHER_CANCEL,
     "delete": VOUCHER_DELETE,
+}
+_JOURNAL_ACTION_PERMISSIONS: dict[str, str] = {
+    "create": JOURNAL_ENTRY_CREATE,
+    "update": JOURNAL_ENTRY_UPDATE,
+    "post": JOURNAL_ENTRY_POST,
+    "cancel": JOURNAL_ENTRY_UPDATE,
+    "delete": JOURNAL_ENTRY_DELETE,
 }
 _VOUCHER_META: dict[VoucherType, tuple[DocumentType, str, str, AccountSubtype | None]] = {
     VoucherType.CASH_RECEIPT: (
@@ -133,6 +156,12 @@ _VOUCHER_META: dict[VoucherType, tuple[DocumentType, str, str, AccountSubtype | 
         DocumentType.CONTRA_VOUCHER,
         "CON",
         "contra_voucher",
+        None,
+    ),
+    VoucherType.JOURNAL: (
+        DocumentType.JOURNAL_ENTRY,
+        "JV",
+        "journal_entry",
         None,
     ),
 }
@@ -210,9 +239,77 @@ class VoucherService:
         await self._ensure_policy(tenant_id)
         return await self._to_response(tenant_id, row)
 
+    async def print_document(
+        self,
+        tenant_id: UUID,
+        voucher_id: UUID,
+        *,
+        template_family: str = "uae",
+    ):
+        row = await self._require(tenant_id, voucher_id)
+        await self._ensure_policy(tenant_id)
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        party_name, party_code = await self._party_labels(
+            tenant_id, row.party_type, row.party_id
+        )
+        account_ids = {line.account_id for line in row.lines}
+        account_map: dict[UUID, object] = {}
+        if account_ids:
+            from sqlalchemy import select
+
+            from app.erp.accounting.accounts.models import Account
+
+            account_rows = (
+                await self.session.execute(
+                    select(Account).where(
+                        Account.tenant_id == tenant_id,
+                        Account.id.in_(account_ids),
+                    )
+                )
+            ).scalars().all()
+            account_map = {account.id: account for account in account_rows}
+        journal_lines = [
+            PrintJournalLine(
+                line_number=line.line_number,
+                account_code=account_map[line.account_id].code
+                if line.account_id in account_map
+                else None,
+                account_name=account_map[line.account_id].name
+                if line.account_id in account_map
+                else "",
+                description=line.description,
+                debit=line.debit if line.debit > _ZERO else None,
+                credit=line.credit if line.credit > _ZERO else None,
+            )
+            for line in row.lines
+        ]
+        voucher_type = VoucherType(row.voucher_type)
+        doc_type = _VOUCHER_META[voucher_type][0].value
+        printer = PrintService(self.session)
+        return await printer.assemble_voucher(
+            tenant_id,
+            document_type=doc_type,
+            document_id=row.id,
+            document_number=row.document_number,
+            document_date=row.voucher_date,
+            voucher_type=voucher_type.value,
+            template_family=template_family,
+            currency_code=currency.code,
+            total_amount=row.total_amount,
+            payment_method=row.payment_method,
+            party_name=party_name,
+            party_code=party_code,
+            cheque_number=row.cheque_number,
+            cheque_date=row.cheque_date,
+            narration=row.narration,
+            reference=row.reference or row.external_reference,
+            journal_lines=journal_lines,
+        )
+
     async def create(
         self, tenant_id: UUID, payload: VoucherCreate, *, actor_user_id: UUID
     ) -> VoucherResponse:
+        self._assert_voucher_permission("create", payload.voucher_type)
         async with transaction(self.session):
             return await self._persist_create(tenant_id, payload, actor_user_id=actor_user_id)
 
@@ -227,13 +324,16 @@ class VoucherService:
     ) -> VoucherResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, voucher_id, for_update=True)
+            self._assert_voucher_permission("update", VoucherType(row.voucher_type))
             self._assert_version(row, expected_version)
             assert_editable(InvoiceDocumentStatus(row.status))
             old_values = await self._snapshot(tenant_id, row)
             merged = self._merged_update(row, payload)
             values = await self._draft_values(tenant_id, merged)
             policy = await self._ensure_policy(tenant_id)
-            policy.assert_open(values["voucher_date"], can_override=self._can_override)
+            policy.assert_open(
+                cast(date, values["voucher_date"]), can_override=self._can_override
+            )
             for name, value in values.items():
                 setattr(row, name, value)
             if payload.lines is not None:
@@ -268,6 +368,7 @@ class VoucherService:
     ) -> VoucherResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, voucher_id, for_update=True)
+            self._assert_voucher_permission("delete", VoucherType(row.voucher_type))
             self._assert_version(row, expected_version)
             assert_editable(InvoiceDocumentStatus(row.status))
             old_values = await self._snapshot(tenant_id, row)
@@ -307,6 +408,8 @@ class VoucherService:
             if replay is not None:
                 return VoucherResponse.model_validate(replay)
             row = await self._require(tenant_id, voucher_id, for_update=True)
+            voucher_type = VoucherType(row.voucher_type)
+            self._assert_voucher_permission("post", voucher_type)
             if InvoiceDocumentStatus(row.status) == InvoiceDocumentStatus.POSTED:
                 response = await self._to_response(tenant_id, row)
                 await self.idempotency.store(
@@ -322,15 +425,32 @@ class VoucherService:
             await self._apply_draft_note_netting(tenant_id, row, actor_user_id=actor_user_id)
             await self._validate_for_post(tenant_id, row)
             lines = await self._post_journal_lines(tenant_id, row)
-            voucher_type = VoucherType(row.voucher_type)
-            if voucher_type not in {VoucherType.CONTRA} and not self._is_receipt(voucher_type):
-                outflow = quantize_money(sum((line.debit for line in lines), _ZERO))
+            if (
+                voucher_type not in {VoucherType.CONTRA, VoucherType.JOURNAL}
+                and not self._is_receipt(voucher_type)
+            ):
+                if row.payment_account_id is None:
+                    raise ValidationError("payment_account_id is required")
+                outflow = quantize_money(sum((line.credit for line in lines), _ZERO))
+                outflow_base = quantize_money(
+                    sum(
+                        (
+                            quantize_money(
+                                line.credit * (line.exchange_rate or row.exchange_rate)
+                            )
+                            for line in lines
+                        ),
+                        _ZERO,
+                    )
+                )
+                if outflow_base <= _ZERO:
+                    outflow_base = quantize_money(outflow * row.exchange_rate)
                 settings = await self.org.get_money_movement_settings(tenant_id)
                 await assert_cash_available(
                     self.session,
                     tenant_id,
                     account_id=row.payment_account_id,
-                    outflow_base=outflow,
+                    outflow_base=outflow_base,
                     allow_negative_cash=settings.allow_negative_cash,
                 )
             source_type = self._source_type(VoucherType(row.voucher_type))
@@ -345,12 +465,17 @@ class VoucherService:
                 narration=row.narration or f"Voucher {row.document_number}",
                 branch_id=row.branch_id,
                 actor_id=actor_user_id,
-                journal_type=JournalType.SYSTEM,
+                journal_type=(
+                    JournalType.MANUAL
+                    if voucher_type == VoucherType.JOURNAL
+                    else JournalType.SYSTEM
+                ),
                 reference=row.document_number,
             )
             row.journal_entry_id = journal.id
-            if VoucherType(row.voucher_type) != VoucherType.CONTRA:
+            if voucher_type not in {VoucherType.CONTRA, VoucherType.JOURNAL}:
                 await self._apply_live_allocations(tenant_id, row, actor_user_id=actor_user_id)
+            await self._ensure_pdc_cheque(tenant_id, row, actor_user_id=actor_user_id)
             row.status = target.value
             row.is_posted = True
             row.posted_at = utcnow()
@@ -402,6 +527,7 @@ class VoucherService:
             if replay is not None:
                 return VoucherResponse.model_validate(replay)
             row = await self._require(tenant_id, voucher_id, for_update=True)
+            self._assert_voucher_permission("cancel", VoucherType(row.voucher_type))
             if InvoiceDocumentStatus(row.status) == InvoiceDocumentStatus.CANCELLED:
                 response = await self._to_response(tenant_id, row)
                 await self.idempotency.store(
@@ -484,7 +610,9 @@ class VoucherService:
         await self._validate_payload(tenant_id, payload)
         values = await self._draft_values(tenant_id, payload)
         policy = await self._ensure_policy(tenant_id)
-        policy.assert_open(values["voucher_date"], can_override=self._can_override)
+        policy.assert_open(
+            cast(date, values["voucher_date"]), can_override=self._can_override
+        )
         doc_type, series, _, _ = _VOUCHER_META[payload.voucher_type]
         document_number = await self.sequences.allocate(
             tenant_id,
@@ -533,6 +661,9 @@ class VoucherService:
                 "party_type": payload.party_type,
                 "party_id": payload.party_id,
                 "payment_method": payload.payment_method,
+                "cheque_number": payload.cheque_number,
+                "cheque_date": payload.cheque_date,
+                "external_reference": payload.external_reference,
                 "reference": payload.reference,
                 "branch_id": payload.branch_id,
                 "cost_center_id": payload.cost_center_id,
@@ -541,6 +672,10 @@ class VoucherService:
         voucher_type = payload.voucher_type if isinstance(payload, VoucherCreate) else None
         if voucher_type is None:
             raise ValidationError("voucher_type is required")
+        resolved_type = (
+            voucher_type if isinstance(voucher_type, VoucherType) else VoucherType(voucher_type)
+        )
+        is_journal = resolved_type == VoucherType.JOURNAL
         voucher_date = payload.voucher_date or today_in_timezone(
             await self.org.get_timezone(tenant_id)
         )
@@ -554,20 +689,38 @@ class VoucherService:
                 on_date=voucher_date,
             )
         ).rate
-        foreign_amount, base_amount = document_fx_amounts(payload.total_amount, rate)
-        await self._require_payment_account(
-            tenant_id,
-            payload.payment_account_id,
-            voucher_type if isinstance(payload, VoucherCreate) else VoucherType(voucher_type),
-        )
+        if is_journal:
+            lines = payload.lines or []
+            total_amount = quantize_money(
+                sum((line.debit or _ZERO for line in lines), _ZERO)
+            )
+            if (
+                payload.total_amount is not None
+                and quantize_money(payload.total_amount) != total_amount
+            ):
+                raise ValidationError(
+                    "total_amount must equal sum of line debits for journal vouchers",
+                    details={
+                        "total_amount": str(payload.total_amount),
+                        "debit_total": str(total_amount),
+                    },
+                )
+        else:
+            if payload.total_amount is None:
+                raise ValidationError("total_amount is required")
+            total_amount = quantize_money(payload.total_amount)
+            payment_account_id = payload.payment_account_id
+            if payment_account_id is None:
+                raise ValidationError("payment_account_id is required")
+            await self._require_payment_account(tenant_id, payment_account_id, resolved_type)
+        foreign_amount, base_amount = document_fx_amounts(total_amount, rate)
+        payment_method = payload.payment_method
         return {
-            "voucher_type": voucher_type.value
-            if isinstance(voucher_type, VoucherType)
-            else voucher_type,
+            "voucher_type": resolved_type.value,
             "voucher_date": voucher_date,
             "payment_account_id": payload.payment_account_id,
             "counter_account_id": payload.counter_account_id,
-            "total_amount": quantize_money(payload.total_amount),
+            "total_amount": total_amount,
             "currency_id": currency_id,
             "base_currency_id": base.id,
             "exchange_rate": rate,
@@ -576,10 +729,13 @@ class VoucherService:
             "party_type": payload.party_type,
             "party_id": payload.party_id,
             "payment_method": (
-                payload.payment_method.value
-                if isinstance(payload.payment_method, PaymentMethod)
-                else payload.payment_method
+                payment_method.value
+                if isinstance(payment_method, PaymentMethod)
+                else payment_method
             ),
+            "cheque_number": payload.cheque_number,
+            "cheque_date": payload.cheque_date,
+            "external_reference": payload.external_reference,
             "reference": payload.reference,
             "branch_id": payload.branch_id,
             "cost_center_id": payload.cost_center_id,
@@ -589,12 +745,16 @@ class VoucherService:
     async def _line_rows(
         self, tenant_id: UUID, payload: VoucherCreate | VoucherUpdate | Voucher
     ) -> builtins.list[dict[str, object]]:
-        lines = payload.lines if hasattr(payload, "lines") and payload.lines is not None else []
+        line_inputs: list[VoucherLineInput]
         if isinstance(payload, Voucher):
-            lines = [
+            voucher_type = VoucherType(payload.voucher_type)
+            is_journal = voucher_type == VoucherType.JOURNAL
+            line_inputs = [
                 VoucherLineInput(
                     account_id=line.account_id,
-                    amount=line.amount,
+                    amount=None if is_journal else line.amount,
+                    debit=line.debit,
+                    credit=line.credit,
                     party_type=line.party_type,
                     party_id=line.party_id,
                     tax_id=line.tax_id,
@@ -604,8 +764,15 @@ class VoucherService:
                 )
                 for line in payload.lines
             ]
+        elif isinstance(payload, VoucherCreate):
+            voucher_type = payload.voucher_type
+            line_inputs = payload.lines
+        else:
+            raise ValidationError("voucher_type is required")
+        is_journal = voucher_type == VoucherType.JOURNAL
+        receipt = self._is_receipt(voucher_type)
         rows: builtins.list[dict[str, object]] = []
-        for index, line in enumerate(lines, start=1):
+        for index, line in enumerate(line_inputs, start=1):
             account = await self.accounts.require_postable(tenant_id, line.account_id)
             if account.account_subtype in _CONTROL_SUBTYPES and (
                 line.party_type is None or line.party_id is None
@@ -614,11 +781,25 @@ class VoucherService:
                     "AR/AP voucher lines require party_type and party_id",
                     details={"line_number": index, "account_id": str(line.account_id)},
                 )
+            if is_journal:
+                debit = quantize_money(line.debit or _ZERO)
+                credit = quantize_money(line.credit or _ZERO)
+                amount = max(debit, credit)
+            else:
+                amount = quantize_money(cast(Decimal, line.amount))
+                debit = _ZERO
+                credit = _ZERO
+                if receipt:
+                    credit = amount
+                else:
+                    debit = amount
             rows.append(
                 {
                     "line_number": index,
                     "account_id": line.account_id,
-                    "amount": quantize_money(line.amount),
+                    "amount": amount,
+                    "debit": debit,
+                    "credit": credit,
                     "party_type": line.party_type,
                     "party_id": line.party_id,
                     "tax_id": line.tax_id,
@@ -635,15 +816,40 @@ class VoucherService:
             raise ValidationError("Contra vouchers are not supported")
         if not payload.lines:
             raise ValidationError("Voucher requires at least one counter line")
-        line_total = quantize_money(sum((line.amount for line in payload.lines), _ZERO))
-        if line_total != quantize_money(payload.total_amount):
+        if voucher_type == VoucherType.JOURNAL:
+            if payload.payment_account_id is not None:
+                raise ValidationError("Journal vouchers must not set payment_account_id")
+            if payload.allocations:
+                raise ValidationError("Journal vouchers do not support allocations")
+            debit_total = quantize_money(
+                sum((line.debit or _ZERO for line in payload.lines), _ZERO)
+            )
+            credit_total = quantize_money(
+                sum((line.credit or _ZERO for line in payload.lines), _ZERO)
+            )
+            if debit_total == _ZERO:
+                raise ValidationError("Journal vouchers require at least one debit line")
+            if debit_total != credit_total:
+                raise ValidationError(
+                    "Journal debits must equal credits",
+                    details={"debit_total": str(debit_total), "credit_total": str(credit_total)},
+                )
+            return
+        line_total = quantize_money(
+            sum((cast(Decimal, line.amount) for line in payload.lines), _ZERO)
+        )
+        if payload.total_amount is None or line_total != quantize_money(payload.total_amount):
             raise ValidationError(
                 "Line amounts must equal total_amount",
-                details={"line_total": str(line_total), "total_amount": str(payload.total_amount)},
+                details={
+                    "line_total": str(line_total),
+                    "total_amount": str(payload.total_amount),
+                },
             )
         await self._validate_allocations(tenant_id, payload)
 
     async def _validate_for_post(self, tenant_id: UUID, row: Voucher) -> None:
+        is_journal = VoucherType(row.voucher_type) == VoucherType.JOURNAL
         payload = VoucherCreate(
             voucher_type=VoucherType(row.voucher_type),
             voucher_date=row.voucher_date,
@@ -653,7 +859,12 @@ class VoucherService:
             currency_id=row.currency_id,
             party_type=row.party_type,
             party_id=row.party_id,
-            payment_method=PaymentMethod(row.payment_method),
+            payment_method=(
+                PaymentMethod(row.payment_method) if row.payment_method is not None else None
+            ),
+            cheque_number=row.cheque_number,
+            cheque_date=row.cheque_date,
+            external_reference=row.external_reference,
             reference=row.reference,
             branch_id=row.branch_id,
             cost_center_id=row.cost_center_id,
@@ -661,7 +872,9 @@ class VoucherService:
             lines=[
                 VoucherLineInput(
                     account_id=line.account_id,
-                    amount=line.amount,
+                    amount=None if is_journal else line.amount,
+                    debit=line.debit if is_journal else None,
+                    credit=line.credit if is_journal else None,
                     party_type=line.party_type,
                     party_id=line.party_id,
                     tax_id=line.tax_id,
@@ -685,22 +898,22 @@ class VoucherService:
             if isinstance(payload, VoucherCreate)
             else getattr(payload, "voucher_type", None)
         )
-        if voucher_type == VoucherType.CONTRA:
+        if voucher_type in {VoucherType.CONTRA, VoucherType.JOURNAL}:
             return
         lines = payload.lines or []
         ar_ap_total = _ZERO
         for line in lines:
             account = await self.accounts.require_postable(tenant_id, line.account_id)
             if account.account_subtype in _CONTROL_SUBTYPES:
-                ar_ap_total = quantize_money(ar_ap_total + line.amount)
+                ar_ap_total = quantize_money(ar_ap_total + cast(Decimal, line.amount))
         if ar_ap_total == _ZERO:
             return
         allocations = payload.allocations or []
         if not allocations:
             raise ValidationError("AR/AP voucher lines require allocations")
-        receivable = self._is_receipt(
-            voucher_type if isinstance(voucher_type, VoucherType) else VoucherType(voucher_type)
-        )
+        if not isinstance(voucher_type, VoucherType):
+            raise ValidationError("voucher_type is required")
+        receivable = self._is_receipt(voucher_type)
         cash, notes = split_payment_allocations(allocations, receivable=receivable)
         allocated = sum_cash_allocations(allocations, receivable=receivable)
         if allocated != ar_ap_total:
@@ -715,10 +928,32 @@ class VoucherService:
         self, tenant_id: UUID, row: Voucher
     ) -> builtins.list[JournalLineInput]:
         voucher_type = VoucherType(row.voucher_type)
+        if voucher_type == VoucherType.JOURNAL:
+            journal_lines: builtins.list[JournalLineInput] = []
+            for line in row.lines:
+                journal_lines.append(
+                    JournalLineInput(
+                        account_id=line.account_id,
+                        debit=line.debit,
+                        credit=line.credit,
+                        currency_id=row.currency_id,
+                        exchange_rate=row.exchange_rate,
+                        party_type=PartyType(line.party_type) if line.party_type else None,
+                        party_id=line.party_id,
+                        tax_id=line.tax_id,
+                        branch_id=line.branch_id or row.branch_id,
+                        cost_center_id=line.cost_center_id or row.cost_center_id,
+                        description=line.description,
+                    )
+                )
+            row.amount_unapplied = _ZERO
+            return journal_lines
         if voucher_type == VoucherType.CONTRA:
             destination_id = row.counter_account_id
             if destination_id is None:
                 raise ValidationError("Contra vouchers require counter_account_id")
+            if row.payment_account_id is None:
+                raise ValidationError("Contra vouchers require payment_account_id")
             return [
                 JournalLineInput(
                     account_id=destination_id,
@@ -743,11 +978,14 @@ class VoucherService:
         )
         advance = await self.resolver.require(tenant_id, advance_role)
         fx_account = await self.resolver.require(tenant_id, AccountSystemRole.FX_GAIN_LOSS)
+        if row.payment_account_id is None:
+            raise ValidationError("payment_account_id is required")
+        payment_account_id = row.payment_account_id
         lines: builtins.list[JournalLineInput] = []
         if receipt:
             lines.append(
                 JournalLineInput(
-                    account_id=row.payment_account_id,
+                    account_id=payment_account_id,
                     debit=row.total_amount,
                     currency_id=row.currency_id,
                     exchange_rate=row.exchange_rate,
@@ -757,7 +995,7 @@ class VoucherService:
         else:
             lines.append(
                 JournalLineInput(
-                    account_id=row.payment_account_id,
+                    account_id=payment_account_id,
                     credit=row.total_amount,
                     currency_id=row.currency_id,
                     exchange_rate=row.exchange_rate,
@@ -1190,16 +1428,16 @@ class VoucherService:
 
     def _available_actions(
         self, row: Voucher, status: InvoiceDocumentStatus, *, period_locked: bool
-    ) -> list[str]:
-        actions: list[str] = []
+    ) -> builtins.list[str]:
+        actions: builtins.list[str] = []
+        voucher_type = VoucherType(row.voucher_type)
         for action in transition_actions(status):
             if action in {"post", "cancel"} and period_locked:
                 continue
-            required = _ACTION_PERMISSIONS[action]
-            if has_permission(self.actor_permissions, required):
+            if self._has_voucher_permission(action, voucher_type):
                 actions.append(action)
-        if status == InvoiceDocumentStatus.DRAFT and has_permission(
-            self.actor_permissions, VOUCHER_DELETE
+        if status == InvoiceDocumentStatus.DRAFT and self._has_voucher_permission(
+            "delete", voucher_type
         ):
             actions.append("delete")
         return actions
@@ -1217,7 +1455,7 @@ class VoucherService:
         actor_user_id: UUID,
     ) -> None:
         voucher_type = VoucherType(row.voucher_type)
-        if voucher_type == VoucherType.CONTRA:
+        if voucher_type in {VoucherType.CONTRA, VoucherType.JOURNAL}:
             return
         receivable = self._is_receipt(voucher_type)
         live = await self.allocations.list_live_for_payment(
@@ -1329,6 +1567,10 @@ class VoucherService:
         status = InvoiceDocumentStatus(row.status)
         period_locked = self._date_in_locked_period(row.voucher_date)
         allocations = await self._draft_allocations(tenant_id, row.id)
+        fiscal = await FiscalYearConfig.load(self.session, tenant_id)
+        payment_method = (
+            PaymentMethod(row.payment_method) if row.payment_method is not None else None
+        )
         return VoucherResponse(
             id=row.id,
             tenant_id=row.tenant_id,
@@ -1351,11 +1593,15 @@ class VoucherService:
             base_amount=row.base_amount,
             party_type=row.party_type,
             party_id=row.party_id,
-            payment_method=PaymentMethod(row.payment_method),
+            payment_method=payment_method,
+            cheque_number=row.cheque_number,
+            cheque_date=row.cheque_date,
+            external_reference=row.external_reference,
             reference=row.reference,
             branch_id=row.branch_id,
             cost_center_id=row.cost_center_id,
             narration=row.narration,
+            period=fiscal.fiscal_period_for(row.voucher_date),
             journal_entry_id=row.journal_entry_id,
             reversal_journal_entry_id=row.reversal_journal_entry_id,
             posted_at=row.posted_at,
@@ -1402,7 +1648,15 @@ class VoucherService:
             currency_id=values.get("currency_id", row.currency_id),
             party_type=values.get("party_type", row.party_type),
             party_id=values.get("party_id", row.party_id),
-            payment_method=values.get("payment_method", PaymentMethod(row.payment_method)),
+            payment_method=(
+                values.get(
+                    "payment_method",
+                    PaymentMethod(row.payment_method) if row.payment_method else None,
+                )
+            ),
+            cheque_number=values.get("cheque_number", row.cheque_number),
+            cheque_date=values.get("cheque_date", row.cheque_date),
+            external_reference=values.get("external_reference", row.external_reference),
             reference=values.get("reference", row.reference),
             branch_id=values.get("branch_id", row.branch_id),
             cost_center_id=values.get("cost_center_id", row.cost_center_id),
@@ -1413,6 +1667,8 @@ class VoucherService:
                     VoucherLineInput(
                         account_id=line.account_id,
                         amount=line.amount,
+                        debit=line.debit,
+                        credit=line.credit,
                         party_type=line.party_type,
                         party_id=line.party_id,
                         tax_id=line.tax_id,
@@ -1461,3 +1717,90 @@ class VoucherService:
 
     def _source_type(self, voucher_type: VoucherType) -> str:
         return _VOUCHER_META[voucher_type][2]
+
+    def _assert_voucher_permission(self, action: str, voucher_type: VoucherType) -> None:
+        if not self._has_voucher_permission(action, voucher_type):
+            raise PermissionDeniedError()
+
+    def _has_voucher_permission(self, action: str, voucher_type: VoucherType) -> bool:
+        voucher_permission = _ACTION_PERMISSIONS[action]
+        if voucher_type != VoucherType.JOURNAL:
+            return has_permission(self.actor_permissions, voucher_permission)
+        journal_permission = _JOURNAL_ACTION_PERMISSIONS[action]
+        return has_permission(self.actor_permissions, voucher_permission) or has_permission(
+            self.actor_permissions, journal_permission
+        )
+
+    async def _party_labels(
+        self,
+        tenant_id: UUID,
+        party_type: str | None,
+        party_id: UUID | None,
+    ) -> tuple[str | None, str | None]:
+        if party_id is None or party_type is None:
+            return None, None
+        from app.crm.customers.models import Customer
+
+        party = await self.session.get(Customer, party_id)
+        if party is None or party.tenant_id != tenant_id:
+            return None, None
+        return party.name, party.code
+
+    async def _ensure_pdc_cheque(
+        self,
+        tenant_id: UUID,
+        row: Voucher,
+        *,
+        actor_user_id: UUID,
+    ) -> None:
+        voucher_type = VoucherType(row.voucher_type)
+        if voucher_type not in {VoucherType.BANK_RECEIPT, VoucherType.BANK_PAYMENT}:
+            return
+        if row.payment_method != PaymentMethod.CHEQUE.value:
+            return
+        if not row.cheque_number or row.cheque_date is None:
+            return
+        if row.cheque_date <= row.voucher_date:
+            return
+        if row.payment_account_id is None:
+            return
+        from sqlalchemy import select
+
+        existing = await self.session.scalar(
+            select(Cheque.id).where(
+                Cheque.tenant_id == tenant_id,
+                Cheque.voucher_id == row.id,
+                Cheque.deleted_at.is_(None),
+            )
+        )
+        if existing is not None:
+            return
+        bank = await BankAccountRepository(self.session).get_by_account_id(
+            tenant_id, row.payment_account_id
+        )
+        if bank is None:
+            return
+        direction = (
+            ChequeDirection.INBOUND
+            if self._is_receipt(voucher_type)
+            else ChequeDirection.OUTBOUND
+        )
+        party_type = PartyType(row.party_type) if row.party_type else None
+        cheques = ChequeService(self.session, actor_permissions=self.actor_permissions)
+        await cheques.create(
+            tenant_id,
+            ChequeCreate(
+                cheque_number=row.cheque_number,
+                direction=direction,
+                cheque_date=row.cheque_date,
+                due_date=row.cheque_date,
+                amount=row.total_amount,
+                currency_id=row.currency_id,
+                party_type=party_type,
+                party_id=row.party_id,
+                bank_account_id=bank.id,
+                voucher_id=row.id,
+                narration=row.narration,
+            ),
+            actor_user_id=actor_user_id,
+        )

@@ -24,6 +24,7 @@ from app.auth.catalog import (
     SALES_MODULE,
     WRITE_OFF_CREATE,
 )
+from app.auth.models import Tenant
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
 from app.common.outbox.service import OutboxService
@@ -430,7 +431,9 @@ class SalesInvoiceService:
             )
             if replay is not None:
                 return SalesInvoiceResponse.model_validate(replay)
-            order = await self.sales_orders.get(tenant_id, payload.sales_order_id)
+            order = await self.sales_orders._require(
+                tenant_id, payload.sales_order_id, for_update=True
+            )
             if order.status != SalesOrderStatus.CONFIRMED:
                 raise ValidationError(
                     "Sales invoices can only be created from a confirmed sales order"
@@ -474,6 +477,27 @@ class SalesInvoiceService:
                 for line_id, qty in allocations
                 for source in (by_id[line_id],)
             ]
+            from app.common.utils.conversion_charges import prorate_header_charges
+
+            converted_net = _ZERO
+            for line_id, qty in allocations:
+                source = by_id[line_id]
+                line_discount_type = (
+                    DiscountType(source.discount_type) if source.discount_type else None
+                )
+                _, _, _, net = compute_line_amounts(
+                    quantity=qty,
+                    rate=source.rate,
+                    discount_type=line_discount_type,
+                    discount_value=source.discount_value,
+                    tax_rate=source.tax_rate,
+                    prices_include_tax=order.prices_include_tax,
+                )
+                converted_net += net
+            converted_net = quantize_money(converted_net)
+            shipping_amount, adjustment_amount = prorate_header_charges(
+                order, converted_net, order.subtotal
+            )
             create_payload = SalesInvoiceCreate(
                 customer_id=order.customer_id,
                 contact_id=order.contact_id,
@@ -481,6 +505,7 @@ class SalesInvoiceService:
                 invoice_date=payload.invoice_date,
                 salesperson_id=order.salesperson_id,
                 sales_order_id=order.id,
+                opportunity_id=order.opportunity_id,
                 source_quotation_id=order.source_quotation_id,
                 source_proforma_invoice_id=order.source_proforma_invoice_id,
                 payment_terms_id=order.payment_terms_id,
@@ -489,9 +514,10 @@ class SalesInvoiceService:
                 terms_and_conditions=order.terms_and_conditions,
                 discount_type=order.discount_type,
                 discount_value=order.discount_value,
-                shipping_amount=order.shipping_amount,
-                adjustment_amount=order.adjustment_amount,
+                shipping_amount=shipping_amount,
+                adjustment_amount=adjustment_amount,
                 place_of_supply=order.place_of_supply,
+                prices_include_tax=order.prices_include_tax,
                 lines=lines,
             )
             header, line_rows = await self._build_draft(tenant_id, create_payload)
@@ -570,6 +596,9 @@ class SalesInvoiceService:
             customer_ids = {note.customer_id for note in notes}
             if len(customer_ids) != 1:
                 raise ValidationError("Delivery notes must belong to the same customer")
+            currency_ids = {note.currency_id for note in notes}
+            if len(currency_ids) != 1:
+                raise ValidationError("Delivery notes must share the same currency")
             order_ids = {note.sales_order_id for note in notes if note.sales_order_id is not None}
             sales_order_id = next(iter(order_ids)) if len(order_ids) == 1 else None
             first = notes[0]
@@ -621,6 +650,7 @@ class SalesInvoiceService:
                 invoice_date=payload.invoice_date,
                 salesperson_id=order.salesperson_id if order is not None else None,
                 sales_order_id=sales_order_id,
+                opportunity_id=order.opportunity_id if order is not None else None,
                 source_quotation_id=order.source_quotation_id if order is not None else None,
                 source_proforma_invoice_id=(
                     order.source_proforma_invoice_id if order is not None else None
@@ -634,6 +664,7 @@ class SalesInvoiceService:
                 discount_type=order.discount_type if order is not None else None,
                 discount_value=order.discount_value if order is not None else None,
                 place_of_supply=PlaceOfSupply(first.place_of_supply),
+                prices_include_tax=order.prices_include_tax if order is not None else None,
                 lines=lines,
             )
             header, line_rows = await self._build_draft(tenant_id, create_payload)
@@ -721,6 +752,7 @@ class SalesInvoiceService:
                 branch_id=quotation.branch_id,
                 invoice_date=invoice_date,
                 salesperson_id=quotation.salesperson_id,
+                opportunity_id=quotation.opportunity_id,
                 source_quotation_id=quotation.id,
                 payment_terms_id=quotation.payment_terms_id,
                 currency_id=quotation.currency_id,
@@ -731,6 +763,7 @@ class SalesInvoiceService:
                 shipping_amount=quotation.shipping_amount,
                 adjustment_amount=quotation.adjustment_amount,
                 place_of_supply=quotation.place_of_supply,
+                prices_include_tax=quotation.prices_include_tax,
                 lines=[
                     SalesInvoiceLineInput(
                         product_id=source.product_id,
@@ -748,6 +781,7 @@ class SalesInvoiceService:
             )
             header, line_rows = await self._build_draft(tenant_id, create_payload)
             header["source_quotation_id"] = quotation.id
+            header["opportunity_id"] = quotation.opportunity_id
             copy_source_commercial_header(
                 header,
                 exchange_rate=quotation.exchange_rate,
@@ -862,6 +896,7 @@ class SalesInvoiceService:
                 shipping_amount=pfi.shipping_amount,
                 adjustment_amount=pfi.adjustment_amount,
                 place_of_supply=pfi.place_of_supply,
+                prices_include_tax=pfi.prices_include_tax,
                 country_of_origin=pfi.country_of_origin,
                 lines=[
                     SalesInvoiceLineInput(
@@ -1274,10 +1309,18 @@ class SalesInvoiceService:
     ) -> SalesInvoice:
         """Caller owns the transaction. Amount may be negative to reverse a credit note."""
 
+        from app.common.utils.settlement import assert_invoice_not_over_settled
+
         row = await self._require(tenant_id, invoice_id, for_update=True)
         row.amount_credited = quantize_money(row.amount_credited + amount)
         if row.amount_credited < _ZERO:
             raise ValidationError("Credited amount cannot be negative")
+        assert_invoice_not_over_settled(
+            grand_total=row.grand_total,
+            amount_paid=row.amount_paid,
+            amount_credited=row.amount_credited,
+            amount_written_off=row.amount_written_off,
+        )
         self._refresh_payment_status(row)
         await self.session.flush()
         return row
@@ -1287,20 +1330,18 @@ class SalesInvoiceService:
     ) -> SalesInvoice:
         """Caller owns the transaction. Amount may be negative to reverse a receipt."""
 
+        from app.common.utils.settlement import assert_invoice_not_over_settled
+
         row = await self._require(tenant_id, invoice_id, for_update=True)
         row.amount_paid = quantize_money(row.amount_paid + amount)
         if row.amount_paid < _ZERO:
             raise ValidationError("Paid amount cannot be negative")
-        settled = quantize_money(row.amount_paid + row.amount_credited + row.amount_written_off)
-        if settled > row.grand_total:
-            raise PaymentOverAllocatedError(
-                details={
-                    "grand_total": str(row.grand_total),
-                    "amount_paid": str(row.amount_paid),
-                    "amount_credited": str(row.amount_credited),
-                    "amount_written_off": str(row.amount_written_off),
-                }
-            )
+        assert_invoice_not_over_settled(
+            grand_total=row.grand_total,
+            amount_paid=row.amount_paid,
+            amount_credited=row.amount_credited,
+            amount_written_off=row.amount_written_off,
+        )
         self._refresh_payment_status(row)
         await self.session.flush()
         return row
@@ -1449,6 +1490,7 @@ class SalesInvoiceService:
     async def _stamp_cogs(self, tenant_id: UUID, row: SalesInvoice) -> None:
         statuses: list[str] = []
         total = _ZERO
+        cogs_groups: dict[tuple[UUID, UUID], list[tuple[SalesInvoiceLine, Decimal]]] = {}
         for line in row.lines:
             stockable = await self._is_stockable(tenant_id, line.product_id)
             if line.delivery_note_id is not None and line.delivery_note_line_id is not None:
@@ -1465,6 +1507,8 @@ class SalesInvoiceService:
                 )
                 if dn_line is not None and dn_line.quantity > _ZERO:
                     line.cogs_amount = quantize_money(value * line.quantity / dn_line.quantity)
+                    key = (line.delivery_note_id, line.delivery_note_line_id)
+                    cogs_groups.setdefault(key, []).append((line, value))
                 else:
                     line.cogs_amount = quantize_money(_ZERO)
                 line.cogs_status = (
@@ -1483,6 +1527,14 @@ class SalesInvoiceService:
                 line.cogs_status = CogsStatus.NOT_APPLICABLE.value
             statuses.append(line.cogs_status)
             total += line.cogs_amount
+        for grouped in cogs_groups.values():
+            expected = grouped[0][1]
+            allocated = quantize_money(sum((item[0].cogs_amount for item in grouped), _ZERO))
+            drift = quantize_money(expected - allocated)
+            if drift != _ZERO:
+                last_line = grouped[-1][0]
+                last_line.cogs_amount = quantize_money(last_line.cogs_amount + drift)
+                total = quantize_money(total + drift)
         row.cogs_amount = quantize_money(total)
         row.cogs_status = _header_cogs_status(statuses)
 
@@ -1562,12 +1614,22 @@ class SalesInvoiceService:
                     description=f"AR {row.document_number}",
                 )
             )
+        from app.erp.credit_notes.service import _round_off_residual
+
+        residual = _round_off_residual(lines, round_off.id)
+        if residual is not None:
+            lines.append(residual)
         return lines
 
     async def _build_draft(
         self, tenant_id: UUID, payload: SalesInvoiceCreate
     ) -> tuple[dict[str, object], builtins.list[dict[str, object]]]:
-        customer = await self.customers.get(tenant_id, payload.customer_id)
+        from app.common.schemas.discount_fields import assert_discount_bounds
+
+        assert_discount_bounds(payload.discount_type, payload.discount_value)
+        for line in payload.lines:
+            assert_discount_bounds(line.discount_type, line.discount_value)
+        customer = await self.customers.require_party(tenant_id, payload.customer_id)
         if payload.branch_id is not None:
             await self.org.require_branch(tenant_id, payload.branch_id)
         if payload.contact_id is not None:
@@ -1605,6 +1667,9 @@ class SalesInvoiceService:
             tax_treatment in {TaxTreatment.EXPORT, TaxTreatment.GCC}
             or place == PlaceOfSupply.OUTSIDE_UAE
         )
+        prices_include_tax = await self._resolve_prices_include_tax(
+            tenant_id, payload.prices_include_tax
+        )
         line_rows, line_nets, line_taxes = await self._build_lines(
             tenant_id,
             payload.lines,
@@ -1612,15 +1677,18 @@ class SalesInvoiceService:
             place_of_supply=place,
             price_list_id=customer.default_price_list_id,
             currency_id=currency_id,
+            prices_include_tax=prices_include_tax,
         )
         round_off = quantize_money(payload.round_off_amount)
-        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
-            line_nets=line_nets,
-            line_taxes=line_taxes,
-            discount_type=payload.discount_type,
-            discount_value=payload.discount_value,
-            shipping_amount=quantize_money(payload.shipping_amount),
-            adjustment_amount=quantize_money(payload.adjustment_amount),
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes, adjustment_amount = (
+            compute_header_totals(
+                line_nets=line_nets,
+                line_taxes=line_taxes,
+                discount_type=payload.discount_type,
+                discount_value=payload.discount_value,
+                shipping_amount=quantize_money(payload.shipping_amount),
+                adjustment_amount=quantize_money(payload.adjustment_amount),
+            )
         )
         apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         grand = quantize_money(grand + round_off)
@@ -1635,6 +1703,7 @@ class SalesInvoiceService:
             "branch_id": payload.branch_id,
             "salesperson_id": payload.salesperson_id or customer.salesperson_id,
             "sales_order_id": payload.sales_order_id,
+            "opportunity_id": payload.opportunity_id,
             "source_quotation_id": payload.source_quotation_id,
             "source_proforma_invoice_id": payload.source_proforma_invoice_id,
             "payment_terms_id": payment_terms_id,
@@ -1649,11 +1718,12 @@ class SalesInvoiceService:
             "discount_value": payload.discount_value,
             "discount_amount": doc_discount,
             "shipping_amount": quantize_money(payload.shipping_amount),
-            "adjustment_amount": quantize_money(payload.adjustment_amount),
+            "adjustment_amount": adjustment_amount,
             "round_off_amount": round_off,
             "subtotal": subtotal,
             "tax_amount": tax_total,
             "grand_total": grand,
+            "prices_include_tax": prices_include_tax,
             "foreign_amount": grand,
             "base_amount": quantize_money(grand * resolved.rate),
             "bill_to_snapshot": format_address_snapshot(customer.billing_address),
@@ -1674,6 +1744,14 @@ class SalesInvoiceService:
         }
         return header, line_rows
 
+    async def _resolve_prices_include_tax(
+        self, tenant_id: UUID, explicit: bool | None
+    ) -> bool:
+        if explicit is not None:
+            return explicit
+        tenant = await self.session.get(Tenant, tenant_id)
+        return bool(tenant and tenant.prices_include_tax_default)
+
     async def _build_lines(
         self,
         tenant_id: UUID,
@@ -1683,6 +1761,7 @@ class SalesInvoiceService:
         place_of_supply: PlaceOfSupply,
         price_list_id: UUID | None,
         currency_id: UUID,
+        prices_include_tax: bool = False,
     ) -> tuple[builtins.list[dict[str, object]], builtins.list[Decimal], builtins.list[Decimal]]:
         built: builtins.list[dict[str, object]] = []
         nets: builtins.list[Decimal] = []
@@ -1735,6 +1814,7 @@ class SalesInvoiceService:
                 discount_type=line.discount_type,
                 discount_value=line.discount_value,
                 tax_rate=chosen_tax.rate,
+                prices_include_tax=prices_include_tax,
             )
             built.append(
                 {
@@ -1823,6 +1903,7 @@ class SalesInvoiceService:
                 if "place_of_supply" in values
                 else PlaceOfSupply(existing.place_of_supply)
             ),
+            prices_include_tax=values.get("prices_include_tax", existing.prices_include_tax),
             lines=lines,
         )
 
@@ -1849,6 +1930,7 @@ class SalesInvoiceService:
             adjustment_amount=row.adjustment_amount,
             round_off_amount=row.round_off_amount,
             place_of_supply=PlaceOfSupply(row.place_of_supply),
+            prices_include_tax=row.prices_include_tax,
             lines=[
                 SalesInvoiceLineInput(
                     product_id=line.product_id,
@@ -1981,6 +2063,7 @@ class SalesInvoiceService:
             branch_id=row.branch_id,
             salesperson_id=row.salesperson_id,
             sales_order_id=row.sales_order_id,
+            opportunity_id=row.opportunity_id,
             source_quotation_id=row.source_quotation_id,
             source_proforma_invoice_id=row.source_proforma_invoice_id,
             payment_terms_id=row.payment_terms_id,

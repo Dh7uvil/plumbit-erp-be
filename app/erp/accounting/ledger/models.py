@@ -101,6 +101,7 @@ class JournalEntry(AuditUserMixin, SoftDeleteTenantModel):
     )
     narration: Mapped[str | None] = mapped_column(Text, nullable=True)
     reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    external_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     posted_by: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),

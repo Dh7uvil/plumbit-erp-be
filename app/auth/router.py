@@ -269,6 +269,20 @@ async def logout(
     return ApiResponse(data=None, message="Logged out successfully")
 
 
+@auth_router.post(
+    "/logout-all",
+    response_model=ApiResponse[None],
+    summary="Log out all sessions",
+    description="Revoke every refresh token and invalidate existing access tokens.",
+)
+async def logout_all(
+    tenant: TenantContextDependency,
+    service: AuthServiceDependency,
+) -> ApiResponse[None]:
+    await service.logout_all(tenant_id=tenant.tenant_id, user_id=tenant.user_id)
+    return ApiResponse(data=None, message="Logged out from all sessions successfully")
+
+
 @auth_router.get(
     "/me",
     response_model=ApiResponse[MeResponse],
@@ -577,12 +591,13 @@ async def create_role(
     payload: RoleCreate,
     tenant: TenantContextDependency,
     service: AuthServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(ROLE_CREATE))],
+    current_user: Annotated[CurrentUser, Depends(require_permission(ROLE_CREATE))],
 ) -> ApiResponse[RoleDetailResponse]:
     role = await service.create_role(
         tenant.tenant_id,
         payload,
         actor_user_id=tenant.user_id,
+        actor_permissions=current_user.permissions,
     )
     return ApiResponse(data=role, message="Role created successfully")
 
@@ -656,13 +671,14 @@ async def set_role_permissions(
     payload: SetRolePermissionsRequest,
     tenant: TenantContextDependency,
     service: AuthServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(ROLE_UPDATE))],
+    current_user: Annotated[CurrentUser, Depends(require_permission(ROLE_UPDATE))],
 ) -> ApiResponse[RoleDetailResponse]:
     role = await service.set_role_permissions(
         tenant.tenant_id,
         role_id,
         payload,
         actor_user_id=tenant.user_id,
+        actor_permissions=current_user.permissions,
     )
     return ApiResponse(data=role, message="Role permissions updated successfully")
 

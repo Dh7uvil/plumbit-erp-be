@@ -284,12 +284,12 @@ async def test_available_actions_respect_permissions(client: AsyncClient) -> Non
         json={
             "name": "Order Reader",
             "email": limited_email,
-            "password": "password12",
+            "password": "Password12",
             "role_ids": [role.json()["data"]["id"]],
         },
     )
     assert user.status_code == 201, user.text
-    limited_headers = await login_headers(client, tenant_id, limited_email, "password12")
+    limited_headers = await login_headers(client, tenant_id, limited_email, "Password12")
     fetched = await client.get(f"/api/v1/sales-orders/{order_id}", headers=limited_headers)
     assert fetched.status_code == 200, fetched.text
     assert fetched.json()["data"]["available_actions"] == ["clone"]

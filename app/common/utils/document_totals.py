@@ -7,6 +7,7 @@ from decimal import Decimal
 from app.auth.schemas import AddressResponse, format_address_label
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.core.enums import DiscountType, PlaceOfSupply, TaxCategory, TaxTreatment
+from app.core.exceptions import ValidationError
 
 _ZERO = Decimal("0")
 _HUNDRED = Decimal("100")
@@ -35,6 +36,8 @@ def discount_amount(
     if discount_type is None or discount_value is None:
         return quantize_money(_ZERO)
     if discount_type == DiscountType.PERCENTAGE:
+        if discount_value > _HUNDRED:
+            raise ValidationError("Percentage discount cannot exceed 100")
         return quantize_money(base * discount_value / _HUNDRED)
     return quantize_money(min(discount_value, base))
 
@@ -46,14 +49,20 @@ def compute_line_amounts(
     discount_type: DiscountType | None,
     discount_value: Decimal | None,
     tax_rate: Decimal,
+    prices_include_tax: bool = False,
 ) -> tuple[Decimal, Decimal, Decimal, Decimal]:
     """Return (qty, line_discount, tax_amount, net_amount)."""
 
     qty = quantize_quantity(quantity)
     gross = quantize_money(qty * rate)
     line_discount = discount_amount(gross, discount_type, discount_value)
-    net = quantize_money(gross - line_discount)
-    tax = quantize_money(net * tax_rate / _HUNDRED)
+    total = quantize_money(gross - line_discount)
+    if prices_include_tax and tax_rate > _ZERO:
+        net = quantize_money(total * _HUNDRED / (_HUNDRED + tax_rate))
+        tax = quantize_money(total - net)
+    else:
+        net = total
+        tax = quantize_money(net * tax_rate / _HUNDRED)
     return qty, line_discount, tax, net
 
 
@@ -97,17 +106,20 @@ def compute_header_totals(
     discount_value: Decimal | None,
     shipping_amount: Decimal,
     adjustment_amount: Decimal,
-) -> tuple[Decimal, Decimal, Decimal, Decimal, list[Decimal]]:
-    """Return (subtotal, doc_discount, tax_total, grand_total, adjusted_line_taxes)."""
+) -> tuple[Decimal, Decimal, Decimal, Decimal, list[Decimal], Decimal]:
+    """Return (subtotal, doc_discount, tax_total, grand_total, adjusted_line_taxes, adjustment)."""
 
     subtotal = quantize_money(sum(line_nets, start=_ZERO))
     doc_discount = discount_amount(subtotal, discount_type, discount_value)
     adjusted_taxes = adjusted_line_taxes_after_header_discount(line_nets, line_taxes, doc_discount)
     tax_total = quantize_money(sum(adjusted_taxes, start=_ZERO))
-    grand = quantize_money(
-        subtotal - doc_discount + tax_total + shipping_amount + adjustment_amount
-    )
-    return subtotal, doc_discount, tax_total, grand, adjusted_taxes
+    pre_adjustment = quantize_money(subtotal - doc_discount + tax_total + shipping_amount)
+    adjustment = quantize_money(adjustment_amount)
+    minimum_adjustment = quantize_money(-pre_adjustment)
+    if adjustment < minimum_adjustment:
+        adjustment = minimum_adjustment
+    grand = quantize_money(pre_adjustment + adjustment)
+    return subtotal, doc_discount, tax_total, grand, adjusted_taxes, adjustment
 
 
 def apply_adjusted_line_taxes(

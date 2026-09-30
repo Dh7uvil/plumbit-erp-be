@@ -51,6 +51,12 @@ class StockAdjustmentLineInput(BaseModel):
         normalized = value.strip()
         return normalized or None
 
+    @model_validator(mode="after")
+    def validate_positive_adjustment_cost(self) -> "StockAdjustmentLineInput":
+        if self.qty_delta is not None and self.qty_delta > Decimal("0") and self.unit_cost is None:
+            raise ValueError("unit_cost is required for positive adjustments")
+        return self
+
 
 class StockAdjustmentLineResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)

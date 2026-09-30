@@ -122,6 +122,7 @@ class OpportunityResponse(BaseModel):
     source_id: UUID | None
     lead_id: UUID | None
     campaign_id: UUID | None
+    closed_at: datetime | None = None
     version: int
     available_actions: list[str] = Field(default_factory=list)
     created_at: datetime

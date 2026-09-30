@@ -23,7 +23,12 @@ from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
-from app.common.idempotency.service import hash_request, require_idempotency_key
+from app.common.idempotency.service import (
+    hash_import_request,
+    hash_request,
+    optional_idempotency_key,
+    require_idempotency_key,
+)
 from app.common.imex.http import parse_mapping_json, read_upload
 from app.common.imex.schemas import ImportPreviewResponse, ImportResult
 from app.common.imex.service import export_response, preview_file, template_response
@@ -113,6 +118,7 @@ async def quotation_import_preview(
     status_code=status.HTTP_201_CREATED,
 )
 async def quotation_import(
+    request: Request,
     tenant: TenantContextDependency,
     service: QuotationServiceDependency,
     _: Annotated[CurrentUser, Depends(require_permission(QUOTATION_IMPORT))],
@@ -120,7 +126,7 @@ async def quotation_import(
     mapping: Annotated[str | None, Form()] = None,
     idempotency_key: IdempotencyKeyHeader = None,
 ) -> ApiResponse[ImportResult]:
-    require_idempotency_key(idempotency_key)
+    key = require_idempotency_key(idempotency_key)
     filename, content = await read_upload(file)
     result = await service.import_drafts(
         tenant.tenant_id,
@@ -128,6 +134,14 @@ async def quotation_import(
         content=content,
         mapping=parse_mapping_json(mapping),
         actor_user_id=tenant.user_id,
+        idempotency_key=key,
+        request_hash=hash_import_request(
+            method=request.method,
+            path=request.url.path,
+            content=content,
+            fields={"mapping": mapping or ""},
+        ),
+        endpoint=request.url.path,
     )
     return ApiResponse(data=result, message="Quotation drafts imported")
 
@@ -166,11 +180,24 @@ async def quotation_export(
 @router.post("", response_model=ApiResponse[QuotationResponse], status_code=status.HTTP_201_CREATED)
 async def create_quotation(
     payload: QuotationCreate,
+    request: Request,
     tenant: TenantContextDependency,
     service: QuotationServiceDependency,
     _: Annotated[CurrentUser, Depends(require_permission(QUOTATION_CREATE))],
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ApiResponse[QuotationResponse]:
-    row = await service.create(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
+    key = optional_idempotency_key(idempotency_key)
+    body = await request.body()
+    row = await service.create(
+        tenant.tenant_id,
+        payload,
+        actor_user_id=tenant.user_id,
+        idempotency_key=key,
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body)
+        if key
+        else None,
+        endpoint=request.url.path if key else None,
+    )
     return ApiResponse(data=row, message="Quotation created successfully")
 
 

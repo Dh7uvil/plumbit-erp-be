@@ -14,7 +14,11 @@ def get_task_service(
     session: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUserDependency,
 ) -> TaskService:
-    return TaskService(session, actor_permissions=current_user.permissions)
+    return TaskService(
+        session,
+        actor_permissions=current_user.permissions,
+        actor=current_user.actor,
+    )
 
 
 TaskServiceDependency = Annotated[TaskService, Depends(get_task_service)]

@@ -13,7 +13,6 @@ from app.auth.catalog import (
     DELIVERY_NOTE_DELETE,
     GOODS_RECEIPT_CREATE,
     GOODS_RECEIPT_DELETE,
-    LANDED_COST_CREATE,
     PURCHASE_INVOICE_CREATE,
     SALES_INVOICE_CREATE,
     SALES_RETURN_CREATE,
@@ -555,25 +554,23 @@ def test_draft_proforma_hides_advance_and_cost_sheet_actions() -> None:
     assert "create_cost_sheet" not in actions
 
 
-def test_dispatched_shipment_exposes_tracking_and_landed_cost_actions() -> None:
+def test_dispatched_shipment_exposes_tracking_actions() -> None:
     service = _actions_service(
         ShipmentService,
-        frozenset({SHIPMENT_UPDATE, COST_SHEET_CREATE, LANDED_COST_CREATE}),
+        frozenset({SHIPMENT_UPDATE, COST_SHEET_CREATE}),
     )
     actions = service._available_actions(ShipmentStatus.DISPATCHED)
 
     assert "tracking" in actions
-    assert "create_landed_cost" in actions
     assert "create_cost_sheet" in actions
 
 
-def test_draft_shipment_hides_tracking_and_landed_cost_actions() -> None:
+def test_draft_shipment_hides_tracking_actions() -> None:
     service = _actions_service(
         ShipmentService,
-        frozenset({SHIPMENT_UPDATE, COST_SHEET_CREATE, LANDED_COST_CREATE}),
+        frozenset({SHIPMENT_UPDATE, COST_SHEET_CREATE}),
     )
     actions = service._available_actions(ShipmentStatus.DRAFT)
 
     assert "tracking" not in actions
-    assert "create_landed_cost" not in actions
     assert "create_cost_sheet" in actions

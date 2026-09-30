@@ -63,7 +63,7 @@ class CategoryService:
     ) -> CategoryResponse:
         async with transaction(self.session):
             if payload.parent_id is not None:
-                await self._require(tenant_id, payload.parent_id)
+                await self.require_id(tenant_id, payload.parent_id)
             await self._validate_account_refs(
                 tenant_id, payload.income_account_id, payload.purchase_account_id
             )

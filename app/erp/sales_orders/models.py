@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -135,6 +136,9 @@ class SalesOrder(AuditUserMixin, SoftDeleteTenantModel):
     subtotal: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     tax_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     grand_total: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
+    prices_include_tax: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     foreign_amount: Mapped[Decimal] = mapped_column(
         _MONEY, nullable=False, server_default=text("0")
     )
@@ -148,6 +152,12 @@ class SalesOrder(AuditUserMixin, SoftDeleteTenantModel):
         String(30),
         nullable=False,
         server_default=text("'NOT_INVOICED'"),
+    )
+    opportunity_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("crm_opportunities.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     source_quotation_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),

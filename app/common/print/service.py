@@ -10,7 +10,12 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.org_service import OrganizationService
-from app.common.print.schemas import PrintDocumentResponse, PrintLetterhead, PrintLine
+from app.common.print.schemas import (
+    PrintDocumentResponse,
+    PrintJournalLine,
+    PrintLetterhead,
+    PrintLine,
+)
 from app.common.utils.money_words import amount_in_words
 
 
@@ -128,3 +133,131 @@ class PrintService:
         if amount is None:
             return None
         return amount_in_words(amount, currency_code=currency)
+
+    async def assemble_voucher(
+        self,
+        tenant_id: UUID,
+        *,
+        document_type: str,
+        document_id: UUID,
+        document_number: str,
+        document_date: date,
+        voucher_type: str,
+        template_family: str = "uae",
+        currency_code: str | None = None,
+        total_amount: Decimal,
+        payment_method: str | None = None,
+        party_name: str | None = None,
+        party_code: str | None = None,
+        cheque_number: str | None = None,
+        cheque_date: date | None = None,
+        narration: str | None = None,
+        reference: str | None = None,
+        journal_lines: list[PrintJournalLine],
+    ) -> PrintDocumentResponse:
+        template_kind = "journal" if voucher_type == "JOURNAL" else "voucher"
+        return await self._assemble_accounting(
+            tenant_id,
+            document_type=document_type,
+            document_id=document_id,
+            document_number=document_number,
+            document_date=document_date,
+            template_family=template_family,
+            template_kind=template_kind,
+            voucher_type=voucher_type,
+            currency_code=currency_code,
+            total_amount=total_amount,
+            payment_method=payment_method,
+            party_name=party_name,
+            party_code=party_code,
+            cheque_number=cheque_number,
+            cheque_date=cheque_date,
+            narration=narration,
+            reference=reference,
+            journal_lines=journal_lines,
+        )
+
+    async def assemble_cheque(
+        self,
+        tenant_id: UUID,
+        *,
+        document_id: UUID,
+        document_number: str,
+        document_date: date,
+        template_family: str = "uae",
+        currency_code: str | None = None,
+        amount: Decimal,
+        cheque_number: str,
+        due_date: date | None = None,
+        direction: str,
+        party_name: str | None = None,
+        party_code: str | None = None,
+        bank_name: str | None = None,
+        narration: str | None = None,
+    ) -> PrintDocumentResponse:
+        return await self._assemble_accounting(
+            tenant_id,
+            document_type="CHEQUE",
+            document_id=document_id,
+            document_number=document_number,
+            document_date=document_date,
+            template_family=template_family,
+            template_kind="cheque",
+            currency_code=currency_code,
+            total_amount=amount,
+            cheque_number=cheque_number,
+            cheque_date=document_date,
+            due_date=due_date,
+            narration=narration or f"{direction.title()} cheque {cheque_number}",
+            reference=bank_name,
+            journal_lines=[],
+        )
+
+    async def _assemble_accounting(
+        self,
+        tenant_id: UUID,
+        *,
+        document_type: str,
+        document_id: UUID,
+        document_number: str,
+        document_date: date,
+        template_family: str,
+        template_kind: str,
+        currency_code: str | None,
+        total_amount: Decimal,
+        voucher_type: str | None = None,
+        payment_method: str | None = None,
+        party_name: str | None = None,
+        party_code: str | None = None,
+        cheque_number: str | None = None,
+        cheque_date: date | None = None,
+        due_date: date | None = None,
+        narration: str | None = None,
+        reference: str | None = None,
+        journal_lines: list[PrintJournalLine],
+    ) -> PrintDocumentResponse:
+        letterhead = await self.letterhead(tenant_id)
+        family = template_family if template_family in {"uae", "china"} else "uae"
+        return PrintDocumentResponse(
+            document_type=document_type,
+            document_id=document_id,
+            document_number=document_number,
+            document_date=document_date,
+            template_family=family,
+            template_kind=template_kind,
+            voucher_type=voucher_type,
+            payment_method=payment_method,
+            party_name=party_name,
+            party_code=party_code,
+            cheque_number=cheque_number,
+            cheque_date=cheque_date,
+            due_date=due_date,
+            narration=narration,
+            reference=reference,
+            currency_code=currency_code,
+            grand_total=total_amount,
+            amount_in_words=self.words(total_amount, currency=currency_code),
+            notes=narration,
+            letterhead=letterhead,
+            journal_lines=journal_lines,
+        )

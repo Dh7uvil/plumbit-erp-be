@@ -3,7 +3,9 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, Request, status
+from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
+
+from app.common.print.schemas import PrintDocumentResponse
 
 from app.auth.catalog import (
     SALES_RETURN_CREATE,
@@ -82,6 +84,21 @@ async def get_sales_return(
     _: Annotated[CurrentUser, Depends(require_permission(SALES_RETURN_READ))],
 ) -> ApiResponse[SalesReturnResponse]:
     return ApiResponse(data=await service.get(tenant.tenant_id, return_id))
+
+
+@router.get("/{return_id}/print", response_model=ApiResponse[PrintDocumentResponse])
+async def print_sales_return(
+    return_id: UUID,
+    tenant: TenantContextDependency,
+    service: SalesReturnServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_RETURN_READ))],
+    template_family: Annotated[str, Query()] = "uae",
+) -> ApiResponse[PrintDocumentResponse]:
+    return ApiResponse(
+        data=await service.print_document(
+            tenant.tenant_id, return_id, template_family=template_family
+        )
+    )
 
 
 @router.patch("/{return_id}", response_model=ApiResponse[SalesReturnResponse])

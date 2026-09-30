@@ -34,6 +34,16 @@ class AccountRepository:
     async def get(self, tenant_id: UUID, account_id: UUID) -> Account | None:
         return await self._repo.get(tenant_id, account_id)
 
+    async def get_many(self, tenant_id: UUID, account_ids: set[UUID]) -> list[Account]:
+        if not account_ids:
+            return []
+        statement = select(Account).where(
+            Account.tenant_id == tenant_id,
+            Account.id.in_(account_ids),
+            Account.deleted_at.is_(None),
+        )
+        return list((await self.session.execute(statement)).scalars().all())
+
     async def get_by_code(self, tenant_id: UUID, code: str) -> Account | None:
         statement = select(Account).where(
             Account.tenant_id == tenant_id,

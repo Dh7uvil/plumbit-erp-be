@@ -15,6 +15,20 @@ from app.common.utils.document_totals import (
 from app.core.enums import DiscountType, PlaceOfSupply, TaxCategory, TaxTreatment
 
 
+def test_line_amounts_inclusive_rate_back_calculates_net_and_tax() -> None:
+    qty, discount, tax, net = compute_line_amounts(
+        quantity=Decimal("2"),
+        rate=Decimal("105"),
+        discount_type=None,
+        discount_value=None,
+        tax_rate=Decimal("5"),
+        prices_include_tax=True,
+    )
+    assert net == Decimal("200.0000")
+    assert tax == Decimal("10.0000")
+    assert net + tax == Decimal("210.0000")
+
+
 def test_line_amounts_apply_percent_discount_then_vat() -> None:
     qty, discount, tax, net = compute_line_amounts(
         quantity=Decimal("2"),
@@ -30,7 +44,7 @@ def test_line_amounts_apply_percent_discount_then_vat() -> None:
 
 
 def test_header_totals_reduce_vat_pro_rata_and_add_shipping() -> None:
-    subtotal, discount, tax_total, grand, adjusted = compute_header_totals(
+    subtotal, discount, tax_total, grand, adjusted, adjustment = compute_header_totals(
         line_nets=[Decimal("180.0000")],
         line_taxes=[Decimal("9.0000")],
         discount_type=DiscountType.AMOUNT,
@@ -46,7 +60,7 @@ def test_header_totals_reduce_vat_pro_rata_and_add_shipping() -> None:
 
 
 def test_header_totals_mixed_tax_rates_with_percent_discount() -> None:
-    subtotal, discount, tax_total, grand, adjusted = compute_header_totals(
+    subtotal, discount, tax_total, grand, adjusted, adjustment = compute_header_totals(
         line_nets=[Decimal("100.0000"), Decimal("200.0000")],
         line_taxes=[Decimal("5.0000"), Decimal("10.0000")],
         discount_type=DiscountType.PERCENTAGE,

@@ -16,6 +16,7 @@ from app.auth.catalog import (
     OPPORTUNITY_UPDATE,
 )
 from app.auth.models import User
+from app.common.repositories.scoping import Actor, record_scope_criteria
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.pagination import PageParams as Pagination
@@ -63,10 +64,12 @@ class OpportunityService:
         session: AsyncSession,
         *,
         actor_permissions: frozenset[str] = frozenset(),
+        actor: Actor | None = None,
         repo: OpportunityRepository | None = None,
     ) -> None:
         self.session = session
         self.actor_permissions = actor_permissions
+        self.actor = actor
         self.repo = repo or OpportunityRepository(session)
         self.stage_history = OpportunityStageHistoryRepository(session)
         self.pipelines = PipelineRepository(session)
@@ -108,8 +111,13 @@ class OpportunityService:
             filters["source_id"] = source_id
         if campaign_id is not None:
             filters["campaign_id"] = campaign_id
+        extra = record_scope_criteria(self.actor, Opportunity) if self.actor is not None else []
         rows, total = await self.repo.list(
-            tenant_id, page=page, common_filter=common_filter, filters=filters or None
+            tenant_id,
+            page=page,
+            common_filter=common_filter,
+            filters=filters or None,
+            extra_criteria=extra or None,
         )
         return [await self._to_response(row) for row in rows], total
 
@@ -134,6 +142,25 @@ class OpportunityService:
         await self._require(tenant_id, opportunity_id)
         quotations = QuotationService(self.session, actor_permissions=self.actor_permissions)
         return await quotations.list(
+            tenant_id,
+            page=page,
+            common_filter=common_filter,
+            opportunity_id=opportunity_id,
+        )
+
+    async def list_sales_orders(
+        self,
+        tenant_id: UUID,
+        opportunity_id: UUID,
+        *,
+        page: PageParams,
+        common_filter: BaseFilter | None = None,
+    ) -> tuple[builtins.list[object], int]:
+        from app.erp.sales_orders.service import SalesOrderService
+
+        await self._require(tenant_id, opportunity_id)
+        orders = SalesOrderService(self.session, actor_permissions=self.actor_permissions)
+        return await orders.list(
             tenant_id,
             page=page,
             common_filter=common_filter,
@@ -280,6 +307,8 @@ class OpportunityService:
         async with transaction(self.session):
             row = await self._require(tenant_id, opportunity_id, for_update=True)
             self._assert_version(row, expected_version)
+            if row.customer_id is None:
+                raise ValidationError("A customer is required before marking an opportunity as won")
             stages = await self.stages.list_for_pipeline(tenant_id, row.pipeline_id)
             won_stage = find_stage_by_kind(stages, PipelineStageKind.WON)
             if won_stage is None:
@@ -398,10 +427,15 @@ class OpportunityService:
         update_values: dict[str, object] = {
             "stage_id": to_stage.id,
             "status": new_status.value,
-            "probability": to_stage.probability,
             "version": row.version + 1,
             "updated_by": actor_user_id,
         }
+        if row.probability is None:
+            update_values["probability"] = to_stage.probability
+        if new_status in {OpportunityStatus.WON, OpportunityStatus.LOST}:
+            update_values["closed_at"] = now
+        elif from_closed:
+            update_values["closed_at"] = None
         if new_status == OpportunityStatus.LOST:
             update_values["lost_reason_id"] = lost_reason_id
         else:
@@ -591,6 +625,7 @@ class OpportunityService:
             "source_id": str(row.source_id) if row.source_id else None,
             "lead_id": str(row.lead_id) if row.lead_id else None,
             "campaign_id": str(row.campaign_id) if row.campaign_id else None,
+            "closed_at": row.closed_at.isoformat() if row.closed_at else None,
             "version": row.version,
         }
 

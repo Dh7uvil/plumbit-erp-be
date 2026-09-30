@@ -13,11 +13,15 @@ from fastapi import Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from app.common.utils.currency import format_money_display, format_quantity_display
+from app.common.utils.currency import (
+    format_money_display,
+    format_quantity_display,
+    format_rate_display,
+)
 
 _CSV_ACCEPT = "text/csv"
 
-CsvFieldClass = Literal["money", "quantity", "percent", "other"]
+CsvFieldClass = Literal["money", "quantity", "percent", "rate", "other"]
 
 _FX_FIELDS = frozenset({"exchange_rate"})
 _INTEGER_FIELDS = frozenset(
@@ -75,7 +79,6 @@ _MONEY_FIELDS = frozenset(
         "outstanding",
         "overdue",
         "price",
-        "rate",
         "recoverable_input_vat",
         "subtotal",
         "total",
@@ -146,8 +149,8 @@ def wants_xlsx(format: str | None) -> bool:
 
 
 def csv_field_class(field: str) -> CsvFieldClass:
-    if field in _FX_FIELDS or field.endswith("exchange_rate"):
-        return "other"
+    if field in _FX_FIELDS or field.endswith("exchange_rate") or field == "rate":
+        return "rate"
     if field in _INTEGER_FIELDS or field.endswith("_count") or field.endswith("_days"):
         return "other"
     if field in _PERCENT_FIELDS or field.endswith(("_percent", "_pct", "_percentage")):
@@ -163,7 +166,7 @@ def csv_field_class(field: str) -> CsvFieldClass:
     if field.startswith("days_"):
         return "money"
     if field.endswith("_rate"):
-        return "money"
+        return "rate"
     return "other"
 
 
@@ -174,7 +177,7 @@ def csv_cell(value: object, field: str | None = None) -> str:
         return str(value)
     if field is not None:
         kind = csv_field_class(field)
-        if kind in {"money", "quantity", "percent"}:
+        if kind in {"money", "quantity", "percent", "rate"}:
             formatted = _format_decimal_cell(value, kind)
             if formatted is not None:
                 return formatted
@@ -344,6 +347,8 @@ def _format_decimal_cell(value: object, kind: CsvFieldClass) -> str | None:
         return None
     if kind == "quantity":
         return format_quantity_display(parsed)
+    if kind == "rate":
+        return format_rate_display(parsed)
     return format_money_display(parsed)
 
 

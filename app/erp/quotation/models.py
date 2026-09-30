@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -147,6 +148,9 @@ class Quotation(AuditUserMixin, SoftDeleteTenantModel):
         Numeric(MONEY_PRECISION, MONEY_SCALE),
         nullable=False,
         server_default=text("0"),
+    )
+    prices_include_tax: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
     )
     foreign_amount: Mapped[Decimal] = mapped_column(
         Numeric(MONEY_PRECISION, MONEY_SCALE),

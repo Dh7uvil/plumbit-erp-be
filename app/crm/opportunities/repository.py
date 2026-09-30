@@ -7,6 +7,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.base import BaseRepository
 from app.common.schemas.filters import BaseFilter
@@ -61,9 +62,14 @@ class OpportunityRepository:
         page: PageParams,
         common_filter: BaseFilter | None = None,
         filters: Mapping[str, object] | None = None,
+        extra_criteria: Sequence[ColumnElement[bool]] | None = None,
     ) -> tuple[Sequence[Opportunity], int]:
         return await self._repo.list(
-            tenant_id, page=page, common_filter=common_filter, filters=filters
+            tenant_id,
+            page=page,
+            common_filter=common_filter,
+            filters=filters,
+            extra_criteria=extra_criteria,
         )
 
     async def create(self, tenant_id: UUID, values: Mapping[str, object]) -> Opportunity:

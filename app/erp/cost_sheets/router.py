@@ -12,7 +12,6 @@ from app.auth.catalog import (
     COST_SHEET_DELETE,
     COST_SHEET_READ,
     COST_SHEET_UPDATE,
-    LANDED_COST_CREATE,
 )
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
@@ -25,14 +24,11 @@ from app.common.utils.concurrency import require_document_version
 from app.erp.cost_sheets.dependencies import CostSheetServiceDependency
 from app.erp.cost_sheets.schemas import (
     CostSheetCreate,
-    CostSheetCreateLandedCostRequest,
     CostSheetFilter,
     CostSheetResponse,
     CostSheetUpdate,
     CostSheetVersionRequest,
 )
-from app.erp.landed_costs.schemas import LandedCostResponse
-
 router = APIRouter(prefix="/cost-sheets", tags=["Cost Sheets"])
 
 IfMatch = Annotated[str | None, Header()]
@@ -204,32 +200,3 @@ async def pull_cost_sheet_actuals(
     )
     return ApiResponse(data=row, message="Actuals refreshed from posted documents")
 
-
-@router.post(
-    "/{cost_sheet_id}/create-landed-cost",
-    response_model=ApiResponse[LandedCostResponse],
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_landed_cost_from_sheet(
-    cost_sheet_id: UUID,
-    payload: CostSheetCreateLandedCostRequest,
-    request: Request,
-    tenant: TenantContextDependency,
-    service: CostSheetServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(LANDED_COST_CREATE))],
-    if_match: IfMatch = None,
-    idempotency_key: IdempotencyKeyHeader = None,
-) -> ApiResponse[LandedCostResponse]:
-    body = await request.body()
-    expected = require_document_version(if_match=if_match, body_version=payload.version)
-    row = await service.create_landed_cost(
-        tenant.tenant_id,
-        cost_sheet_id,
-        payload,
-        actor_user_id=tenant.user_id,
-        expected_version=expected,
-        idempotency_key=require_idempotency_key(idempotency_key),
-        request_hash=hash_request(method=request.method, path=request.url.path, body=body),
-        endpoint=request.url.path,
-    )
-    return ApiResponse(data=row, message="Landed cost created from cost sheet")

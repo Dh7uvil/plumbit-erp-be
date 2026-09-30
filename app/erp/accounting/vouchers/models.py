@@ -51,10 +51,10 @@ class Voucher(AuditUserMixin, SoftDeleteTenantModel):
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     is_posted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     voucher_date: Mapped[date] = mapped_column(Date, nullable=False)
-    payment_account_id: Mapped[UUID] = mapped_column(
+    payment_account_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("accounts.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
     )
     counter_account_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
@@ -83,7 +83,10 @@ class Voucher(AuditUserMixin, SoftDeleteTenantModel):
     base_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     party_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     party_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=True)
-    payment_method: Mapped[str] = mapped_column(String(30), nullable=False)
+    payment_method: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    cheque_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    cheque_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    external_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     branch_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
@@ -149,6 +152,8 @@ class VoucherLine(TenantModel):
         nullable=False,
     )
     amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    debit: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
+    credit: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     party_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     party_id: Mapped[UUID | None] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=True)
     tax_id: Mapped[UUID | None] = mapped_column(

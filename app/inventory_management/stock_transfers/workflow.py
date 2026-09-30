@@ -5,10 +5,13 @@ from app.core.exceptions import InvalidStatusTransitionError
 
 _TRANSITIONS: dict[tuple[StockDocumentStatus, str], StockDocumentStatus] = {
     (StockDocumentStatus.DRAFT, "post"): StockDocumentStatus.POSTED,
+    (StockDocumentStatus.DRAFT, "ship"): StockDocumentStatus.SHIPPED,
     (StockDocumentStatus.DRAFT, "cancel"): StockDocumentStatus.CANCELLED,
+    (StockDocumentStatus.SHIPPED, "receive"): StockDocumentStatus.RECEIVED,
 }
 
 _EDITABLE = frozenset({StockDocumentStatus.DRAFT})
+_COMPLETED = frozenset({StockDocumentStatus.POSTED, StockDocumentStatus.RECEIVED})
 
 
 def next_status(current: StockDocumentStatus, action: str) -> StockDocumentStatus:
@@ -27,3 +30,7 @@ def transition_actions(current: StockDocumentStatus) -> list[str]:
 def assert_editable(status: StockDocumentStatus) -> None:
     if status not in _EDITABLE:
         raise InvalidStatusTransitionError("Only draft stock transfers can be edited")
+
+
+def is_completed(status: StockDocumentStatus) -> bool:
+    return status in _COMPLETED

@@ -19,12 +19,14 @@ from app.auth.catalog import (
     TASKS_MODULE,
 )
 from app.auth.models import User
+from app.common.repositories.scoping import Actor, record_scope_criteria
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.outbox.service import OutboxService
 from app.common.services.audit import AuditWriter
 from app.common.utils.datetime import utcnow
 from app.core.enums import AuditAction, TaskPriority, TaskRelatedEntityType, TaskStatus, TaskType
-from app.core.exceptions import ResourceNotFoundError, ValidationError
+from app.core.exceptions import AppError, ResourceNotFoundError, ValidationError
 from app.core.permissions import has_permission
 from app.db.session import transaction
 from app.task_management.task_labels.models import TaskLabel
@@ -40,6 +42,10 @@ from app.task_management.tasks.related import assert_related_entity_exists
 from app.task_management.tasks.repository import TaskRepository
 from app.task_management.tasks.schemas import (
     TaskAssign,
+    TaskBulkAssign,
+    TaskBulkResult,
+    TaskBulkResultItem,
+    TaskBulkStatus,
     TaskChecklistItemCreate,
     TaskChecklistItemResponse,
     TaskChecklistItemUpdate,
@@ -66,12 +72,15 @@ class TaskService:
         session: AsyncSession,
         *,
         actor_permissions: frozenset[str] = frozenset(),
+        actor: Actor | None = None,
         repo: TaskRepository | None = None,
     ) -> None:
         self.session = session
         self.actor_permissions = actor_permissions
+        self.actor = actor
         self.repo = repo or TaskRepository(session)
         self.audit = AuditWriter(session)
+        self.outbox = OutboxService(session)
 
     async def list(
         self,
@@ -169,6 +178,8 @@ class TaskService:
                     )
                 )
             )
+        if self.actor is not None:
+            extra.extend(record_scope_criteria(self.actor, Task))
 
         rows, total = await self.repo.list(
             tenant_id,
@@ -341,6 +352,94 @@ class TaskService:
             refreshed = await self._require(tenant_id, task_id)
             return await self._to_response(refreshed, include_children=True)
 
+    async def bulk_assign(
+        self,
+        tenant_id: UUID,
+        payload: TaskBulkAssign,
+        *,
+        actor_user_id: UUID,
+    ) -> TaskBulkResult:
+        items: builtins.list[TaskBulkResultItem] = []
+        for entry in payload.items:
+            if not has_permission(self.actor_permissions, TASK_ASSIGN):
+                items.append(
+                    TaskBulkResultItem(
+                        task_id=entry.task_id,
+                        success=False,
+                        error="Permission denied",
+                    )
+                )
+                continue
+            try:
+                async with transaction(self.session):
+                    row = await self.assign(
+                        tenant_id,
+                        entry.task_id,
+                        TaskAssign(assignee_id=entry.assignee_id),
+                        actor_user_id=actor_user_id,
+                    )
+                items.append(TaskBulkResultItem(task_id=entry.task_id, success=True, data=row))
+            except (AppError, ValidationError) as exc:
+                items.append(
+                    TaskBulkResultItem(
+                        task_id=entry.task_id,
+                        success=False,
+                        error=str(exc),
+                    )
+                )
+        success_count = sum(1 for item in items if item.success)
+        return TaskBulkResult(
+            items=items,
+            success_count=success_count,
+            error_count=len(items) - success_count,
+        )
+
+    async def bulk_status(
+        self,
+        tenant_id: UUID,
+        payload: TaskBulkStatus,
+        *,
+        actor_user_id: UUID,
+    ) -> TaskBulkResult:
+        items: builtins.list[TaskBulkResultItem] = []
+        for entry in payload.items:
+            if not has_permission(self.actor_permissions, TASK_MOVE):
+                items.append(
+                    TaskBulkResultItem(
+                        task_id=entry.task_id,
+                        success=False,
+                        error="Permission denied",
+                    )
+                )
+                continue
+            try:
+                existing = await self._require(tenant_id, entry.task_id)
+                sort_order = (
+                    entry.sort_order if entry.sort_order is not None else existing.sort_order
+                )
+                async with transaction(self.session):
+                    row = await self.move(
+                        tenant_id,
+                        entry.task_id,
+                        TaskMove(status=entry.status, sort_order=sort_order),
+                        actor_user_id=actor_user_id,
+                    )
+                items.append(TaskBulkResultItem(task_id=entry.task_id, success=True, data=row))
+            except (AppError, ValidationError) as exc:
+                items.append(
+                    TaskBulkResultItem(
+                        task_id=entry.task_id,
+                        success=False,
+                        error=str(exc),
+                    )
+                )
+        success_count = sum(1 for item in items if item.success)
+        return TaskBulkResult(
+            items=items,
+            success_count=success_count,
+            error_count=len(items) - success_count,
+        )
+
     async def assign(
         self,
         tenant_id: UUID,
@@ -371,6 +470,25 @@ class TaskService:
                 old_values=old_values,
                 new_values=await self._snapshot(tenant_id, row),
             )
+            if (
+                payload.assignee_id is not None
+                and payload.assignee_id != actor_user_id
+                and old_values.get("assignee_id") != str(payload.assignee_id)
+            ):
+                await self.outbox.enqueue(
+                    tenant_id,
+                    event_type="tasks.assigned",
+                    aggregate_type="task",
+                    aggregate_id=row.id,
+                    payload={
+                        "task_id": str(row.id),
+                        "assignee_id": str(payload.assignee_id),
+                        "actor_user_id": str(actor_user_id),
+                        "task_number": row.task_number,
+                        "title": row.title,
+                    },
+                    dedupe_key=f"task-assigned:{row.id}:{payload.assignee_id}",
+                )
             return await self._to_response(row, include_children=True)
 
     async def delete(self, tenant_id: UUID, task_id: UUID, *, actor_user_id: UUID) -> TaskResponse:

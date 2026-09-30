@@ -1,9 +1,10 @@
 """Bank account routes."""
 
+from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.auth.catalog import (
     BANK_ACCOUNT_CREATE,
@@ -23,6 +24,7 @@ from app.erp.accounting.bank_accounts.schemas import (
     BankAccountFilter,
     BankAccountResponse,
     BankAccountUpdate,
+    BankBalanceProjectionResponse,
 )
 
 router = APIRouter(prefix="/bank-accounts", tags=["Bank Accounts"])
@@ -59,6 +61,28 @@ async def create_bank_account(
 ) -> ApiResponse[BankAccountResponse]:
     row = await service.create(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Bank account created successfully")
+
+
+@router.get(
+    "/{bank_account_id}/balance-projection",
+    response_model=ApiResponse[BankBalanceProjectionResponse],
+)
+async def get_bank_balance_projection(
+    bank_account_id: UUID,
+    tenant: TenantContextDependency,
+    service: BankAccountServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(BANK_ACCOUNT_READ))],
+    as_of: date | None = None,
+    horizon_days: int = Query(default=30, ge=1, le=365),
+) -> ApiResponse[BankBalanceProjectionResponse]:
+    return ApiResponse(
+        data=await service.balance_projection(
+            tenant.tenant_id,
+            bank_account_id,
+            as_of=as_of,
+            horizon_days=horizon_days,
+        )
+    )
 
 
 @router.get("/{bank_account_id}", response_model=ApiResponse[BankAccountResponse])

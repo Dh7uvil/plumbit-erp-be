@@ -25,3 +25,21 @@ def require_permission(required_permission: str) -> PermissionDependency:
         return current_user
 
     return dependency
+
+
+def require_any_permission(*required_permissions: str) -> PermissionDependency:
+    """Build a dependency that passes when any listed permission is granted."""
+
+    parsed_permissions = tuple(parse_permission(permission) for permission in required_permissions)
+
+    async def dependency(
+        current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    ) -> CurrentUser:
+        if not any(
+            has_permission(current_user.permissions, permission)
+            for permission in parsed_permissions
+        ):
+            raise PermissionDeniedError()
+        return current_user
+
+    return dependency

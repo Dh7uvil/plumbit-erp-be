@@ -145,7 +145,7 @@ class ChargeAppliesTo(StrEnum):
     BOTH = "BOTH"
 
 
-class LandedCostAllocationMethod(StrEnum):
+class ChargeAllocationMethod(StrEnum):
     VALUE = "VALUE"
     WEIGHT = "WEIGHT"
     QUANTITY = "QUANTITY"
@@ -211,6 +211,7 @@ class DocumentType(StrEnum):
     CREDIT_NOTE = "CREDIT_NOTE"
     PURCHASE_ORDER = "PURCHASE_ORDER"
     GOODS_RECEIPT = "GOODS_RECEIPT"
+    GRN_CHARGE_ADJUSTMENT = "GRN_CHARGE_ADJUSTMENT"
     PURCHASE_INVOICE = "PURCHASE_INVOICE"
     DEBIT_NOTE = "DEBIT_NOTE"
     STOCK_TRANSFER = "STOCK_TRANSFER"
@@ -224,7 +225,7 @@ class DocumentType(StrEnum):
     JOURNAL_ENTRY = "JOURNAL_ENTRY"
     CUSTOMER_PAYMENT = "CUSTOMER_PAYMENT"
     SUPPLIER_PAYMENT = "SUPPLIER_PAYMENT"
-    LANDED_COST = "LANDED_COST"
+    # LANDED_COST removed in migration 070; retained only in historical DB rows / audit.
     COST_SHEET_IMPORT = "COST_SHEET_IMPORT"
     COST_SHEET_EXPORT = "COST_SHEET_EXPORT"
     COST_SHEET_OTHER = "COST_SHEET_OTHER"
@@ -242,6 +243,7 @@ class VoucherType(StrEnum):
     BANK_RECEIPT = "BANK_RECEIPT"
     BANK_PAYMENT = "BANK_PAYMENT"
     CONTRA = "CONTRA"
+    JOURNAL = "JOURNAL"
 
 
 class CostSheetType(StrEnum):
@@ -258,6 +260,8 @@ class CostSheetStatus(StrEnum):
 
 class StockDocumentStatus(StrEnum):
     DRAFT = "DRAFT"
+    SHIPPED = "SHIPPED"
+    RECEIVED = "RECEIVED"
     POSTED = "POSTED"
     CANCELLED = "CANCELLED"
 
@@ -356,6 +360,7 @@ class BudgetStatus(StrEnum):
 class RecurringDocumentKind(StrEnum):
     SALES_INVOICE = "SALES_INVOICE"
     PURCHASE_INVOICE = "PURCHASE_INVOICE"
+    STANDING_JOURNAL = "STANDING_JOURNAL"
 
 
 class RecurringFrequency(StrEnum):
@@ -669,6 +674,7 @@ class AttachmentEntityType(StrEnum):
     STOCK_ADJUSTMENT = "STOCK_ADJUSTMENT"
     PROFORMA_INVOICE = "PROFORMA_INVOICE"
     GOODS_RECEIPT = "GOODS_RECEIPT"
+    GRN_CHARGE_ADJUSTMENT = "GRN_CHARGE_ADJUSTMENT"
     QUALITY_INSPECTION = "QUALITY_INSPECTION"
     PACKAGE = "PACKAGE"
     SHIPMENT = "SHIPMENT"
@@ -683,7 +689,6 @@ class AttachmentEntityType(StrEnum):
     ACCOUNT = "ACCOUNT"
     CUSTOMER_PAYMENT = "CUSTOMER_PAYMENT"
     SUPPLIER_PAYMENT = "SUPPLIER_PAYMENT"
-    LANDED_COST = "LANDED_COST"
     TASK = "TASK"
 
 
@@ -827,3 +832,10 @@ class CampaignMemberStatus(StrEnum):
     SENT = "SENT"
     RESPONDED = "RESPONDED"
     CONVERTED = "CONVERTED"
+
+
+class RecordScope(StrEnum):
+    ALL = "all"
+    BRANCH = "branch"
+    TEAM = "team"
+    OWN = "own"

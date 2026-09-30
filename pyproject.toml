@@ -17,6 +17,7 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "python-multipart>=0.0.20",
     "pyjwt>=2.13.0",
+    "redis>=5.2.1",
     "sqlalchemy[asyncio]>=2.0.52",
     "uvicorn[standard]>=0.52.4",
 ]
@@ -32,6 +33,10 @@ outbox = "app.cli.outbox:main"
 dunning-scan = "app.cli.dunning_scan:main"
 rebuild-inventory-gl = "app.cli.rebuild_inventory_gl:main"
 renumber-documents = "app.cli.renumber_documents:main"
+backfill-journal-vouchers = "app.cli.backfill_journal_vouchers:main"
+cheque-due-scan = "app.cli.cheque_due_scan:main"
+gl-integrity = "app.cli.gl_integrity:main"
+data-quality = "app.cli.data_quality:main"
 
 [build-system]
 requires = ["hatchling"]

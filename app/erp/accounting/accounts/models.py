@@ -51,6 +51,9 @@ class Account(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
     is_system: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    is_blocked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     system_role: Mapped[str | None] = mapped_column(String(50), nullable=True)
     currency_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),

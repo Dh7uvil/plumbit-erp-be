@@ -87,6 +87,7 @@ class JournalEntryRepository:
                 JournalEntry.source_id == source_id,
                 JournalEntry.status == "POSTED",
                 JournalEntry.deleted_at.is_(None),
+                JournalEntry.reversed_by_id.is_(None),
             )
             .options(self._with_lines())
         )

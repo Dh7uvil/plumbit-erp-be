@@ -30,7 +30,7 @@ def test_header_discount_vat_sums_to_expected_total_seven_lines() -> None:
 
 
 def test_compute_header_totals_zero_rated_and_shipping() -> None:
-    subtotal, discount, tax_total, grand, adjusted = compute_header_totals(
+    subtotal, discount, tax_total, grand, adjusted, adjustment = compute_header_totals(
         line_nets=[Decimal("100.0000"), Decimal("50.0000")],
         line_taxes=[Decimal("0.0000"), Decimal("0.0000")],
         discount_type=DiscountType.PERCENTAGE,

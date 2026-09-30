@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import ClassVar
+from typing import ClassVar, Self
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -10,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.common.schemas.filters import BaseFilter
 from app.core.enums import InvoiceDocumentStatus, PaymentMethod, VoucherType
 from app.erp.accounting.open_items.schemas import PaymentAllocationInput
+
+_ZERO = Decimal("0")
 
 
 class VoucherFilter(BaseFilter):
@@ -44,7 +46,9 @@ class VoucherFilter(BaseFilter):
 
 class VoucherLineInput(BaseModel):
     account_id: UUID
-    amount: Decimal = Field(gt=0, max_digits=18, decimal_places=4)
+    amount: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=4)
+    debit: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
+    credit: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     party_type: str | None = None
     party_id: UUID | None = None
     tax_id: UUID | None = None
@@ -60,6 +64,20 @@ class VoucherLineInput(BaseModel):
         normalized = value.strip()
         return normalized or None
 
+    @model_validator(mode="after")
+    def validate_line_amounts(self) -> Self:
+        debit = self.debit or _ZERO
+        credit = self.credit or _ZERO
+        has_amount = self.amount is not None and self.amount > _ZERO
+        has_debit_credit = debit > _ZERO or credit > _ZERO
+        if has_amount and has_debit_credit:
+            raise ValueError("Provide either amount or debit/credit, not both")
+        if not has_amount and not has_debit_credit:
+            raise ValueError("Line requires amount or debit/credit")
+        if debit > _ZERO and credit > _ZERO:
+            raise ValueError("Line cannot have both debit and credit")
+        return self
+
 
 class VoucherLineResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -68,6 +86,8 @@ class VoucherLineResponse(BaseModel):
     line_number: int
     account_id: UUID
     amount: Decimal
+    debit: Decimal
+    credit: Decimal
     party_type: str | None
     party_id: UUID | None
     tax_id: UUID | None
@@ -82,6 +102,7 @@ _ACTIVE_VOUCHER_TYPES = frozenset(
         VoucherType.CASH_PAYMENT,
         VoucherType.BANK_RECEIPT,
         VoucherType.BANK_PAYMENT,
+        VoucherType.JOURNAL,
     }
 )
 
@@ -89,13 +110,16 @@ _ACTIVE_VOUCHER_TYPES = frozenset(
 class VoucherCreate(BaseModel):
     voucher_type: VoucherType
     voucher_date: date | None = None
-    payment_account_id: UUID
+    payment_account_id: UUID | None = None
     counter_account_id: UUID | None = None
-    total_amount: Decimal = Field(gt=0, max_digits=18, decimal_places=4)
+    total_amount: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=4)
     currency_id: UUID | None = None
     party_type: str | None = None
     party_id: UUID | None = None
-    payment_method: PaymentMethod = PaymentMethod.CASH
+    payment_method: PaymentMethod | None = None
+    cheque_number: str | None = Field(default=None, max_length=50)
+    cheque_date: date | None = None
+    external_reference: str | None = Field(default=None, max_length=100)
     reference: str | None = Field(default=None, max_length=100)
     branch_id: UUID | None = None
     cost_center_id: UUID | None = None
@@ -112,13 +136,29 @@ class VoucherCreate(BaseModel):
             raise ValueError("Unsupported voucher type")
         return value
 
-    @field_validator("reference", "narration")
+    @field_validator("reference", "narration", "external_reference", "cheque_number")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()
         return normalized or None
+
+    @model_validator(mode="after")
+    def validate_type_specific(self) -> Self:
+        if self.voucher_type == VoucherType.JOURNAL:
+            if self.payment_account_id is not None:
+                raise ValueError("Journal vouchers must not set payment_account_id")
+            if self.payment_method is not None:
+                raise ValueError("Journal vouchers must not set payment_method")
+        else:
+            if self.payment_account_id is None:
+                raise ValueError("payment_account_id is required")
+            if self.total_amount is None:
+                raise ValueError("total_amount is required")
+            if self.payment_method is None:
+                object.__setattr__(self, "payment_method", PaymentMethod.CASH)
+        return self
 
 
 class VoucherUpdate(BaseModel):
@@ -130,6 +170,9 @@ class VoucherUpdate(BaseModel):
     party_type: str | None = None
     party_id: UUID | None = None
     payment_method: PaymentMethod | None = None
+    cheque_number: str | None = Field(default=None, max_length=50)
+    cheque_date: date | None = None
+    external_reference: str | None = Field(default=None, max_length=100)
     reference: str | None = Field(default=None, max_length=100)
     branch_id: UUID | None = None
     cost_center_id: UUID | None = None
@@ -138,7 +181,7 @@ class VoucherUpdate(BaseModel):
     allocations: list[PaymentAllocationInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
-    @field_validator("reference", "narration")
+    @field_validator("reference", "narration", "external_reference", "cheque_number")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -160,7 +203,7 @@ class VoucherResponse(BaseModel):
     is_posted: bool
     voucher_date: date
     document_date: date
-    payment_account_id: UUID
+    payment_account_id: UUID | None
     counter_account_id: UUID | None
     total_amount: Decimal
     amount_unapplied: Decimal
@@ -171,7 +214,10 @@ class VoucherResponse(BaseModel):
     base_amount: Decimal
     party_type: str | None
     party_id: UUID | None
-    payment_method: PaymentMethod
+    payment_method: PaymentMethod | None
+    cheque_number: str | None = None
+    cheque_date: date | None = None
+    external_reference: str | None = None
     reference: str | None
     branch_id: UUID | None
     cost_center_id: UUID | None
@@ -183,6 +229,7 @@ class VoucherResponse(BaseModel):
     cancelled_at: datetime | None
     cancelled_by: UUID | None
     cancel_reason: str | None
+    period: int | None = None
     lines: list[VoucherLineResponse] = Field(default_factory=list)
     allocations: list[PaymentAllocationInput] = Field(default_factory=list)
     available_actions: list[str] = Field(default_factory=list)

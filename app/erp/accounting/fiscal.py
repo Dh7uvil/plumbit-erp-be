@@ -45,6 +45,36 @@ class FiscalYearConfig:
         end = _clamp_day(fiscal_year + 1, self.start_month, self.start_day) - timedelta(days=1)
         return start, end
 
+    def period_bounds(self, fiscal_year: int) -> list[tuple[int, date, date]]:
+        """Return fiscal periods 1–12 as ``(period, start, end)`` within the year."""
+
+        fy_start, fy_end = self.bounds(fiscal_year)
+        periods: list[tuple[int, date, date]] = []
+        cursor = fy_start
+        for period in range(1, 13):
+            if period == 12:
+                period_end = fy_end
+            else:
+                next_month = cursor.month + 1
+                next_year = cursor.year
+                if next_month > 12:
+                    next_month = 1
+                    next_year += 1
+                next_start = _clamp_day(next_year, next_month, self.start_day)
+                period_end = next_start - timedelta(days=1)
+            periods.append((period, cursor, period_end))
+            cursor = period_end + timedelta(days=1)
+        return periods
+
+    def fiscal_period_for(self, document_date: date) -> int:
+        """Return the 1–12 fiscal period that contains ``document_date``."""
+
+        fiscal_year = self.year_for(document_date)
+        for period, start, end in self.period_bounds(fiscal_year):
+            if start <= document_date <= end:
+                return period
+        return 12
+
     @classmethod
     async def load(cls, session: AsyncSession, tenant_id: UUID) -> FiscalYearConfig:
         cache: dict[UUID, FiscalYearConfig] = session.sync_session.info.setdefault(_CACHE_KEY, {})

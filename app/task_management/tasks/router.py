@@ -30,6 +30,9 @@ from app.common.schemas.response import ApiResponse
 from app.task_management.tasks.dependencies import TaskServiceDependency
 from app.task_management.tasks.schemas import (
     TaskAssign,
+    TaskBulkAssign,
+    TaskBulkResult,
+    TaskBulkStatus,
     TaskChecklistItemCreate,
     TaskChecklistItemResponse,
     TaskChecklistItemUpdate,
@@ -96,6 +99,28 @@ async def create_task(
 ) -> ApiResponse[TaskResponse]:
     row = await service.create(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Task created successfully")
+
+
+@router.post("/bulk-assign", response_model=ApiResponse[TaskBulkResult])
+async def bulk_assign_tasks(
+    payload: TaskBulkAssign,
+    tenant: TenantContextDependency,
+    service: TaskServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(TASK_ASSIGN))],
+) -> ApiResponse[TaskBulkResult]:
+    result = await service.bulk_assign(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
+    return ApiResponse(data=result, message="Bulk assign completed")
+
+
+@router.post("/bulk-status", response_model=ApiResponse[TaskBulkResult])
+async def bulk_status_tasks(
+    payload: TaskBulkStatus,
+    tenant: TenantContextDependency,
+    service: TaskServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(TASK_MOVE))],
+) -> ApiResponse[TaskBulkResult]:
+    result = await service.bulk_status(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
+    return ApiResponse(data=result, message="Bulk status change completed")
 
 
 @router.get("/{task_id}", response_model=ApiResponse[TaskResponse])

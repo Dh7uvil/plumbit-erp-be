@@ -59,6 +59,24 @@ class BankAccountUpdate(BaseModel):
         return normalize_required_text(value, field_name="name")
 
 
+class BankBalanceProjectionLine(BaseModel):
+    kind: str
+    event_date: date
+    description: str
+    amount: Decimal
+
+
+class BankBalanceProjectionResponse(BaseModel):
+    bank_account_id: UUID
+    account_id: UUID
+    currency_code: str
+    as_of: date
+    horizon_date: date
+    book_balance: Decimal
+    projected_balance: Decimal
+    lines: list[BankBalanceProjectionLine] = Field(default_factory=list)
+
+
 class BankAccountResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

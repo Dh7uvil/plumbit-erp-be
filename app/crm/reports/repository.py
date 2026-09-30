@@ -172,7 +172,11 @@ class CrmReportRepository:
     ) -> dict[UUID, dict[str, Decimal | int]]:
         amount = func.coalesce(Opportunity.amount, 0)
         probability = func.coalesce(Opportunity.probability, PipelineStage.probability, 0)
-        weighted = amount * probability / 100
+        open_status = Opportunity.status == OpportunityStatus.OPEN.value
+        weighted = case(
+            (open_status, amount * probability / 100),
+            else_=_ZERO,
+        )
         statement = (
             select(
                 Opportunity.stage_id,

@@ -168,8 +168,27 @@ async def _missing_rows(session: AsyncSession, tenant_id: UUID) -> list[RebuildR
     return rows
 
 
+async def _grns_with_charges(
+    session: AsyncSession, tenant_id: UUID, grn_ids: list[UUID]
+) -> set[UUID]:
+    if not grn_ids:
+        return set()
+    from app.inventory_management.goods_receipts.models import GoodsReceiptCharge
+
+    statement = (
+        select(GoodsReceiptCharge.goods_receipt_id)
+        .where(
+            GoodsReceiptCharge.tenant_id == tenant_id,
+            GoodsReceiptCharge.goods_receipt_id.in_(grn_ids),
+        )
+        .distinct()
+    )
+    return set((await session.scalars(statement)).all())
+
+
 async def _apply_row(
     ledger: InventoryLedgerService,
+    session: AsyncSession,
     tenant_id: UUID,
     row: RebuildRow,
     *,
@@ -181,7 +200,21 @@ async def _apply_row(
         "actor_id": actor_id,
     }
     if row.source_type == SOURCE_GOODS_RECEIPT:
-        await ledger.post_goods_receipt(tenant_id, amount=row.amount, **kwargs)
+        charged = await _grns_with_charges(session, tenant_id, [row.source_id])
+        if charged:
+            from app.inventory_management.goods_receipts.service import GoodsReceiptService
+
+            grn_service = GoodsReceiptService(session)
+            grn = await grn_service._require(tenant_id, row.source_id)
+            _, charge_credits = await grn_service._compute_charge_allocations(tenant_id, grn)
+            await ledger.post_goods_receipt_with_charges(
+                tenant_id,
+                goods_amount=row.amount,
+                charge_credits=charge_credits,
+                **kwargs,
+            )
+        else:
+            await ledger.post_goods_receipt(tenant_id, amount=row.amount, **kwargs)
     elif row.source_type == SOURCE_DELIVERY_NOTE:
         await ledger.post_delivery_note(tenant_id, amount=row.amount, **kwargs)
     elif row.source_type == SOURCE_PURCHASE_RETURN:
@@ -221,7 +254,7 @@ async def rebuild(tenant_id: UUID, *, apply: bool) -> int:
                 if row.source_type == SOURCE_STOCK_ADJUSTMENT:
                     await _apply_adjustment(session, ledger, tenant_id, row, actor_id=actor_id)
                 else:
-                    await _apply_row(ledger, tenant_id, row, actor_id=actor_id)
+                    await _apply_row(ledger, session, tenant_id, row, actor_id=actor_id)
         print(f"posted={len(actionable)}")
         return 0
 
