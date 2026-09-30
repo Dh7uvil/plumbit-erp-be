@@ -2348,6 +2348,11 @@
             ],
             "title": "Credit Limit"
           },
+          "credit_hold": {
+            "type": "boolean",
+            "title": "Credit Hold",
+            "default": false
+          },
           "salesperson_id": {
             "anyOf": [
               {
@@ -3021,6 +3026,11 @@
             ],
             "title": "Credit Limit"
           },
+          "credit_hold": {
+            "type": "boolean",
+            "title": "Credit Hold",
+            "default": false
+          },
           "salesperson_id": {
             "anyOf": [
               {
@@ -3253,6 +3263,17 @@
               }
             ],
             "title": "Credit Limit"
+          },
+          "credit_hold": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credit Hold"
           },
           "salesperson_id": {
             "anyOf": [

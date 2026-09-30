@@ -447,6 +447,16 @@
         ],
         "title": "ApiResponse[list[ChargeTypeResponse]]"
       },
+      "ChargeAllocationMethod": {
+        "type": "string",
+        "enum": [
+          "VALUE",
+          "WEIGHT",
+          "QUANTITY",
+          "VOLUME"
+        ],
+        "title": "ChargeAllocationMethod"
+      },
       "ChargeAppliesTo": {
         "type": "string",
         "enum": [
@@ -488,7 +498,7 @@
           "allocation_basis": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/LandedCostAllocationMethod"
+                "$ref": "#/components/schemas/ChargeAllocationMethod"
               },
               {
                 "type": "null"
@@ -557,7 +567,7 @@
           "allocation_basis": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/LandedCostAllocationMethod"
+                "$ref": "#/components/schemas/ChargeAllocationMethod"
               },
               {
                 "type": "null"
@@ -689,7 +699,7 @@
           "allocation_basis": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/LandedCostAllocationMethod"
+                "$ref": "#/components/schemas/ChargeAllocationMethod"
               },
               {
                 "type": "null"
@@ -745,16 +755,6 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
-      },
-      "LandedCostAllocationMethod": {
-        "type": "string",
-        "enum": [
-          "VALUE",
-          "WEIGHT",
-          "QUANTITY",
-          "VOLUME"
-        ],
-        "title": "LandedCostAllocationMethod"
       },
       "ValidationError": {
         "properties": {

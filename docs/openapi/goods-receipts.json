@@ -512,6 +512,66 @@
         }
       }
     },
+    "/api/v1/goods-receipts/charge-types": {
+      "get": {
+        "tags": [
+          "Goods Receipts"
+        ],
+        "summary": "List Goods Receipt Charge Types",
+        "operationId": "list_goods_receipt_charge_types_api_v1_goods_receipts_charge_types_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_ChargeTypeResponse__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/goods-receipts/{receipt_id}": {
       "get": {
         "tags": [
@@ -976,54 +1036,6 @@
           }
         }
       }
-    },
-    "/api/v1/goods-receipts/{receipt_id}/landed-cost-eligible": {
-      "get": {
-        "tags": [
-          "Goods Receipts"
-        ],
-        "summary": "Get Landed Cost Eligible",
-        "operationId": "get_landed_cost_eligible_api_v1_goods_receipts__receipt_id__landed_cost_eligible_get",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "receipt_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Receipt Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_LandedCostEligibleResponse_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
@@ -1096,40 +1108,6 @@
         ],
         "title": "ApiResponse[JournalEntryResponse]"
       },
-      "ApiResponse_LandedCostEligibleResponse_": {
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "const": true,
-            "title": "Success",
-            "default": true
-          },
-          "data": {
-            "$ref": "#/components/schemas/LandedCostEligibleResponse"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
-          },
-          "meta": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Meta"
-          }
-        },
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "ApiResponse[LandedCostEligibleResponse]"
-      },
       "ApiResponse_PrintDocumentResponse_": {
         "properties": {
           "success": {
@@ -1163,6 +1141,44 @@
           "data"
         ],
         "title": "ApiResponse[PrintDocumentResponse]"
+      },
+      "ApiResponse_list_ChargeTypeResponse__": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ChargeTypeResponse"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[list[ChargeTypeResponse]]"
       },
       "ApiResponse_list_GoodsReceiptBillingQueueItem__": {
         "properties": {
@@ -1239,6 +1255,140 @@
           "data"
         ],
         "title": "ApiResponse[list[GoodsReceiptResponse]]"
+      },
+      "ChargeAllocationMethod": {
+        "type": "string",
+        "enum": [
+          "VALUE",
+          "WEIGHT",
+          "QUANTITY",
+          "VOLUME"
+        ],
+        "title": "ChargeAllocationMethod"
+      },
+      "ChargeAppliesTo": {
+        "type": "string",
+        "enum": [
+          "IMPORT",
+          "EXPORT",
+          "BOTH"
+        ],
+        "title": "ChargeAppliesTo"
+      },
+      "ChargeTypeResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tenant Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "is_inventoriable": {
+            "type": "boolean",
+            "title": "Is Inventoriable"
+          },
+          "default_account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Default Account Id"
+          },
+          "allocation_basis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChargeAllocationMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default_tax_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Tax Id"
+          },
+          "applies_to": {
+            "$ref": "#/components/schemas/ChargeAppliesTo"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "code",
+          "name",
+          "sort_order",
+          "is_inventoriable",
+          "default_account_id",
+          "allocation_basis",
+          "default_tax_id",
+          "applies_to",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ChargeTypeResponse"
       },
       "ConversionLineInput": {
         "properties": {
@@ -1366,6 +1516,154 @@
         },
         "type": "object",
         "title": "GoodsReceiptCancelRequest"
+      },
+      "GoodsReceiptChargeInput": {
+        "properties": {
+          "charge_type_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Charge Type Id"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              }
+            ],
+            "title": "Amount"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "supplier_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Id"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "charge_type_id",
+          "amount"
+        ],
+        "title": "GoodsReceiptChargeInput"
+      },
+      "GoodsReceiptChargeResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "line_number": {
+            "type": "integer",
+            "title": "Line Number"
+          },
+          "charge_type_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Charge Type Id"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          },
+          "base_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Amount"
+          },
+          "allocation_basis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChargeAllocationMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supplier_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Id"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "line_number",
+          "charge_type_id",
+          "description",
+          "amount",
+          "base_amount",
+          "allocation_basis",
+          "supplier_id",
+          "notes"
+        ],
+        "title": "GoodsReceiptChargeResponse"
       },
       "GoodsReceiptCreate": {
         "properties": {
@@ -1529,6 +1827,13 @@
             "type": "array",
             "minItems": 1,
             "title": "Lines"
+          },
+          "charges": {
+            "items": {
+              "$ref": "#/components/schemas/GoodsReceiptChargeInput"
+            },
+            "type": "array",
+            "title": "Charges"
           }
         },
         "type": "object",
@@ -1594,6 +1899,13 @@
               }
             ],
             "title": "Lines"
+          },
+          "charges": {
+            "items": {
+              "$ref": "#/components/schemas/GoodsReceiptChargeInput"
+            },
+            "type": "array",
+            "title": "Charges"
           }
         },
         "type": "object",
@@ -1643,6 +1955,13 @@
               }
             ],
             "title": "Notes"
+          },
+          "charges": {
+            "items": {
+              "$ref": "#/components/schemas/GoodsReceiptChargeInput"
+            },
+            "type": "array",
+            "title": "Charges"
           }
         },
         "type": "object",
@@ -1976,6 +2295,18 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Qty Billed",
             "default": "0"
+          },
+          "allocated_charge_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Allocated Charge Amount",
+            "default": "0"
+          },
+          "incoming_consumed": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Incoming Consumed",
+            "default": "0"
           }
         },
         "type": "object",
@@ -2273,6 +2604,25 @@
             "type": "array",
             "title": "Lines"
           },
+          "charges": {
+            "items": {
+              "$ref": "#/components/schemas/GoodsReceiptChargeResponse"
+            },
+            "type": "array",
+            "title": "Charges"
+          },
+          "charges_total": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Charges Total",
+            "default": "0"
+          },
+          "charges_total_base": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Charges Total Base",
+            "default": "0"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -2494,6 +2844,20 @@
             ],
             "title": "Lines"
           },
+          "charges": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/GoodsReceiptChargeInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Charges"
+          },
           "version": {
             "anyOf": [
               {
@@ -2660,6 +3024,28 @@
               }
             ],
             "title": "Reference"
+          },
+          "external_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Reference"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
           },
           "posted_at": {
             "anyOf": [
@@ -2972,107 +3358,6 @@
         ],
         "title": "JournalType"
       },
-      "LandedCostEligibleLine": {
-        "properties": {
-          "goods_receipt_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Goods Receipt Id"
-          },
-          "goods_receipt_line_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Goods Receipt Line Id"
-          },
-          "goods_receipt_number": {
-            "type": "string",
-            "title": "Goods Receipt Number"
-          },
-          "product_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Product Id"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description"
-          },
-          "quantity": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Quantity"
-          },
-          "net_weight": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Net Weight"
-          },
-          "landed_unit_cost": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Landed Unit Cost"
-          },
-          "line_value": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Line Value"
-          },
-          "qty_remaining": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Qty Remaining"
-          }
-        },
-        "type": "object",
-        "required": [
-          "goods_receipt_id",
-          "goods_receipt_line_id",
-          "goods_receipt_number",
-          "product_id",
-          "description",
-          "quantity",
-          "net_weight",
-          "landed_unit_cost",
-          "line_value",
-          "qty_remaining"
-        ],
-        "title": "LandedCostEligibleLine"
-      },
-      "LandedCostEligibleResponse": {
-        "properties": {
-          "goods_receipt_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Goods Receipt Id"
-          },
-          "lines": {
-            "items": {
-              "$ref": "#/components/schemas/LandedCostEligibleLine"
-            },
-            "type": "array",
-            "title": "Lines"
-          }
-        },
-        "type": "object",
-        "required": [
-          "goods_receipt_id"
-        ],
-        "title": "LandedCostEligibleResponse"
-      },
       "OutstandingBillLine": {
         "properties": {
           "line_id": {
@@ -3161,6 +3446,112 @@
             "type": "string",
             "title": "Template Family",
             "default": "uae"
+          },
+          "template_kind": {
+            "type": "string",
+            "title": "Template Kind",
+            "default": "commercial"
+          },
+          "voucher_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voucher Type"
+          },
+          "payment_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Method"
+          },
+          "party_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Name"
+          },
+          "party_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Code"
+          },
+          "cheque_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cheque Number"
+          },
+          "cheque_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cheque Date"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "narration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Narration"
+          },
+          "reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference"
           },
           "customer_code": {
             "anyOf": [
@@ -3372,6 +3763,13 @@
             },
             "type": "array",
             "title": "Lines"
+          },
+          "journal_lines": {
+            "items": {
+              "$ref": "#/components/schemas/PrintJournalLine"
+            },
+            "type": "array",
+            "title": "Journal Lines"
           }
         },
         "type": "object",
@@ -3383,6 +3781,70 @@
           "letterhead"
         ],
         "title": "PrintDocumentResponse"
+      },
+      "PrintJournalLine": {
+        "properties": {
+          "line_number": {
+            "type": "integer",
+            "title": "Line Number"
+          },
+          "account_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Code"
+          },
+          "account_name": {
+            "type": "string",
+            "title": "Account Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "debit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Debit"
+          },
+          "credit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "line_number",
+          "account_name"
+        ],
+        "title": "PrintJournalLine"
       },
       "PrintLetterhead": {
         "properties": {
@@ -3725,6 +4187,8 @@
         "type": "string",
         "enum": [
           "DRAFT",
+          "SHIPPED",
+          "RECEIVED",
           "POSTED",
           "CANCELLED"
         ],

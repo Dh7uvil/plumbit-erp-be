@@ -285,6 +285,7 @@
         ],
         "summary": "Create Journal",
         "operationId": "create_journal_api_v1_journals_post",
+        "deprecated": true,
         "security": [
           {
             "HTTPBearer": []
@@ -363,6 +364,7 @@
             }
           }
         },
+        "deprecated": true,
         "security": [
           {
             "HTTPBearer": []
@@ -423,6 +425,7 @@
         ],
         "summary": "Update Journal",
         "operationId": "update_journal_api_v1_journals__journal_id__patch",
+        "deprecated": true,
         "security": [
           {
             "HTTPBearer": []
@@ -495,6 +498,7 @@
         ],
         "summary": "Delete Journal",
         "operationId": "delete_journal_api_v1_journals__journal_id__delete",
+        "deprecated": true,
         "security": [
           {
             "HTTPBearer": []
@@ -559,6 +563,7 @@
         ],
         "summary": "Post Journal",
         "operationId": "post_journal_api_v1_journals__journal_id__post_post",
+        "deprecated": true,
         "security": [
           {
             "HTTPBearer": []
@@ -639,6 +644,7 @@
         ],
         "summary": "Cancel Journal",
         "operationId": "cancel_journal_api_v1_journals__journal_id__cancel_post",
+        "deprecated": true,
         "security": [
           {
             "HTTPBearer": []
@@ -720,6 +726,7 @@
         ],
         "summary": "Reverse Journal",
         "operationId": "reverse_journal_api_v1_journals__journal_id__reverse_post",
+        "deprecated": true,
         "security": [
           {
             "HTTPBearer": []
@@ -1110,6 +1117,18 @@
             ],
             "title": "Reference"
           },
+          "external_reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Reference"
+          },
           "lines": {
             "items": {
               "$ref": "#/components/schemas/JournalLineInput"
@@ -1262,6 +1281,28 @@
               }
             ],
             "title": "Reference"
+          },
+          "external_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Reference"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
           },
           "posted_at": {
             "anyOf": [
@@ -1533,6 +1574,18 @@
               }
             ],
             "title": "Reference"
+          },
+          "external_reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Reference"
           },
           "lines": {
             "anyOf": [

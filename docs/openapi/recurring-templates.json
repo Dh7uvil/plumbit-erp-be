@@ -608,7 +608,8 @@
         "type": "string",
         "enum": [
           "SALES_INVOICE",
-          "PURCHASE_INVOICE"
+          "PURCHASE_INVOICE",
+          "STANDING_JOURNAL"
         ],
         "title": "RecurringDocumentKind"
       },

@@ -1228,6 +1228,143 @@
         }
       }
     },
+    "/api/v1/reports/pdc-register": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Pdc Register",
+        "operationId": "get_pdc_register_api_v1_reports_pdc_register_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "due_date_from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Due Date From"
+            }
+          },
+          {
+            "name": "due_date_to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Due Date To"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Direction"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "bank_account_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Bank Account Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PdcRegisterResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/reports/account-statement": {
       "get": {
         "tags": [
@@ -1241,24 +1378,6 @@
           }
         ],
         "parameters": [
-          {
-            "name": "party_type",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/PartyType"
-            }
-          },
-          {
-            "name": "party_id",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Party Id"
-            }
-          },
           {
             "name": "from",
             "in": "query",
@@ -1277,6 +1396,109 @@
               "type": "string",
               "format": "date",
               "title": "To"
+            }
+          },
+          {
+            "name": "party_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PartyType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Party Type"
+            }
+          },
+          {
+            "name": "party_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Party Id"
+            }
+          },
+          {
+            "name": "account_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "include_opening",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Opening"
+            }
+          },
+          {
+            "name": "include_pdc",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Pdc"
+            }
+          },
+          {
+            "name": "currency_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Currency Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
             }
           }
         ],
@@ -2712,6 +2934,97 @@
         }
       }
     },
+    "/api/v1/reports/ratio-analysis": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Get Ratio Analysis",
+        "operationId": "get_ratio_analysis_api_v1_reports_ratio_analysis_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "To"
+            }
+          },
+          {
+            "name": "branch_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Branch Id"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RatioAnalysisResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/reports/cash-flow": {
       "get": {
         "tags": [
@@ -3651,8 +3964,15 @@
       "AccountStatementLine": {
         "properties": {
           "journal_entry_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Journal Entry Id"
           },
           "document_number": {
@@ -3712,11 +4032,89 @@
               }
             ],
             "title": "Description"
+          },
+          "voucher_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voucher Code"
+          },
+          "source_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Type"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "cheque_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cheque Number"
+          },
+          "cheque_clearing_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cheque Clearing Date"
+          },
+          "balance_side": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balance Side"
+          },
+          "narration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Narration"
           }
         },
         "type": "object",
         "required": [
-          "journal_entry_id",
           "document_number",
           "entry_date",
           "due_date",
@@ -3728,6 +4126,55 @@
         ],
         "title": "AccountStatementLine"
       },
+      "AccountStatementOpening": {
+        "properties": {
+          "entry_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Entry Date"
+          },
+          "debit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Debit",
+            "default": "0"
+          },
+          "credit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Credit",
+            "default": "0"
+          },
+          "running_balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Running Balance"
+          },
+          "balance_side": {
+            "type": "string",
+            "title": "Balance Side"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "default": "Opening balance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entry_date",
+          "running_balance",
+          "balance_side"
+        ],
+        "title": "AccountStatementOpening"
+      },
       "AccountStatementResponse": {
         "properties": {
           "currency_code": {
@@ -3736,13 +4183,61 @@
             "description": "ISO currency code for all monetary amounts (tenant base currency)."
           },
           "party_type": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Party Type"
           },
           "party_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Party Id"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "account_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Code"
+          },
+          "account_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Name"
           },
           "from_date": {
             "type": "string",
@@ -3764,6 +4259,28 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Closing Balance"
           },
+          "total_debit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Debit",
+            "default": "0"
+          },
+          "total_credit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Credit",
+            "default": "0"
+          },
+          "opening": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountStatementOpening"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "lines": {
             "items": {
               "$ref": "#/components/schemas/AccountStatementLine"
@@ -3775,8 +4292,6 @@
         "type": "object",
         "required": [
           "currency_code",
-          "party_type",
-          "party_id",
           "from_date",
           "to_date",
           "opening_balance",
@@ -4503,6 +5018,40 @@
         ],
         "title": "ApiResponse[PartyStatementResponse]"
       },
+      "ApiResponse_PdcRegisterResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/PdcRegisterResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[PdcRegisterResponse]"
+      },
       "ApiResponse_ProfitAndLossResponse_": {
         "properties": {
           "success": {
@@ -4570,6 +5119,40 @@
           "data"
         ],
         "title": "ApiResponse[PurchaseSuggestionResponse]"
+      },
+      "ApiResponse_RatioAnalysisResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/RatioAnalysisResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[RatioAnalysisResponse]"
       },
       "ApiResponse_ReceivedNotBilledResponse_": {
         "properties": {
@@ -6848,6 +7431,173 @@
         ],
         "title": "PartyType"
       },
+      "PdcRegisterLine": {
+        "properties": {
+          "cheque_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Cheque Id"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "cheque_number": {
+            "type": "string",
+            "title": "Cheque Number"
+          },
+          "direction": {
+            "type": "string",
+            "title": "Direction"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "cheque_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Cheque Date"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          },
+          "party_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Type"
+          },
+          "party_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Id"
+          },
+          "party_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Name"
+          },
+          "bank_account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Bank Account Id"
+          },
+          "bank_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bank Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cheque_id",
+          "document_number",
+          "cheque_number",
+          "direction",
+          "status",
+          "cheque_date",
+          "due_date",
+          "amount",
+          "bank_account_id"
+        ],
+        "title": "PdcRegisterLine"
+      },
+      "PdcRegisterResponse": {
+        "properties": {
+          "currency_code": {
+            "type": "string",
+            "title": "Currency Code",
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
+          },
+          "from_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Date"
+          },
+          "to_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Date"
+          },
+          "total_inbound": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Inbound",
+            "default": "0"
+          },
+          "total_outbound": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Outbound",
+            "default": "0"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/PdcRegisterLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "currency_code"
+        ],
+        "title": "PdcRegisterResponse"
+      },
       "PeriodAmount": {
         "properties": {
           "label": {
@@ -7309,6 +8059,87 @@
           "as_of"
         ],
         "title": "PurchaseSuggestionResponse"
+      },
+      "RatioAnalysisLine": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "numerator": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Numerator"
+          },
+          "denominator": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Denominator"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "numerator",
+          "denominator"
+        ],
+        "title": "RatioAnalysisLine"
+      },
+      "RatioAnalysisResponse": {
+        "properties": {
+          "currency_code": {
+            "type": "string",
+            "title": "Currency Code",
+            "description": "ISO currency code for all monetary amounts (tenant base currency)."
+          },
+          "from_date": {
+            "type": "string",
+            "format": "date",
+            "title": "From Date"
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "title": "To Date"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/RatioAnalysisLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "currency_code",
+          "from_date",
+          "to_date",
+          "as_of"
+        ],
+        "title": "RatioAnalysisResponse"
       },
       "ReceivedNotBilledLine": {
         "properties": {

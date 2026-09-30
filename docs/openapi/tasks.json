@@ -285,6 +285,135 @@
               ],
               "title": "Related Entity Id"
             }
+          },
+          {
+            "name": "statuses",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Statuses"
+            }
+          },
+          {
+            "name": "priorities",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priorities"
+            }
+          },
+          {
+            "name": "assignee_ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assignee Ids"
+            }
+          },
+          {
+            "name": "label_ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Label Ids"
+            }
+          },
+          {
+            "name": "task_types",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Types"
+            }
+          },
+          {
+            "name": "unassigned",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Unassigned"
+            }
+          },
+          {
+            "name": "parent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Id"
+            }
+          },
+          {
+            "name": "top_level_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Top Level Only"
+            }
           }
         ],
         "responses": {
@@ -353,6 +482,98 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/tasks/bulk-assign": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Bulk Assign Tasks",
+        "operationId": "bulk_assign_tasks_api_v1_tasks_bulk_assign_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskBulkAssign"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TaskBulkResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/tasks/bulk-status": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "Bulk Status Tasks",
+        "operationId": "bulk_status_tasks_api_v1_tasks_bulk_status_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskBulkStatus"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_TaskBulkResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/tasks/{task_id}": {
@@ -1196,6 +1417,40 @@
   },
   "components": {
     "schemas": {
+      "ApiResponse_TaskBulkResult_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/TaskBulkResult"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[TaskBulkResult]"
+      },
       "ApiResponse_TaskChecklistItemResponse_": {
         "properties": {
           "success": {
@@ -1443,6 +1698,159 @@
         "type": "object",
         "title": "TaskAssign"
       },
+      "TaskBulkAssign": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskBulkAssignItem"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "TaskBulkAssign"
+      },
+      "TaskBulkAssignItem": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "assignee_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id"
+        ],
+        "title": "TaskBulkAssignItem"
+      },
+      "TaskBulkResult": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskBulkResultItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "success_count": {
+            "type": "integer",
+            "title": "Success Count",
+            "default": 0
+          },
+          "error_count": {
+            "type": "integer",
+            "title": "Error Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "TaskBulkResult"
+      },
+      "TaskBulkResultItem": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "success"
+        ],
+        "title": "TaskBulkResultItem"
+      },
+      "TaskBulkStatus": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskBulkStatusItem"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "TaskBulkStatus"
+      },
+      "TaskBulkStatusItem": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "status"
+        ],
+        "title": "TaskBulkStatusItem"
+      },
       "TaskChecklistItemCreate": {
         "properties": {
           "title": {
@@ -1673,6 +2081,10 @@
             ],
             "title": "Description"
           },
+          "task_type": {
+            "$ref": "#/components/schemas/TaskType",
+            "default": "TASK"
+          },
           "priority": {
             "$ref": "#/components/schemas/TaskPriority",
             "default": "MEDIUM"
@@ -1700,6 +2112,18 @@
               }
             ],
             "title": "Assignee Id"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
           },
           "related_entity_type": {
             "anyOf": [
@@ -1802,6 +2226,34 @@
         ],
         "title": "TaskMove"
       },
+      "TaskParentSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "task_number": {
+            "type": "string",
+            "title": "Task Number"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "task_type": {
+            "$ref": "#/components/schemas/TaskType"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "task_number",
+          "title",
+          "task_type"
+        ],
+        "title": "TaskParentSummary"
+      },
       "TaskPriority": {
         "type": "string",
         "enum": [
@@ -1843,6 +2295,9 @@
           "task_number": {
             "type": "string",
             "title": "Task Number"
+          },
+          "task_type": {
+            "$ref": "#/components/schemas/TaskType"
           },
           "title": {
             "type": "string",
@@ -1913,6 +2368,18 @@
             ],
             "title": "Assignee Id"
           },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
           "sort_order": {
             "type": "integer",
             "title": "Sort Order"
@@ -1938,6 +2405,26 @@
               }
             ],
             "title": "Related Entity Id"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskParentSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subtask_count": {
+            "type": "integer",
+            "title": "Subtask Count",
+            "default": 0
+          },
+          "subtask_done_count": {
+            "type": "integer",
+            "title": "Subtask Done Count",
+            "default": 0
           },
           "labels": {
             "items": {
@@ -2008,6 +2495,7 @@
           "id",
           "tenant_id",
           "task_number",
+          "task_type",
           "title",
           "description",
           "status",
@@ -2016,6 +2504,7 @@
           "started_at",
           "completed_at",
           "assignee_id",
+          "parent_id",
           "sort_order",
           "related_entity_type",
           "related_entity_id",
@@ -2035,6 +2524,16 @@
           "CANCELLED"
         ],
         "title": "TaskStatus"
+      },
+      "TaskType": {
+        "type": "string",
+        "enum": [
+          "TASK",
+          "BUG",
+          "STORY",
+          "EPIC"
+        ],
+        "title": "TaskType"
       },
       "TaskUpdate": {
         "properties": {
@@ -2061,6 +2560,16 @@
               }
             ],
             "title": "Description"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskType"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "priority": {
             "anyOf": [
@@ -2095,6 +2604,18 @@
               }
             ],
             "title": "Assignee Id"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
           },
           "related_entity_type": {
             "anyOf": [
