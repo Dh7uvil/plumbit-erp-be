@@ -44,4 +44,5 @@ docs/*
 !docs/TECH_STACK.md
 !docs/openapi/
 !docs/openapi/**
+!docs/permissions-catalog.json
  

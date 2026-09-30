@@ -646,6 +646,12 @@
             ],
             "title": "Description"
           },
+          "record_scope": {
+            "type": "string",
+            "pattern": "^(all|branch|team|own)$",
+            "title": "Record Scope",
+            "default": "all"
+          },
           "permission_ids": {
             "items": {
               "type": "string",
@@ -692,6 +698,10 @@
             "type": "boolean",
             "title": "Is System Role"
           },
+          "record_scope": {
+            "type": "string",
+            "title": "Record Scope"
+          },
           "user_count": {
             "type": "integer",
             "title": "User Count",
@@ -722,6 +732,7 @@
           "name",
           "description",
           "is_system_role",
+          "record_scope",
           "created_at",
           "updated_at"
         ],
@@ -758,6 +769,10 @@
             "type": "boolean",
             "title": "Is System Role"
           },
+          "record_scope": {
+            "type": "string",
+            "title": "Record Scope"
+          },
           "user_count": {
             "type": "integer",
             "title": "User Count",
@@ -781,6 +796,7 @@
           "name",
           "description",
           "is_system_role",
+          "record_scope",
           "created_at",
           "updated_at"
         ],
@@ -811,6 +827,18 @@
               }
             ],
             "title": "Description"
+          },
+          "record_scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(all|branch|team|own)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Scope"
           }
         },
         "type": "object",

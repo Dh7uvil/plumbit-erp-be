@@ -653,6 +653,7 @@
           "STOCK_ADJUSTMENT",
           "PROFORMA_INVOICE",
           "GOODS_RECEIPT",
+          "GRN_CHARGE_ADJUSTMENT",
           "QUALITY_INSPECTION",
           "PACKAGE",
           "SHIPMENT",
@@ -667,7 +668,6 @@
           "ACCOUNT",
           "CUSTOMER_PAYMENT",
           "SUPPLIER_PAYMENT",
-          "LANDED_COST",
           "TASK"
         ],
         "title": "AttachmentEntityType"

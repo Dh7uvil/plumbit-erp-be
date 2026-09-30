@@ -861,8 +861,27 @@
               }
             ]
           },
+          "contact_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Id"
+          },
           "contact": {
-            "$ref": "#/components/schemas/LeadConvertContact"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeadConvertContact"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "opportunity": {
             "anyOf": [
@@ -876,9 +895,6 @@
           }
         },
         "type": "object",
-        "required": [
-          "contact"
-        ],
         "title": "LeadConvert"
       },
       "LeadConvertContact": {
@@ -1490,6 +1506,18 @@
             ],
             "title": "Converted At"
           },
+          "lost_reason_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lost Reason Id"
+          },
           "available_actions": {
             "items": {
               "type": "string"
@@ -1577,6 +1605,18 @@
         "properties": {
           "status": {
             "$ref": "#/components/schemas/LeadStatus"
+          },
+          "lost_reason_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lost Reason Id"
           },
           "version": {
             "anyOf": [

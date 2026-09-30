@@ -801,96 +801,6 @@
           }
         }
       }
-    },
-    "/api/v1/cost-sheets/{cost_sheet_id}/create-landed-cost": {
-      "post": {
-        "tags": [
-          "Cost Sheets"
-        ],
-        "summary": "Create Landed Cost From Sheet",
-        "operationId": "create_landed_cost_from_sheet_api_v1_cost_sheets__cost_sheet_id__create_landed_cost_post",
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "cost_sheet_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Cost Sheet Id"
-            }
-          },
-          {
-            "name": "if-match",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Idempotency-Key"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CostSheetCreateLandedCostRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_LandedCostResponse_"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
@@ -929,40 +839,6 @@
         ],
         "title": "ApiResponse[CostSheetResponse]"
       },
-      "ApiResponse_LandedCostResponse_": {
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "const": true,
-            "title": "Success",
-            "default": true
-          },
-          "data": {
-            "$ref": "#/components/schemas/LandedCostResponse"
-          },
-          "message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Message"
-          },
-          "meta": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Meta"
-          }
-        },
-        "type": "object",
-        "required": [
-          "data"
-        ],
-        "title": "ApiResponse[LandedCostResponse]"
-      },
       "ApiResponse_list_CostSheetResponse__": {
         "properties": {
           "success": {
@@ -1000,6 +876,16 @@
           "data"
         ],
         "title": "ApiResponse[list[CostSheetResponse]]"
+      },
+      "ChargeAllocationMethod": {
+        "type": "string",
+        "enum": [
+          "VALUE",
+          "WEIGHT",
+          "QUANTITY",
+          "VOLUME"
+        ],
+        "title": "ChargeAllocationMethod"
       },
       "CostSheetChargeInput": {
         "properties": {
@@ -1041,7 +927,7 @@
           "allocation_basis": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/LandedCostAllocationMethod"
+                "$ref": "#/components/schemas/ChargeAllocationMethod"
               },
               {
                 "type": "null"
@@ -1127,7 +1013,7 @@
           "allocation_basis": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/LandedCostAllocationMethod"
+                "$ref": "#/components/schemas/ChargeAllocationMethod"
               },
               {
                 "type": "null"
@@ -1320,7 +1206,7 @@
             "title": "Port Of Discharge"
           },
           "allocation_method": {
-            "$ref": "#/components/schemas/LandedCostAllocationMethod",
+            "$ref": "#/components/schemas/ChargeAllocationMethod",
             "default": "VALUE"
           },
           "notes": {
@@ -1356,36 +1242,6 @@
           "lines"
         ],
         "title": "CostSheetCreate"
-      },
-      "CostSheetCreateLandedCostRequest": {
-        "properties": {
-          "document_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Document Date"
-          },
-          "version": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Version"
-          }
-        },
-        "type": "object",
-        "title": "CostSheetCreateLandedCostRequest"
       },
       "CostSheetLineInput": {
         "properties": {
@@ -1722,19 +1578,7 @@
             "title": "Port Of Discharge"
           },
           "allocation_method": {
-            "$ref": "#/components/schemas/LandedCostAllocationMethod"
-          },
-          "landed_cost_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Landed Cost Id"
+            "$ref": "#/components/schemas/ChargeAllocationMethod"
           },
           "notes": {
             "anyOf": [
@@ -1839,7 +1683,6 @@
           "port_of_loading",
           "port_of_discharge",
           "allocation_method",
-          "landed_cost_id",
           "notes",
           "totals",
           "created_at",
@@ -2132,7 +1975,7 @@
           "allocation_method": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/LandedCostAllocationMethod"
+                "$ref": "#/components/schemas/ChargeAllocationMethod"
               },
               {
                 "type": "null"
@@ -2213,18 +2056,6 @@
         "type": "object",
         "title": "CostSheetVersionRequest"
       },
-      "ExpenseCategory": {
-        "type": "string",
-        "enum": [
-          "FREIGHT",
-          "CUSTOMS_DUTY",
-          "INSURANCE",
-          "CLEARING",
-          "INSPECTION",
-          "OTHER"
-        ],
-        "title": "ExpenseCategory"
-      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2237,498 +2068,6 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
-      },
-      "LandedCostAllocationMethod": {
-        "type": "string",
-        "enum": [
-          "VALUE",
-          "WEIGHT",
-          "QUANTITY",
-          "VOLUME"
-        ],
-        "title": "LandedCostAllocationMethod"
-      },
-      "LandedCostAllocationResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "line_number": {
-            "type": "integer",
-            "title": "Line Number"
-          },
-          "goods_receipt_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Goods Receipt Id"
-          },
-          "goods_receipt_line_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Goods Receipt Line Id"
-          },
-          "allocation_base": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Allocation Base"
-          },
-          "allocated_amount": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Allocated Amount"
-          },
-          "qty_remaining_at_post": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Qty Remaining At Post"
-          },
-          "qty_consumed_at_post": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Qty Consumed At Post"
-          },
-          "previous_landed_unit_cost": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Previous Landed Unit Cost"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "line_number",
-          "goods_receipt_id",
-          "goods_receipt_line_id",
-          "allocation_base",
-          "allocated_amount"
-        ],
-        "title": "LandedCostAllocationResponse"
-      },
-      "LandedCostChargeResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "line_number": {
-            "type": "integer",
-            "title": "Line Number"
-          },
-          "purchase_invoice_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Purchase Invoice Id"
-          },
-          "purchase_invoice_line_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Purchase Invoice Line Id"
-          },
-          "expense_category": {
-            "$ref": "#/components/schemas/ExpenseCategory"
-          },
-          "charge_type_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Charge Type Id"
-          },
-          "allocation_basis": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/LandedCostAllocationMethod"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "bill_number": {
-            "type": "string",
-            "title": "Bill Number"
-          },
-          "amount": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Amount"
-          },
-          "base_amount": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Base Amount"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "line_number",
-          "purchase_invoice_id",
-          "purchase_invoice_line_id",
-          "expense_category",
-          "bill_number",
-          "amount",
-          "base_amount"
-        ],
-        "title": "LandedCostChargeResponse"
-      },
-      "LandedCostResponse": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "tenant_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Tenant Id"
-          },
-          "document_number": {
-            "type": "string",
-            "title": "Document Number"
-          },
-          "status": {
-            "$ref": "#/components/schemas/StockDocumentStatus"
-          },
-          "version": {
-            "type": "integer",
-            "title": "Version"
-          },
-          "is_posted": {
-            "type": "boolean",
-            "title": "Is Posted"
-          },
-          "document_date": {
-            "type": "string",
-            "format": "date",
-            "title": "Document Date"
-          },
-          "allocation_method": {
-            "$ref": "#/components/schemas/LandedCostAllocationMethod"
-          },
-          "shipment_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Shipment Id"
-          },
-          "branch_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Branch Id"
-          },
-          "journal_entry_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Journal Entry Id"
-          },
-          "reversal_journal_entry_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reversal Journal Entry Id"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          },
-          "total_charges": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Total Charges"
-          },
-          "posted_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Posted At"
-          },
-          "posted_by": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Posted By"
-          },
-          "cancelled_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cancelled At"
-          },
-          "cancelled_by": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cancelled By"
-          },
-          "cancel_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cancel Reason"
-          },
-          "available_actions": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Available Actions"
-          },
-          "period_locked": {
-            "type": "boolean",
-            "title": "Period Locked",
-            "default": false
-          },
-          "related_documents": {
-            "items": {
-              "$ref": "#/components/schemas/RelatedDocumentRef"
-            },
-            "type": "array",
-            "title": "Related Documents"
-          },
-          "charges": {
-            "items": {
-              "$ref": "#/components/schemas/LandedCostChargeResponse"
-            },
-            "type": "array",
-            "title": "Charges"
-          },
-          "allocations": {
-            "items": {
-              "$ref": "#/components/schemas/LandedCostAllocationResponse"
-            },
-            "type": "array",
-            "title": "Allocations"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By"
-          },
-          "updated_by": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated By"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "tenant_id",
-          "document_number",
-          "status",
-          "version",
-          "is_posted",
-          "document_date",
-          "allocation_method",
-          "shipment_id",
-          "branch_id",
-          "journal_entry_id",
-          "reversal_journal_entry_id",
-          "notes",
-          "total_charges",
-          "posted_at",
-          "posted_by",
-          "cancelled_at",
-          "cancelled_by",
-          "cancel_reason",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "LandedCostResponse"
-      },
-      "RelatedDocumentRef": {
-        "properties": {
-          "document_type": {
-            "type": "string",
-            "title": "Document Type"
-          },
-          "document_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Document Id"
-          },
-          "document_number": {
-            "type": "string",
-            "title": "Document Number"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "relationship": {
-            "type": "string",
-            "title": "Relationship"
-          },
-          "document_date": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Document Date"
-          },
-          "quantity_summary": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Quantity Summary"
-          },
-          "amount_summary": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Amount Summary"
-          }
-        },
-        "type": "object",
-        "required": [
-          "document_type",
-          "document_id",
-          "document_number",
-          "status",
-          "relationship"
-        ],
-        "title": "RelatedDocumentRef"
-      },
-      "StockDocumentStatus": {
-        "type": "string",
-        "enum": [
-          "DRAFT",
-          "POSTED",
-          "CANCELLED"
-        ],
-        "title": "StockDocumentStatus"
       },
       "ValidationError": {
         "properties": {

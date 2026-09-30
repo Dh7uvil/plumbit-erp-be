@@ -427,6 +427,70 @@
         }
       }
     },
+    "/api/v1/accounts/{account_id}/period-balances": {
+      "get": {
+        "tags": [
+          "Accounts"
+        ],
+        "summary": "Get Account Period Balances",
+        "operationId": "get_account_period_balances_api_v1_accounts__account_id__period_balances_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Account Id"
+            }
+          },
+          {
+            "name": "fiscal_year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fiscal Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AccountPeriodBalancesResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/accounts/{account_id}": {
       "get": {
         "tags": [
@@ -677,6 +741,11 @@
             "title": "Is Group",
             "default": false
           },
+          "is_blocked": {
+            "type": "boolean",
+            "title": "Is Blocked",
+            "default": false
+          },
           "currency_id": {
             "anyOf": [
               {
@@ -698,6 +767,93 @@
           "account_subtype"
         ],
         "title": "AccountCreate"
+      },
+      "AccountPeriodBalance": {
+        "properties": {
+          "period": {
+            "type": "integer",
+            "title": "Period"
+          },
+          "from_date": {
+            "type": "string",
+            "format": "date",
+            "title": "From Date"
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "title": "To Date"
+          },
+          "debit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Debit"
+          },
+          "credit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Credit"
+          },
+          "closing": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Closing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "period",
+          "from_date",
+          "to_date",
+          "debit",
+          "credit",
+          "closing"
+        ],
+        "title": "AccountPeriodBalance"
+      },
+      "AccountPeriodBalancesResponse": {
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "title": "Fiscal Year"
+          },
+          "currency_code": {
+            "type": "string",
+            "title": "Currency Code"
+          },
+          "opening": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Opening"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/AccountPeriodBalance"
+            },
+            "type": "array",
+            "title": "Periods"
+          },
+          "closing": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Closing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "account_id",
+          "fiscal_year",
+          "currency_code",
+          "opening",
+          "periods",
+          "closing"
+        ],
+        "title": "AccountPeriodBalancesResponse"
       },
       "AccountResponse": {
         "properties": {
@@ -748,6 +904,28 @@
             ],
             "title": "Parent Id"
           },
+          "parent_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Code"
+          },
+          "parent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Name"
+          },
           "depth": {
             "type": "integer",
             "title": "Depth"
@@ -785,6 +963,11 @@
           "is_active": {
             "type": "boolean",
             "title": "Is Active"
+          },
+          "is_blocked": {
+            "type": "boolean",
+            "title": "Is Blocked",
+            "default": false
           },
           "created_at": {
             "type": "string",
@@ -962,6 +1145,28 @@
             ],
             "title": "Parent Id"
           },
+          "parent_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Code"
+          },
+          "parent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Name"
+          },
           "depth": {
             "type": "integer",
             "title": "Depth"
@@ -999,6 +1204,11 @@
           "is_active": {
             "type": "boolean",
             "title": "Is Active"
+          },
+          "is_blocked": {
+            "type": "boolean",
+            "title": "Is Blocked",
+            "default": false
           },
           "created_at": {
             "type": "string",
@@ -1177,6 +1387,17 @@
             ],
             "title": "Is Active"
           },
+          "is_blocked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Blocked"
+          },
           "currency_id": {
             "anyOf": [
               {
@@ -1226,6 +1447,40 @@
           "data"
         ],
         "title": "ApiResponse[AccountBalanceResponse]"
+      },
+      "ApiResponse_AccountPeriodBalancesResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/AccountPeriodBalancesResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[AccountPeriodBalancesResponse]"
       },
       "ApiResponse_AccountResponse_": {
         "properties": {

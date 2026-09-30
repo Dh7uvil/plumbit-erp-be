@@ -223,6 +223,83 @@
         }
       }
     },
+    "/api/v1/bank-accounts/{bank_account_id}/balance-projection": {
+      "get": {
+        "tags": [
+          "Bank Accounts"
+        ],
+        "summary": "Get Bank Balance Projection",
+        "operationId": "get_bank_balance_projection_api_v1_bank_accounts__bank_account_id__balance_projection_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "bank_account_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Bank Account Id"
+            }
+          },
+          {
+            "name": "as_of",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "name": "horizon_days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "default": 30,
+              "title": "Horizon Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BankBalanceProjectionResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/bank-accounts/{bank_account_id}": {
       "get": {
         "tags": [
@@ -409,6 +486,40 @@
           "data"
         ],
         "title": "ApiResponse[BankAccountResponse]"
+      },
+      "ApiResponse_BankBalanceProjectionResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/BankBalanceProjectionResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[BankBalanceProjectionResponse]"
       },
       "ApiResponse_list_BankAccountResponse__": {
         "properties": {
@@ -855,6 +966,92 @@
         },
         "type": "object",
         "title": "BankAccountUpdate"
+      },
+      "BankBalanceProjectionLine": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "event_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Event Date"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "event_date",
+          "description",
+          "amount"
+        ],
+        "title": "BankBalanceProjectionLine"
+      },
+      "BankBalanceProjectionResponse": {
+        "properties": {
+          "bank_account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Bank Account Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "currency_code": {
+            "type": "string",
+            "title": "Currency Code"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "horizon_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Horizon Date"
+          },
+          "book_balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Book Balance"
+          },
+          "projected_balance": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Projected Balance"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/BankBalanceProjectionLine"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bank_account_id",
+          "account_id",
+          "currency_code",
+          "as_of",
+          "horizon_date",
+          "book_balance",
+          "projected_balance"
+        ],
+        "title": "BankBalanceProjectionResponse"
       },
       "HTTPValidationError": {
         "properties": {
