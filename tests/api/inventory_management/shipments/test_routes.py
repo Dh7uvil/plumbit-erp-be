@@ -83,7 +83,7 @@ async def test_shipment_groups_posted_notes_without_moving_stock(client: AsyncCl
         headers=_if_match(headers, attached.json()["data"]["version"]),
     )
     assert dispatched.status_code == 200, dispatched.text
-    assert dispatched.json()["data"]["status"] == "DISPATCHED"
+    assert dispatched.json()["data"]["status"] == "IN_TRANSIT"
 
     tracked = await client.patch(
         f"/api/v1/shipments/{shipment['id']}/tracking",

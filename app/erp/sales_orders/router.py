@@ -5,6 +5,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
 
+from app.common.print.schemas import PrintDocumentResponse
+
 from app.auth.catalog import (
     PROFORMA_INVOICE_CREATE,
     PURCHASE_ORDER_CREATE,
@@ -135,6 +137,21 @@ async def get_sales_order(
     _: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_READ))],
 ) -> ApiResponse[SalesOrderResponse]:
     return ApiResponse(data=await service.get(tenant.tenant_id, sales_order_id))
+
+
+@router.get("/{sales_order_id}/print", response_model=ApiResponse[PrintDocumentResponse])
+async def print_sales_order(
+    sales_order_id: UUID,
+    tenant: TenantContextDependency,
+    service: SalesOrderServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_READ))],
+    template_family: Annotated[str, Query()] = "uae",
+) -> ApiResponse[PrintDocumentResponse]:
+    return ApiResponse(
+        data=await service.print_document(
+            tenant.tenant_id, sales_order_id, template_family=template_family
+        )
+    )
 
 
 @router.patch("/{sales_order_id}", response_model=ApiResponse[SalesOrderResponse])

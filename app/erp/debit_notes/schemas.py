@@ -113,6 +113,7 @@ class DebitNoteCreate(BaseModel):
     adjustment_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     round_off_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    prices_include_tax: bool | None = None
     lines: list[DebitNoteLineInput] = Field(min_length=1)
 
     @field_validator("notes")
@@ -136,6 +137,7 @@ class DebitNoteUpdate(BaseModel):
     adjustment_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     round_off_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    prices_include_tax: bool | None = None
     lines: list[DebitNoteLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
@@ -212,6 +214,7 @@ class DebitNoteResponse(BaseModel):
     subtotal: Decimal
     tax_amount: Decimal
     grand_total: Decimal
+    prices_include_tax: bool = False
     foreign_amount: Decimal
     base_amount: Decimal
     notes: str | None

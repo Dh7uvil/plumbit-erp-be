@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -19,10 +20,13 @@ from app.common.utils.export_evidence import has_export_evidence
 from app.core.enums import (
     AccountSubtype,
     AccountType,
+    ChequeDirection,
+    ChequeStatus,
     CogsStatus,
     CompanyType,
     InvoiceDocumentStatus,
     JournalEntryStatus,
+    JournalType,
     OpenItemType,
     PartyType,
     PurchaseOrderStatus,
@@ -43,6 +47,7 @@ from app.erp.accounting.reports.financials import FinancialReports
 from app.erp.accounting.reports.inventory import InventoryReports
 from app.erp.accounting.reports.schemas import (
     AccountStatementLine,
+    AccountStatementOpening,
     AccountStatementResponse,
     AgingBucketTotals,
     AgingDocument,
@@ -65,6 +70,8 @@ from app.erp.accounting.reports.schemas import (
     OutstandingSummary,
     PartyStatementLine,
     PartyStatementResponse,
+    PdcRegisterLine,
+    PdcRegisterResponse,
     ReceivedNotBilledLine,
     ReceivedNotBilledResponse,
     ReportWarning,
@@ -80,6 +87,36 @@ from app.erp.sales_invoices.models import SalesInvoice, SalesInvoiceLine
 _ZERO = Decimal("0")
 _DEBIT_NORMAL = frozenset({AccountType.ASSET.value, AccountType.EXPENSE.value})
 EXPORT_EVIDENCE_WINDOW_DAYS = 90
+_UNCLEARED_CHEQUE_STATUSES = frozenset(
+    {ChequeStatus.ISSUED.value, ChequeStatus.DEPOSITED.value}
+)
+_SOURCE_VOUCHER_CODES: dict[str, str] = {
+    "journal_entry": "JV",
+    "cash_receipt_voucher": "CR",
+    "cash_payment_voucher": "CP",
+    "bank_receipt_voucher": "BR",
+    "bank_payment_voucher": "BP",
+    "contra_voucher": "CV",
+    "sales_invoice": "SI",
+    "purchase_invoice": "PI",
+    "credit_note": "CN",
+    "debit_note": "DN",
+    "customer_payment": "RC",
+    "supplier_payment": "SP",
+    "customer_payment_allocation": "RC",
+    "supplier_payment_allocation": "SP",
+    "customer_payment_refund": "RR",
+    "supplier_payment_refund": "SR",
+    "credit_note_refund": "CN",
+    "debit_note_refund": "DN",
+    "cheque_issue": "CQ",
+    "cheque_clear": "CL",
+    "cheque_allocation": "CQ",
+    "OPENING_BALANCE": "OB",
+    "fx_revaluation": "FX",
+    "sales_invoice_write_off": "WO",
+    "purchase_invoice_write_off": "WO",
+}
 
 
 def _net_sides(debit: Decimal, credit: Decimal) -> tuple[Decimal, Decimal]:
@@ -87,6 +124,22 @@ def _net_sides(debit: Decimal, credit: Decimal) -> tuple[Decimal, Decimal]:
     if net >= _ZERO:
         return net, _ZERO
     return _ZERO, quantize_money(-net)
+
+
+def _balance_side(balance: Decimal) -> str:
+    return "DR" if balance >= _ZERO else "CR"
+
+
+def _voucher_code(source_type: str | None, *, journal_type: str) -> str | None:
+    if source_type:
+        mapped = _SOURCE_VOUCHER_CODES.get(source_type)
+        if mapped:
+            return mapped
+        compact = source_type.replace("_", "")
+        return compact[:2].upper() if compact else None
+    if journal_type == JournalType.OPENING_BALANCE.value:
+        return "OB"
+    return "JV"
 
 
 def _posted_join():
@@ -629,24 +682,50 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         self,
         tenant_id: UUID,
         *,
-        party_type: PartyType,
-        party_id: UUID,
+        party_type: PartyType | None = None,
+        party_id: UUID | None = None,
+        account_id: UUID | None = None,
         from_date: date,
         to_date: date,
+        include_opening: bool = True,
+        include_pdc: bool = False,
+        currency_id: UUID | None = None,
     ) -> AccountStatementResponse:
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
-        opening_d, opening_c = await self._sum_party(
-            tenant_id, party_type=party_type.value, party_id=party_id, before=from_date
+        if party_id is None and party_type is None and account_id is None:
+            raise ValidationError("Either party or account_id is required")
+        if (party_id is None) != (party_type is None):
+            raise ValidationError("party_type and party_id must both be provided")
+        if party_id is None and account_id is None:
+            raise ValidationError("account_id is required when party is not provided")
+
+        account = None
+        account_type: str | None = None
+        if account_id is not None:
+            account = await self.accounts.get(tenant_id, account_id)
+            account_type = account.account_type
+
+        party_type_value = party_type.value if party_type is not None else None
+        opening_d, opening_c = await self._sum_statement_opening(
+            tenant_id,
+            before=from_date,
+            party_type=party_type_value,
+            party_id=party_id,
+            account_id=account_id,
+            currency_id=currency_id,
         )
-        running = quantize_money(opening_d - opening_c)
+        if account_type is not None:
+            opening_signed = self._signed(account_type, opening_d, opening_c)
+        else:
+            opening_signed = quantize_money(opening_d - opening_c)
+
+        running = opening_signed if include_opening else _ZERO
         statement = (
             select(JournalEntryLine, JournalEntry)
             .join(JournalEntry, _posted_join())
             .where(
                 JournalEntryLine.tenant_id == tenant_id,
-                JournalEntryLine.party_type == party_type.value,
-                JournalEntryLine.party_id == party_id,
                 JournalEntry.entry_date >= from_date,
                 JournalEntry.entry_date <= to_date,
             )
@@ -656,31 +735,232 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 JournalEntryLine.line_number.asc(),
             )
         )
+        if party_type_value is not None:
+            statement = statement.where(JournalEntryLine.party_type == party_type_value)
+        if party_id is not None:
+            statement = statement.where(JournalEntryLine.party_id == party_id)
+        if account_id is not None:
+            statement = statement.where(JournalEntryLine.account_id == account_id)
+        if currency_id is not None:
+            statement = statement.where(JournalEntryLine.currency_id == currency_id)
+
         rows = (await self.session.execute(statement)).all()
-        lines: list[AccountStatementLine] = []
+        cheque_meta = await self._cheque_meta_for_journals(
+            tenant_id,
+            [
+                header.source_id
+                for _, header in rows
+                if header.source_type in {"cheque_issue", "cheque_clear"} and header.source_id
+            ],
+        )
+
+        pending: list[AccountStatementLine] = []
+        total_debit = _ZERO
+        total_credit = _ZERO
         for line, header in rows:
-            running = quantize_money(running + line.debit_base - line.credit_base)
-            lines.append(
+            debit, credit = self._statement_line_amounts(line, currency_id=currency_id)
+            total_debit = quantize_money(total_debit + debit)
+            total_credit = quantize_money(total_credit + credit)
+            cheque = cheque_meta.get(header.source_id) if header.source_id else None
+            pending.append(
                 AccountStatementLine(
                     journal_entry_id=header.id,
                     document_number=header.document_number,
                     entry_date=header.entry_date,
                     due_date=line.due_date,
                     external_reference=line.external_reference,
-                    debit=line.debit_base,
-                    credit=line.credit_base,
-                    running_balance=running,
+                    debit=debit,
+                    credit=credit,
+                    running_balance=_ZERO,
                     description=line.description,
+                    voucher_code=_voucher_code(
+                        header.source_type, journal_type=header.journal_type
+                    ),
+                    source_type=header.source_type,
+                    source_id=header.source_id,
+                    cheque_number=(
+                        cheque.cheque_number if cheque is not None else header.reference
+                    ),
+                    cheque_clearing_date=self._cheque_clearing_date(cheque),
+                    balance_side=None,
+                    narration=header.narration,
                 )
             )
+
+        if include_pdc:
+            pdc_rows = await self._uncleared_cheques_for_statement(
+                tenant_id,
+                from_date=from_date,
+                to_date=to_date,
+                party_type=party_type_value,
+                party_id=party_id,
+                account_id=account_id,
+                currency_id=currency_id,
+            )
+            for cheque in pdc_rows:
+                debit, credit = self._pdc_amounts(cheque, currency_id=currency_id)
+                total_debit = quantize_money(total_debit + debit)
+                total_credit = quantize_money(total_credit + credit)
+                entry_date = cheque.due_date or cheque.cheque_date
+                pending.append(
+                    AccountStatementLine(
+                        journal_entry_id=cheque.journal_entry_id,
+                        document_number=cheque.document_number,
+                        entry_date=entry_date,
+                        due_date=cheque.due_date,
+                        external_reference=None,
+                        debit=debit,
+                        credit=credit,
+                        running_balance=_ZERO,
+                        description=cheque.narration or f"PDC {cheque.cheque_number}",
+                        voucher_code="PD",
+                        source_type="cheque",
+                        source_id=cheque.id,
+                        cheque_number=cheque.cheque_number,
+                        cheque_clearing_date=cheque.due_date,
+                        balance_side=None,
+                        narration=cheque.narration,
+                    )
+                )
+
+        pending.sort(
+            key=lambda row: (
+                row.entry_date,
+                row.due_date or row.entry_date,
+                row.document_number,
+            )
+        )
+        lines: list[AccountStatementLine] = []
+        running = opening_signed if include_opening else _ZERO
+        for row in pending:
+            if account_type is not None:
+                running = quantize_money(
+                    running + self._delta(account_type, row.debit, row.credit)
+                )
+            else:
+                running = quantize_money(running + row.debit - row.credit)
+            lines.append(
+                row.model_copy(
+                    update={
+                        "running_balance": running,
+                        "balance_side": _balance_side(running),
+                    }
+                )
+            )
+
+        currency_code = await self._statement_currency_code(tenant_id, currency_id)
+        opening_row = None
+        if include_opening:
+            opening_row = AccountStatementOpening(
+                entry_date=from_date,
+                debit=opening_d,
+                credit=opening_c,
+                running_balance=opening_signed,
+                balance_side=_balance_side(opening_signed),
+            )
+
         return AccountStatementResponse(
-            currency_code=await self._report_currency_code(tenant_id),
-            party_type=party_type.value,
+            currency_code=currency_code,
+            party_type=party_type_value,
             party_id=party_id,
+            account_id=account.id if account is not None else None,
+            account_code=account.code if account is not None else None,
+            account_name=account.name if account is not None else None,
             from_date=from_date,
             to_date=to_date,
-            opening_balance=quantize_money(opening_d - opening_c),
+            opening_balance=opening_signed,
             closing_balance=running,
+            total_debit=total_debit,
+            total_credit=total_credit,
+            opening=opening_row,
+            lines=lines,
+        )
+
+    async def pdc_register(
+        self,
+        tenant_id: UUID,
+        *,
+        due_date_from: date | None = None,
+        due_date_to: date | None = None,
+        direction: str | None = None,
+        status: str | None = None,
+        bank_account_id: UUID | None = None,
+    ) -> PdcRegisterResponse:
+        from app.erp.accounting.bank_accounts.models import BankAccount
+        from app.erp.accounting.cheques.models import Cheque
+
+        due_or_cheque = func.coalesce(Cheque.due_date, Cheque.cheque_date)
+        statement = select(Cheque, BankAccount).join(
+            BankAccount,
+            (BankAccount.id == Cheque.bank_account_id) & (BankAccount.tenant_id == tenant_id),
+        ).where(
+            Cheque.tenant_id == tenant_id,
+            Cheque.deleted_at.is_(None),
+        )
+        if due_date_from is not None:
+            statement = statement.where(due_or_cheque >= due_date_from)
+        if due_date_to is not None:
+            statement = statement.where(due_or_cheque <= due_date_to)
+        if direction is not None:
+            statement = statement.where(Cheque.direction == direction)
+        if status is not None:
+            statement = statement.where(Cheque.status == status)
+        else:
+            statement = statement.where(Cheque.status.in_(tuple(_UNCLEARED_CHEQUE_STATUSES)))
+        if bank_account_id is not None:
+            statement = statement.where(Cheque.bank_account_id == bank_account_id)
+        statement = statement.order_by(due_or_cheque.asc(), Cheque.document_number.asc())
+        rows = (await self.session.execute(statement)).all()
+
+        party_ids = {cheque.party_id for cheque, _ in rows if cheque.party_id}
+        party_names: dict[UUID, str] = {}
+        if party_ids:
+            party_names = {
+                row[0]: row[1]
+                for row in (
+                    await self.session.execute(
+                        select(Customer.id, Customer.name).where(
+                            Customer.tenant_id == tenant_id,
+                            Customer.id.in_(list(party_ids)),
+                        )
+                    )
+                ).all()
+            }
+
+        lines: list[PdcRegisterLine] = []
+        total_inbound = _ZERO
+        total_outbound = _ZERO
+        for cheque, bank in rows:
+            party_name = (
+                party_names.get(cheque.party_id) if cheque.party_id is not None else None
+            )
+            if cheque.direction == ChequeDirection.INBOUND.value:
+                total_inbound = quantize_money(total_inbound + cheque.amount)
+            else:
+                total_outbound = quantize_money(total_outbound + cheque.amount)
+            lines.append(
+                PdcRegisterLine(
+                    cheque_id=cheque.id,
+                    document_number=cheque.document_number,
+                    cheque_number=cheque.cheque_number,
+                    direction=cheque.direction,
+                    status=cheque.status,
+                    cheque_date=cheque.cheque_date,
+                    due_date=cheque.due_date,
+                    amount=cheque.amount,
+                    party_type=cheque.party_type,
+                    party_id=cheque.party_id,
+                    party_name=party_name,
+                    bank_account_id=cheque.bank_account_id,
+                    bank_name=bank.bank_name,
+                )
+            )
+        return PdcRegisterResponse(
+            currency_code=await self._report_currency_code(tenant_id),
+            from_date=due_date_from,
+            to_date=due_date_to,
+            total_inbound=total_inbound,
+            total_outbound=total_outbound,
             lines=lines,
         )
 
@@ -1113,6 +1393,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         party_id: UUID | None = None,
         branch_id: UUID | None = None,
         cost_center_id: UUID | None = None,
+        exclude_source_types: Sequence[str] | None = None,
     ) -> dict[UUID, tuple[Decimal, Decimal]]:
         statement = (
             select(
@@ -1143,6 +1424,8 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 (JournalEntryLine.cost_center_id == cost_center_id)
                 | (JournalEntry.cost_center_id == cost_center_id)
             )
+        if exclude_source_types:
+            statement = statement.where(JournalEntry.source_type.notin_(exclude_source_types))
         result: dict[UUID, tuple[Decimal, Decimal]] = {}
         for account_id_row, debit, credit in (await self.session.execute(statement)).all():
             result[account_id_row] = (
@@ -1258,6 +1541,138 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             lines=lines,
         )
 
+    async def _statement_currency_code(
+        self, tenant_id: UUID, currency_id: UUID | None
+    ) -> str:
+        if currency_id is None:
+            return await self._report_currency_code(tenant_id)
+        return (await self.currencies.get(tenant_id, currency_id)).code
+
+    @staticmethod
+    def _statement_line_amounts(
+        line: JournalEntryLine, *, currency_id: UUID | None
+    ) -> tuple[Decimal, Decimal]:
+        if currency_id is None:
+            return line.debit_base, line.credit_base
+        return line.debit, line.credit
+
+    @staticmethod
+    def _pdc_amounts(cheque, *, currency_id: UUID | None) -> tuple[Decimal, Decimal]:
+        amount = cheque.base_amount if currency_id is None else cheque.amount
+        amount = quantize_money(amount)
+        if ChequeDirection(cheque.direction) == ChequeDirection.INBOUND:
+            return amount, _ZERO
+        return _ZERO, amount
+
+    @staticmethod
+    def _cheque_clearing_date(cheque) -> date | None:
+        if cheque is None:
+            return None
+        if cheque.cleared_at is not None:
+            return cheque.cleared_at.date()
+        if ChequeStatus(cheque.status) == ChequeStatus.CLEARED:
+            return cheque.due_date or cheque.cheque_date
+        return None
+
+    async def _cheque_meta_for_journals(
+        self, tenant_id: UUID, cheque_ids: list[UUID]
+    ) -> dict[UUID, object]:
+        if not cheque_ids:
+            return {}
+        from app.erp.accounting.cheques.models import Cheque
+
+        unique_ids = list(dict.fromkeys(cheque_ids))
+        rows = (
+            await self.session.execute(
+                select(Cheque).where(
+                    Cheque.tenant_id == tenant_id,
+                    Cheque.id.in_(unique_ids),
+                    Cheque.deleted_at.is_(None),
+                )
+            )
+        ).scalars().all()
+        return {row.id: row for row in rows}
+
+    async def _uncleared_cheques_for_statement(
+        self,
+        tenant_id: UUID,
+        *,
+        from_date: date,
+        to_date: date,
+        party_type: str | None,
+        party_id: UUID | None,
+        account_id: UUID | None,
+        currency_id: UUID | None,
+    ) -> list:
+        from app.erp.accounting.cheques.models import Cheque
+
+        due_or_cheque = func.coalesce(Cheque.due_date, Cheque.cheque_date)
+        statement = select(Cheque).where(
+            Cheque.tenant_id == tenant_id,
+            Cheque.deleted_at.is_(None),
+            Cheque.status.in_(tuple(_UNCLEARED_CHEQUE_STATUSES)),
+            due_or_cheque >= from_date,
+            due_or_cheque <= to_date,
+        )
+        if party_id is not None:
+            statement = statement.where(Cheque.party_id == party_id)
+        if party_type is not None:
+            statement = statement.where(Cheque.party_type == party_type)
+        if currency_id is not None:
+            statement = statement.where(Cheque.currency_id == currency_id)
+        if account_id is not None and party_id is None:
+            party_ids = (
+                select(JournalEntryLine.party_id)
+                .join(JournalEntry, _posted_join())
+                .where(
+                    JournalEntryLine.tenant_id == tenant_id,
+                    JournalEntryLine.account_id == account_id,
+                    JournalEntryLine.party_id.is_not(None),
+                )
+                .distinct()
+            )
+            statement = statement.where(Cheque.party_id.in_(party_ids))
+        statement = statement.order_by(due_or_cheque.asc(), Cheque.document_number.asc())
+        return list((await self.session.execute(statement)).scalars().all())
+
+    async def _sum_statement_opening(
+        self,
+        tenant_id: UUID,
+        *,
+        before: date,
+        party_type: str | None = None,
+        party_id: UUID | None = None,
+        account_id: UUID | None = None,
+        currency_id: UUID | None = None,
+    ) -> tuple[Decimal, Decimal]:
+        debit_col = (
+            JournalEntryLine.debit_base if currency_id is None else JournalEntryLine.debit
+        )
+        credit_col = (
+            JournalEntryLine.credit_base if currency_id is None else JournalEntryLine.credit
+        )
+        statement = (
+            select(
+                func.coalesce(func.sum(debit_col), 0),
+                func.coalesce(func.sum(credit_col), 0),
+            )
+            .join(JournalEntry, _posted_join())
+            .where(
+                JournalEntryLine.tenant_id == tenant_id,
+                JournalEntry.entry_date < before,
+            )
+        )
+        if party_type is not None:
+            statement = statement.where(JournalEntryLine.party_type == party_type)
+        if party_id is not None:
+            statement = statement.where(JournalEntryLine.party_id == party_id)
+        if account_id is not None:
+            statement = statement.where(JournalEntryLine.account_id == account_id)
+        if currency_id is not None:
+            statement = statement.where(JournalEntryLine.currency_id == currency_id)
+        debit, credit = (await self.session.execute(statement)).one()
+        return quantize_money(Decimal(debit)), quantize_money(Decimal(credit))
+
     async def _sum_party(
         self,
         tenant_id: UUID,
@@ -1328,14 +1743,21 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         self, tenant_id: UUID, customer_id: UUID, *, as_of: date | None = None
     ) -> OutstandingSummary:
         from app.crm.customers.service import CustomerService
-        from app.erp.accounting.open_items.service import OpenItemsService
+        from app.erp.accounting.open_items.as_of import as_of_balances
 
         customer = await CustomerService(self.session).get(tenant_id, customer_id)
-        items = await OpenItemsService(self.session).list_ar_open_items(tenant_id, customer_id)
+        as_of_date = as_of or utcnow().date()
+        items = [
+            row.to_open_item_row()
+            for row in await as_of_balances(
+                self.session, tenant_id, PartyType.CUSTOMER, as_of_date
+            )
+            if row.party_id == customer_id
+        ]
         return self._outstanding_from_items(
             customer_id,
             items,
-            as_of=as_of or utcnow().date(),
+            as_of=as_of_date,
             credit_limit=customer.credit_limit,
             party_type=PartyType.CUSTOMER,
             currency_code=await self._report_currency_code(tenant_id),
@@ -1344,20 +1766,27 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
     async def supplier_outstanding(
         self, tenant_id: UUID, supplier_id: UUID, *, as_of: date | None = None
     ) -> OutstandingSummary:
-        from app.erp.accounting.open_items.service import OpenItemsService
+        from app.erp.accounting.open_items.as_of import as_of_balances
 
-        items = await OpenItemsService(self.session).list_ap_open_items(tenant_id, supplier_id)
+        as_of_date = as_of or utcnow().date()
+        items = [
+            row.to_open_item_row()
+            for row in await as_of_balances(
+                self.session, tenant_id, PartyType.SUPPLIER, as_of_date
+            )
+            if row.party_id == supplier_id
+        ]
         return self._outstanding_from_items(
             supplier_id,
             items,
-            as_of=as_of or utcnow().date(),
+            as_of=as_of_date,
             credit_limit=None,
             party_type=PartyType.SUPPLIER,
             currency_code=await self._report_currency_code(tenant_id),
         )
 
     async def _aging(self, tenant_id: UUID, *, as_of: date, party_type: PartyType) -> AgingResponse:
-        from app.erp.accounting.open_items.service import OpenItemsService
+        from app.erp.accounting.open_items.as_of import as_of_balances
 
         if party_type == PartyType.CUSTOMER:
             company_types = (CompanyType.CUSTOMER.value, CompanyType.BOTH.value)
@@ -1376,16 +1805,16 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             .scalars()
             .all()
         )
-        open_items = OpenItemsService(self.session)
+        as_of_items = await as_of_balances(self.session, tenant_id, party_type, as_of)
+        items_by_party: dict[UUID, list] = {}
+        for item in as_of_items:
+            items_by_party.setdefault(item.party_id, []).append(item.to_open_item_row())
         rows: list[AgingPartyRow] = []
         totals = AgingBucketTotals()
         warnings: list[ReportWarning] = []
         report_currency = await self._report_currency_code(tenant_id)
         for party in parties:
-            if party_type == PartyType.CUSTOMER:
-                items = await open_items.list_ar_open_items(tenant_id, party.id)
-            else:
-                items = await open_items.list_ap_open_items(tenant_id, party.id)
+            items = items_by_party.get(party.id, [])
             buckets, documents, item_warnings = self._bucket_items(
                 items, as_of=as_of, party_type=party_type
             )

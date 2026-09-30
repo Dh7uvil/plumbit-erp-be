@@ -1,10 +1,12 @@
 """Phase 7 — cash/bank vouchers and day book."""
 
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
 
+from tests.api.erp.accounting.test_banking import _bank_account
 from tests.api.erp.customer_payments.test_routes import (
     _enable_books,
     _idempotent,
@@ -205,6 +207,120 @@ async def test_delete_draft_voucher(client: AsyncClient) -> None:
     assert deleted.status_code == 200, deleted.text
     missing = await client.get(f"/api/v1/vouchers/{voucher['id']}", headers=headers)
     assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_journal_voucher_via_vouchers_endpoint(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    cash_account = await _account_by_subtype(client, headers, "CASH")
+    revenue = await _counter_account(client, headers)
+    created = await client.post(
+        "/api/v1/vouchers",
+        headers=headers,
+        json={
+            "voucher_type": "JOURNAL",
+            "narration": "Standing accrual",
+            "lines": [
+                {"account_id": cash_account, "debit": "80", "credit": "0"},
+                {"account_id": revenue, "debit": "0", "credit": "80"},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    voucher = created.json()["data"]
+    assert voucher["voucher_type"] == "JOURNAL"
+    posted = await client.post(
+        f"/api/v1/vouchers/{voucher['id']}/post",
+        headers=_idempotent(headers, voucher["version"]),
+    )
+    assert posted.status_code == 200, posted.text
+    journal = await client.get(
+        f"/api/v1/vouchers/{voucher['id']}",
+        headers=headers,
+    )
+    assert journal.status_code == 200, journal.text
+    assert journal.json()["data"]["journal_entry_id"] is not None
+
+
+@pytest.mark.asyncio
+async def test_voucher_print_includes_amount_in_words(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    voucher = await _draft_cash_payment(client, headers, amount="105")
+    printed = await client.get(
+        f"/api/v1/vouchers/{voucher['id']}/print",
+        headers=headers,
+    )
+    assert printed.status_code == 200, printed.text
+    body = printed.json()["data"]
+    assert body["template_kind"] == "voucher"
+    assert body["amount_in_words"] is not None
+    assert len(body["journal_lines"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_bank_receipt_future_cheque_creates_pdc_linkage(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    today = await _enable_books(client, headers)
+    bank = await _bank_account(client, headers)
+    invoice = await _posted_invoice(client, headers)
+    total = Decimal(str(invoice["grand_total"]))
+    voucher_date = date.fromisoformat(today)
+    cheque_date = (voucher_date + timedelta(days=30)).isoformat()
+    ar_account = await _account_by_subtype(client, headers, "ACCOUNTS_RECEIVABLE")
+    created = await client.post(
+        "/api/v1/vouchers",
+        headers=headers,
+        json={
+            "voucher_type": "BANK_RECEIPT",
+            "voucher_date": today,
+            "payment_account_id": bank["account_id"],
+            "total_amount": str(total),
+            "currency_id": invoice["currency_id"],
+            "party_type": "CUSTOMER",
+            "party_id": invoice["customer_id"],
+            "payment_method": "CHEQUE",
+            "cheque_number": "PDC-BRV-1",
+            "cheque_date": cheque_date,
+            "lines": [
+                {
+                    "account_id": ar_account,
+                    "amount": str(total),
+                    "party_type": "CUSTOMER",
+                    "party_id": invoice["customer_id"],
+                }
+            ],
+            "allocations": [
+                {
+                    "item_type": "SALES_INVOICE",
+                    "item_id": invoice["id"],
+                    "amount": str(total),
+                }
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    voucher = created.json()["data"]
+    posted = await client.post(
+        f"/api/v1/vouchers/{voucher['id']}/post",
+        headers=_idempotent(headers, voucher["version"]),
+    )
+    assert posted.status_code == 200, posted.text
+    cheques = await client.get(
+        "/api/v1/cheques",
+        headers=headers,
+        params={"party_id": invoice["customer_id"]},
+    )
+    assert cheques.status_code == 200, cheques.text
+    rows = [row for row in cheques.json()["data"] if row["cheque_number"] == "PDC-BRV-1"]
+    assert len(rows) == 1
+    assert rows[0]["cheque_date"] == cheque_date
+    assert rows[0]["voucher_id"] == voucher["id"]
+    assert rows[0]["status"] == "DRAFT"
 
 
 @pytest.mark.asyncio

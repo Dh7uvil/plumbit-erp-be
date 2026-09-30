@@ -9,6 +9,8 @@ from uuid import uuid4
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.core.config import get_settings
+
 REQUEST_ID_HEADER = b"x-request-id"
 FORWARDED_FOR_HEADER = b"x-forwarded-for"
 REAL_IP_HEADER = b"x-real-ip"
@@ -64,10 +66,16 @@ def _header_value(headers: list[tuple[bytes, bytes]], name: bytes) -> str | None
 
 
 def _client_ip_from_scope(scope: Scope) -> str | None:
+    settings = get_settings()
     headers = list(scope.get("headers") or [])
     forwarded = _header_value(headers, FORWARDED_FOR_HEADER)
     if forwarded:
-        first_hop = forwarded.split(",", 1)[0].strip()
+        hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
+        if settings.trusted_proxy_count > 0 and hops:
+            if len(hops) > settings.trusted_proxy_count:
+                return hops[-(settings.trusted_proxy_count + 1)]
+            return hops[0]
+        first_hop = hops[0] if hops else None
         if first_hop:
             return first_hop
     real_ip = _header_value(headers, REAL_IP_HEADER)

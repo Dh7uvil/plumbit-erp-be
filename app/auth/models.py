@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     SmallInteger,
     String,
@@ -82,6 +83,12 @@ class Tenant(TimestampedModel):
         default=False,
         server_default=text("false"),
     )
+    prices_include_tax_default: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     lock_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     hard_lock_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     lock_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -123,7 +130,23 @@ class Tenant(TimestampedModel):
         default=True,
         server_default=text("true"),
     )
+    overdue_days_threshold: Mapped[int | None] = mapped_column(
+        nullable=True,
+        default=None,
+    )
     allow_negative_cash: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    invoice_policy: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="bill_ahead",
+        server_default=text("'bill_ahead'"),
+    )
+    returns_reopen_delivery: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,
@@ -155,6 +178,12 @@ class User(TenantModel):
         DateTime(timezone=True),
         nullable=True,
     )
+    token_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
 
 
 class Role(TenantModel):
@@ -170,6 +199,12 @@ class Role(TenantModel):
         nullable=False,
         default=False,
         server_default=text("false"),
+    )
+    record_scope: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="all",
+        server_default=text("'all'"),
     )
 
 

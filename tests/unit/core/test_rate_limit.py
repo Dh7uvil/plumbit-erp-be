@@ -19,8 +19,10 @@ def test_enforce_auth_rate_limit_honors_settings(monkeypatch: pytest.MonkeyPatch
         env = "development"
         auth_rate_limit_requests = 1
         rate_limit_window_seconds = 60
+        redis_url = None
 
     monkeypatch.setattr("app.core.rate_limit.get_settings", lambda: _Settings())
+    monkeypatch.setattr("app.core.rate_limit._auth_limiter", None)
     auth_limiter.reset()
     enforce_auth_rate_limit("login:test")
     with pytest.raises(RateLimitExceededError):

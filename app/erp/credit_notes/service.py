@@ -21,6 +21,7 @@ from app.auth.catalog import (
     PERIOD_OVERRIDE,
     SALES_MODULE,
 )
+from app.auth.models import Tenant
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
 from app.common.outbox.service import OutboxService
@@ -302,6 +303,32 @@ class CreditNoteService:
                 )
             if not lines:
                 raise ValidationError("This sales invoice has no remaining quantity to credit")
+            shipping_amount = _ZERO
+            adjustment_amount = _ZERO
+            if first_credit:
+                from app.common.utils.conversion_charges import prorate_header_charges
+
+                converted_net = _ZERO
+                for line in invoice.lines:
+                    outstanding = quantize_quantity(line.quantity - line.qty_credited)
+                    if outstanding <= _ZERO:
+                        continue
+                    line_discount_type = (
+                        DiscountType(line.discount_type) if line.discount_type else None
+                    )
+                    _, _, _, net = compute_line_amounts(
+                        quantity=outstanding,
+                        rate=line.rate,
+                        discount_type=line_discount_type,
+                        discount_value=line.discount_value,
+                        tax_rate=line.tax_rate,
+                        prices_include_tax=invoice.prices_include_tax,
+                    )
+                    converted_net += net
+                converted_net = quantize_money(converted_net)
+                shipping_amount, adjustment_amount = prorate_header_charges(
+                    invoice, converted_net, invoice.subtotal
+                )
             create_payload = CreditNoteCreate(
                 customer_id=invoice.customer_id,
                 sales_invoice_id=invoice.id,
@@ -316,10 +343,11 @@ class CreditNoteService:
                     else None
                 ),
                 discount_value=invoice.discount_value if first_credit else None,
-                shipping_amount=invoice.shipping_amount if first_credit else _ZERO,
-                adjustment_amount=invoice.adjustment_amount if first_credit else _ZERO,
+                shipping_amount=shipping_amount,
+                adjustment_amount=adjustment_amount,
                 round_off_amount=invoice.round_off_amount if first_credit else _ZERO,
                 place_of_supply=PlaceOfSupply(invoice.place_of_supply),
+                prices_include_tax=invoice.prices_include_tax,
                 country_of_origin=invoice.country_of_origin,
                 lines=lines,
             )
@@ -838,6 +866,8 @@ class CreditNoteService:
             si_line.qty_credited = quantize_quantity(si_line.qty_credited + line.quantity * sign)
             if si_line.qty_credited < _ZERO:
                 raise ValidationError("Credited quantity cannot be negative")
+            if si_line.qty_credited > si_line.quantity:
+                raise ValidationError("Credited quantity cannot exceed invoiced quantity")
         await self.sales_invoices.apply_credit(
             tenant_id, invoice.id, quantize_money(row.grand_total * sign)
         )
@@ -1026,7 +1056,12 @@ class CreditNoteService:
     async def _build_draft(
         self, tenant_id: UUID, payload: CreditNoteCreate
     ) -> tuple[dict[str, object], builtins.list[dict[str, object]]]:
-        customer = await self.customers.get(tenant_id, payload.customer_id)
+        from app.common.schemas.discount_fields import assert_discount_bounds
+
+        assert_discount_bounds(payload.discount_type, payload.discount_value)
+        for line in payload.lines:
+            assert_discount_bounds(line.discount_type, line.discount_value)
+        customer = await self.customers.require_party(tenant_id, payload.customer_id)
         if payload.branch_id is not None:
             await self.org.require_branch(tenant_id, payload.branch_id)
         invoice: SalesInvoice | None = None
@@ -1073,20 +1108,26 @@ class CreditNoteService:
                 or place == PlaceOfSupply.OUTSIDE_UAE
             )
         )
+        prices_include_tax = await self._resolve_prices_include_tax(
+            tenant_id, payload.prices_include_tax
+        )
         line_rows, line_nets, line_taxes = await self._build_lines(
             tenant_id,
             payload.lines,
             tax_treatment=tax_treatment,
             place_of_supply=place,
+            prices_include_tax=prices_include_tax,
         )
         round_off = quantize_money(payload.round_off_amount)
-        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
-            line_nets=line_nets,
-            line_taxes=line_taxes,
-            discount_type=payload.discount_type,
-            discount_value=payload.discount_value,
-            shipping_amount=quantize_money(payload.shipping_amount),
-            adjustment_amount=quantize_money(payload.adjustment_amount),
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes, adjustment_amount = (
+            compute_header_totals(
+                line_nets=line_nets,
+                line_taxes=line_taxes,
+                discount_type=payload.discount_type,
+                discount_value=payload.discount_value,
+                shipping_amount=quantize_money(payload.shipping_amount),
+                adjustment_amount=quantize_money(payload.adjustment_amount),
+            )
         )
         apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         grand = quantize_money(grand + round_off)
@@ -1108,11 +1149,12 @@ class CreditNoteService:
             "discount_value": payload.discount_value,
             "discount_amount": doc_discount,
             "shipping_amount": quantize_money(payload.shipping_amount),
-            "adjustment_amount": quantize_money(payload.adjustment_amount),
+            "adjustment_amount": adjustment_amount,
             "round_off_amount": round_off,
             "subtotal": subtotal,
             "tax_amount": tax_total,
             "grand_total": grand,
+            "prices_include_tax": prices_include_tax,
             "foreign_amount": grand,
             "base_amount": quantize_money(grand * resolved.rate),
             "notes": payload.notes,
@@ -1122,6 +1164,14 @@ class CreditNoteService:
         }
         return header, line_rows
 
+    async def _resolve_prices_include_tax(
+        self, tenant_id: UUID, explicit: bool | None
+    ) -> bool:
+        if explicit is not None:
+            return explicit
+        tenant = await self.session.get(Tenant, tenant_id)
+        return bool(tenant and tenant.prices_include_tax_default)
+
     async def _build_lines(
         self,
         tenant_id: UUID,
@@ -1129,6 +1179,7 @@ class CreditNoteService:
         *,
         tax_treatment: TaxTreatment,
         place_of_supply: PlaceOfSupply,
+        prices_include_tax: bool = False,
     ) -> tuple[builtins.list[dict[str, object]], builtins.list[Decimal], builtins.list[Decimal]]:
         built: builtins.list[dict[str, object]] = []
         nets: builtins.list[Decimal] = []
@@ -1176,6 +1227,7 @@ class CreditNoteService:
                 discount_type=line.discount_type,
                 discount_value=line.discount_value,
                 tax_rate=chosen_tax.rate,
+                prices_include_tax=prices_include_tax,
             )
             built.append(
                 {
@@ -1254,6 +1306,7 @@ class CreditNoteService:
                 else PlaceOfSupply(existing.place_of_supply)
             ),
             country_of_origin=values.get("country_of_origin", existing.country_of_origin),
+            prices_include_tax=values.get("prices_include_tax", existing.prices_include_tax),
             lines=lines,
         )
 
@@ -1273,6 +1326,7 @@ class CreditNoteService:
             adjustment_amount=row.adjustment_amount,
             round_off_amount=row.round_off_amount,
             place_of_supply=PlaceOfSupply(row.place_of_supply),
+            prices_include_tax=row.prices_include_tax,
             country_of_origin=row.country_of_origin,
             lines=[
                 CreditNoteLineInput(

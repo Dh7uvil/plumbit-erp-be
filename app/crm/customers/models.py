@@ -66,6 +66,12 @@ class Customer(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
         Numeric(MONEY_PRECISION, MONEY_SCALE),
         nullable=True,
     )
+    credit_hold: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     salesperson_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("employees.id", ondelete="SET NULL"),

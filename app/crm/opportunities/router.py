@@ -11,6 +11,7 @@ from app.auth.catalog import (
     OPPORTUNITY_READ,
     OPPORTUNITY_UPDATE,
     QUOTATION_READ,
+    SALES_ORDER_READ,
 )
 from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
@@ -30,6 +31,7 @@ from app.crm.opportunities.schemas import (
     OpportunityVersionedAction,
 )
 from app.erp.quotation.schemas import QuotationResponse
+from app.erp.sales_orders.schemas import SalesOrderResponse
 
 router = APIRouter(prefix="/opportunities", tags=["Opportunities"])
 
@@ -83,6 +85,22 @@ async def list_opportunity_quotations(
     _: Annotated[CurrentUser, Depends(require_permission(QUOTATION_READ))],
 ) -> ApiResponse[list[QuotationResponse]]:
     rows, total = await service.list_quotations(
+        tenant.tenant_id,
+        opportunity_id,
+        page=page,
+    )
+    return paginated_response(rows, params=page, total=total)
+
+
+@router.get("/{opportunity_id}/sales-orders", response_model=ApiResponse[list[SalesOrderResponse]])
+async def list_opportunity_sales_orders(
+    opportunity_id: UUID,
+    tenant: TenantContextDependency,
+    page: PaginationDependency,
+    service: OpportunityServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_READ))],
+) -> ApiResponse[list[SalesOrderResponse]]:
+    rows, total = await service.list_sales_orders(
         tenant.tenant_id,
         opportunity_id,
         page=page,

@@ -48,8 +48,8 @@ from app.erp.accounting.fx_revaluation.schemas import (
 from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
 from app.erp.accounting.ledger.posting import LedgerPostingService
 from app.erp.accounting.ledger.schemas import JournalLineInput
+from app.erp.accounting.open_items.as_of import as_of_balances
 from app.erp.accounting.open_items.schemas import OpenExposureItem
-from app.erp.accounting.open_items.service import OpenItemsService
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 
 _ZERO = Decimal("0")
@@ -104,7 +104,6 @@ class FxRevaluationService:
         self.session = session
         self.actor_permissions = actor_permissions
         self.repo = FxRevaluationRepository(session)
-        self.open_items = OpenItemsService(session)
         self.currencies = CurrencyService(session)
         self.rates = ExchangeRateService(session)
         self.accounts = AccountResolver(session)
@@ -291,7 +290,11 @@ class FxRevaluationService:
     ) -> tuple[_List[_Bucket], _List[str]]:
         warnings: _List[str] = []
         grouped: dict[tuple[str, UUID | None, UUID], _BucketAccum] = {}
-        items = await self.open_items.list_revaluation_items(tenant_id, as_of=as_of)
+        ar_items = await as_of_balances(self.session, tenant_id, PartyType.CUSTOMER, as_of)
+        ap_items = await as_of_balances(self.session, tenant_id, PartyType.SUPPLIER, as_of)
+        items: list[OpenExposureItem] = [
+            row.to_exposure_item(party_type=PartyType.CUSTOMER) for row in ar_items
+        ] + [row.to_exposure_item(party_type=PartyType.SUPPLIER) for row in ap_items]
         accounts: dict[tuple[str, UUID], UUID] = {}
         for item in items:
             if item.currency_id == base_currency_id:

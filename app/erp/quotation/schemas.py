@@ -8,9 +8,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.schemas.conversion import ConversionLineInput
+from app.common.schemas.discount_fields import DiscountFieldsMixin
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.packing import PackingFields
 from app.common.schemas.related_documents import RelatedDocumentRef
+from app.common.schemas.warnings import DocumentWarning
 from app.core.enums import DiscountType, Incoterm, PlaceOfSupply, QuotationStatus, TaxTreatment
 
 
@@ -32,14 +34,12 @@ class QuotationFilter(BaseFilter):
     currency_id: UUID | None = None
 
 
-class QuotationLineInput(PackingFields):
+class QuotationLineInput(PackingFields, DiscountFieldsMixin):
     product_id: UUID | None = None
     description: str | None = None
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
     unit_id: UUID | None = None
     rate: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
-    discount_type: DiscountType | None = None
-    discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     tax_id: UUID | None = None
 
     @field_validator("description")
@@ -84,7 +84,7 @@ class QuotationLineResponse(PackingFields):
         return self
 
 
-class QuotationCreate(BaseModel):
+class QuotationCreate(DiscountFieldsMixin):
     customer_id: UUID
     contact_id: UUID | None = None
     opportunity_id: UUID | None = None
@@ -98,17 +98,16 @@ class QuotationCreate(BaseModel):
     notes: str | None = None
     terms_and_conditions: str | None = None
     terms_template_id: UUID | None = None
-    discount_type: DiscountType | None = None
-    discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     shipping_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    prices_include_tax: bool | None = None
     incoterm: Incoterm | None = None
     incoterm_place: str | None = Field(default=None, max_length=120)
     lines: list[QuotationLineInput] = Field(default_factory=list)
 
 
-class QuotationUpdate(BaseModel):
+class QuotationUpdate(DiscountFieldsMixin):
     contact_id: UUID | None = None
     branch_id: UUID | None = None
     quote_date: date | None = None
@@ -119,11 +118,10 @@ class QuotationUpdate(BaseModel):
     salesperson_id: UUID | None = None
     notes: str | None = None
     terms_and_conditions: str | None = None
-    discount_type: DiscountType | None = None
-    discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     shipping_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    prices_include_tax: bool | None = None
     incoterm: Incoterm | None = None
     incoterm_place: str | None = Field(default=None, max_length=120)
     lines: list[QuotationLineInput] | None = None
@@ -203,6 +201,7 @@ class QuotationResponse(BaseModel):
     subtotal: Decimal
     tax_amount: Decimal
     grand_total: Decimal
+    prices_include_tax: bool = False
     foreign_amount: Decimal
     base_amount: Decimal
     converted_at: datetime | None
@@ -213,6 +212,7 @@ class QuotationResponse(BaseModel):
     display_number: str
     available_actions: list[str] = Field(default_factory=list)
     related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
+    warnings: list[DocumentWarning] = Field(default_factory=list)
     lines: list[QuotationLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

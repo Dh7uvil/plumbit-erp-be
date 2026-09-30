@@ -65,6 +65,7 @@ async def list_journals(
     "",
     response_model=ApiResponse[JournalEntryResponse],
     status_code=status.HTTP_201_CREATED,
+    deprecated=True,
 )
 async def create_journal(
     payload: JournalEntryCreate,
@@ -80,6 +81,7 @@ async def create_journal(
     "/contra",
     response_model=ApiResponse[JournalEntryResponse],
     status_code=status.HTTP_201_CREATED,
+    deprecated=True,
 )
 async def create_contra_journal(
     payload: JournalContraCreate,
@@ -101,7 +103,11 @@ async def get_journal(
     return ApiResponse(data=await service.get(tenant.tenant_id, journal_id))
 
 
-@router.patch("/{journal_id}", response_model=ApiResponse[JournalEntryResponse])
+@router.patch(
+    "/{journal_id}",
+    response_model=ApiResponse[JournalEntryResponse],
+    deprecated=True,
+)
 async def update_journal(
     journal_id: UUID,
     payload: JournalEntryUpdate,
@@ -120,7 +126,11 @@ async def update_journal(
     return ApiResponse(data=row, message="Journal entry updated successfully")
 
 
-@router.delete("/{journal_id}", response_model=ApiResponse[JournalEntryResponse])
+@router.delete(
+    "/{journal_id}",
+    response_model=ApiResponse[JournalEntryResponse],
+    deprecated=True,
+)
 async def delete_journal(
     journal_id: UUID,
     tenant: TenantContextDependency,
@@ -137,7 +147,11 @@ async def delete_journal(
     return ApiResponse(data=row, message="Journal entry deleted successfully")
 
 
-@router.post("/{journal_id}/post", response_model=ApiResponse[JournalEntryResponse])
+@router.post(
+    "/{journal_id}/post",
+    response_model=ApiResponse[JournalEntryResponse],
+    deprecated=True,
+)
 async def post_journal(
     journal_id: UUID,
     request: Request,
@@ -160,7 +174,11 @@ async def post_journal(
     return ApiResponse(data=row, message="Journal entry posted successfully")
 
 
-@router.post("/{journal_id}/cancel", response_model=ApiResponse[JournalEntryResponse])
+@router.post(
+    "/{journal_id}/cancel",
+    response_model=ApiResponse[JournalEntryResponse],
+    deprecated=True,
+)
 async def cancel_journal(
     journal_id: UUID,
     tenant: TenantContextDependency,
@@ -180,7 +198,11 @@ async def cancel_journal(
     return ApiResponse(data=row, message="Journal entry cancelled")
 
 
-@router.post("/{journal_id}/reverse", response_model=ApiResponse[JournalEntryResponse])
+@router.post(
+    "/{journal_id}/reverse",
+    response_model=ApiResponse[JournalEntryResponse],
+    deprecated=True,
+)
 async def reverse_journal(
     journal_id: UUID,
     request: Request,

@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, Query, status
+from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
 
 from app.auth.catalog import (
     PURCHASE_ORDER_APPROVE,
@@ -18,6 +18,7 @@ from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
+from app.common.idempotency.service import hash_request, optional_idempotency_key
 from app.common.print.schemas import PrintDocumentResponse
 from app.common.schemas.billing_queue import PurchaseOrderBillingQueueItem
 from app.common.schemas.pagination import paginated_response
@@ -38,6 +39,7 @@ from app.erp.purchase_orders.schemas import (
 router = APIRouter(prefix="/purchase-orders", tags=["Purchase Orders"])
 
 IfMatch = Annotated[str | None, Header()]
+IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
 
 
 @router.get("/compose-defaults", response_model=ApiResponse[PurchaseOrderComposeDefaults])
@@ -96,11 +98,24 @@ async def list_purchase_orders(
 )
 async def create_purchase_order(
     payload: PurchaseOrderCreate,
+    request: Request,
     tenant: TenantContextDependency,
     service: PurchaseOrderServiceDependency,
     _: Annotated[CurrentUser, Depends(require_permission(PURCHASE_ORDER_CREATE))],
+    idempotency_key: IdempotencyKeyHeader = None,
 ) -> ApiResponse[PurchaseOrderResponse]:
-    row = await service.create(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
+    key = optional_idempotency_key(idempotency_key)
+    body = await request.body()
+    row = await service.create(
+        tenant.tenant_id,
+        payload,
+        actor_user_id=tenant.user_id,
+        idempotency_key=key,
+        request_hash=hash_request(method=request.method, path=request.url.path, body=body)
+        if key
+        else None,
+        endpoint=request.url.path if key else None,
+    )
     return ApiResponse(data=row, message="Purchase order created successfully")
 
 

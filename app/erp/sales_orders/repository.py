@@ -45,6 +45,7 @@ _FILTER_FIELDS = frozenset(
         "salesperson_id",
         "source_quotation_id",
         "source_proforma_invoice_id",
+        "opportunity_id",
     }
 )
 

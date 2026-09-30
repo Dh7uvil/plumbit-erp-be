@@ -122,12 +122,12 @@ async def _user_headers(
         json={
             "name": "Limited User",
             "email": email,
-            "password": "password12",
+            "password": "Password12",
             "role_ids": [role.json()["data"]["id"]],
         },
     )
     assert user.status_code == 201, user.text
-    return await login_headers(client, tenant_id, email, "password12")
+    return await login_headers(client, tenant_id, email, "Password12")
 
 
 @pytest.mark.asyncio

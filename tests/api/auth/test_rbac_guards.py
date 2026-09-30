@@ -39,7 +39,7 @@ async def _create_user_with_permissions(
     ]
     suffix = uuid4().hex[:8]
     email = f"limited-{suffix}@example.com"
-    password = "password12"
+    password = "Password12"
     role = await client.post(
         "/api/v1/roles",
         headers=headers,
@@ -99,7 +99,7 @@ async def test_non_superadmin_cannot_assign_superadmin(client: AsyncClient) -> N
         json={
             "name": "Target User",
             "email": f"target-{uuid4().hex[:8]}@example.com",
-            "password": "password12",
+            "password": "Password12",
             "role_ids": [],
         },
     )
@@ -170,7 +170,7 @@ async def test_cannot_delete_role_assigned_to_users(client: AsyncClient) -> None
         json={
             "name": "Role User",
             "email": f"role-user-{uuid4().hex[:8]}@example.com",
-            "password": "password12",
+            "password": "Password12",
             "role_ids": [role_id],
         },
     )
@@ -230,7 +230,7 @@ async def test_admin_reset_user_password_and_rejects_self(client: AsyncClient) -
         json={
             "name": "Reset Target",
             "email": f"reset-{uuid4().hex[:8]}@example.com",
-            "password": "password12",
+            "password": "Password12",
             "role_ids": [],
         },
     )
@@ -245,7 +245,7 @@ async def test_admin_reset_user_password_and_rejects_self(client: AsyncClient) -
     assert reset.status_code == 200, reset.text
     old = await client.post(
         "/api/v1/auth/login",
-        json={"tenant_id": tenant_id, "email": target_email, "password": "password12"},
+        json={"tenant_id": tenant_id, "email": target_email, "password": "Password12"},
     )
     assert old.status_code == 401, old.text
     new_login = await client.post(

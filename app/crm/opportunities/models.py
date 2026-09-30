@@ -120,6 +120,7 @@ class Opportunity(AuditUserMixin, SoftDeleteTenantModel):
         ForeignKey("crm_campaigns.id", ondelete="SET NULL"),
         nullable=True,
     )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
 
 

@@ -14,7 +14,11 @@ def get_lead_service(
     session: Annotated[AsyncSession, Depends(get_db)],
     current_user: CurrentUserDependency,
 ) -> LeadService:
-    return LeadService(session, actor_permissions=current_user.permissions)
+    return LeadService(
+        session,
+        actor_permissions=current_user.permissions,
+        actor=current_user.actor,
+    )
 
 
 LeadServiceDependency = Annotated[LeadService, Depends(get_lead_service)]

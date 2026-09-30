@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     jwt_algorithm: Literal["HS256", "HS384", "HS512"] = "HS256"
     jwt_access_token_ttl_minutes: int = Field(default=30, ge=1)
     jwt_refresh_token_ttl_minutes: int = Field(default=10_080, ge=1)
+    jwt_issuer: str | None = None
+    jwt_audience: str | None = None
     password_reset_ttl_minutes: int = Field(default=60, ge=5, le=1_440)
 
     # CORS
@@ -88,6 +90,7 @@ class Settings(BaseSettings):
     rate_limit_requests: int = Field(default=100, ge=1)
     rate_limit_window_seconds: int = Field(default=60, ge=1)
     auth_rate_limit_requests: int = Field(default=10, ge=1)
+    trusted_proxy_count: int = Field(default=0, ge=0)
 
     # Uploads
     max_upload_size_mb: int = Field(default=25, ge=1)
@@ -129,6 +132,10 @@ class Settings(BaseSettings):
     # of truth; SessionEvents.after_commit only nudges it.
     feature_background_workers_enabled: bool = False
     feature_ai_forecasting_enabled: bool = False
+    feature_ai_assistant_enabled: bool = False
+
+    # AI assistant (optional; stub when unset)
+    openai_api_key: SecretStr | None = None
 
     @property
     def database_url(self) -> PostgresDsn:

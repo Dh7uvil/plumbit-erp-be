@@ -151,6 +151,10 @@ class CustomerService:
         rows = mapped_rows(filename=filename, content=content, mapping=resolved)
         created_ids = []
         errors: list[ImportRowError] = []
+        from app.crm.contacts.schemas import ContactCreate
+        from app.crm.contacts.service import ContactService
+
+        contacts = ContactService(self.session)
         for index, row in enumerate(rows, start=2):
             try:
                 name = (row.get("name") or "").strip()
@@ -158,6 +162,8 @@ class CustomerService:
                     raise ValidationError("Name is required")
                 trn = (row.get("trn") or "").strip() or None
                 code = (row.get("code") or "").strip() or None
+                email = (row.get("email") or "").strip() or None
+                phone = (row.get("phone") or "").strip() or None
                 created = await self.create(
                     tenant_id,
                     CustomerCreate(
@@ -168,10 +174,21 @@ class CustomerService:
                         tax_treatment=(
                             TaxTreatment.REGISTERED if trn else TaxTreatment.UNREGISTERED
                         ),
-                        notes=(row.get("phone") or row.get("email") or "").strip() or None,
                     ),
                     actor_user_id=actor_user_id,
                 )
+                if email or phone:
+                    await contacts.create_record(
+                        tenant_id,
+                        ContactCreate(
+                            customer_id=created.id,
+                            name=name,
+                            email=email,
+                            phone=phone,
+                            is_primary=True,
+                        ),
+                        actor_user_id=actor_user_id,
+                    )
                 created_ids.append(created.id)
             except (ValidationError, DuplicateResourceError, ValueError) as exc:
                 errors.append(ImportRowError(row_number=index, message=str(exc)))
@@ -234,6 +251,7 @@ class CustomerService:
                         "default_price_list_id": payload.default_price_list_id,
                         "payment_terms_id": payload.payment_terms_id,
                         "credit_limit": payload.credit_limit,
+                        "credit_hold": payload.credit_hold,
                         "salesperson_id": payload.salesperson_id,
                         "receivable_account_id": payload.receivable_account_id,
                         "payable_account_id": payload.payable_account_id,
@@ -483,6 +501,7 @@ class CustomerService:
             "price_list": price_list_name,
             "payment_terms": payment_term_name,
             "credit_limit": row.credit_limit,
+            "credit_hold": row.credit_hold,
             "salesperson": await self.org.employee_audit_label(tenant_id, row.salesperson_id),
             "notes": row.notes,
             "is_active": row.is_active,
@@ -568,6 +587,7 @@ class CustomerService:
             default_price_list_id=row.default_price_list_id,
             payment_terms_id=row.payment_terms_id,
             credit_limit=row.credit_limit,
+            credit_hold=row.credit_hold,
             salesperson_id=row.salesperson_id,
             receivable_account_id=row.receivable_account_id,
             payable_account_id=row.payable_account_id,
@@ -609,13 +629,14 @@ class CustomerService:
             allowed = ", ".join(sorted(item.value for item in self.role.allowed_write_types))
             raise ValidationError(f"company_type must be one of: {allowed}")
 
-    async def require_party(self, tenant_id: UUID, party_id: UUID) -> Customer:
+    async def require_party(self, tenant_id: UUID, party_id: UUID) -> CustomerResponse:
         row = await self.repo.get(tenant_id, party_id)
-        if row is None:
-            raise ResourceNotFoundError("Customer not found")
+        if row is None or CompanyType(row.company_type) not in self.role.visible_types:
+            raise ResourceNotFoundError(self.role.not_found_message)
         if not row.is_active:
-            raise ValidationError("Customer is inactive")
-        return row
+            label = "Supplier" if self.role is SUPPLIER_PARTY_ROLE else "Customer"
+            raise ValidationError(f"{label} is inactive")
+        return await self._to_response(tenant_id, row)
 
     async def _require(self, tenant_id: UUID, customer_id: UUID) -> Customer:
         row = await self.repo.get(tenant_id, customer_id)

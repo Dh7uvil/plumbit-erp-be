@@ -23,13 +23,14 @@ from app.auth.catalog import (
 )
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
+from app.common.print.service import PrintService
 from app.common.outbox.service import OutboxService
 from app.common.period_lock import PeriodLockPolicy
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
 from app.common.utils.currency import document_fx_amounts, quantize_money
-from app.common.utils.datetime import utcnow
+from app.common.utils.datetime import today_in_timezone, utcnow
 from app.core.enums import (
     AccountSystemRole,
     AuditAction,
@@ -114,7 +115,7 @@ class ChequeService:
         self.sequences = DocumentSequenceService(session)
         self.currencies = CurrencyService(session)
         self.rates = ExchangeRateService(session)
-        self.posting = LedgerPostingService(session)
+        self.posting = LedgerPostingService(session, actor_permissions=actor_permissions)
         self.resolver = AccountResolver(session)
         self.party_accounts = PartyAccountResolver(session)
         self.allocations = PaymentAllocationRepository(session)
@@ -159,6 +160,37 @@ class ChequeService:
 
     async def get(self, tenant_id: UUID, cheque_id: UUID) -> ChequeResponse:
         return await self._to_response(await self._require(tenant_id, cheque_id))
+
+    async def print_document(
+        self,
+        tenant_id: UUID,
+        cheque_id: UUID,
+        *,
+        template_family: str = "uae",
+    ):
+        row = await self._require(tenant_id, cheque_id)
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        bank = await self.bank_accounts.get(tenant_id, row.bank_account_id)
+        party_name, party_code = await self._party_labels(
+            tenant_id, row.party_type, row.party_id
+        )
+        printer = PrintService(self.session)
+        return await printer.assemble_cheque(
+            tenant_id,
+            document_id=row.id,
+            document_number=row.document_number,
+            document_date=row.cheque_date,
+            template_family=template_family,
+            currency_code=currency.code,
+            amount=row.amount,
+            cheque_number=row.cheque_number,
+            due_date=row.due_date,
+            direction=row.direction,
+            party_name=party_name,
+            party_code=party_code,
+            bank_name=bank.bank_name,
+            narration=row.narration,
+        )
 
     async def create(
         self, tenant_id: UUID, payload: ChequeCreate, *, actor_user_id: UUID
@@ -385,7 +417,40 @@ class ChequeService:
                 entity_id=cheque_id,
                 new_values={"status": target.value},
             )
+            await self.session.refresh(row)
             return await self._to_response(row)
+
+    async def batch_deposit(
+        self,
+        tenant_id: UUID,
+        items: list[tuple[UUID, int]],
+        *,
+        actor_user_id: UUID,
+    ) -> list[ChequeResponse]:
+        async with transaction(self.session):
+            results: list[ChequeResponse] = []
+            for cheque_id, expected_version in items:
+                row = await self._require_for_update(tenant_id, cheque_id)
+                self._assert_version(row, expected_version)
+                if ChequeDirection(row.direction) != ChequeDirection.INBOUND:
+                    raise ValidationError("Only inbound cheques can be deposited")
+                target = next_status(ChequeStatus(row.status), "deposit")
+                row.status = target.value
+                row.version += 1
+                row.updated_by = actor_user_id
+                await self.session.flush()
+                await self.audit.write(
+                    tenant_id=tenant_id,
+                    user_id=actor_user_id,
+                    action=AuditAction.UPDATE,
+                    module=ACCOUNTING_MODULE,
+                    entity_type="cheque",
+                    entity_id=cheque_id,
+                    new_values={"status": target.value},
+                )
+                await self.session.refresh(row)
+                results.append(await self._to_response(row))
+            return results
 
     async def clear(
         self,
@@ -397,6 +462,7 @@ class ChequeService:
         idempotency_key: str,
         request_hash: str,
         endpoint: str,
+        cleared_on: date | None = None,
     ) -> ChequeResponse:
         async with transaction(self.session):
             replay = await self.idempotency.begin(
@@ -407,7 +473,7 @@ class ChequeService:
             row = await self._require_for_update(tenant_id, cheque_id)
             self._assert_version(row, expected_version)
             target = next_status(ChequeStatus(row.status), "clear")
-            clear_date = row.due_date or row.cheque_date
+            clear_date = cleared_on or today_in_timezone(await self.org.get_timezone(tenant_id))
             await self._ensure_period_open(tenant_id, clear_date)
             receivable = ChequeDirection(row.direction) == ChequeDirection.INBOUND
             lines = await self._clear_journal_lines(tenant_id, row, receivable=receivable)
@@ -455,6 +521,7 @@ class ChequeService:
         actor_user_id: UUID,
         expected_version: int,
         reason: str | None,
+        bank_charge: Decimal = _ZERO,
         idempotency_key: str,
         request_hash: str,
         endpoint: str,
@@ -468,7 +535,7 @@ class ChequeService:
             row = await self._require_for_update(tenant_id, cheque_id)
             self._assert_version(row, expected_version)
             target = next_status(ChequeStatus(row.status), "bounce")
-            bounce_date = utcnow().date()
+            bounce_date = today_in_timezone(await self.org.get_timezone(tenant_id))
             await self._ensure_period_open(tenant_id, bounce_date)
             receivable = ChequeDirection(row.direction) == ChequeDirection.INBOUND
             row.bounce_reason = reason
@@ -498,6 +565,36 @@ class ChequeService:
                     actor_id=actor_user_id,
                 )
                 row.reversal_journal_entry_id = issue_reversal.id
+            charge = quantize_money(bank_charge)
+            if charge > _ZERO:
+                bank = await self.bank_accounts.require(tenant_id, row.bank_account_id)
+                charges_account = await self.resolver.require(
+                    tenant_id, AccountSystemRole.BANK_CHARGES
+                )
+                await self.posting.post_for_document(
+                    tenant_id,
+                    source_type="cheque_bounce_charge",
+                    source_id=row.id,
+                    entry_date=bounce_date,
+                    lines=[
+                        JournalLineInput(
+                            account_id=charges_account.id,
+                            debit=charge,
+                            description="Cheque bounce bank charge",
+                        ),
+                        JournalLineInput(
+                            account_id=bank.account_id,
+                            credit=charge,
+                            description="Cheque bounce bank charge",
+                        ),
+                    ],
+                    currency_id=row.currency_id,
+                    exchange_rate=row.exchange_rate,
+                    narration=f"Bounce charge {row.cheque_number}",
+                    branch_id=None,
+                    actor_id=actor_user_id,
+                    journal_type=JournalType.SYSTEM,
+                )
             row.status = target.value
             row.is_posted = False
             row.bounced_at = utcnow()
@@ -538,7 +635,7 @@ class ChequeService:
             target = next_status(current, "cancel")
             if current == ChequeStatus.ISSUED:
                 receivable = ChequeDirection(row.direction) == ChequeDirection.INBOUND
-                cancel_date = utcnow().date()
+                cancel_date = today_in_timezone(await self.org.get_timezone(tenant_id))
                 await self._reverse_allocations(
                     tenant_id,
                     row,
@@ -1070,3 +1167,18 @@ class ChequeService:
         response.available_actions = allowed
         response.allocations = allocations
         return response
+
+    async def _party_labels(
+        self,
+        tenant_id: UUID,
+        party_type: str | None,
+        party_id: UUID | None,
+    ) -> tuple[str | None, str | None]:
+        if party_id is None or party_type is None:
+            return None, None
+        from app.crm.customers.models import Customer
+
+        party = await self.session.get(Customer, party_id)
+        if party is None or party.tenant_id != tenant_id:
+            return None, None
+        return party.name, party.code

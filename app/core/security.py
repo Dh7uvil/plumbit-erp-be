@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -12,7 +13,10 @@ from uuid import uuid4
 import bcrypt
 import jwt
 
+from app.core.config import get_settings
 from app.core.exceptions import InvalidTokenError, TokenExpiredError, TokenTypeError
+
+logger = logging.getLogger(__name__)
 
 MAX_BCRYPT_PASSWORD_BYTES = 72
 DEFAULT_BCRYPT_ROUNDS = 12
@@ -37,6 +41,7 @@ class TokenClaims:
     expires_at: datetime
     token_id: str
     tenant_id: str | None = None
+    token_version: int = 0
 
 
 def _password_bytes(password: str) -> bytes:
@@ -79,6 +84,7 @@ def _create_token(
     algorithm: str,
     issuer: str | None,
     audience: str | None,
+    token_version: int = 0,
 ) -> str:
     if not subject:
         raise ValueError("Token subject must not be empty")
@@ -97,6 +103,8 @@ def _create_token(
     }
     if tenant_id is not None:
         payload["tenant_id"] = tenant_id
+    if token_type == TokenType.ACCESS:
+        payload["token_version"] = token_version
     if issuer is not None:
         payload["iss"] = issuer
     if audience is not None:
@@ -114,6 +122,7 @@ def create_access_token(
     algorithm: str = "HS256",
     issuer: str | None = None,
     audience: str | None = None,
+    token_version: int = 0,
 ) -> str:
     return _create_token(
         subject=subject,
@@ -124,6 +133,7 @@ def create_access_token(
         algorithm=algorithm,
         issuer=issuer,
         audience=audience,
+        token_version=token_version,
     )
 
 
@@ -166,6 +176,48 @@ def _numeric_date(payload: dict[str, object], claim: str) -> datetime:
         raise InvalidTokenError() from exc
 
 
+def _token_version(payload: dict[str, object]) -> int:
+    value = payload.get("token_version")
+    if value is None:
+        return 0
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise InvalidTokenError()
+    return value
+
+
+def _validate_issuer_audience(
+    payload: dict[str, object],
+    *,
+    issuer: str | None,
+    audience: str | None,
+) -> None:
+    token_iss = payload.get("iss")
+    token_aud = payload.get("aud")
+
+    if issuer is not None and token_iss is not None and token_iss != issuer:
+        raise InvalidTokenError()
+    if audience is not None and token_aud is not None:
+        if isinstance(token_aud, str):
+            audiences = {token_aud}
+        elif isinstance(token_aud, list):
+            audiences = {item for item in token_aud if isinstance(item, str)}
+        else:
+            raise InvalidTokenError()
+        if audience not in audiences:
+            raise InvalidTokenError()
+
+    if (token_iss is None or token_aud is None) and (issuer is not None or audience is not None):
+        settings = get_settings()
+        if settings.env == "development":
+            logger.warning(
+                "jwt_missing_iss_or_aud",
+                extra={
+                    "has_iss": token_iss is not None,
+                    "has_aud": token_aud is not None,
+                },
+            )
+
+
 def decode_token(
     token: str,
     *,
@@ -185,18 +237,18 @@ def decode_token(
             token,
             secret,
             algorithms=[algorithm],
-            audience=audience,
-            issuer=issuer,
             options={
                 "require": ["sub", "type", "iat", "exp", "jti"],
-                "verify_aud": audience is not None,
-                "verify_iss": issuer is not None,
+                "verify_aud": False,
+                "verify_iss": False,
             },
         )
     except jwt.ExpiredSignatureError as exc:
         raise TokenExpiredError() from exc
     except jwt.InvalidTokenError as exc:
         raise InvalidTokenError() from exc
+
+    _validate_issuer_audience(payload, issuer=issuer, audience=audience)
 
     try:
         token_type = TokenType(_required_string(payload, "type"))
@@ -209,6 +261,8 @@ def decode_token(
     if tenant_id_value is not None and not isinstance(tenant_id_value, str):
         raise InvalidTokenError()
 
+    token_version = _token_version(payload) if expected_type == TokenType.ACCESS else 0
+
     return TokenClaims(
         subject=_required_string(payload, "sub"),
         token_type=token_type,
@@ -216,6 +270,7 @@ def decode_token(
         expires_at=_numeric_date(payload, "exp"),
         token_id=_required_string(payload, "jti"),
         tenant_id=tenant_id_value,
+        token_version=token_version,
     )
 
 

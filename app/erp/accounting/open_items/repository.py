@@ -1,18 +1,23 @@
 """Payment allocation queries."""
 
 from collections.abc import Sequence
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import and_, delete, exists, func, or_, select
+from sqlalchemy import and_, cast, delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy.types import Date
 
-from app.core.enums import InvoiceDocumentStatus, PaymentAllocationSource
+from app.core.enums import ChequeStatus, InvoiceDocumentStatus, PaymentAllocationSource
+from app.erp.accounting.cheques.models import Cheque
 from app.erp.accounting.customer_payments.models import CustomerPayment
 from app.erp.accounting.open_items.models import PaymentAllocation
 from app.erp.accounting.supplier_payments.models import SupplierPayment
 from app.erp.accounting.vouchers.models import Voucher
+from app.erp.credit_notes.models import CreditNote
+from app.erp.debit_notes.models import DebitNote
 
 _ZERO = Decimal("0")
 _NOTE_SOURCES = (
@@ -156,6 +161,149 @@ class PaymentAllocationRepository:
         )
         rows = (await self.session.execute(statement)).all()
         return {item_id: Decimal(str(amount)) for item_id, amount in rows}
+
+    def _live_as_of_clause(self, as_of: date) -> ColumnElement[bool]:
+        return or_(
+            PaymentAllocation.reversed_at.is_(None),
+            cast(PaymentAllocation.reversed_at, Date) > as_of,
+        )
+
+    def _as_of_source_clause(self, tenant_id: UUID, as_of: date) -> ColumnElement[bool]:
+        posted_customer = exists(
+            select(1).where(
+                CustomerPayment.id == PaymentAllocation.payment_id,
+                CustomerPayment.tenant_id == tenant_id,
+                CustomerPayment.status == InvoiceDocumentStatus.POSTED.value,
+                CustomerPayment.deleted_at.is_(None),
+                CustomerPayment.payment_date <= as_of,
+            )
+        )
+        posted_supplier = exists(
+            select(1).where(
+                SupplierPayment.id == PaymentAllocation.payment_id,
+                SupplierPayment.tenant_id == tenant_id,
+                SupplierPayment.status == InvoiceDocumentStatus.POSTED.value,
+                SupplierPayment.deleted_at.is_(None),
+                SupplierPayment.payment_date <= as_of,
+            )
+        )
+        posted_voucher = exists(
+            select(1).where(
+                Voucher.id == PaymentAllocation.payment_id,
+                Voucher.tenant_id == tenant_id,
+                Voucher.status == InvoiceDocumentStatus.POSTED.value,
+                Voucher.deleted_at.is_(None),
+                Voucher.voucher_date <= as_of,
+            )
+        )
+        posted_credit_note = exists(
+            select(1).where(
+                CreditNote.id == PaymentAllocation.payment_id,
+                CreditNote.tenant_id == tenant_id,
+                CreditNote.status == InvoiceDocumentStatus.POSTED.value,
+                CreditNote.deleted_at.is_(None),
+                CreditNote.credit_note_date <= as_of,
+            )
+        )
+        posted_debit_note = exists(
+            select(1).where(
+                DebitNote.id == PaymentAllocation.payment_id,
+                DebitNote.tenant_id == tenant_id,
+                DebitNote.status == InvoiceDocumentStatus.POSTED.value,
+                DebitNote.deleted_at.is_(None),
+                DebitNote.debit_note_date <= as_of,
+            )
+        )
+        posted_cheque = exists(
+            select(1).where(
+                Cheque.id == PaymentAllocation.payment_id,
+                Cheque.tenant_id == tenant_id,
+                Cheque.status.in_(
+                    [
+                        ChequeStatus.ISSUED.value,
+                        ChequeStatus.DEPOSITED.value,
+                        ChequeStatus.CLEARED.value,
+                    ]
+                ),
+                Cheque.deleted_at.is_(None),
+                Cheque.cheque_date <= as_of,
+            )
+        )
+        return or_(
+            and_(
+                PaymentAllocation.payment_type == PaymentAllocationSource.CUSTOMER_PAYMENT.value,
+                posted_customer,
+            ),
+            and_(
+                PaymentAllocation.payment_type == PaymentAllocationSource.SUPPLIER_PAYMENT.value,
+                posted_supplier,
+            ),
+            and_(
+                PaymentAllocation.payment_type == PaymentAllocationSource.VOUCHER.value,
+                posted_voucher,
+            ),
+            and_(
+                PaymentAllocation.payment_type == PaymentAllocationSource.CREDIT_NOTE.value,
+                posted_credit_note,
+            ),
+            and_(
+                PaymentAllocation.payment_type == PaymentAllocationSource.DEBIT_NOTE.value,
+                posted_debit_note,
+            ),
+            and_(
+                PaymentAllocation.payment_type == PaymentAllocationSource.CHEQUE.value,
+                posted_cheque,
+            ),
+        )
+
+    async def allocated_for_items_as_of(
+        self,
+        tenant_id: UUID,
+        item_type: str,
+        item_ids: Sequence[UUID],
+        as_of: date,
+    ) -> dict[UUID, Decimal]:
+        if not item_ids:
+            return {}
+        statement = (
+            select(PaymentAllocation.item_id, func.coalesce(func.sum(PaymentAllocation.amount), 0))
+            .where(
+                PaymentAllocation.tenant_id == tenant_id,
+                PaymentAllocation.item_type == item_type,
+                PaymentAllocation.item_id.in_(list(item_ids)),
+                self._live_as_of_clause(as_of),
+                self._as_of_source_clause(tenant_id, as_of),
+            )
+            .group_by(PaymentAllocation.item_id)
+        )
+        rows = (await self.session.execute(statement)).all()
+        return {item_id: Decimal(str(amount)) for item_id, amount in rows}
+
+    async def allocated_from_sources_as_of(
+        self,
+        tenant_id: UUID,
+        payment_type: str,
+        payment_ids: Sequence[UUID],
+        as_of: date,
+    ) -> dict[UUID, Decimal]:
+        if not payment_ids:
+            return {}
+        statement = (
+            select(
+                PaymentAllocation.payment_id,
+                func.coalesce(func.sum(PaymentAllocation.amount), 0),
+            )
+            .where(
+                PaymentAllocation.tenant_id == tenant_id,
+                PaymentAllocation.payment_type == payment_type,
+                PaymentAllocation.payment_id.in_(list(payment_ids)),
+                self._live_as_of_clause(as_of),
+                self._as_of_source_clause(tenant_id, as_of),
+            )
+            .group_by(PaymentAllocation.payment_id)
+        )
+        rows = (await self.session.execute(statement)).all()
+        return {payment_id: Decimal(str(amount)) for payment_id, amount in rows}
 
     async def has_live_for_item(self, tenant_id: UUID, item_type: str, item_id: UUID) -> bool:
         statement = (

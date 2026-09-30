@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, status
 
 from app.auth.catalog import (
     CHEQUE_BOUNCE,
@@ -17,6 +17,7 @@ from app.auth.catalog import (
     CHEQUE_UPDATE,
 )
 from app.common.dependencies.auth import CurrentUser
+from app.common.print.schemas import PrintDocumentResponse
 from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
@@ -26,8 +27,10 @@ from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
 from app.erp.accounting.cheques.dependencies import ChequeServiceDependency
 from app.erp.accounting.cheques.schemas import (
+    ChequeBatchDepositRequest,
     ChequeBounceRequest,
     ChequeCancelRequest,
+    ChequeClearRequest,
     ChequeCreate,
     ChequeFilter,
     ChequeResponse,
@@ -71,6 +74,21 @@ async def create_cheque(
 ) -> ApiResponse[ChequeResponse]:
     row = await service.create(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Cheque created successfully")
+
+
+@router.post("/batch-deposit", response_model=ApiResponse[list[ChequeResponse]])
+async def batch_deposit_cheques(
+    payload: ChequeBatchDepositRequest,
+    tenant: TenantContextDependency,
+    service: ChequeServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(CHEQUE_DEPOSIT))],
+) -> ApiResponse[list[ChequeResponse]]:
+    rows = await service.batch_deposit(
+        tenant.tenant_id,
+        [(item.id, item.version) for item in payload.cheques],
+        actor_user_id=tenant.user_id,
+    )
+    return ApiResponse(data=rows, message="Cheques deposited successfully")
 
 
 @router.get("/{cheque_id}", response_model=ApiResponse[ChequeResponse])
@@ -122,6 +140,21 @@ async def delete_cheque(
     return ApiResponse(data=row, message="Cheque deleted successfully")
 
 
+@router.get("/{cheque_id}/print", response_model=ApiResponse[PrintDocumentResponse])
+async def print_cheque(
+    cheque_id: UUID,
+    tenant: TenantContextDependency,
+    service: ChequeServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(CHEQUE_READ))],
+    template_family: Annotated[str, Query()] = "uae",
+) -> ApiResponse[PrintDocumentResponse]:
+    return ApiResponse(
+        data=await service.print_document(
+            tenant.tenant_id, cheque_id, template_family=template_family
+        )
+    )
+
+
 @router.post("/{cheque_id}/issue", response_model=ApiResponse[ChequeResponse])
 async def issue_cheque(
     request: Request,
@@ -169,19 +202,22 @@ async def deposit_cheque(
 async def clear_cheque(
     request: Request,
     cheque_id: UUID,
+    payload: ChequeClearRequest,
     tenant: TenantContextDependency,
     service: ChequeServiceDependency,
     _: Annotated[CurrentUser, Depends(require_permission(CHEQUE_CLEAR))],
     if_match: IfMatch = None,
     idempotency_key: IdempotencyKeyHeader = None,
 ) -> ApiResponse[ChequeResponse]:
+    expected = require_document_version(if_match=if_match, body_version=payload.version)
     key = require_idempotency_key(idempotency_key)
     body = await request.body()
     row = await service.clear(
         tenant.tenant_id,
         cheque_id,
         actor_user_id=tenant.user_id,
-        expected_version=require_document_version(if_match=if_match),
+        expected_version=expected,
+        cleared_on=payload.cleared_on,
         idempotency_key=key,
         request_hash=hash_request(method=request.method, path=request.url.path, body=body),
         endpoint=request.url.path,
@@ -209,6 +245,7 @@ async def bounce_cheque(
         actor_user_id=tenant.user_id,
         expected_version=expected,
         reason=payload.reason,
+        bank_charge=payload.bank_charge,
         idempotency_key=key,
         request_hash=hash_request(method=request.method, path=request.url.path, body=body),
         endpoint=request.url.path,

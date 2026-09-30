@@ -3,9 +3,13 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, status
 
 from app.auth.catalog import (
+    JOURNAL_ENTRY_CREATE,
+    JOURNAL_ENTRY_DELETE,
+    JOURNAL_ENTRY_POST,
+    JOURNAL_ENTRY_UPDATE,
     VOUCHER_CANCEL,
     VOUCHER_CREATE,
     VOUCHER_DELETE,
@@ -14,8 +18,9 @@ from app.auth.catalog import (
     VOUCHER_UPDATE,
 )
 from app.common.dependencies.auth import CurrentUser
+from app.common.print.schemas import PrintDocumentResponse
 from app.common.dependencies.pagination import PaginationDependency
-from app.common.dependencies.permissions import require_permission
+from app.common.dependencies.permissions import require_any_permission, require_permission
 from app.common.dependencies.tenant import TenantContextDependency
 from app.common.idempotency.service import hash_request, require_idempotency_key
 from app.common.schemas.pagination import paginated_response
@@ -69,7 +74,10 @@ async def create_voucher(
     payload: VoucherCreate,
     tenant: TenantContextDependency,
     service: VoucherServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(VOUCHER_CREATE))],
+    _: Annotated[
+        CurrentUser,
+        Depends(require_any_permission(VOUCHER_CREATE, JOURNAL_ENTRY_CREATE)),
+    ],
 ) -> ApiResponse[VoucherResponse]:
     row = await service.create(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Voucher created successfully")
@@ -91,7 +99,10 @@ async def update_voucher(
     payload: VoucherUpdate,
     tenant: TenantContextDependency,
     service: VoucherServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(VOUCHER_UPDATE))],
+    _: Annotated[
+        CurrentUser,
+        Depends(require_any_permission(VOUCHER_UPDATE, JOURNAL_ENTRY_UPDATE)),
+    ],
     if_match: IfMatch = None,
 ) -> ApiResponse[VoucherResponse]:
     version = require_document_version(if_match=if_match, body_version=payload.version)
@@ -110,7 +121,10 @@ async def delete_voucher(
     voucher_id: UUID,
     tenant: TenantContextDependency,
     service: VoucherServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(VOUCHER_DELETE))],
+    _: Annotated[
+        CurrentUser,
+        Depends(require_any_permission(VOUCHER_DELETE, JOURNAL_ENTRY_DELETE)),
+    ],
     if_match: IfMatch = None,
     version: int | None = None,
 ) -> ApiResponse[VoucherResponse]:
@@ -130,7 +144,10 @@ async def post_voucher(
     voucher_id: UUID,
     tenant: TenantContextDependency,
     service: VoucherServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(VOUCHER_POST))],
+    _: Annotated[
+        CurrentUser,
+        Depends(require_any_permission(VOUCHER_POST, JOURNAL_ENTRY_POST)),
+    ],
     if_match: IfMatch = None,
     idempotency_key: IdempotencyKeyHeader = None,
 ) -> ApiResponse[VoucherResponse]:
@@ -155,7 +172,10 @@ async def cancel_voucher(
     payload: VoucherCancelRequest,
     tenant: TenantContextDependency,
     service: VoucherServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(VOUCHER_CANCEL))],
+    _: Annotated[
+        CurrentUser,
+        Depends(require_any_permission(VOUCHER_CANCEL, JOURNAL_ENTRY_UPDATE)),
+    ],
     if_match: IfMatch = None,
     idempotency_key: IdempotencyKeyHeader = None,
 ) -> ApiResponse[VoucherResponse]:
@@ -173,6 +193,21 @@ async def cancel_voucher(
         endpoint=request.url.path,
     )
     return ApiResponse(data=row, message="Voucher cancelled successfully")
+
+
+@router.get("/{voucher_id}/print", response_model=ApiResponse[PrintDocumentResponse])
+async def print_voucher(
+    voucher_id: UUID,
+    tenant: TenantContextDependency,
+    service: VoucherServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(VOUCHER_READ))],
+    template_family: Annotated[str, Query()] = "uae",
+) -> ApiResponse[PrintDocumentResponse]:
+    return ApiResponse(
+        data=await service.print_document(
+            tenant.tenant_id, voucher_id, template_family=template_family
+        )
+    )
 
 
 @router.get(

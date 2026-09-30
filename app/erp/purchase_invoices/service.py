@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.catalog import (
     DEBIT_NOTE_CREATE,
     GOODS_RECEIPT_CREATE,
-    LANDED_COST_CREATE,
     PERIOD_OVERRIDE,
     PURCHASE_INVOICE_CANCEL,
     PURCHASE_INVOICE_DELETE,
@@ -204,7 +203,6 @@ class PurchaseInvoiceService:
         await self._ensure_policy(tenant_id)
         response = self._to_response(row, today=await self._today(tenant_id))
         response.related_documents = await self._related_documents(tenant_id, row)
-        await self._attach_landed_cost_remaining(tenant_id, response)
         return response
 
     async def print_document(
@@ -340,6 +338,7 @@ class PurchaseInvoiceService:
                 shipping_amount=order.shipping_amount,
                 adjustment_amount=order.adjustment_amount,
                 place_of_supply=order.place_of_supply,
+                prices_include_tax=order.prices_include_tax,
                 lines=lines,
             )
             header, line_rows = await self._build_draft(tenant_id, create_payload)
@@ -1070,8 +1069,9 @@ class PurchaseInvoiceService:
         fallback = await self._grn_line_rate(
             tenant_id, receipt_id, receipt_line_id, default=line.rate
         )
-        grn_unit_cost = _weighted_landed_unit_cost(layers, fallback)
-        line.grn_unit_cost = grn_unit_cost
+        grn_goods_cost = _weighted_unit_cost(layers, fallback)
+        grn_landed_cost = _weighted_landed_unit_cost(layers, fallback)
+        line.grn_unit_cost = grn_landed_cost
         billed_qty = line.quantity
         bill_unit = quantize_money(net_amount / billed_qty) if billed_qty else _ZERO
         qty_remaining = quantize_quantity(sum((layer.qty_remaining for layer in layers), _ZERO))
@@ -1080,10 +1080,28 @@ class PurchaseInvoiceService:
         qty_to_remaining = min(billed_qty, max(qty_remaining, _ZERO))
         leftover = quantize_quantity(billed_qty - qty_to_remaining)
         qty_to_consumed = min(leftover, qty_consumed) if qty_consumed > _ZERO else leftover
+        revalue_qty = min(billed_qty, qty_remaining)
+        remaining_to_revalue = revalue_qty
         for layer in layers:
-            if layer.qty_remaining > _ZERO:
-                await self.costing.revalue(tenant_id, layer.id, bill_unit)
-        grni_amount = quantize_money(grn_unit_cost * billed_qty)
+            if layer.qty_remaining <= _ZERO or remaining_to_revalue <= _ZERO:
+                continue
+            uplift = quantize_money(layer.landed_unit_cost - layer.unit_cost)
+            target_landed = quantize_money(bill_unit + uplift)
+            billed_on_layer = min(remaining_to_revalue, layer.qty_remaining)
+            if billed_on_layer >= layer.qty_remaining:
+                await self.costing.revalue(tenant_id, layer.id, target_landed)
+            else:
+                old_landed = layer.landed_unit_cost
+                new_landed = quantize_money(
+                    (
+                        old_landed * (layer.qty_remaining - billed_on_layer)
+                        + target_landed * billed_on_layer
+                    )
+                    / layer.qty_remaining
+                )
+                await self.costing.revalue(tenant_id, layer.id, new_landed)
+            remaining_to_revalue = quantize_quantity(remaining_to_revalue - billed_on_layer)
+        grni_amount = quantize_money(grn_goods_cost * billed_qty)
         variance = quantize_money(net_amount - grni_amount)
         if billed_qty <= _ZERO or variance == _ZERO:
             inv_amount = _ZERO
@@ -1172,7 +1190,12 @@ class PurchaseInvoiceService:
     async def _build_draft(
         self, tenant_id: UUID, payload: PurchaseInvoiceCreate
     ) -> tuple[dict[str, object], builtins.list[dict[str, object]]]:
-        supplier = await self.suppliers.get(tenant_id, payload.supplier_id)
+        from app.common.schemas.discount_fields import assert_discount_bounds
+
+        assert_discount_bounds(payload.discount_type, payload.discount_value)
+        for line in payload.lines:
+            assert_discount_bounds(line.discount_type, line.discount_value)
+        supplier = await self.suppliers.require_party(tenant_id, payload.supplier_id)
         if payload.branch_id is not None:
             await self.org.require_branch(tenant_id, payload.branch_id)
         if payload.contact_id is not None:
@@ -1202,21 +1225,27 @@ class PurchaseInvoiceService:
         )
         tax_treatment = TaxTreatment(supplier.tax_treatment)
         reverse_charge = _resolve_reverse_charge(payload.bill_type, payload.is_reverse_charge)
+        prices_include_tax = await self._resolve_prices_include_tax(
+            tenant_id, payload.prices_include_tax
+        )
         line_rows, line_nets, line_taxes = await self._build_lines(
             tenant_id,
             payload.lines,
             tax_treatment=tax_treatment,
             place_of_supply=place,
             reverse_charge=reverse_charge,
+            prices_include_tax=prices_include_tax,
         )
         round_off = quantize_money(payload.round_off_amount)
-        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
-            line_nets=line_nets,
-            line_taxes=line_taxes,
-            discount_type=payload.discount_type,
-            discount_value=payload.discount_value,
-            shipping_amount=quantize_money(payload.shipping_amount),
-            adjustment_amount=quantize_money(payload.adjustment_amount),
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes, adjustment_amount = (
+            compute_header_totals(
+                line_nets=line_nets,
+                line_taxes=line_taxes,
+                discount_type=payload.discount_type,
+                discount_value=payload.discount_value,
+                shipping_amount=quantize_money(payload.shipping_amount),
+                adjustment_amount=quantize_money(payload.adjustment_amount),
+            )
         )
         apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         grand = quantize_money(grand + round_off)
@@ -1254,11 +1283,12 @@ class PurchaseInvoiceService:
             "discount_value": payload.discount_value,
             "discount_amount": doc_discount,
             "shipping_amount": quantize_money(payload.shipping_amount),
-            "adjustment_amount": quantize_money(payload.adjustment_amount),
+            "adjustment_amount": adjustment_amount,
             "round_off_amount": round_off,
             "subtotal": subtotal,
             "tax_amount": tax_total,
             "grand_total": grand,
+            "prices_include_tax": prices_include_tax,
             "foreign_amount": grand,
             "base_amount": quantize_money(grand * resolved.rate),
             "notes": payload.notes,
@@ -1270,6 +1300,16 @@ class PurchaseInvoiceService:
         }
         return header, line_rows
 
+    async def _resolve_prices_include_tax(
+        self, tenant_id: UUID, explicit: bool | None
+    ) -> bool:
+        if explicit is not None:
+            return explicit
+        from app.auth.models import Tenant
+
+        tenant = await self.session.get(Tenant, tenant_id)
+        return bool(tenant and tenant.prices_include_tax_default)
+
     async def _build_lines(
         self,
         tenant_id: UUID,
@@ -1278,6 +1318,7 @@ class PurchaseInvoiceService:
         tax_treatment: TaxTreatment,
         place_of_supply: PlaceOfSupply,
         reverse_charge: bool,
+        prices_include_tax: bool = False,
     ) -> tuple[builtins.list[dict[str, object]], builtins.list[Decimal], builtins.list[Decimal]]:
         built: builtins.list[dict[str, object]] = []
         nets: builtins.list[Decimal] = []
@@ -1311,6 +1352,11 @@ class PurchaseInvoiceService:
                     charge_type = await self.charge_types.get(tenant_id, charge_type_id)
                     if charge_type is None or not charge_type.is_active:
                         raise ValidationError("Charge type not found")
+                    if charge_type.is_inventoriable:
+                        raise ValidationError(
+                            "Inventoriable charge types must be recorded on goods receipts, "
+                            "not purchase invoice expense lines"
+                        )
                     expense_category = legacy_expense_category(charge_type.code)
                     if line.tax_id is None and charge_type.default_tax_id is not None:
                         line = line.model_copy(update={"tax_id": charge_type.default_tax_id})
@@ -1336,6 +1382,11 @@ class PurchaseInvoiceService:
                     if charge_type_id is not None
                     else None
                 )
+                if charge_type_row is not None and charge_type_row.is_inventoriable:
+                    raise ValidationError(
+                        "Inventoriable charge types must be recorded on goods receipts, "
+                        "not purchase invoice expense lines"
+                    )
                 needs_expense_account = True
                 if charge_type_row is not None:
                     needs_expense_account = not charge_type_row.is_inventoriable
@@ -1368,6 +1419,7 @@ class PurchaseInvoiceService:
                 discount_type=line.discount_type,
                 discount_value=line.discount_value,
                 tax_rate=applied_rate,
+                prices_include_tax=prices_include_tax,
             )
             built.append(
                 {
@@ -1570,12 +1622,6 @@ class PurchaseInvoiceService:
             and has_permission(self.actor_permissions, WRITE_OFF_CREATE)
         ):
             actions.append("write_off")
-        if (
-            status == InvoiceDocumentStatus.POSTED
-            and any(line.line_type == PurchaseInvoiceLineType.EXPENSE.value for line in row.lines)
-            and has_permission(self.actor_permissions, LANDED_COST_CREATE)
-        ):
-            actions.append("create_landed_cost")
         if status == InvoiceDocumentStatus.POSTED and has_permission(
             self.actor_permissions, DEBIT_NOTE_CREATE
         ):
@@ -1788,38 +1834,7 @@ class PurchaseInvoiceService:
                     amount_summary=str(payment.amount_paid),
                 )
             )
-        from app.erp.landed_costs.repository import LandedCostRepository
-
-        for item in await LandedCostRepository(self.session).list_for_purchase_invoice(
-            tenant_id, row.id
-        ):
-            related.append(
-                RelatedDocumentRef(
-                    document_type=DocumentType.LANDED_COST.value,
-                    document_id=item.id,
-                    document_number=item.document_number,
-                    status=item.status,
-                    relationship="child",
-                    document_date=item.document_date,
-                    amount_summary=str(sum((charge.amount for charge in item.charges), Decimal("0"))),
-                )
-            )
         return related
-
-    async def _attach_landed_cost_remaining(
-        self, tenant_id: UUID, response: PurchaseInvoiceResponse
-    ) -> None:
-        from app.erp.landed_costs.repository import LandedCostRepository
-
-        line_ids = [line.id for line in response.lines]
-        allocated = await LandedCostRepository(self.session).posted_allocated_by_bill_line(
-            tenant_id, line_ids
-        )
-        for line in response.lines:
-            taken = allocated.get(line.id, _ZERO)
-            line.landed_cost_allocated = quantize_money(taken)
-            if line.line_type == PurchaseInvoiceLineType.EXPENSE:
-                line.landed_cost_remaining = quantize_money(line.amount - taken)
 
     async def _require(
         self, tenant_id: UUID, invoice_id: UUID, *, for_update: bool = False
@@ -1884,6 +1899,17 @@ def _resolve_reverse_charge(bill_type: BillType, is_reverse_charge: bool | None)
     if is_reverse_charge is not None:
         return is_reverse_charge
     return bill_type == BillType.IMPORT
+
+
+def _weighted_unit_cost(layers: Sequence[StockCostLayer], fallback: Decimal) -> Decimal:
+    total_qty = sum((layer.qty_received for layer in layers), _ZERO)
+    if total_qty > _ZERO:
+        return quantize_money(
+            sum((layer.unit_cost * layer.qty_received for layer in layers), _ZERO) / total_qty
+        )
+    if layers:
+        return quantize_money(layers[0].unit_cost)
+    return quantize_money(fallback)
 
 
 def _weighted_landed_unit_cost(

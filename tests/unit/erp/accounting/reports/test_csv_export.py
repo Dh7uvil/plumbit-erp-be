@@ -35,7 +35,9 @@ def test_csv_field_class_separates_money_qty_fx_and_integers() -> None:
     assert csv_field_class("qty_remaining") == "quantity"
     assert csv_field_class("reorder_level") == "quantity"
     assert csv_field_class("tax_rate") == "percent"
-    assert csv_field_class("exchange_rate") == "other"
+    assert csv_field_class("exchange_rate") == "rate"
+    assert csv_field_class("rate") == "rate"
+    assert csv_field_class("discount_rate") == "rate"
     assert csv_field_class("days") == "other"
     assert csv_field_class("window_days") == "other"
     assert csv_field_class("sku") == "other"
@@ -48,9 +50,13 @@ def test_csv_cell_formats_money_and_qty_to_two_places() -> None:
     assert csv_cell(Decimal("5.5"), "tax_rate") == "5.50"
 
 
-def test_csv_cell_leaves_fx_integers_ids_and_bools_unpadded() -> None:
+def test_csv_cell_formats_rates_to_two_places() -> None:
+    assert csv_cell(Decimal("3.672500"), "exchange_rate") == "3.67"
+    assert csv_cell(Decimal("1.234567"), "rate") == "1.23"
+
+
+def test_csv_cell_leaves_integers_ids_and_bools_unpadded() -> None:
     layer_id = UUID("12345678-1234-5678-1234-567812345678")
-    assert csv_cell(Decimal("3.672500"), "exchange_rate") == "3.672500"
     assert csv_cell(5, "days") == "5"
     assert csv_cell(layer_id, "layer_id") == str(layer_id)
     assert csv_cell(True, "overdue") == "True"
@@ -77,7 +83,7 @@ def test_csv_response_applies_display_scale_by_field() -> None:
     assert parsed[0]["qty_remaining"] == "4.00"
     assert parsed[0]["stock_value"] == "320.00"
     assert parsed[0]["landed_unit_cost"] == "80.00"
-    assert parsed[0]["exchange_rate"] == "3.672500"
+    assert parsed[0]["exchange_rate"] == "3.67"
     assert parsed[0]["days"] == "12"
     assert parsed[0]["overdue"] == "False"
     assert parsed[0]["sku"] == "PIPE-1"

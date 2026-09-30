@@ -143,6 +143,7 @@ async def test_inbound_cheque_issue_clear_and_bounce(client: AsyncClient) -> Non
     cleared = await client.post(
         f"/api/v1/cheques/{cheque['id']}/clear",
         headers=_idempotent(headers, cheque["version"]),
+        json={"version": cheque["version"]},
     )
     assert cleared.status_code == 200, cleared.text
     cheque = cleared.json()["data"]

@@ -82,14 +82,29 @@ class ChequeAllocationResponse(BaseModel):
     created_at: datetime | None = None
 
 
+class ChequeClearRequest(BaseModel):
+    cleared_on: date | None = None
+    version: int
+
+
 class ChequeBounceRequest(BaseModel):
     reason: str | None = None
+    bank_charge: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     version: int
 
 
 class ChequeCancelRequest(BaseModel):
     reason: str | None = None
     version: int
+
+
+class ChequeBatchDepositItem(BaseModel):
+    id: UUID
+    version: int
+
+
+class ChequeBatchDepositRequest(BaseModel):
+    cheques: list[ChequeBatchDepositItem] = Field(min_length=1, max_length=100)
 
 
 class ChequeResponse(BaseModel):

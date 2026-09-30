@@ -1,6 +1,7 @@
 """Stock balance and movement queries."""
 
 from collections.abc import Mapping, Sequence
+from datetime import date
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -244,6 +245,28 @@ class StockMovementRepository:
             .where(
                 StockMovement.tenant_id == tenant_id,
                 StockMovement.product_id == product_id,
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none() is not None
+
+    async def has_outbound_after_date(
+        self,
+        tenant_id: UUID,
+        *,
+        warehouse_id: UUID,
+        product_id: UUID,
+        document_date: date,
+    ) -> bool:
+        statement = (
+            select(StockMovement.id)
+            .where(
+                StockMovement.tenant_id == tenant_id,
+                StockMovement.warehouse_id == warehouse_id,
+                StockMovement.product_id == product_id,
+                StockMovement.qty < _ZERO,
+                StockMovement.document_date > document_date,
             )
             .limit(1)
         )

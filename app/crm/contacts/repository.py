@@ -53,6 +53,28 @@ class ContactRepository:
     async def soft_delete(self, tenant_id: UUID, contact_id: UUID) -> Contact | None:
         return await self._repo.soft_delete(tenant_id, contact_id)
 
+    async def find_by_email_for_customer(
+        self, tenant_id: UUID, customer_id: UUID, email: str
+    ) -> Contact | None:
+        normalized = email.strip().lower()
+        if not normalized:
+            return None
+        statement = (
+            select(Contact)
+            .where(
+                Contact.tenant_id == tenant_id,
+                Contact.customer_id == customer_id,
+                Contact.deleted_at.is_(None),
+                Contact.email.is_not(None),
+            )
+            .limit(50)
+        )
+        result = await self.session.execute(statement)
+        for row in result.scalars().all():
+            if row.email and row.email.strip().lower() == normalized:
+                return row
+        return None
+
     async def get_primary(self, tenant_id: UUID, customer_id: UUID) -> Contact | None:
         statement = (
             select(Contact)

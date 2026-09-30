@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.common.schemas.discount_fields import DiscountFieldsMixin
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.core.enums import (
@@ -48,7 +49,7 @@ class CreditNoteFilter(BaseFilter):
         return self
 
 
-class CreditNoteLineInput(BaseModel):
+class CreditNoteLineInput(DiscountFieldsMixin):
     product_id: UUID | None = None
     description: str | None = None
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
@@ -56,8 +57,6 @@ class CreditNoteLineInput(BaseModel):
     rate: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     sales_invoice_line_id: UUID | None = None
     sales_return_line_id: UUID | None = None
-    discount_type: DiscountType | None = None
-    discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     tax_id: UUID | None = None
     income_account_id: UUID | None = None
     hs_code: str | None = Field(default=None, max_length=20)
@@ -100,7 +99,7 @@ class CreditNoteLineResponse(BaseModel):
     hs_code: str | None = None
 
 
-class CreditNoteCreate(BaseModel):
+class CreditNoteCreate(DiscountFieldsMixin):
     customer_id: UUID
     sales_invoice_id: UUID | None = None
     sales_return_id: UUID | None = None
@@ -109,12 +108,11 @@ class CreditNoteCreate(BaseModel):
     credit_note_date: date | None = None
     currency_id: UUID | None = None
     notes: str | None = None
-    discount_type: DiscountType | None = None
-    discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     shipping_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     round_off_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    prices_include_tax: bool | None = None
     country_of_origin: str | None = Field(default=None, max_length=2)
     lines: list[CreditNoteLineInput] = Field(min_length=1)
 
@@ -134,7 +132,7 @@ class CreditNoteCreate(BaseModel):
         return value.strip().upper() or None
 
 
-class CreditNoteUpdate(BaseModel):
+class CreditNoteUpdate(DiscountFieldsMixin):
     sales_invoice_id: UUID | None = None
     sales_return_id: UUID | None = None
     reason_code: CreditNoteReason | None = None
@@ -142,12 +140,11 @@ class CreditNoteUpdate(BaseModel):
     credit_note_date: date | None = None
     currency_id: UUID | None = None
     notes: str | None = None
-    discount_type: DiscountType | None = None
-    discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     shipping_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     round_off_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    prices_include_tax: bool | None = None
     country_of_origin: str | None = Field(default=None, max_length=2)
     lines: list[CreditNoteLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
@@ -233,6 +230,7 @@ class CreditNoteResponse(BaseModel):
     subtotal: Decimal
     tax_amount: Decimal
     grand_total: Decimal
+    prices_include_tax: bool = False
     foreign_amount: Decimal
     base_amount: Decimal
     notes: str | None

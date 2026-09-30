@@ -46,9 +46,12 @@ class PurchaseOrderLineInput(BaseModel):
     product_id: UUID | None = None
     supplier_product_id: UUID | None = None
     description: str | None = None
-    quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
+    quantity: Decimal = Field(default=Decimal("1"), gt=0, max_digits=18, decimal_places=6)
     unit_id: UUID | None = None
     rate: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
+    net_weight: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
+    gross_weight: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
+    volume: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
     discount_type: DiscountType | None = None
     discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     tax_id: UUID | None = None
@@ -89,6 +92,9 @@ class PurchaseOrderLineResponse(BaseModel):
     tax_rate: Decimal
     tax_amount: Decimal
     amount: Decimal
+    net_weight: Decimal | None = None
+    gross_weight: Decimal | None = None
+    volume: Decimal | None = None
     qty_received: Decimal
     qty_returned: Decimal = Decimal("0")
     qty_billed: Decimal
@@ -123,6 +129,7 @@ class PurchaseOrderCreate(BaseModel):
     shipping_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    prices_include_tax: bool | None = None
     lines: list[PurchaseOrderLineInput] = Field(default_factory=list)
 
     @field_validator("reference_number")
@@ -150,6 +157,7 @@ class PurchaseOrderUpdate(BaseModel):
     shipping_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    prices_include_tax: bool | None = None
     lines: list[PurchaseOrderLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
@@ -224,6 +232,7 @@ class PurchaseOrderResponse(BaseModel):
     subtotal: Decimal
     tax_amount: Decimal
     grand_total: Decimal
+    prices_include_tax: bool = False
     foreign_amount: Decimal
     base_amount: Decimal
     receipt_status: ReceiptStatus

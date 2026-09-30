@@ -1,9 +1,10 @@
 """Price-list ORM models."""
 
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Index, Numeric, String, text
+from sqlalchemy import Date, ForeignKey, Index, Numeric, String, text
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -38,6 +39,8 @@ class PriceList(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
         Numeric(MONEY_PRECISION, MONEY_SCALE),
         nullable=True,
     )
+    valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class PriceListItem(SoftDeleteTenantModel):

@@ -4,7 +4,7 @@ from app.core.enums import ShipmentStatus
 from app.core.exceptions import InvalidStatusTransitionError
 
 _TRANSITIONS: dict[tuple[ShipmentStatus, str], ShipmentStatus] = {
-    (ShipmentStatus.DRAFT, "dispatch"): ShipmentStatus.DISPATCHED,
+    (ShipmentStatus.DRAFT, "dispatch"): ShipmentStatus.IN_TRANSIT,
     (ShipmentStatus.DRAFT, "cancel"): ShipmentStatus.CANCELLED,
     (ShipmentStatus.DISPATCHED, "arrive"): ShipmentStatus.ARRIVED,
     (ShipmentStatus.DISPATCHED, "cancel"): ShipmentStatus.CANCELLED,

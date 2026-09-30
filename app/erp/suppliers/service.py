@@ -47,6 +47,9 @@ class SupplierService:
     async def get(self, tenant_id: UUID, supplier_id: UUID) -> SupplierResponse:
         return self._to_response(await self._parties.get(tenant_id, supplier_id))
 
+    async def require_party(self, tenant_id: UUID, supplier_id: UUID) -> SupplierResponse:
+        return self._to_response(await self._parties.require_party(tenant_id, supplier_id))
+
     async def import_rows(
         self,
         tenant_id: UUID,

@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Header, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, Request, UploadFile, status
 
 from app.auth.catalog import (
     BANK_RECONCILIATION_CREATE,
@@ -20,7 +20,7 @@ from app.common.dependencies.auth import CurrentUser
 from app.common.dependencies.pagination import PaginationDependency
 from app.common.dependencies.permissions import require_permission
 from app.common.dependencies.tenant import TenantContextDependency
-from app.common.idempotency.service import require_idempotency_key
+from app.common.idempotency.service import hash_import_request, require_idempotency_key
 from app.common.imex.http import parse_mapping_json, read_upload
 from app.common.imex.schemas import ImportPreviewResponse, ImportResult
 from app.common.imex.service import export_response, preview_file, template_response
@@ -143,6 +143,7 @@ async def bank_statement_import_preview(
     status_code=status.HTTP_201_CREATED,
 )
 async def bank_statement_import(
+    request: Request,
     tenant: TenantContextDependency,
     service: BankReconciliationServiceDependency,
     _: Annotated[CurrentUser, Depends(require_permission(BANK_RECONCILIATION_IMPORT))],
@@ -155,7 +156,7 @@ async def bank_statement_import(
     mapping: Annotated[str | None, Form()] = None,
     idempotency_key: IdempotencyKeyHeader = None,
 ) -> ApiResponse[ImportResult]:
-    require_idempotency_key(idempotency_key)
+    key = require_idempotency_key(idempotency_key)
     filename, content = await read_upload(file)
     result = await service.import_rows(
         tenant.tenant_id,
@@ -168,6 +169,21 @@ async def bank_statement_import(
         content=content,
         mapping=parse_mapping_json(mapping),
         actor_user_id=tenant.user_id,
+        idempotency_key=key,
+        request_hash=hash_import_request(
+            method=request.method,
+            path=request.url.path,
+            content=content,
+            fields={
+                "bank_account_id": str(bank_account_id),
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "opening_balance": str(opening_balance),
+                "closing_balance": str(closing_balance),
+                "mapping": mapping or "",
+            },
+        ),
+        endpoint=request.url.path,
     )
     return ApiResponse(data=result, message="Bank statement imported")
 

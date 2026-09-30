@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import ACCOUNTING_MODULE
+from app.common.idempotency.service import IdempotencyService
 from app.common.imex.commercial import import_result
 from app.common.imex.schemas import ImexMappingEntry, ImportResult, ImportRowError
 from app.common.imex.service import mapped_rows, parse_optional_date, parse_optional_decimal
@@ -52,6 +53,7 @@ class BankReconciliationService:
         self.bank_accounts = BankAccountService(session)
         self.fx = ExchangeRateService(session)
         self.audit = AuditWriter(session)
+        self.idempotency = IdempotencyService(session)
 
     async def list(
         self,
@@ -167,6 +169,46 @@ class BankReconciliationService:
             return _to_response(deleted)
 
     async def import_rows(
+        self,
+        tenant_id: UUID,
+        *,
+        bank_account_id: UUID,
+        period_start: date,
+        period_end: date,
+        opening_balance: Decimal,
+        closing_balance: Decimal,
+        filename: str | None,
+        content: bytes,
+        mapping: Sequence[ImexMappingEntry],
+        actor_user_id: UUID,
+        idempotency_key: str,
+        request_hash: str,
+        endpoint: str,
+    ) -> ImportResult:
+        async with transaction(self.session):
+            replay = await self.idempotency.begin(
+                tenant_id, idempotency_key, request_hash, endpoint=endpoint
+            )
+            if replay is not None:
+                return ImportResult.model_validate(replay)
+            result = await self._import_rows(
+                tenant_id,
+                bank_account_id=bank_account_id,
+                period_start=period_start,
+                period_end=period_end,
+                opening_balance=opening_balance,
+                closing_balance=closing_balance,
+                filename=filename,
+                content=content,
+                mapping=mapping,
+                actor_user_id=actor_user_id,
+            )
+            await self.idempotency.store(
+                tenant_id, idempotency_key, result.model_dump(mode="json")
+            )
+            return result
+
+    async def _import_rows(
         self,
         tenant_id: UUID,
         *,
@@ -328,6 +370,16 @@ class BankReconciliationService:
             ).scalar_one_or_none()
             if journal_line is None:
                 raise ValidationError("Journal line does not belong to this bank account")
+            stmt_amount = stmt_line.debit if stmt_line.debit > _ZERO else stmt_line.credit
+            line_net = quantize_money(journal_line.debit - journal_line.credit)
+            if abs(stmt_amount - abs(line_net)) > Decimal("0.01"):
+                raise ValidationError(
+                    "Statement amount does not match the journal line amount",
+                    details={
+                        "statement_amount": str(stmt_amount),
+                        "journal_line_net": str(line_net),
+                    },
+                )
             stmt_line.match_status = BankStatementMatchStatus.MATCHED.value
             stmt_line.matched_journal_line_id = journal_line_id
             row.version += 1

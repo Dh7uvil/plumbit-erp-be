@@ -20,6 +20,15 @@ class PrintLetterhead(BaseModel):
     default_currency: str | None = None
 
 
+class PrintJournalLine(BaseModel):
+    line_number: int
+    account_code: str | None = None
+    account_name: str
+    description: str | None = None
+    debit: Decimal | None = None
+    credit: Decimal | None = None
+
+
 class PrintLine(BaseModel):
     line_number: int
     item_code: str | None = None
@@ -43,6 +52,16 @@ class PrintDocumentResponse(BaseModel):
     document_number: str
     document_date: date
     template_family: str = "uae"
+    template_kind: str = "commercial"
+    voucher_type: str | None = None
+    payment_method: str | None = None
+    party_name: str | None = None
+    party_code: str | None = None
+    cheque_number: str | None = None
+    cheque_date: date | None = None
+    due_date: date | None = None
+    narration: str | None = None
+    reference: str | None = None
     customer_code: str | None = None
     customer_name: str | None = None
     customer_address: str | None = None
@@ -63,3 +82,4 @@ class PrintDocumentResponse(BaseModel):
     notes: str | None = None
     letterhead: PrintLetterhead
     lines: list[PrintLine] = Field(default_factory=list)
+    journal_lines: list[PrintJournalLine] = Field(default_factory=list)

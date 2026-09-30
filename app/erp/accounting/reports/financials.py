@@ -10,6 +10,8 @@ from app.common.utils.currency import quantize_money
 from app.core.enums import AccountSubtype, AccountSystemRole, AccountType
 from app.core.exceptions import ValidationError
 from app.erp.accounting.fiscal import FiscalYearConfig
+from app.erp.accounting.ledger.posting import SOURCE_YEAR_END_CLOSING
+from app.erp.accounting.ledger.repository import JournalEntryRepository
 from app.erp.accounting.reports.schemas import (
     BalanceSheetLine,
     BalanceSheetResponse,
@@ -20,11 +22,15 @@ from app.erp.accounting.reports.schemas import (
     PeriodAmount,
     ProfitAndLossLine,
     ProfitAndLossResponse,
+    RatioAnalysisLine,
+    RatioAnalysisResponse,
 )
+from app.erp.accounting.year_end.ids import fiscal_year_source_id
 
 _ZERO = Decimal("0")
 _PL_TYPES = frozenset({AccountType.INCOME.value, AccountType.EXPENSE.value})
 _CASH_SUBTYPES = frozenset({AccountSubtype.CASH.value, AccountSubtype.BANK.value})
+_PL_EXCLUDE_SOURCES = (SOURCE_YEAR_END_CLOSING,)
 
 
 class FinancialReports:
@@ -55,6 +61,7 @@ class FinancialReports:
             end=to_date,
             branch_id=branch_id,
             cost_center_id=cost_center_id,
+            exclude_source_types=_PL_EXCLUDE_SOURCES,
         )
         comparative_map = await self._sum_by_account(
             tenant_id,
@@ -62,6 +69,7 @@ class FinancialReports:
             end=comparative_to,
             branch_id=branch_id,
             cost_center_id=cost_center_id,
+            exclude_source_types=_PL_EXCLUDE_SOURCES,
         )
         ytd_map = (
             await self._sum_by_account(
@@ -70,6 +78,7 @@ class FinancialReports:
                 end=to_date,
                 branch_id=branch_id,
                 cost_center_id=cost_center_id,
+                exclude_source_types=_PL_EXCLUDE_SOURCES,
             )
             if ytd_from is not None
             else {}
@@ -88,6 +97,7 @@ class FinancialReports:
                         end=end,
                         branch_id=branch_id,
                         cost_center_id=cost_center_id,
+                        exclude_source_types=_PL_EXCLUDE_SOURCES,
                     ),
                 )
             )
@@ -264,6 +274,18 @@ class FinancialReports:
         closing = await self._sum_by_account(
             tenant_id, end=as_of, branch_id=branch_id, cost_center_id=cost_center_id
         )
+        pl_start = await self._open_pl_start(tenant_id, as_of=as_of)
+        open_pl_map = (
+            await self._sum_by_account(
+                tenant_id,
+                start=pl_start,
+                end=as_of,
+                branch_id=branch_id,
+                cost_center_id=cost_center_id,
+            )
+            if pl_start is not None
+            else closing
+        )
         lines: list[BalanceSheetLine] = []
         total_assets = _ZERO
         total_liabilities = _ZERO
@@ -275,10 +297,16 @@ class FinancialReports:
                 continue
             amount = self._signed(account.account_type, *closing.get(account.id, (_ZERO, _ZERO)))
             if account.account_type in _PL_TYPES:
-                if account.account_type == AccountType.INCOME.value:
-                    current_earnings += amount
+                if pl_start is not None:
+                    pl_amount = self._signed(
+                        account.account_type, *open_pl_map.get(account.id, (_ZERO, _ZERO))
+                    )
                 else:
-                    current_earnings -= amount
+                    pl_amount = amount
+                if account.account_type == AccountType.INCOME.value:
+                    current_earnings += pl_amount
+                else:
+                    current_earnings -= pl_amount
                 continue
             if account.system_role == AccountSystemRole.RETAINED_EARNINGS.value:
                 retained_earnings_id = account.id
@@ -610,6 +638,118 @@ class FinancialReports:
             to_date=to_date,
             sections=sections,
         )
+
+    async def ratio_analysis(
+        self,
+        tenant_id: UUID,
+        *,
+        from_date: date,
+        to_date: date,
+        branch_id: UUID | None = None,
+    ) -> RatioAnalysisResponse:
+        if from_date > to_date:
+            raise ValidationError("from_date must be on or before to_date")
+        pnl = await self.profit_and_loss(
+            tenant_id, from_date=from_date, to_date=to_date, branch_id=branch_id
+        )
+        balance = await self.balance_sheet(
+            tenant_id, as_of=to_date, branch_id=branch_id, include_comparative=False
+        )
+        current_assets = _ZERO
+        current_liabilities = _ZERO
+        inventory = _ZERO
+        for line in balance.lines:
+            if line.account_subtype in {
+                AccountSubtype.CASH.value,
+                AccountSubtype.BANK.value,
+                AccountSubtype.ACCOUNTS_RECEIVABLE.value,
+                AccountSubtype.TAX_RECEIVABLE.value,
+                AccountSubtype.OTHER_CURRENT_ASSET.value,
+            }:
+                current_assets += line.amount
+            elif line.account_subtype == AccountSubtype.STOCK.value:
+                current_assets += line.amount
+                inventory += line.amount
+            elif line.account_subtype in {
+                AccountSubtype.ACCOUNTS_PAYABLE.value,
+                AccountSubtype.TAX_PAYABLE.value,
+                AccountSubtype.OTHER_CURRENT_LIABILITY.value,
+            }:
+                current_liabilities += line.amount
+        current_assets = quantize_money(current_assets)
+        current_liabilities = quantize_money(current_liabilities)
+        inventory = quantize_money(inventory)
+        total_liabilities = balance.total_liabilities
+        total_equity = balance.total_equity
+
+        def _ratio(
+            key: str, label: str, numerator: Decimal, denominator: Decimal
+        ) -> RatioAnalysisLine:
+            value = quantize_money(numerator / denominator) if denominator != _ZERO else None
+            return RatioAnalysisLine(
+                key=key,
+                label=label,
+                numerator=numerator,
+                denominator=denominator,
+                value=value,
+            )
+
+        lines = [
+            _ratio(
+                "current_ratio",
+                "Current ratio",
+                current_assets,
+                current_liabilities,
+            ),
+            _ratio(
+                "quick_ratio",
+                "Quick ratio",
+                quantize_money(current_assets - inventory),
+                current_liabilities,
+            ),
+            _ratio(
+                "debt_to_equity",
+                "Debt to equity",
+                total_liabilities,
+                total_equity,
+            ),
+            _ratio(
+                "gross_margin",
+                "Gross margin",
+                pnl.gross_profit,
+                pnl.total_income,
+            ),
+            _ratio(
+                "net_margin",
+                "Net margin",
+                pnl.net_profit,
+                pnl.total_income,
+            ),
+        ]
+        return RatioAnalysisResponse(
+            currency_code=await self._report_currency_code(tenant_id),
+            from_date=from_date,
+            to_date=to_date,
+            as_of=to_date,
+            lines=lines,
+        )
+
+    async def _open_pl_start(self, tenant_id: UUID, *, as_of: date) -> date | None:
+        fiscal = await FiscalYearConfig.load(self.session, tenant_id)
+        journals = JournalEntryRepository(self.session)
+        latest_end: date | None = None
+        for year in range(fiscal.year_for(as_of), fiscal.year_for(as_of) - 20, -1):
+            closing = await journals.get_posted_for_source(
+                tenant_id, SOURCE_YEAR_END_CLOSING, fiscal_year_source_id(year)
+            )
+            if closing is None or closing.reversed_by_id is not None:
+                continue
+            _, fy_end = fiscal.bounds(year)
+            if fy_end <= as_of and (latest_end is None or fy_end > latest_end):
+                latest_end = fy_end
+        if latest_end is None:
+            return None
+        return latest_end + timedelta(days=1)
 
 
 def _period_slices(from_date: date, to_date: date, count: int) -> list[tuple[date, date, str]]:

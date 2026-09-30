@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.schemas.filters import BaseFilter
-from app.core.enums import CostSheetStatus, CostSheetType, LandedCostAllocationMethod
+from app.core.enums import ChargeAllocationMethod, CostSheetStatus, CostSheetType
 
 
 class CostSheetFilter(BaseFilter):
@@ -57,7 +57,7 @@ class CostSheetChargeInput(BaseModel):
     charge_type_id: UUID
     estimated_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     actual_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
-    allocation_basis: LandedCostAllocationMethod | None = None
+    allocation_basis: ChargeAllocationMethod | None = None
     purchase_invoice_id: UUID | None = None
     purchase_invoice_line_id: UUID | None = None
 
@@ -75,7 +75,7 @@ class CostSheetCreate(BaseModel):
     incoterm: str | None = Field(default=None, max_length=10)
     port_of_loading: str | None = Field(default=None, max_length=120)
     port_of_discharge: str | None = Field(default=None, max_length=120)
-    allocation_method: LandedCostAllocationMethod = LandedCostAllocationMethod.VALUE
+    allocation_method: ChargeAllocationMethod = ChargeAllocationMethod.VALUE
     notes: str | None = None
     lines: list[CostSheetLineInput] = Field(min_length=1)
     charges: list[CostSheetChargeInput] = Field(default_factory=list)
@@ -101,7 +101,7 @@ class CostSheetUpdate(BaseModel):
     incoterm: str | None = Field(default=None, max_length=10)
     port_of_loading: str | None = Field(default=None, max_length=120)
     port_of_discharge: str | None = Field(default=None, max_length=120)
-    allocation_method: LandedCostAllocationMethod | None = None
+    allocation_method: ChargeAllocationMethod | None = None
     notes: str | None = None
     lines: list[CostSheetLineInput] | None = Field(default=None, min_length=1)
     charges: list[CostSheetChargeInput] | None = None
@@ -143,7 +143,7 @@ class CostSheetChargeResponse(BaseModel):
     estimated_amount: Decimal
     actual_amount: Decimal | None
     variance_amount: Decimal | None
-    allocation_basis: LandedCostAllocationMethod | None
+    allocation_basis: ChargeAllocationMethod | None
     purchase_invoice_id: UUID | None
     purchase_invoice_line_id: UUID | None
     is_inventoriable: bool = False
@@ -184,8 +184,7 @@ class CostSheetResponse(BaseModel):
     incoterm: str | None
     port_of_loading: str | None
     port_of_discharge: str | None
-    allocation_method: LandedCostAllocationMethod
-    landed_cost_id: UUID | None
+    allocation_method: ChargeAllocationMethod
     notes: str | None
     totals: CostSheetTotals
     base_total: Decimal | None = None
@@ -196,11 +195,6 @@ class CostSheetResponse(BaseModel):
     updated_at: datetime
     created_by: UUID | None = None
     updated_by: UUID | None = None
-
-
-class CostSheetCreateLandedCostRequest(BaseModel):
-    document_date: date | None = None
-    version: int | None = Field(default=None, ge=1)
 
 
 class CostSheetVersionRequest(BaseModel):

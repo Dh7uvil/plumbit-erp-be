@@ -27,6 +27,19 @@ def require_idempotency_key(value: str | None) -> str:
     return key
 
 
+def optional_idempotency_key(value: str | None) -> str | None:
+    """Return a validated Idempotency-Key when present, otherwise ``None``."""
+
+    if value is None:
+        return None
+    key = value.strip()
+    if not key:
+        return None
+    if len(key) > 255:
+        raise ValidationError("Idempotency-Key must be 255 characters or fewer")
+    return key
+
+
 def hash_request(*, method: str, path: str, body: bytes) -> str:
     """Fingerprint method, path, and raw body for conflict detection."""
 
@@ -36,6 +49,30 @@ def hash_request(*, method: str, path: str, body: bytes) -> str:
     digest.update(path.encode())
     digest.update(b"\n")
     digest.update(body)
+    return digest.hexdigest()
+
+
+def hash_import_request(
+    *,
+    method: str,
+    path: str,
+    content: bytes,
+    fields: dict[str, str | None] | None = None,
+) -> str:
+    """Fingerprint multipart import payloads (form fields plus file bytes)."""
+
+    digest = hashlib.sha256()
+    digest.update(method.upper().encode())
+    digest.update(b"\n")
+    digest.update(path.encode())
+    digest.update(b"\n")
+    for key in sorted((fields or {}).keys()):
+        value = fields[key]
+        digest.update(key.encode())
+        digest.update(b"=")
+        digest.update((value or "").encode())
+        digest.update(b"\n")
+    digest.update(content)
     return digest.hexdigest()
 
 

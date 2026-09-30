@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.schemas.conversion import ConversionLineInput
+from app.common.schemas.discount_fields import DiscountFieldsMixin
 from app.common.schemas.packing import PackingFields
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.related_documents import QuantityProgress, RelatedDocumentRef
@@ -43,16 +44,15 @@ class SalesOrderFilter(BaseFilter):
     salesperson_id: UUID | None = None
     source_quotation_id: UUID | None = None
     source_proforma_invoice_id: UUID | None = None
+    opportunity_id: UUID | None = None
 
 
-class SalesOrderLineInput(PackingFields):
+class SalesOrderLineInput(PackingFields, DiscountFieldsMixin):
     product_id: UUID | None = None
     description: str | None = None
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
     unit_id: UUID | None = None
     rate: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
-    discount_type: DiscountType | None = None
-    discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     tax_id: UUID | None = None
 
     @field_validator("description")
@@ -99,14 +99,15 @@ class SalesOrderLineResponse(PackingFields):
 
     @model_validator(mode="after")
     def compute_remaining(self) -> "SalesOrderLineResponse":
-        leftover_deliver = self.quantity - self.qty_delivered
+        net_delivered = self.qty_delivered - self.qty_returned
+        leftover_deliver = self.quantity - net_delivered
         leftover_invoice = self.quantity - self.qty_invoiced
         self.qty_remaining_to_deliver = leftover_deliver if leftover_deliver > 0 else Decimal("0")
         self.qty_remaining_to_invoice = leftover_invoice if leftover_invoice > 0 else Decimal("0")
         return self
 
 
-class SalesOrderCreate(BaseModel):
+class SalesOrderCreate(DiscountFieldsMixin):
     customer_id: UUID
     contact_id: UUID | None = None
     branch_id: UUID | None = None
@@ -123,11 +124,10 @@ class SalesOrderCreate(BaseModel):
     notes: str | None = None
     terms_and_conditions: str | None = None
     terms_template_id: UUID | None = None
-    discount_type: DiscountType | None = None
-    discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     shipping_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    prices_include_tax: bool | None = None
     lines: list[SalesOrderLineInput] = Field(default_factory=list)
 
     @field_validator("reference_number", "customer_po_number")
@@ -139,7 +139,7 @@ class SalesOrderCreate(BaseModel):
         return normalized or None
 
 
-class SalesOrderUpdate(BaseModel):
+class SalesOrderUpdate(DiscountFieldsMixin):
     contact_id: UUID | None = None
     branch_id: UUID | None = None
     warehouse_id: UUID | None = None
@@ -154,11 +154,10 @@ class SalesOrderUpdate(BaseModel):
     salesperson_id: UUID | None = None
     notes: str | None = None
     terms_and_conditions: str | None = None
-    discount_type: DiscountType | None = None
-    discount_value: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     shipping_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    prices_include_tax: bool | None = None
     lines: list[SalesOrderLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
@@ -237,12 +236,14 @@ class SalesOrderResponse(BaseModel):
     subtotal: Decimal
     tax_amount: Decimal
     grand_total: Decimal
+    prices_include_tax: bool = False
     foreign_amount: Decimal
     base_amount: Decimal
     fulfillment_status: FulfillmentStatus
     billing_status: BillingStatus
     source_quotation_id: UUID | None
     source_proforma_invoice_id: UUID | None = None
+    opportunity_id: UUID | None = None
     confirmed_at: datetime | None
     confirmed_by: UUID | None
     closed_at: datetime | None

@@ -19,7 +19,6 @@ from app.auth.catalog import (
     GOODS_RECEIPT_READ,
     INVENTORY_MODULE,
     JOURNAL_ENTRY_READ,
-    LANDED_COST_READ,
     LEAD_READ,
     LOGISTICS_MODULE,
     NOTE_READ,
@@ -143,6 +142,8 @@ _PARTY_FIELDS: frozenset[str] = frozenset(
         "price_list",
         "payment_terms",
         "credit_limit",
+        "credit_hold",
+        "is_active",
         "salesperson",
         "notes",
     }
@@ -599,22 +600,6 @@ ACTIVITY_ENTITIES: dict[str, ActivityEntitySpec] = {
                 "currency",
                 "exchange_rate",
                 "narration",
-            }
-        ),
-    ),
-    "landed_cost": ActivityEntitySpec(
-        module=PURCHASE_MODULE,
-        entity_type="landed_cost",
-        read_permission=LANDED_COST_READ,
-        changed_fields=frozenset(
-            {
-                "document_number",
-                "document_date",
-                "allocation_method",
-                "status",
-                "version",
-                "charge_count",
-                "allocation_count",
             }
         ),
     ),

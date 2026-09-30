@@ -52,6 +52,14 @@ class ContactService:
     async def get(self, tenant_id: UUID, contact_id: UUID) -> ContactResponse:
         return ContactResponse.model_validate(await self._require(tenant_id, contact_id))
 
+    async def find_by_email_for_customer(
+        self, tenant_id: UUID, customer_id: UUID, email: str
+    ) -> ContactResponse | None:
+        row = await self.repo.find_by_email_for_customer(tenant_id, customer_id, email)
+        if row is None:
+            return None
+        return ContactResponse.model_validate(row)
+
     async def get_primary(self, tenant_id: UUID, customer_id: UUID) -> ContactResponse | None:
         row = await self.repo.get_primary(tenant_id, customer_id)
         if row is None:

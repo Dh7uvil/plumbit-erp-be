@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.common.schemas.filters import BaseFilter
 from app.core.enums import LeadStatus, TaxTreatment
+from app.crm.customers.schemas import validate_trn_digits
 
 
 class LeadFilter(BaseFilter):
@@ -134,6 +135,7 @@ class LeadAssign(BaseModel):
 
 class LeadStatusChange(BaseModel):
     status: LeadStatus
+    lost_reason_id: UUID | None = None
     version: int | None = Field(default=None, ge=1)
 
 
@@ -154,10 +156,7 @@ class LeadConvertCustomerCreate(BaseModel):
     @field_validator("trn")
     @classmethod
     def normalize_trn(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        return normalized or None
+        return validate_trn_digits(value)
 
     @model_validator(mode="after")
     def require_trn_when_registered(self) -> Self:
@@ -232,13 +231,16 @@ class LeadConvert(BaseModel):
     version: int | None = Field(default=None, ge=1)
     customer_id: UUID | None = None
     new_customer: LeadConvertCustomerCreate | None = None
-    contact: LeadConvertContact
+    contact_id: UUID | None = None
+    contact: LeadConvertContact | None = None
     opportunity: LeadConvertOpportunity | None = None
 
     @model_validator(mode="after")
     def require_customer_source(self) -> Self:
         if (self.customer_id is None) == (self.new_customer is None):
             raise ValueError("Provide exactly one of customer_id or new_customer")
+        if (self.contact_id is None) == (self.contact is None):
+            raise ValueError("Provide exactly one of contact_id or contact")
         return self
 
 
@@ -267,6 +269,7 @@ class LeadResponse(BaseModel):
     converted_contact_id: UUID | None
     converted_opportunity_id: UUID | None
     converted_at: datetime | None
+    lost_reason_id: UUID | None = None
     available_actions: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

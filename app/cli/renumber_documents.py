@@ -31,7 +31,6 @@ from app.erp.accounting.numbering import (
 from app.erp.accounting.supplier_payments.models import SupplierPayment
 from app.erp.credit_notes.models import CreditNote
 from app.erp.debit_notes.models import DebitNote
-from app.erp.landed_costs.models import LandedCost, LandedCostAllocation, LandedCostCharge
 from app.erp.proforma_invoices.models import ProformaInvoice
 from app.erp.purchase_invoices.models import PurchaseInvoice
 from app.erp.purchase_orders.models import PurchaseOrder
@@ -168,7 +167,6 @@ _TABLES: tuple[NumberedTable, ...] = (
         "inspection_date",
         has_party=True,
     ),
-    _nt(LandedCost, "LC", DocumentType.LANDED_COST, "document_date", has_party=True),
 )
 
 
@@ -282,28 +280,6 @@ async def _qcr_party_ids(session: AsyncSession, tenant_id: UUID) -> dict[UUID, U
     return {row.id: row.supplier_id for row in result.all()}
 
 
-async def _landed_cost_party_ids(session: AsyncSession, tenant_id: UUID) -> dict[UUID, UUID]:
-    mapping: dict[UUID, UUID] = {}
-    allocations = await session.execute(
-        select(LandedCostAllocation.landed_cost_id, GoodsReceipt.supplier_id)
-        .join(GoodsReceipt, GoodsReceipt.id == LandedCostAllocation.goods_receipt_id)
-        .join(LandedCost, LandedCost.id == LandedCostAllocation.landed_cost_id)
-        .where(LandedCost.tenant_id == tenant_id)
-        .order_by(LandedCostAllocation.line_number.asc())
-    )
-    for landed_cost_id, supplier_id in allocations.all():
-        mapping.setdefault(landed_cost_id, supplier_id)
-    charges = await session.execute(
-        select(LandedCostCharge.landed_cost_id, PurchaseInvoice.supplier_id)
-        .join(PurchaseInvoice, PurchaseInvoice.id == LandedCostCharge.purchase_invoice_id)
-        .where(LandedCostCharge.tenant_id == tenant_id)
-        .order_by(LandedCostCharge.line_number.asc())
-    )
-    for landed_cost_id, supplier_id in charges.all():
-        mapping.setdefault(landed_cost_id, supplier_id)
-    return mapping
-
-
 async def _rewrite_table(
     session: AsyncSession,
     tenant_id: UUID,
@@ -410,7 +386,6 @@ async def renumber_tenant(
     extra_party: dict[str, dict[UUID, UUID]] = {
         "PACKAGE": await _package_party_ids(session, tenant_id),
         "QUALITY_INSPECTION": await _qcr_party_ids(session, tenant_id),
-        "LANDED_COST": await _landed_cost_party_ids(session, tenant_id),
     }
     max_seq: dict[tuple[str, int], int] = defaultdict(int)
     documents_updated = 0

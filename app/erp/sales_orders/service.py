@@ -24,8 +24,11 @@ from app.auth.catalog import (
     SALES_ORDER_DELETE,
     SALES_ORDER_UPDATE,
 )
+from app.auth.models import Tenant
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
+from app.common.print.schemas import PrintDocumentResponse
+from app.common.print.service import PrintService
 from app.common.outbox.service import OutboxService
 from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.packing import packing_persist
@@ -161,6 +164,7 @@ class SalesOrderService:
         salesperson_id: UUID | None = None,
         source_quotation_id: UUID | None = None,
         source_proforma_invoice_id: UUID | None = None,
+        opportunity_id: UUID | None = None,
     ) -> tuple[list[SalesOrderResponse], int]:
         requires_approval = await self.org.sales_order_requires_approval(tenant_id)
         filters: dict[str, object] = {}
@@ -184,6 +188,8 @@ class SalesOrderService:
             filters["source_quotation_id"] = source_quotation_id
         if source_proforma_invoice_id is not None:
             filters["source_proforma_invoice_id"] = source_proforma_invoice_id
+        if opportunity_id is not None:
+            filters["opportunity_id"] = opportunity_id
         rows, total = await self.repo.list(
             tenant_id,
             page=page,
@@ -198,6 +204,41 @@ class SalesOrderService:
         response = self._to_response(row, requires_approval=requires_approval)
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
+
+    async def print_document(
+        self,
+        tenant_id: UUID,
+        sales_order_id: UUID,
+        *,
+        template_family: str = "uae",
+    ) -> PrintDocumentResponse:
+        row = await self.get(tenant_id, sales_order_id)
+        customer = await self.customers.get(tenant_id, row.customer_id)
+        currency = await self.currencies.get(tenant_id, row.currency_id)
+        printer = PrintService(self.session)
+        family = template_family if template_family in {"uae", "china"} else "uae"
+        return await printer.assemble(
+            tenant_id,
+            document_type=DocumentType.SALES_ORDER.value,
+            document_id=row.id,
+            document_number=row.document_number,
+            document_date=row.order_date,
+            template_family=family,
+            customer_code=customer.code,
+            customer_name=customer.name,
+            customer_address=row.bill_to_snapshot or format_address_snapshot(customer.billing_address),
+            customer_trn=row.customer_trn or customer.trn,
+            lpo_number=row.customer_po_number,
+            currency_code=currency.code,
+            subtotal=row.subtotal,
+            tax_amount=row.tax_amount,
+            grand_total=row.grand_total,
+            notes=row.notes,
+            lines=[
+                printer.commercial_line(line, index=index)
+                for index, line in enumerate(row.lines, start=1)
+            ],
+        )
 
     async def compose_defaults(
         self, tenant_id: UUID, customer_id: UUID
@@ -306,6 +347,26 @@ class SalesOrderService:
             )
             by_id = {line.id: line for line in quotation.lines}
             selected = [(by_id[line_id], qty) for line_id, qty in allocations]
+            from app.common.utils.conversion_charges import prorate_header_charges
+
+            converted_net = _ZERO
+            for source, qty in selected:
+                line_discount_type = (
+                    DiscountType(source.discount_type) if source.discount_type else None
+                )
+                _, _, _, net = compute_line_amounts(
+                    quantity=qty,
+                    rate=source.rate,
+                    discount_type=line_discount_type,
+                    discount_value=source.discount_value,
+                    tax_rate=source.tax_rate,
+                    prices_include_tax=quotation.prices_include_tax,
+                )
+                converted_net += net
+            converted_net = quantize_money(converted_net)
+            shipping_amount, adjustment_amount = prorate_header_charges(
+                quotation, converted_net, quotation.subtotal
+            )
             payload = SalesOrderCreate(
                 customer_id=quotation.customer_id,
                 contact_id=quotation.contact_id,
@@ -324,9 +385,10 @@ class SalesOrderService:
                 terms_and_conditions=quotation.terms_and_conditions,
                 discount_type=quotation.discount_type,
                 discount_value=quotation.discount_value,
-                shipping_amount=quotation.shipping_amount,
-                adjustment_amount=quotation.adjustment_amount,
+                shipping_amount=shipping_amount,
+                adjustment_amount=adjustment_amount,
                 place_of_supply=quotation.place_of_supply,
+                prices_include_tax=quotation.prices_include_tax,
                 lines=[
                     SalesOrderLineInput(
                         product_id=source.product_id,
@@ -348,6 +410,7 @@ class SalesOrderService:
             )
             header, line_rows = await self._build_draft(tenant_id, payload)
             header["source_quotation_id"] = quotation.id
+            header["opportunity_id"] = quotation.opportunity_id
             copy_source_commercial_header(
                 header,
                 exchange_rate=quotation.exchange_rate,
@@ -466,6 +529,7 @@ class SalesOrderService:
                 shipping_amount=pfi.shipping_amount,
                 adjustment_amount=pfi.adjustment_amount,
                 place_of_supply=pfi.place_of_supply,
+                prices_include_tax=pfi.prices_include_tax,
                 lines=[
                     SalesOrderLineInput(
                         product_id=source.product_id,
@@ -761,6 +825,7 @@ class SalesOrderService:
                 shipping_amount=source.shipping_amount,
                 adjustment_amount=source.adjustment_amount,
                 place_of_supply=PlaceOfSupply(source.place_of_supply),
+                prices_include_tax=source.prices_include_tax,
                 lines=[
                     SalesOrderLineInput(
                         product_id=line.product_id,
@@ -984,7 +1049,7 @@ class SalesOrderService:
     async def apply_line_reservations(
         self, tenant_id: UUID, row: SalesOrder
     ) -> builtins.list[ReservationShortfall]:
-        """Recompute reserved qty from quantity - qty_delivered - qty_returned.
+        """Recompute reserved qty from outstanding delivery quantity.
 
         Reservation must never fail a confirm. If available stock is short, reserve
         what exists and report the shortfall. Repeat calls are a no-op when the
@@ -1012,7 +1077,7 @@ class SalesOrderService:
                     await self.stock.release_reserved_locked(locked, qty=line.qty_reserved)
                     line.qty_reserved = _ZERO
                 continue
-            target = quantize_quantity(line.quantity - line.qty_delivered - line.qty_returned)
+            target = self._outstanding_delivery(line)
             if target < _ZERO:
                 target = _ZERO
             current = quantize_quantity(line.qty_reserved)
@@ -1082,6 +1147,8 @@ class SalesOrderService:
             line.qty_delivered = quantize_quantity(line.qty_delivered + qty)
             if line.qty_delivered < _ZERO:
                 raise ValidationError("Delivered quantity cannot be negative")
+            if line.qty_delivered > line.quantity:
+                raise ValidationError("Delivered quantity cannot exceed ordered quantity")
         self._refresh_fulfillment_status(row)
         if SalesOrderStatus(row.status) == SalesOrderStatus.CONFIRMED:
             await self.apply_line_reservations(tenant_id, row)
@@ -1107,6 +1174,8 @@ class SalesOrderService:
             line.qty_returned = quantize_quantity(line.qty_returned + qty)
             if line.qty_returned < _ZERO:
                 raise ValidationError("Returned quantity cannot be negative")
+            if line.qty_returned > line.qty_delivered:
+                raise ValidationError("Returned quantity cannot exceed delivered quantity")
         self._refresh_fulfillment_status(row)
         await self.session.flush()
 
@@ -1127,6 +1196,8 @@ class SalesOrderService:
             line.qty_invoiced = quantize_quantity(line.qty_invoiced + qty)
             if line.qty_invoiced < _ZERO:
                 raise ValidationError("Invoiced quantity cannot be negative")
+            if line.qty_invoiced > line.quantity:
+                raise ValidationError("Invoiced quantity cannot exceed ordered quantity")
         self._refresh_billing_status(row)
         await self.session.flush()
 
@@ -1269,26 +1340,11 @@ class SalesOrderService:
         else:
             rows.append(self._tracker_pending("goods_receipt", DocumentType.GOODS_RECEIPT.value))
 
-        from app.erp.landed_costs.repository import LandedCostRepository
         from app.inventory_management.purchase_returns.repository import PurchaseReturnRepository
 
-        landed_rows: builtins.list[OrderTrackerRow] = []
         return_rows: builtins.list[OrderTrackerRow] = []
-        lc_repo = LandedCostRepository(self.session)
         pr_repo = PurchaseReturnRepository(self.session)
         for receipt in receipts:
-            for landed in await lc_repo.list_for_goods_receipt(tenant_id, receipt.id):
-                landed_rows.append(
-                    self._tracker_row(
-                        stage="landed_cost",
-                        document_type=DocumentType.LANDED_COST.value,
-                        document_id=landed.id,
-                        document_number=landed.document_number,
-                        status=landed.status,
-                        document_date=landed.document_date,
-                        quantity_summary=None,
-                    )
-                )
             for item in await pr_repo.list_for_goods_receipt(tenant_id, receipt.id):
                 return_rows.append(
                     self._tracker_row(
@@ -1303,10 +1359,6 @@ class SalesOrderService:
                         ),
                     )
                 )
-        if landed_rows:
-            rows.extend(landed_rows)
-        elif receipts:
-            rows.append(self._tracker_pending("landed_cost", DocumentType.LANDED_COST.value))
         if return_rows:
             rows.extend(return_rows)
         elif receipts:
@@ -1614,7 +1666,8 @@ class SalesOrderService:
         return f"{len(quantities)} lines · qty {total}"
 
     def _outstanding_delivery(self, line: SalesOrderLine) -> Decimal:
-        outstanding = quantize_quantity(line.quantity - line.qty_delivered)
+        net_delivered = quantize_quantity(line.qty_delivered - line.qty_returned)
+        outstanding = quantize_quantity(line.quantity - net_delivered)
         return outstanding if outstanding > _ZERO else _ZERO
 
     async def _release_line_reservations(self, tenant_id: UUID, row: SalesOrder) -> None:
@@ -1673,7 +1726,12 @@ class SalesOrderService:
     async def _build_draft(
         self, tenant_id: UUID, payload: SalesOrderCreate
     ) -> tuple[dict[str, object], builtins.list[dict[str, object]]]:
-        customer = await self.customers.get(tenant_id, payload.customer_id)
+        from app.common.schemas.discount_fields import assert_discount_bounds
+
+        assert_discount_bounds(payload.discount_type, payload.discount_value)
+        for line in payload.lines:
+            assert_discount_bounds(line.discount_type, line.discount_value)
+        customer = await self.customers.require_party(tenant_id, payload.customer_id)
         if payload.branch_id is not None:
             await self.org.require_branch(tenant_id, payload.branch_id)
         if payload.contact_id is not None:
@@ -1715,6 +1773,9 @@ class SalesOrderService:
             terms_body = default_terms.body if default_terms else None
 
         price_list_id = payload.price_list_id or customer.default_price_list_id
+        prices_include_tax = await self._resolve_prices_include_tax(
+            tenant_id, payload.prices_include_tax
+        )
         line_rows, line_nets, line_taxes = await self._build_lines(
             tenant_id,
             payload.lines,
@@ -1722,14 +1783,17 @@ class SalesOrderService:
             place_of_supply=place,
             price_list_id=price_list_id,
             currency_id=currency_id,
+            prices_include_tax=prices_include_tax,
         )
-        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
-            line_nets=line_nets,
-            line_taxes=line_taxes,
-            discount_type=payload.discount_type,
-            discount_value=payload.discount_value,
-            shipping_amount=quantize_money(payload.shipping_amount),
-            adjustment_amount=quantize_money(payload.adjustment_amount),
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes, adjustment_amount = (
+            compute_header_totals(
+                line_nets=line_nets,
+                line_taxes=line_taxes,
+                discount_type=payload.discount_type,
+                discount_value=payload.discount_value,
+                shipping_amount=quantize_money(payload.shipping_amount),
+                adjustment_amount=quantize_money(payload.adjustment_amount),
+            )
         )
         apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         header: dict[str, object] = {
@@ -1759,16 +1823,25 @@ class SalesOrderService:
             "discount_value": payload.discount_value,
             "discount_amount": doc_discount,
             "shipping_amount": quantize_money(payload.shipping_amount),
-            "adjustment_amount": quantize_money(payload.adjustment_amount),
+            "adjustment_amount": adjustment_amount,
             "subtotal": subtotal,
             "tax_amount": tax_total,
             "grand_total": grand,
+            "prices_include_tax": prices_include_tax,
             "foreign_amount": grand,
             "base_amount": quantize_money(grand * resolved.rate),
             "fulfillment_status": FulfillmentStatus.NOT_DELIVERED.value,
             "billing_status": BillingStatus.NOT_INVOICED.value,
         }
         return header, line_rows
+
+    async def _resolve_prices_include_tax(
+        self, tenant_id: UUID, explicit: bool | None
+    ) -> bool:
+        if explicit is not None:
+            return explicit
+        tenant = await self.session.get(Tenant, tenant_id)
+        return bool(tenant and tenant.prices_include_tax_default)
 
     async def _build_lines(
         self,
@@ -1779,6 +1852,7 @@ class SalesOrderService:
         place_of_supply: PlaceOfSupply,
         price_list_id: UUID | None,
         currency_id: UUID,
+        prices_include_tax: bool = False,
     ) -> tuple[builtins.list[dict[str, object]], builtins.list[Decimal], builtins.list[Decimal]]:
         built: builtins.list[dict[str, object]] = []
         nets: builtins.list[Decimal] = []
@@ -1832,6 +1906,7 @@ class SalesOrderService:
                 discount_type=line.discount_type,
                 discount_value=line.discount_value,
                 tax_rate=chosen_tax.rate,
+                prices_include_tax=prices_include_tax,
             )
             built.append(
                 {
@@ -1908,6 +1983,7 @@ class SalesOrderService:
             shipping_amount=values.get("shipping_amount", existing.shipping_amount),
             adjustment_amount=values.get("adjustment_amount", existing.adjustment_amount),
             place_of_supply=values.get("place_of_supply", PlaceOfSupply(existing.place_of_supply)),
+            prices_include_tax=values.get("prices_include_tax", existing.prices_include_tax),
             lines=line_inputs,
         )
 
@@ -2005,6 +2081,7 @@ class SalesOrderService:
             billing_status=BillingStatus(row.billing_status),
             source_quotation_id=row.source_quotation_id,
             source_proforma_invoice_id=row.source_proforma_invoice_id,
+            opportunity_id=row.opportunity_id,
             confirmed_at=row.confirmed_at,
             confirmed_by=row.confirmed_by,
             closed_at=row.closed_at,
@@ -2028,13 +2105,16 @@ class SalesOrderService:
 
     def _quantity_progress(self, row: SalesOrder) -> QuantityProgress:
         ordered = sum((line.quantity for line in row.lines), _ZERO)
-        delivered = sum((line.qty_delivered for line in row.lines), _ZERO)
+        net_delivered = sum(
+            (quantize_quantity(line.qty_delivered - line.qty_returned) for line in row.lines),
+            _ZERO,
+        )
         invoiced = sum((line.qty_invoiced for line in row.lines), _ZERO)
         return QuantityProgress(
             ordered=ordered,
-            fulfilled=delivered,
+            fulfilled=net_delivered,
             invoiced=invoiced,
-            remaining_to_fulfill=remaining_qty(ordered, delivered),
+            remaining_to_fulfill=remaining_qty(ordered, net_delivered),
             remaining_to_invoice=remaining_qty(ordered, invoiced),
         )
 

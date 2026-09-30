@@ -230,12 +230,12 @@ async def test_supplier_read_requires_permission(client: AsyncClient) -> None:
         json={
             "name": "Limited User",
             "email": limited_email,
-            "password": "password12",
+            "password": "Password12",
             "role_ids": [role.json()["data"]["id"]],
         },
     )
     assert user.status_code == 201, user.text
-    limited_headers = await login_headers(client, tenant_id, limited_email, "password12")
+    limited_headers = await login_headers(client, tenant_id, limited_email, "Password12")
     denied = await client.get("/api/v1/suppliers", headers=limited_headers)
     assert denied.status_code == 403
     assert denied.json()["error"]["code"] == "PERMISSION_DENIED"

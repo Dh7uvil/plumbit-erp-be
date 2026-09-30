@@ -19,11 +19,11 @@ from app.erp.accounting.reports.router import router as reports_router
 from app.erp.accounting.router import router as accounting_router
 from app.erp.accounting.supplier_payments.router import router as supplier_payments_router
 from app.erp.accounting.vouchers.router import router as vouchers_router
+from app.erp.accounting.year_end.router import router as year_end_router
 from app.erp.cost_sheets.router import router as cost_sheets_router
 from app.erp.credit_notes.router import router as credit_notes_router
 from app.erp.debit_notes.router import router as debit_notes_router
 from app.erp.exchange_rates.router import router as exchange_rates_router
-from app.erp.landed_costs.router import router as landed_costs_router
 from app.erp.period_lock.router import router as period_lock_router
 from app.erp.proforma_invoices.router import router as proforma_invoices_router
 from app.erp.purchase_invoices.router import router as purchase_invoices_router
@@ -33,6 +33,7 @@ from app.erp.sales_invoices.router import router as sales_invoices_router
 from app.erp.sales_orders.router import router as sales_orders_router
 from app.erp.supplier_products.router import router as supplier_products_router
 from app.erp.suppliers.router import router as suppliers_router
+from app.erp.utilities.router import router as utilities_router
 
 router = APIRouter()
 router.include_router(exchange_rates_router)
@@ -49,7 +50,6 @@ router.include_router(customer_payments_router)
 router.include_router(purchase_orders_router)
 router.include_router(purchase_invoices_router)
 router.include_router(debit_notes_router)
-router.include_router(landed_costs_router)
 router.include_router(cost_sheets_router)
 router.include_router(supplier_payments_router)
 router.include_router(accounts_router)
@@ -58,6 +58,7 @@ router.include_router(cost_centers_router)
 router.include_router(dunning_rules_router)
 router.include_router(journals_router)
 router.include_router(opening_balances_router)
+router.include_router(year_end_router)
 router.include_router(reports_router)
 router.include_router(vouchers_router)
 router.include_router(bank_accounts_router)
@@ -66,3 +67,4 @@ router.include_router(cheques_router)
 router.include_router(budgets_router)
 router.include_router(recurring_router)
 router.include_router(fx_revaluation_router)
+router.include_router(utilities_router)

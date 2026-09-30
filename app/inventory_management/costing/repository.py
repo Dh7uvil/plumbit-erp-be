@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import ValidationError
 from app.inventory_management.costing.models import StockCostConsumption, StockCostLayer
 
 _ZERO = Decimal("0")
@@ -182,6 +183,8 @@ class CostingRepository:
         source_type: str,
         source_id: UUID,
         source_line_id: UUID | None = None,
+        *,
+        for_update: bool = False,
     ) -> Sequence[StockCostLayer]:
         criteria = [
             StockCostLayer.tenant_id == tenant_id,
@@ -191,6 +194,8 @@ class CostingRepository:
         if source_line_id is not None:
             criteria.append(StockCostLayer.source_line_id == source_line_id)
         statement = select(StockCostLayer).where(*criteria)
+        if for_update:
+            statement = statement.with_for_update()
         result = await self.session.execute(statement)
         return result.scalars().all()
 
@@ -206,6 +211,9 @@ class CostingRepository:
         )
         if not layers:
             return 0
+        for layer in layers:
+            if layer.qty_remaining != layer.qty_received:
+                raise ValidationError("Cannot delete a cost layer that has been partially consumed")
         layer_ids = [layer.id for layer in layers]
         await self.session.execute(
             delete(StockCostConsumption).where(

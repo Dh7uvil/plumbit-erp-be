@@ -5,6 +5,7 @@ from decimal import Decimal
 from app.common.utils.currency import (
     format_money_display,
     format_quantity_display,
+    format_rate_display,
     quantize_money,
     quantize_quantity,
 )
@@ -34,3 +35,9 @@ def test_format_quantity_display_pads_and_rounds_half_up() -> None:
     assert format_quantity_display(Decimal("4.000000")) == "4.00"
     assert format_quantity_display(Decimal("1.235")) == "1.24"
     assert format_quantity_display(Decimal("50000.000000")) == "50000.00"
+
+
+def test_format_rate_display_pads_and_rounds_half_up() -> None:
+    assert format_rate_display(Decimal("3.672500")) == "3.67"
+    assert format_rate_display(Decimal("1.234567")) == "1.23"
+    assert format_rate_display(Decimal("1")) == "1.00"

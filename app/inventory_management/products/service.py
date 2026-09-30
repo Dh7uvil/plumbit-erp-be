@@ -106,20 +106,36 @@ class ProductService:
                 name = (row.get("name") or "").strip()
                 if not sku or not name:
                     raise ValidationError("SKU and name are required")
-                created = await self.create(
-                    tenant_id,
-                    ProductCreate(
-                        sku=sku,
-                        name=name,
-                        selling_rate=(
-                            parse_optional_decimal(row.get("selling_rate")) or Decimal("0")
-                        ),
-                        purchase_rate=parse_optional_decimal(row.get("purchase_rate"))
-                        or Decimal("0"),
-                    ),
-                    actor_user_id=actor_user_id,
+                selling_rate = (
+                    parse_optional_decimal(row.get("selling_rate")) or Decimal("0")
                 )
-                created_ids.append(created.id)
+                purchase_rate = (
+                    parse_optional_decimal(row.get("purchase_rate")) or Decimal("0")
+                )
+                existing = await self.find_by_sku(tenant_id, sku)
+                if existing is not None:
+                    await self.update(
+                        tenant_id,
+                        existing.id,
+                        ProductUpdate(
+                            name=name,
+                            selling_rate=selling_rate,
+                            purchase_rate=purchase_rate,
+                        ),
+                        actor_user_id=actor_user_id,
+                    )
+                else:
+                    created = await self.create(
+                        tenant_id,
+                        ProductCreate(
+                            sku=sku,
+                            name=name,
+                            selling_rate=selling_rate,
+                            purchase_rate=purchase_rate,
+                        ),
+                        actor_user_id=actor_user_id,
+                    )
+                    created_ids.append(created.id)
             except (ValidationError, DuplicateResourceError, ValueError) as exc:
                 errors.append(ImportRowError(row_number=index, message=str(exc)))
         return ImportResult(
@@ -206,7 +222,18 @@ class ProductService:
                     record_id=product_id,
                     label="product",
                     action="deactivate",
+                    exclude_tables=frozenset({"stock_balances"}),
                 )
+                from app.inventory_management.stock.service import StockService
+
+                stock = StockService(self.session)
+                if await stock.balances.has_nonzero_balance(tenant_id, product_id):
+                    raise ValidationError("Cannot deactivate product with stock on hand")
+            if "unit_id" in values and values.get("unit_id") != existing.unit_id:
+                from app.inventory_management.stock.service import StockService
+
+                if await StockService(self.session).product_has_activity(tenant_id, product_id):
+                    raise ValidationError("Cannot change product unit after stock activity")
             if values.get("track_inventory") is False and existing.track_inventory:
                 from app.inventory_management.stock.service import StockService
 

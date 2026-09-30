@@ -40,7 +40,7 @@ async def _create_limited_user(
     )
     suffix = uuid4().hex[:8]
     email = f"limited-{suffix}@example.com"
-    password = "password12"
+    password = "Password12"
     role = await client.post(
         "/api/v1/roles",
         headers=headers,
@@ -73,7 +73,7 @@ async def test_user_list_includes_roles_without_n_plus_one(client: AsyncClient) 
             json={
                 "name": f"User {index}",
                 "email": f"user-{index}-{uuid4().hex[:6]}@example.com",
-                "password": "password12",
+                "password": "Password12",
             },
         )
         assert created.status_code == 201, created.text
@@ -122,7 +122,7 @@ async def test_user_list_filters_by_role_id(client: AsyncClient) -> None:
         json={
             "name": "With Role",
             "email": f"with-role-{suffix}@example.com",
-            "password": "password12",
+            "password": "Password12",
             "role_ids": [role_id],
         },
     )
@@ -133,7 +133,7 @@ async def test_user_list_filters_by_role_id(client: AsyncClient) -> None:
         json={
             "name": "Without Role",
             "email": f"without-role-{suffix}@example.com",
-            "password": "password12",
+            "password": "Password12",
         },
     )
     assert unmatched.status_code == 201, unmatched.text
@@ -157,7 +157,7 @@ async def test_user_list_filters_by_role_id(client: AsyncClient) -> None:
         json={
             "name": "Second Role",
             "email": f"second-role-{suffix}@example.com",
-            "password": "password12",
+            "password": "Password12",
             "role_ids": [other_role_id],
         },
     )
@@ -224,7 +224,7 @@ async def test_user_list_filters_by_employee_and_profile_fields(client: AsyncCli
         json={
             "name": "Sales Manager",
             "email": f"sales-{suffix}@example.com",
-            "password": "password12",
+            "password": "Password12",
             "phone": "+971501234567",
             "employee": {
                 "branch_id": branch_id,
@@ -241,7 +241,7 @@ async def test_user_list_filters_by_employee_and_profile_fields(client: AsyncCli
         json={
             "name": "Ops Lead",
             "email": f"ops-{suffix}@example.com",
-            "password": "password12",
+            "password": "Password12",
             "phone": "+971509999999",
             "employee": {
                 "branch_id": other_branch.json()["data"]["id"],
@@ -312,7 +312,7 @@ async def test_activate_and_deactivate_user(client: AsyncClient) -> None:
         json={
             "name": "Staff",
             "email": f"staff-{uuid4().hex[:8]}@example.com",
-            "password": "password12",
+            "password": "Password12",
         },
     )
     assert created.status_code == 201, created.text
@@ -354,7 +354,7 @@ async def test_nested_employee_on_user_create(client: AsyncClient) -> None:
         json={
             "name": "Employee User",
             "email": f"emp-{uuid4().hex[:8]}@example.com",
-            "password": "password12",
+            "password": "Password12",
             "employee": {
                 "branch_id": branch.json()["data"]["id"],
                 "department_id": department.json()["data"]["id"],
@@ -377,7 +377,7 @@ async def test_nested_employee_on_user_create(client: AsyncClient) -> None:
         json={
             "name": "Second Employee",
             "email": f"emp2-{uuid4().hex[:8]}@example.com",
-            "password": "password12",
+            "password": "Password12",
             "employee": {
                 "branch_id": branch.json()["data"]["id"],
                 "department_id": department.json()["data"]["id"],
@@ -658,7 +658,7 @@ async def test_get_audit_log_includes_changes_for_identity_update(client: AsyncC
         json={
             "name": "Before Name",
             "email": f"audit-{suffix}@example.com",
-            "password": "password12",
+            "password": "Password12",
         },
     )
     assert created.status_code == 201, created.text
@@ -713,7 +713,7 @@ async def test_update_user_audit_stores_employee_labels(client: AsyncClient) -> 
         json={
             "name": "Staff Member",
             "email": f"staff-{suffix}@example.com",
-            "password": "password12",
+            "password": "Password12",
             "employee": {
                 "branch_id": branch_id,
                 "designation": "Before Title",
@@ -771,7 +771,7 @@ async def test_assign_roles_skips_audit_when_roles_unchanged(client: AsyncClient
         json={
             "name": "Stable Roles",
             "email": f"stable-{suffix}@example.com",
-            "password": "password12",
+            "password": "Password12",
         },
     )
     assert created.status_code == 201, created.text
@@ -814,7 +814,7 @@ async def test_assign_roles_audit_stores_role_names(client: AsyncClient) -> None
         json={
             "name": "Role Assignee",
             "email": f"roles-{suffix}@example.com",
-            "password": "password12",
+            "password": "Password12",
         },
     )
     assert created.status_code == 201, created.text

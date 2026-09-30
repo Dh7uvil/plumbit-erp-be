@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -124,6 +125,9 @@ class PurchaseOrder(AuditUserMixin, SoftDeleteTenantModel):
     subtotal: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     tax_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     grand_total: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
+    prices_include_tax: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     foreign_amount: Mapped[Decimal] = mapped_column(
         _MONEY, nullable=False, server_default=text("0")
     )
@@ -228,6 +232,9 @@ class PurchaseOrderLine(TenantModel):
     tax_rate: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     tax_amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
     amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
+    net_weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    gross_weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    volume: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     qty_received: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     qty_billed: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     qty_returned: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))

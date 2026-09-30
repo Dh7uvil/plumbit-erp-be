@@ -47,8 +47,10 @@ from app.erp.accounting.reports.schemas import (
     InvoicedNotDispatchedResponse,
     OutstandingDocumentsResponse,
     PartyStatementResponse,
+    PdcRegisterResponse,
     ProfitAndLossResponse,
     PurchaseSuggestionResponse,
+    RatioAnalysisResponse,
     ReceivedNotBilledResponse,
     ReportExportCreate,
     ReportExportJobResponse,
@@ -244,25 +246,58 @@ async def get_bank_book(
     return _maybe_csv(request, export_format, data, user, filename="bank-book.csv")
 
 
-@router.get("/account-statement", response_model=ApiResponse[AccountStatementResponse])
-async def get_account_statement(
+@router.get("/pdc-register", response_model=ApiResponse[PdcRegisterResponse])
+async def get_pdc_register(
+    request: Request,
     tenant: TenantContextDependency,
     service: ReportServiceDependency,
     user: Annotated[CurrentUser, Depends(require_permission(REPORT_LEDGER))],
-    party_type: PartyType,
-    party_id: UUID,
+    due_date_from: date | None = None,
+    due_date_to: date | None = None,
+    direction: str | None = None,
+    status: str | None = None,
+    bank_account_id: UUID | None = None,
+    export_format: FormatQuery = None,
+) -> Any:
+    data = await service.pdc_register(
+        tenant.tenant_id,
+        due_date_from=due_date_from,
+        due_date_to=due_date_to,
+        direction=direction,
+        status=status,
+        bank_account_id=bank_account_id,
+    )
+    return _maybe_csv(request, export_format, data, user, filename="pdc-register.csv")
+
+
+@router.get("/account-statement", response_model=ApiResponse[AccountStatementResponse])
+async def get_account_statement(
+    request: Request,
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    user: Annotated[CurrentUser, Depends(require_permission(REPORT_LEDGER))],
     from_date: Annotated[date, Query(alias="from")],
     to_date: Annotated[date, Query(alias="to")],
-) -> ApiResponse[AccountStatementResponse]:
-    return ApiResponse(
-        data=await service.account_statement(
-            tenant.tenant_id,
-            party_type=party_type,
-            party_id=party_id,
-            from_date=from_date,
-            to_date=to_date,
-        )
+    party_type: PartyType | None = None,
+    party_id: UUID | None = None,
+    account_id: UUID | None = None,
+    include_opening: bool = True,
+    include_pdc: bool = False,
+    currency_id: UUID | None = None,
+    export_format: FormatQuery = None,
+) -> Any:
+    data = await service.account_statement(
+        tenant.tenant_id,
+        party_type=party_type,
+        party_id=party_id,
+        account_id=account_id,
+        from_date=from_date,
+        to_date=to_date,
+        include_opening=include_opening,
+        include_pdc=include_pdc,
+        currency_id=currency_id,
     )
+    return _maybe_csv(request, export_format, data, user, filename="account-statement.csv")
 
 
 @router.get(
@@ -565,6 +600,26 @@ async def get_balance_sheet(
         tenant.tenant_id, as_of=as_of, branch_id=branch_id, cost_center_id=cost_center_id
     )
     return _maybe_csv(request, export_format, data, user, filename="balance-sheet.csv")
+
+
+@router.get("/ratio-analysis", response_model=ApiResponse[RatioAnalysisResponse])
+async def get_ratio_analysis(
+    request: Request,
+    tenant: TenantContextDependency,
+    service: ReportServiceDependency,
+    user: Annotated[CurrentUser, Depends(require_permission(REPORT_FINANCIAL))],
+    from_date: Annotated[date, Query(alias="from")],
+    to_date: Annotated[date, Query(alias="to")],
+    branch_id: UUID | None = None,
+    export_format: FormatQuery = None,
+) -> Any:
+    data = await service.ratio_analysis(
+        tenant.tenant_id,
+        from_date=from_date,
+        to_date=to_date,
+        branch_id=branch_id,
+    )
+    return _maybe_csv(request, export_format, data, user, filename="ratio-analysis.csv")
 
 
 @router.get("/cash-flow", response_model=ApiResponse[CashFlowResponse])

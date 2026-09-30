@@ -326,6 +326,13 @@ OPENAPI_TAGS: list[dict[str, str]] = [
         "name": "Task Labels",
         "description": "Tenant-scoped labels used to categorize tasks.",
     },
+    {
+        "name": "AI Assistant",
+        "description": (
+            "Read-only AI suggestions gated by feature_ai_assistant_enabled and "
+            "ai.assistant.use. Requests are audit-logged; never posts to ledger or stock."
+        ),
+    },
 ]
 APP_DESCRIPTION = "Multi-tenant ERP backend API."
 
@@ -354,6 +361,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     """Create and configure a FastAPI application instance."""
     settings = get_settings()
+    if settings.env in {"staging", "production"} and not settings.cors_origins:
+        msg = "CORS origins must be configured in staging and production"
+        raise RuntimeError(msg)
     configure_logging(settings.log_level)
     wire_platform()
     from app.common.outbox import dispatcher as _outbox_dispatcher  # noqa: F401

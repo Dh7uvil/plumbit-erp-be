@@ -40,6 +40,7 @@ import app.common.attachments.models as _attachments  # noqa: E402, F401
 import app.common.idempotency.models as _idempotency  # noqa: E402, F401
 import app.common.models.audit_log as _audit_log  # noqa: E402, F401
 import app.common.notification_preferences.models as _notification_preferences  # noqa: E402, F401
+import app.common.notifications.models as _notifications  # noqa: E402, F401
 import app.common.outbox.models as _outbox  # noqa: E402, F401
 import app.common.table_preferences.models as _table_preferences  # noqa: E402, F401
 import app.crm.activities.models as _crm_activities  # noqa: E402, F401
@@ -74,7 +75,6 @@ import app.erp.cost_sheets.models as _cost_sheets  # noqa: E402, F401
 import app.erp.credit_notes.models as _credit_notes  # noqa: E402, F401
 import app.erp.debit_notes.models as _debit_notes  # noqa: E402, F401
 import app.erp.exchange_rates.models as _exchange_rates  # noqa: E402, F401
-import app.erp.landed_costs.models as _landed_costs  # noqa: E402, F401
 import app.erp.proforma_invoices.models as _proforma_invoices  # noqa: E402, F401
 import app.erp.purchase_invoices.models as _purchase_invoices  # noqa: E402, F401
 import app.erp.purchase_orders.models as _purchase_orders  # noqa: E402, F401
@@ -85,6 +85,7 @@ import app.erp.supplier_products.models as _supplier_products  # noqa: E402, F40
 import app.inventory_management.categories.models as _categories  # noqa: E402, F401
 import app.inventory_management.costing.models as _costing  # noqa: E402, F401
 import app.inventory_management.delivery_notes.models as _delivery_notes  # noqa: E402, F401
+import app.inventory_management.goods_receipt_charge_adjustments.models as _grn_charge_adjustments  # noqa: E402, F401
 import app.inventory_management.goods_receipts.models as _goods_receipts  # noqa: E402, F401
 import app.inventory_management.packages.models as _packages  # noqa: E402, F401
 import app.inventory_management.price_lists.models as _price_lists  # noqa: E402, F401

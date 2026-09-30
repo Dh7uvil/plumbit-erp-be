@@ -299,6 +299,19 @@ class AccessRepository:
         await self.session.flush()
         return user
 
+    async def list_user_record_scopes(self, tenant_id: UUID, user_id: UUID) -> Sequence[str]:
+        statement = (
+            select(Role.record_scope)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(
+                UserRole.user_id == user_id,
+                UserRole.tenant_id == tenant_id,
+                Role.tenant_id == tenant_id,
+            )
+        )
+        result = await self.session.execute(statement)
+        return [row[0] for row in result.all()]
+
     async def list_user_permission_strings(
         self,
         tenant_id: UUID,
@@ -560,6 +573,15 @@ class AccessRepository:
         for token in result.scalars().all():
             token.revoked_at = revoked_at
         await self.session.flush()
+
+    async def bump_token_version(self, tenant_id: UUID, user_id: UUID) -> int:
+        user = await self.get_user(tenant_id, user_id)
+        if user is None:
+            msg = "User not found"
+            raise ValueError(msg)
+        user.token_version += 1
+        await self.session.flush()
+        return user.token_version
 
     async def list_roles_for_users(
         self,

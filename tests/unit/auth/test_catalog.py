@@ -63,6 +63,7 @@ def test_catalog_includes_quote_ready_permissions() -> None:
     assert "accounting.account.read" in CATALOG_PERMISSIONS
     assert "accounting.journal_entry.post" in CATALOG_PERMISSIONS
     assert "accounting.journal_entry.reverse" in CATALOG_PERMISSIONS
+    assert "accounting.journal.post_control" in CATALOG_PERMISSIONS
     assert "accounting.opening_balance.manage" in CATALOG_PERMISSIONS
     assert "reports.report.ledger" in CATALOG_PERMISSIONS
     assert "reports.report.ar_ap" in CATALOG_PERMISSIONS
@@ -70,12 +71,6 @@ def test_catalog_includes_quote_ready_permissions() -> None:
     assert "reports.report.financial" in CATALOG_PERMISSIONS
     assert "reports.report.export" in CATALOG_PERMISSIONS
     assert "reports.report.crm" in CATALOG_PERMISSIONS
-    assert "purchase.landed_cost.create" in CATALOG_PERMISSIONS
-    assert "purchase.landed_cost.read" in CATALOG_PERMISSIONS
-    assert "purchase.landed_cost.update" in CATALOG_PERMISSIONS
-    assert "purchase.landed_cost.delete" in CATALOG_PERMISSIONS
-    assert "purchase.landed_cost.post" in CATALOG_PERMISSIONS
-    assert "purchase.landed_cost.cancel" in CATALOG_PERMISSIONS
     assert "purchase.purchase_return.cancel" in CATALOG_PERMISSIONS
     assert "sales.customer_payment.create" in CATALOG_PERMISSIONS
     assert "sales.customer_payment.post" in CATALOG_PERMISSIONS
@@ -130,3 +125,4 @@ def test_catalog_includes_quote_ready_permissions() -> None:
     assert "inventory.product.history" in CATALOG_PERMISSIONS
     assert "crm.customer.history" in CATALOG_PERMISSIONS
     assert "purchase.supplier.history" in CATALOG_PERMISSIONS
+    assert "ai.assistant.use" in CATALOG_PERMISSIONS

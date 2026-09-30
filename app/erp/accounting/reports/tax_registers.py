@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.common.utils.currency import quantize_money
+from app.common.utils.document_totals import header_discount_share
 from app.core.enums import AccountSystemRole, InvoiceDocumentStatus, TaxCategory
 from app.core.exceptions import ValidationError
 from app.crm.customers.models import Customer
@@ -54,8 +55,8 @@ class TaxRegisters:
         zone_by_invoice = await self._invoice_designated(tenant_id, invoices)
         lines: list[TaxRegisterLine] = []
         for invoice in invoices:
-            lines.append(
-                self._sales_register_line(
+            lines.extend(
+                self._sales_register_lines(
                     invoice,
                     document_type="SALES_INVOICE",
                     party_name=names.get(invoice.customer_id, ""),
@@ -66,8 +67,8 @@ class TaxRegisters:
                 )
             )
         for note in notes:
-            lines.append(
-                self._credit_register_line(
+            lines.extend(
+                self._credit_register_lines(
                     note,
                     party_name=names.get(note.customer_id, ""),
                     party_trn=trns.get(note.customer_id),
@@ -97,8 +98,8 @@ class TaxRegisters:
         rcm_by_bill = {row.id: row.is_reverse_charge for row in bills}
         lines: list[TaxRegisterLine] = []
         for bill in bills:
-            lines.append(
-                self._purchase_register_line(
+            lines.extend(
+                self._purchase_register_lines(
                     bill,
                     document_type="PURCHASE_INVOICE",
                     party_name=names.get(bill.supplier_id, ""),
@@ -113,8 +114,8 @@ class TaxRegisters:
             reverse = False
             if note.purchase_invoice_id is not None:
                 reverse = rcm_by_bill.get(note.purchase_invoice_id, False)
-            lines.append(
-                self._debit_register_line(
+            lines.extend(
+                self._debit_register_lines(
                     note,
                     party_name=names.get(note.supplier_id, ""),
                     party_trn=trns.get(note.supplier_id),
@@ -335,7 +336,7 @@ class TaxRegisters:
             lines=lines,
         )
 
-    def _sales_register_line(
+    def _sales_register_lines(
         self,
         invoice: SalesInvoice,
         *,
@@ -345,28 +346,24 @@ class TaxRegisters:
         taxes: dict[UUID, Tax],
         is_designated_zone: bool,
         sign: Decimal,
-    ) -> TaxRegisterLine:
-        category = self._first_tax_category(invoice.lines, taxes)
-        net_amount, tax_amount, grand_total = document_base_net_tax(invoice, sign=sign)
-        return TaxRegisterLine(
+    ) -> list[TaxRegisterLine]:
+        return self._document_register_lines(
+            invoice,
             document_type=document_type,
-            document_id=invoice.id,
             document_number=invoice.document_number,
             document_date=invoice.invoice_date,
             party_id=invoice.customer_id,
             party_name=party_name,
             party_trn=party_trn,
             tax_treatment=invoice.tax_treatment,
-            tax_category=category,
             place_of_supply=invoice.place_of_supply,
-            net_amount=net_amount,
-            tax_amount=tax_amount,
-            grand_total=grand_total,
+            taxes=taxes,
+            sign=sign,
             is_export=invoice.is_export,
             is_designated_zone=is_designated_zone,
         )
 
-    def _credit_register_line(
+    def _credit_register_lines(
         self,
         note: CreditNote,
         *,
@@ -374,27 +371,23 @@ class TaxRegisters:
         party_trn: str | None,
         taxes: dict[UUID, Tax],
         sign: Decimal,
-    ) -> TaxRegisterLine:
-        category = self._first_tax_category(note.lines, taxes)
-        net_amount, tax_amount, grand_total = document_base_net_tax(note, sign=sign)
-        return TaxRegisterLine(
+    ) -> list[TaxRegisterLine]:
+        return self._document_register_lines(
+            note,
             document_type="CREDIT_NOTE",
-            document_id=note.id,
             document_number=note.document_number,
             document_date=note.credit_note_date,
             party_id=note.customer_id,
             party_name=party_name,
             party_trn=party_trn,
             tax_treatment=note.tax_treatment,
-            tax_category=category,
             place_of_supply=note.place_of_supply,
-            net_amount=net_amount,
-            tax_amount=tax_amount,
-            grand_total=grand_total,
+            taxes=taxes,
+            sign=sign,
             is_export=note.is_export,
         )
 
-    def _purchase_register_line(
+    def _purchase_register_lines(
         self,
         bill: PurchaseInvoice,
         *,
@@ -405,34 +398,50 @@ class TaxRegisters:
         is_designated_zone: bool,
         is_reverse_charge: bool,
         sign: Decimal,
-    ) -> TaxRegisterLine:
-        category = self._first_tax_category(bill.lines, taxes)
-        tax_src = bill.rcm_tax_amount if is_reverse_charge else bill.tax_amount
-        net_amount, tax_amount, grand_total = document_base_net_tax(
+    ) -> list[TaxRegisterLine]:
+        if is_reverse_charge:
+            category = self._first_tax_category(bill.lines, taxes)
+            net_amount, tax_amount, grand_total = document_base_net_tax(
+                bill,
+                sign=sign,
+                net_amount=bill.rcm_taxable_amount,
+                tax_amount=bill.rcm_tax_amount,
+            )
+            return [
+                TaxRegisterLine(
+                    document_type=document_type,
+                    document_id=bill.id,
+                    document_number=bill.document_number,
+                    document_date=bill.invoice_date,
+                    party_id=bill.supplier_id,
+                    party_name=party_name,
+                    party_trn=party_trn,
+                    tax_treatment=bill.tax_treatment,
+                    tax_category=category,
+                    place_of_supply=bill.place_of_supply,
+                    net_amount=net_amount,
+                    tax_amount=tax_amount,
+                    grand_total=grand_total,
+                    is_reverse_charge=True,
+                    is_designated_zone=is_designated_zone,
+                )
+            ]
+        return self._document_register_lines(
             bill,
-            sign=sign,
-            net_amount=bill.rcm_taxable_amount if is_reverse_charge else None,
-            tax_amount=tax_src,
-        )
-        return TaxRegisterLine(
             document_type=document_type,
-            document_id=bill.id,
             document_number=bill.document_number,
             document_date=bill.invoice_date,
             party_id=bill.supplier_id,
             party_name=party_name,
             party_trn=party_trn,
             tax_treatment=bill.tax_treatment,
-            tax_category=category,
             place_of_supply=bill.place_of_supply,
-            net_amount=net_amount,
-            tax_amount=tax_amount,
-            grand_total=grand_total,
-            is_reverse_charge=is_reverse_charge,
+            taxes=taxes,
+            sign=sign,
             is_designated_zone=is_designated_zone,
         )
 
-    def _debit_register_line(
+    def _debit_register_lines(
         self,
         note: DebitNote,
         *,
@@ -441,25 +450,82 @@ class TaxRegisters:
         taxes: dict[UUID, Tax],
         is_reverse_charge: bool,
         sign: Decimal,
-    ) -> TaxRegisterLine:
-        category = self._first_tax_category(note.lines, taxes)
-        net_amount, tax_amount, grand_total = document_base_net_tax(note, sign=sign)
-        return TaxRegisterLine(
+    ) -> list[TaxRegisterLine]:
+        return self._document_register_lines(
+            note,
             document_type="DEBIT_NOTE",
-            document_id=note.id,
             document_number=note.document_number,
             document_date=self._debit_note_date(note),
             party_id=note.supplier_id,
             party_name=party_name,
             party_trn=party_trn,
             tax_treatment=note.tax_treatment,
-            tax_category=category,
             place_of_supply=note.place_of_supply,
-            net_amount=net_amount,
-            tax_amount=tax_amount,
-            grand_total=grand_total,
+            taxes=taxes,
+            sign=sign,
             is_reverse_charge=is_reverse_charge,
         )
+
+    def _document_register_lines(
+        self,
+        doc: SalesInvoice | CreditNote | PurchaseInvoice | DebitNote,
+        *,
+        document_type: str,
+        document_number: str,
+        document_date: date,
+        party_id: UUID,
+        party_name: str,
+        party_trn: str | None,
+        tax_treatment: str,
+        place_of_supply: str,
+        taxes: dict[UUID, Tax],
+        sign: Decimal,
+        is_export: bool = False,
+        is_designated_zone: bool = False,
+        is_reverse_charge: bool = False,
+    ) -> list[TaxRegisterLine]:
+        rate = doc.exchange_rate
+        remaining_discount = doc.discount_amount
+        last_index = len(doc.lines) - 1
+        rows: list[TaxRegisterLine] = []
+        for index, line in enumerate(doc.lines):
+            if index == last_index:
+                share = remaining_discount
+            else:
+                share = header_discount_share(doc.discount_amount, doc.subtotal, line.amount)
+                remaining_discount = quantize_money(remaining_discount - share)
+            net = quantize_money((line.amount - share) * rate * sign)
+            tax = quantize_money(line.tax_amount * rate * sign)
+            grand = quantize_money(net + tax)
+            category = self._line_tax_category(line, taxes)
+            rows.append(
+                TaxRegisterLine(
+                    document_type=document_type,
+                    document_id=doc.id,
+                    document_number=document_number,
+                    document_date=document_date,
+                    party_id=party_id,
+                    party_name=party_name,
+                    party_trn=party_trn,
+                    tax_treatment=tax_treatment,
+                    tax_category=category,
+                    place_of_supply=place_of_supply,
+                    net_amount=net,
+                    tax_amount=tax,
+                    grand_total=grand,
+                    is_export=is_export,
+                    is_designated_zone=is_designated_zone,
+                    is_reverse_charge=is_reverse_charge,
+                )
+            )
+        return rows
+
+    @staticmethod
+    def _line_tax_category(line: object, taxes: dict[UUID, Tax]) -> str | None:
+        tax_id = getattr(line, "tax_id", None)
+        if tax_id is not None and tax_id in taxes:
+            return taxes[tax_id].tax_category
+        return None
 
     @staticmethod
     def _debit_note_date(note: DebitNote) -> date:

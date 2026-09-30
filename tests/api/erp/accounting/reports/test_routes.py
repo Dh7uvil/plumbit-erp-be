@@ -251,7 +251,10 @@ async def test_stock_valuation_matches_remaining_layers_and_gl(client: AsyncClie
     )
     assert csv_body.status_code == 200, csv_body.text
     assert "text/csv" in csv_body.headers["content-type"]
-    csv_rows = list(csv.DictReader(io.StringIO(csv_body.text)))
+    csv_text = "\n".join(
+        line for line in csv_body.text.splitlines() if not line.startswith("#")
+    )
+    csv_rows = list(csv.DictReader(io.StringIO(csv_text)))
     assert csv_rows
     assert csv_rows[0]["qty_remaining"] == "4.00"
     assert csv_rows[0]["stock_value"] == "320.00"
@@ -607,80 +610,84 @@ async def test_foreign_currency_aging_and_register_use_base_currency(
 
 
 @pytest.mark.asyncio
-async def test_foreign_currency_aging_and_register_use_base_currency(
-    client: AsyncClient,
-) -> None:
+async def test_vat_201_mixed_tax_reconciles_with_vat_gl_recon(client: AsyncClient) -> None:
     from tests.api.erp.purchase_invoices.test_routes import _enable_books
-    from tests.api.erp.quotation.test_routes import (
-        _create_customer,
-        _create_product,
-        _currency_id,
-        _seeded_ids,
-    )
+    from tests.api.erp.quotation.test_routes import _create_customer, _seeded_ids
 
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)
     await _enable_books(client, headers)
-    usd_id = await _currency_id(client, headers, "USD")
-    saved = await client.put(
-        "/api/v1/exchange-rates",
-        headers=headers,
-        json={"currency_id": usd_id, "rate_to_base": "3.672500"},
-    )
-    assert saved.status_code == 200, saved.text
-    accounts = await _accounts(client, headers)
+    taxes = await client.get("/api/v1/taxes?page_size=100", headers=headers)
+    assert taxes.status_code == 200, taxes.text
+    by_category = {item["tax_category"]: item for item in taxes.json()["data"]}
+    standard_tax_id = by_category["STANDARD"]["id"]
+    zero_tax_id = by_category["ZERO_RATED"]["id"]
     ids = await _seeded_ids(client, headers)
-    customer_id = await _create_customer(client, headers, currency_id=usd_id)
-    product_id = await _create_product(client, headers, ids, selling_rate="100.0000")
+    customer_id = await _create_customer(client, headers)
+    standard_product = await client.post(
+        "/api/v1/products",
+        headers=headers,
+        json={
+            "sku": f"SKU-STD-{uuid4().hex[:8]}",
+            "name": "Standard item",
+            "unit_id": ids["pcs"],
+            "selling_rate": "100.0000",
+            "tax_id": standard_tax_id,
+        },
+    )
+    assert standard_product.status_code == 201, standard_product.text
+    zero_product = await client.post(
+        "/api/v1/products",
+        headers=headers,
+        json={
+            "sku": f"SKU-ZERO-{uuid4().hex[:8]}",
+            "name": "Zero-rated item",
+            "unit_id": ids["pcs"],
+            "selling_rate": "50.0000",
+            "tax_id": zero_tax_id,
+        },
+    )
+    assert zero_product.status_code == 201, zero_product.text
     created = await client.post(
         "/api/v1/sales-invoices",
         headers=headers,
         json={
             "customer_id": customer_id,
-            "currency_id": usd_id,
-            "lines": [{"product_id": product_id, "quantity": "1"}],
+            "lines": [
+                {
+                    "product_id": standard_product.json()["data"]["id"],
+                    "quantity": "1",
+                },
+                {
+                    "product_id": zero_product.json()["data"]["id"],
+                    "quantity": "1",
+                },
+            ],
         },
     )
     assert created.status_code == 201, created.text
     invoice = created.json()["data"]
+    assert Decimal(invoice["tax_amount"]) == Decimal("5.0000")
     posted = await client.post(
         f"/api/v1/sales-invoices/{invoice['id']}/post",
         headers=_if_match(headers, invoice["version"], key=uuid4().hex),
     )
     assert posted.status_code == 200, posted.text
-    invoice = posted.json()["data"]
-    as_of = invoice["invoice_date"]
-    aging = await client.get(
-        "/api/v1/reports/ar-aging",
+    entry_date = posted.json()["data"]["invoice_date"]
+    vat = await client.get(
+        "/api/v1/reports/vat-201",
         headers=headers,
-        params={"as_of": as_of},
+        params={"from": entry_date, "to": entry_date},
     )
-    assert aging.status_code == 200, aging.text
-    aging_body = aging.json()["data"]
-    assert "base_totals" not in aging_body
-    assert "currency_totals" not in aging_body
-    assert aging_body["currency_code"]
-    doc = aging_body["rows"][0]["documents"][0]
-    assert Decimal(doc["balance"]) == Decimal(invoice["base_amount"])
-    assert doc["document_balance"] == invoice["grand_total"]
-    tb = await client.get(
-        "/api/v1/reports/trial-balance",
+    assert vat.status_code == 200, vat.text
+    boxes = {item["code"]: item for item in vat.json()["data"]["boxes"]}
+    assert Decimal(boxes["1b"]["tax_amount"]) == Decimal("5.0000")
+    assert Decimal(boxes["2"]["net_amount"]) == Decimal("50.0000")
+    recon = await client.get(
+        "/api/v1/reports/vat-gl-recon",
         headers=headers,
-        params={"from": as_of, "to": as_of},
+        params={"from": entry_date, "to": entry_date},
     )
-    assert tb.status_code == 200, tb.text
-    ar_line = next(
-        line
-        for line in tb.json()["data"]["lines"]
-        if line["account_id"] == accounts["ACCOUNTS_RECEIVABLE"]
-    )
-    ar_net = Decimal(ar_line["closing_debit"]) - Decimal(ar_line["closing_credit"])
-    assert Decimal(aging_body["totals"]["total"]) == ar_net
-    register = await client.get(
-        "/api/v1/reports/sales-register",
-        headers=headers,
-        params={"from": as_of, "to": as_of},
-    )
-    assert register.status_code == 200, register.text
-    reg_line = register.json()["data"]["lines"][0]
-    assert Decimal(reg_line["grand_total"]) == Decimal(invoice["base_amount"])
+    assert recon.status_code == 200, recon.text
+    for line in recon.json()["data"]["lines"]:
+        assert Decimal(line["difference"]) == Decimal("0.0000")

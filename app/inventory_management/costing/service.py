@@ -1,4 +1,8 @@
-"""FIFO costing: add, consume, offset negatives, restore. Mutations from StockService."""
+"""FIFO-only costing: add, consume, offset negatives, restore. Mutations from StockService.
+
+Only FIFO is implemented. Weighted-average and other costing methods are not supported;
+``StockService.lock_balance`` rejects tenants configured with a non-FIFO costing method.
+"""
 
 from __future__ import annotations
 
@@ -393,6 +397,21 @@ class CostingService:
     ) -> int:
         return await self.repo.delete_layers_for_source(
             tenant_id, source_type, source_id, source_line_id
+        )
+
+    async def lock_layers_for_source(
+        self,
+        tenant_id: UUID,
+        source_type: str,
+        source_id: UUID,
+        source_line_id: UUID | None = None,
+    ) -> Sequence[StockCostLayer]:
+        return await self.repo.list_layers_for_source(
+            tenant_id,
+            source_type,
+            source_id,
+            source_line_id,
+            for_update=True,
         )
 
     async def layers_fully_remaining(

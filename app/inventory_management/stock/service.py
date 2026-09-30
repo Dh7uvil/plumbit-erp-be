@@ -293,6 +293,7 @@ class StockService:
         occurred_at: datetime | None = None,
         unit_id: UUID | None = None,
         unit_cost: Decimal | None = None,
+        landed_unit_cost: Decimal | None = None,
         inbound_layers: Sequence[CostConsumption] | None = None,
         quality_hold_delta: Decimal = _ZERO,
         skip_costing: bool = False,
@@ -301,6 +302,16 @@ class StockService:
         qty = quantize_quantity(qty)
         if qty == _ZERO:
             raise ValidationError("Movement quantity cannot be zero")
+        if qty > _ZERO and await self.movements.has_outbound_after_date(
+            tenant_id,
+            warehouse_id=locked.warehouse.id,
+            product_id=locked.product.id,
+            document_date=document_date,
+        ):
+            raise ValidationError(
+                "Back-dated inbound is not allowed when a later outbound movement "
+                "exists for this product and warehouse"
+            )
         if (
             unit_id is not None
             and locked.product.unit_id is not None
@@ -365,6 +376,7 @@ class StockService:
                     locked,
                     qty=qty,
                     unit_cost=resolved_cost,
+                    landed_unit_cost=landed_unit_cost,
                     inbound_layers=inbound_layers,
                     movement_id=movement.id,
                     source_type=source_type,
@@ -430,6 +442,8 @@ class StockService:
         new_hold = quantize_quantity(locked.row.qty_quality_hold + delta)
         if new_hold < _ZERO:
             raise ValidationError("Quality hold cannot be negative")
+        if delta > _ZERO and new_hold > locked.row.qty_on_hand:
+            raise ValidationError("Quality hold cannot exceed on-hand quantity")
         locked.row.qty_quality_hold = new_hold
         occurred = occurred_at or utcnow()
         locked.row.last_movement_at = occurred
@@ -476,6 +490,22 @@ class StockService:
         if inbound_qty <= _ZERO:
             raise ValidationError("Reverse quantity must be positive")
         hold = quantize_quantity(quality_hold_delta)
+        available = available_qty(
+            locked.row.qty_on_hand,
+            locked.row.qty_reserved,
+            locked.row.qty_quality_hold,
+        )
+        resulting_available = available - inbound_qty + hold
+        if resulting_available < _ZERO and not locked.allow_negative_stock:
+            raise InsufficientStockError(
+                details={
+                    "warehouse_id": str(locked.warehouse.id),
+                    "warehouse_code": locked.warehouse.code,
+                    "product_id": str(locked.product.id),
+                    "available_qty": str(available),
+                    "requested_qty": str(inbound_qty),
+                }
+            )
         qty_before = locked.row.qty_on_hand
         locked.row.qty_on_hand = quantize_quantity(qty_before - inbound_qty)
         new_hold = quantize_quantity(locked.row.qty_quality_hold - hold)
@@ -712,6 +742,22 @@ class StockService:
         original_line = (
             original_source_line_id if original_source_line_id is not None else source_line_id
         )
+        hold = quantize_quantity(quality_hold_delta)
+        available = available_qty(
+            locked.row.qty_on_hand,
+            locked.row.qty_reserved,
+            locked.row.qty_quality_hold,
+        )
+        if available - outbound_qty - hold < _ZERO and not locked.allow_negative_stock:
+            raise InsufficientStockError(
+                details={
+                    "warehouse_id": str(locked.warehouse.id),
+                    "warehouse_code": locked.warehouse.code,
+                    "product_id": str(locked.product.id),
+                    "available_qty": str(available),
+                    "requested_qty": str(outbound_qty),
+                }
+            )
         originals = await self.movements.list_for_source(
             tenant_id,
             source_type=original_type,
@@ -722,7 +768,6 @@ class StockService:
         if original is None:
             raise ValidationError("Original outbound movement not found for reconsume")
         undone = await self.costing.unrestore_partial(tenant_id, original.id, outbound_qty)
-        hold = quantize_quantity(quality_hold_delta)
         qty_before = locked.row.qty_on_hand
         locked.row.qty_on_hand = quantize_quantity(qty_before - outbound_qty)
         new_hold = quantize_quantity(locked.row.qty_quality_hold + hold)
@@ -768,6 +813,21 @@ class StockService:
         delta = quantize_quantity(qty)
         if delta <= _ZERO:
             raise ValidationError("Reserve quantity must be positive")
+        available = available_qty(
+            locked.row.qty_on_hand,
+            locked.row.qty_reserved,
+            locked.row.qty_quality_hold,
+        )
+        if available - delta < _ZERO and not locked.allow_negative_stock:
+            raise InsufficientStockError(
+                details={
+                    "warehouse_id": str(locked.warehouse.id),
+                    "warehouse_code": locked.warehouse.code,
+                    "product_id": str(locked.product.id),
+                    "available_qty": str(available),
+                    "requested_qty": str(delta),
+                }
+            )
         locked.row.qty_reserved = quantize_quantity(locked.row.qty_reserved + delta)
         await self.session.flush()
         return locked.row.qty_reserved
@@ -901,6 +961,7 @@ class StockService:
         qty: Decimal,
         unit_cost: Decimal,
         inbound_layers: Sequence[CostConsumption] | None,
+        landed_unit_cost: Decimal | None = None,
         movement_id: UUID,
         source_type: str,
         source_id: UUID,
@@ -930,6 +991,7 @@ class StockService:
                     product_id=locked.product.id,
                     qty=remaining,
                     unit_cost=fragment_cost,
+                    landed_unit_cost=landed_unit_cost,
                     source_type=source_type,
                     source_id=source_id,
                     source_line_id=source_line_id,

@@ -15,7 +15,6 @@ from app.auth.catalog import (
     GOODS_RECEIPT_DELETE,
     GOODS_RECEIPT_POST,
     GOODS_RECEIPT_UPDATE,
-    LANDED_COST_CREATE,
     PERIOD_OVERRIDE,
     PURCHASE_INVOICE_CREATE,
     PURCHASE_MODULE,
@@ -37,12 +36,18 @@ from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
 from app.common.schemas.conversion import ConversionLineInput
+from app.common.utils.charge_allocation import (
+    ChargeLineContext,
+    allocate_charge,
+)
 from app.common.utils.conversion import allocate_conversion_qty, quantity_summary, remaining_qty
 from app.common.utils.currency import document_fx_amounts, quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
 from app.common.utils.document_totals import format_address_snapshot, place_of_supply_from_address
 from app.core.enums import (
     AuditAction,
+    ChargeAllocationMethod,
+    ChargeAppliesTo,
     DocumentType,
     ItemType,
     PlaceOfSupply,
@@ -64,6 +69,8 @@ from app.core.exceptions import (
 )
 from app.core.permissions import has_permission
 from app.db.session import transaction
+from app.erp.accounting.charge_types.schemas import ChargeTypeResponse
+from app.erp.accounting.charge_types.service import ChargeTypeService
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.inventory_posting import InventoryLedgerService
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
@@ -79,6 +86,8 @@ from app.inventory_management.goods_receipts.repository import GoodsReceiptRepos
 from app.inventory_management.goods_receipts.schemas import (
     GoodsReceiptCreate,
     GoodsReceiptCreateFromPurchaseInvoice,
+    GoodsReceiptChargeInput,
+    GoodsReceiptChargeResponse,
     GoodsReceiptCreateFromPurchaseOrder,
     GoodsReceiptLineInput,
     GoodsReceiptLineResponse,
@@ -127,6 +136,7 @@ class GoodsReceiptService:
         self.outbox = OutboxService(session)
         self.audit = AuditWriter(session)
         self.inventory_ledger = InventoryLedgerService(session, actor_permissions=actor_permissions)
+        self.charge_types = ChargeTypeService(session)
         self._can_override = has_permission(actor_permissions, PERIOD_OVERRIDE)
         self._period_policy: PeriodLockPolicy | None = None
 
@@ -189,6 +199,42 @@ class GoodsReceiptService:
         response = self._to_response(row)
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
+
+    async def list_grn_charge_types(
+        self,
+        tenant_id: UUID,
+        *,
+        page: PageParams,
+        common_filter: BaseFilter | None = None,
+    ) -> tuple[builtins.list[ChargeTypeResponse], int]:
+        from sqlalchemy import or_, select
+
+        from app.erp.accounting.charge_types.models import ChargeType
+
+        statement = (
+            select(ChargeType)
+            .where(
+                ChargeType.tenant_id == tenant_id,
+                ChargeType.deleted_at.is_(None),
+                ChargeType.is_active.is_(True),
+                ChargeType.is_inventoriable.is_(True),
+                or_(
+                    ChargeType.applies_to == ChargeAppliesTo.IMPORT.value,
+                    ChargeType.applies_to == ChargeAppliesTo.BOTH.value,
+                ),
+            )
+            .order_by(ChargeType.sort_order, ChargeType.name)
+        )
+        if common_filter is not None and common_filter.search:
+            search = f"%{common_filter.search.strip()}%"
+            statement = statement.where(
+                ChargeType.name.ilike(search) | ChargeType.code.ilike(search)
+            )
+        rows = list((await self.session.execute(statement)).scalars().all())
+        total = len(rows)
+        offset = (page.page - 1) * page.page_size
+        page_rows = rows[offset : offset + page.page_size]
+        return [ChargeTypeResponse.model_validate(row) for row in page_rows], total
 
     async def billing_queue(
         self,
@@ -257,6 +303,9 @@ class GoodsReceiptService:
         self, tenant_id: UUID, payload: GoodsReceiptCreate, *, actor_user_id: UUID
     ) -> GoodsReceiptResponse:
         header, line_rows = await self._build_draft(tenant_id, payload)
+        charge_rows = await self._build_charges(
+            tenant_id, payload.charges, cast(Decimal, header["exchange_rate"])
+        )
         document_date = cast(date, header["document_date"])
         policy = await self._ensure_policy(tenant_id)
         policy.assert_open(document_date, can_override=self._can_override)
@@ -282,6 +331,7 @@ class GoodsReceiptService:
             },
         )
         await self.repo.replace_lines(tenant_id, row.id, line_rows)
+        await self.repo.replace_charges(tenant_id, row.id, charge_rows)
         loaded = await self._require(tenant_id, row.id)
         await self.audit.write(
             tenant_id=tenant_id,
@@ -320,6 +370,7 @@ class GoodsReceiptService:
                 outstanding = quantize_quantity(line.quantity - line.qty_received)
                 if outstanding <= _ZERO:
                     continue
+                prorate = outstanding / line.quantity if line.quantity > _ZERO else _ZERO
                 lines.append(
                     GoodsReceiptLineInput(
                         purchase_order_line_id=line.id,
@@ -330,6 +381,21 @@ class GoodsReceiptService:
                         quantity=outstanding,
                         unit_id=line.unit_id,
                         rate=line.rate,
+                        net_weight=(
+                            quantize_quantity(line.net_weight * prorate)
+                            if line.net_weight is not None
+                            else None
+                        ),
+                        gross_weight=(
+                            quantize_quantity(line.gross_weight * prorate)
+                            if line.gross_weight is not None
+                            else None
+                        ),
+                        volume=(
+                            quantize_quantity(line.volume * prorate)
+                            if line.volume is not None
+                            else None
+                        ),
                     )
                 )
             if not lines:
@@ -346,6 +412,7 @@ class GoodsReceiptService:
                 currency_id=order.currency_id,
                 notes=payload.notes,
                 lines=lines,
+                charges=payload.charges,
             )
             response = await self._create_unlocked(
                 tenant_id, create_payload, actor_user_id=actor_user_id
@@ -426,9 +493,13 @@ class GoodsReceiptService:
                 currency_id=invoice.currency_id,
                 notes=payload.notes,
                 lines=lines,
+                charges=payload.charges,
             )
             header, line_rows = await self._build_draft_from_invoice(
                 tenant_id, create_payload, invoice
+            )
+            charge_rows = await self._build_charges(
+                tenant_id, payload.charges, cast(Decimal, header["exchange_rate"])
             )
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(header["document_date"], can_override=self._can_override)
@@ -457,6 +528,7 @@ class GoodsReceiptService:
                 },
             )
             await self.repo.replace_lines(tenant_id, row.id, line_rows)
+            await self.repo.replace_charges(tenant_id, row.id, charge_rows)
             loaded = await self._require(tenant_id, row.id)
             await self.audit.write(
                 tenant_id=tenant_id,
@@ -497,12 +569,18 @@ class GoodsReceiptService:
                 )
             else:
                 header, line_rows = await self._build_draft(tenant_id, create_payload)
+            charge_rows = await self._build_charges(
+                tenant_id,
+                create_payload.charges,
+                cast(Decimal, header["exchange_rate"]),
+            )
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(cast(date, header["document_date"]), can_override=self._can_override)
             header["updated_by"] = actor_user_id
             header["version"] = existing.version + 1
             await self.repo.update(tenant_id, receipt_id, header)
             await self.repo.replace_lines(tenant_id, receipt_id, line_rows)
+            await self.repo.replace_charges(tenant_id, receipt_id, charge_rows)
             await self.session.flush()
             await self.session.refresh(existing)
             await self.audit.write(
@@ -597,6 +675,17 @@ class GoodsReceiptService:
             movement_type = self._movement_type(row)
             received_this_doc: dict[UUID, Decimal] = {}
             inventory_value = _ZERO
+            allocated_by_line, charge_credits = await self._compute_charge_allocations(
+                tenant_id, row
+            )
+            stockable_lines: builtins.list[GoodsReceiptLine] = []
+            for line in row.lines:
+                stockable = await self._is_stockable(tenant_id, line.product_id)
+                if stockable and line.product_id is not None and line.quantity > _ZERO:
+                    stockable_lines.append(line)
+            charge_per_unit_by_line = self._charge_per_unit_by_line(
+                stockable_lines, allocated_by_line
+            )
             for line in row.lines:
                 await self._assert_supplier_sku_mapped(tenant_id, row.supplier_id, line)
                 stockable = await self._is_stockable(tenant_id, line.product_id)
@@ -628,6 +717,10 @@ class GoodsReceiptService:
                     continue
                 product = await self.products.require_active(tenant_id, line.product_id)
                 unit_cost = quantize_money(line.rate * row.exchange_rate)
+                allocated_charge = allocated_by_line.get(line.id, _ZERO)
+                line.allocated_charge_amount = allocated_charge
+                charge_per_unit = charge_per_unit_by_line.get(line.id, _ZERO)
+                landed_unit_cost = quantize_money(unit_cost + charge_per_unit)
                 hold_delta = line.quantity if product.requires_qc else _ZERO
                 if product.requires_qc:
                     needs_qc = True
@@ -652,14 +745,15 @@ class GoodsReceiptService:
                     occurred_at=occurred_at,
                     unit_id=line.unit_id,
                     unit_cost=unit_cost,
+                    landed_unit_cost=landed_unit_cost,
                     quality_hold_delta=hold_delta,
                 )
                 if result.movement.value is not None:
                     inventory_value += result.movement.value
                 if row.purchase_order_id is not None:
-                    await self.stock.adjust_incoming_locked(
-                        locked, qty=-min(locked.row.qty_incoming, line.quantity)
-                    )
+                    consumed = min(locked.row.qty_incoming, line.quantity)
+                    line.incoming_consumed = consumed
+                    await self.stock.adjust_incoming_locked(locked, qty=-consumed)
                 if line.source_purchase_invoice_line_id is not None:
                     invoice_receipts[line.source_purchase_invoice_line_id] = (
                         invoice_receipts.get(line.source_purchase_invoice_line_id, _ZERO)
@@ -681,11 +775,12 @@ class GoodsReceiptService:
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
-            await self.inventory_ledger.post_goods_receipt(
+            await self.inventory_ledger.post_goods_receipt_with_charges(
                 tenant_id,
                 source_id=row.id,
                 entry_date=row.document_date,
-                amount=inventory_value,
+                goods_amount=inventory_value,
+                charge_credits=charge_credits,
                 actor_id=actor_user_id,
                 branch_id=row.branch_id,
                 document_number=row.document_number,
@@ -832,6 +927,8 @@ class GoodsReceiptService:
             line.qty_billed = quantize_quantity(line.qty_billed + qty)
             if line.qty_billed < _ZERO:
                 raise ValidationError("Billed quantity cannot be negative")
+            if line.qty_billed > line.quantity:
+                raise ValidationError("Billed quantity cannot exceed received quantity")
         await self.session.flush()
 
     async def apply_line_returns(
@@ -851,6 +948,8 @@ class GoodsReceiptService:
             line.qty_returned = quantize_quantity(line.qty_returned + qty)
             if line.qty_returned < _ZERO:
                 raise ValidationError("Returned quantity cannot be negative")
+            if line.qty_returned > line.quantity:
+                raise ValidationError("Returned quantity cannot exceed received quantity")
             hold_release = min(qty, line.qty_on_hold)
             if hold_release > _ZERO:
                 line.qty_on_hold = quantize_quantity(line.qty_on_hold - hold_release)
@@ -878,9 +977,21 @@ class GoodsReceiptService:
             raise GrnCannotCancelError("A purchase return exists for this receipt")
         if any(line.qty_accepted > _ZERO or line.qty_rejected > _ZERO for line in row.lines):
             raise GrnCannotCancelError("Quantity has already been QC-released or scrapped")
-        if not await self.stock.costing.layers_fully_remaining(
+        locked_balances: dict[UUID, Any] = {}
+        for line in row.lines:
+            stockable = await self._is_stockable(tenant_id, line.product_id)
+            if stockable and line.product_id is not None:
+                locked_balances[line.id] = await self.stock.lock_balance(
+                    tenant_id,
+                    warehouse_id=row.warehouse_id,
+                    product_id=line.product_id,
+                    document_date=row.document_date,
+                    can_override_soft_lock=self._can_override,
+                )
+        locked_layers = await self.stock.costing.lock_layers_for_source(
             tenant_id, SOURCE_GOODS_RECEIPT, row.id
-        ):
+        )
+        if not all(layer.qty_remaining == layer.qty_received for layer in locked_layers):
             raise GrnCannotCancelError("Cost layers from this receipt have been consumed")
         if any(line.qty_billed > _ZERO for line in row.lines):
             raise GrnCannotCancelError("This goods receipt has already been billed")
@@ -900,13 +1011,15 @@ class GoodsReceiptService:
                     po_reversals.get(line.purchase_order_line_id, _ZERO) + line.quantity
                 )
             if stockable and line.product_id is not None:
-                locked = await self.stock.lock_balance(
-                    tenant_id,
-                    warehouse_id=row.warehouse_id,
-                    product_id=line.product_id,
-                    document_date=row.document_date,
-                    can_override_soft_lock=self._can_override,
-                )
+                locked = locked_balances.get(line.id)
+                if locked is None:
+                    locked = await self.stock.lock_balance(
+                        tenant_id,
+                        warehouse_id=row.warehouse_id,
+                        product_id=line.product_id,
+                        document_date=row.document_date,
+                        can_override_soft_lock=self._can_override,
+                    )
                 await self.stock.reverse_inbound_locked(
                     tenant_id,
                     locked,
@@ -921,9 +1034,11 @@ class GoodsReceiptService:
                     occurred_at=occurred_at,
                     unit_id=line.unit_id,
                 )
-                outstanding_before = line.quantity
-                incoming_restore = min(line.quantity, outstanding_before)
-                await self.stock.adjust_incoming_locked(locked, qty=incoming_restore)
+                if line.incoming_consumed > _ZERO:
+                    await self.stock.adjust_incoming_locked(
+                        locked, qty=line.incoming_consumed
+                    )
+                    line.incoming_consumed = _ZERO
             line.qty_on_hold = _ZERO
             line.qty_accepted = _ZERO
             line.qty_rejected = _ZERO
@@ -960,7 +1075,7 @@ class GoodsReceiptService:
     async def _build_draft(
         self, tenant_id: UUID, payload: GoodsReceiptCreate
     ) -> tuple[dict[str, Any], builtins.list[dict[str, Any]]]:
-        supplier = await self.suppliers.get(tenant_id, payload.supplier_id)
+        supplier = await self.suppliers.require_party(tenant_id, payload.supplier_id)
         await self.warehouses.require_id(tenant_id, payload.warehouse_id)
         if payload.branch_id is not None:
             await self.org.require_branch(tenant_id, payload.branch_id)
@@ -1061,6 +1176,123 @@ class GoodsReceiptService:
                 }
             )
         return built
+
+    @staticmethod
+    def _charge_per_unit_by_line(
+        stockable_lines: Sequence[GoodsReceiptLine],
+        allocated_by_line: Mapping[UUID, Decimal],
+    ) -> dict[UUID, Decimal]:
+        if not stockable_lines:
+            return {}
+        total_allocated = quantize_money(
+            sum((allocated_by_line.get(line.id, _ZERO) for line in stockable_lines), _ZERO)
+        )
+        applied_charge = _ZERO
+        per_unit: dict[UUID, Decimal] = {}
+        for index, line in enumerate(stockable_lines):
+            allocated_charge = allocated_by_line.get(line.id, _ZERO)
+            if index == len(stockable_lines) - 1:
+                line_charge = quantize_money(total_allocated - applied_charge)
+            else:
+                unit = (
+                    quantize_money(allocated_charge / line.quantity)
+                    if line.quantity > _ZERO
+                    else _ZERO
+                )
+                line_charge = quantize_money(unit * line.quantity)
+                applied_charge = quantize_money(applied_charge + line_charge)
+            per_unit[line.id] = (
+                quantize_money(line_charge / line.quantity) if line.quantity > _ZERO else _ZERO
+            )
+        return per_unit
+
+    async def _build_charges(
+        self,
+        tenant_id: UUID,
+        charges: Sequence[GoodsReceiptChargeInput],
+        exchange_rate: Decimal,
+    ) -> builtins.list[dict[str, Any]]:
+        if not charges:
+            return []
+        charge_type_ids = [item.charge_type_id for item in charges]
+        if len(set(charge_type_ids)) != len(charge_type_ids):
+            raise ValidationError("Duplicate charge types are not allowed on a goods receipt")
+        built: builtins.list[dict[str, Any]] = []
+        for index, charge in enumerate(charges, start=1):
+            charge_type = await self.charge_types.require_active(tenant_id, charge.charge_type_id)
+            if not charge_type.is_inventoriable:
+                raise ValidationError(
+                    f"Charge {charge_type.code} must be inventoriable for goods receipt charges"
+                )
+            applies = charge_type.applies_to
+            if applies == ChargeAppliesTo.EXPORT.value:
+                raise ValidationError(
+                    f"Charge {charge_type.code} does not apply to goods receipt import charges"
+                )
+            basis = charge_type.allocation_basis or ChargeAllocationMethod.VALUE.value
+            built.append(
+                {
+                    "line_number": index,
+                    "charge_type_id": charge.charge_type_id,
+                    "description": charge.description or charge_type.name,
+                    "amount": quantize_money(charge.amount),
+                    "base_amount": quantize_money(charge.amount * exchange_rate),
+                    "allocation_basis": basis,
+                    "supplier_id": charge.supplier_id,
+                    "notes": charge.notes,
+                }
+            )
+        return built
+
+    async def _compute_charge_allocations(
+        self,
+        tenant_id: UUID,
+        row: GoodsReceipt,
+    ) -> tuple[dict[UUID, Decimal], dict[UUID, Decimal]]:
+        if not row.charges:
+            return {}, {}
+        stockable_lines: builtins.list[tuple[GoodsReceiptLine, ChargeLineContext]] = []
+        for line in row.lines:
+            stockable = await self._is_stockable(tenant_id, line.product_id)
+            if not stockable or line.product_id is None or line.quantity <= _ZERO:
+                continue
+            stockable_lines.append(
+                (
+                    line,
+                    ChargeLineContext(
+                        quantity=line.quantity,
+                        rate=line.rate,
+                        net_weight=line.net_weight,
+                        gross_weight=line.gross_weight,
+                        volume=line.volume,
+                    ),
+                )
+            )
+        if not stockable_lines:
+            raise ValidationError(
+                "Goods receipt charges require at least one stockable product line"
+            )
+        contexts = [context for _, context in stockable_lines]
+        allocated: dict[UUID, Decimal] = {line.id: _ZERO for line, _ in stockable_lines}
+        charge_credits: dict[UUID, Decimal] = {}
+        for charge in row.charges:
+            charge_type = await self.charge_types.require_active(tenant_id, charge.charge_type_id)
+            method = ChargeAllocationMethod(
+                charge.allocation_basis or charge_type.allocation_basis or ChargeAllocationMethod.VALUE
+            )
+            shares = allocate_charge(
+                charge.base_amount,
+                contexts,
+                method,
+                exchange_rate=row.exchange_rate,
+            )
+            for (line, _), share in zip(stockable_lines, shares, strict=True):
+                allocated[line.id] = quantize_money(allocated[line.id] + share)
+            account_id = charge_type.default_account_id
+            charge_credits[account_id] = quantize_money(
+                charge_credits.get(account_id, _ZERO) + charge.base_amount
+            )
+        return allocated, charge_credits
 
     async def _build_draft_from_invoice(
         self,
@@ -1179,6 +1411,19 @@ class GoodsReceiptService:
         self, existing: GoodsReceipt, payload: GoodsReceiptUpdate
     ) -> GoodsReceiptCreate:
         values = payload.model_dump(exclude_unset=True, exclude={"version"})
+        if payload.charges is not None:
+            charges = payload.charges
+        else:
+            charges = [
+                GoodsReceiptChargeInput(
+                    charge_type_id=charge.charge_type_id,
+                    amount=charge.amount,
+                    description=charge.description,
+                    supplier_id=charge.supplier_id,
+                    notes=charge.notes,
+                )
+                for charge in existing.charges
+            ]
         if payload.lines is not None:
             lines = payload.lines
         else:
@@ -1219,6 +1464,7 @@ class GoodsReceiptService:
             bl_number=values.get("bl_number", existing.bl_number),
             notes=values.get("notes", existing.notes),
             lines=lines,
+            charges=charges,
         )
 
     async def _assert_supplier_sku_mapped(
@@ -1311,10 +1557,6 @@ class GoodsReceiptService:
         ):
             actions.append("create_inspection")
         if status == StockDocumentStatus.POSTED and has_permission(
-            self.actor_permissions, LANDED_COST_CREATE
-        ):
-            actions.append("create_landed_cost")
-        if status == StockDocumentStatus.POSTED and has_permission(
             self.actor_permissions, PURCHASE_RETURN_CREATE
         ):
             actions.append("create_purchase_return")
@@ -1395,6 +1637,11 @@ class GoodsReceiptService:
             available_actions=self._available_actions(row, status, period_locked=post_blocked),
             period_locked=date_locked,
             lines=[GoodsReceiptLineResponse.model_validate(line) for line in row.lines],
+            charges=[GoodsReceiptChargeResponse.model_validate(charge) for charge in row.charges],
+            charges_total=quantize_money(sum((charge.amount for charge in row.charges), _ZERO)),
+            charges_total_base=quantize_money(
+                sum((charge.base_amount for charge in row.charges), _ZERO)
+            ),
             created_at=row.created_at,
             updated_at=row.updated_at,
             created_by=row.created_by,
@@ -1466,21 +1713,6 @@ class GoodsReceiptService:
                     status=inspection.status,
                     relationship="child",
                     document_date=inspection.inspection_date,
-                )
-            )
-        from app.erp.landed_costs.repository import LandedCostRepository
-
-        for landed in await LandedCostRepository(self.session).list_for_goods_receipt(
-            tenant_id, row.id
-        ):
-            related.append(
-                RelatedDocumentRef(
-                    document_type=DocumentType.LANDED_COST.value,
-                    document_id=landed.id,
-                    document_number=landed.document_number,
-                    status=landed.status,
-                    relationship="child",
-                    document_date=landed.document_date,
                 )
             )
         return related

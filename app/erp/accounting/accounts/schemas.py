@@ -30,6 +30,7 @@ class AccountCreate(BaseModel):
     account_subtype: AccountSubtype
     parent_id: UUID | None = None
     is_group: bool = False
+    is_blocked: bool = False
     currency_id: UUID | None = None
 
     @field_validator("code")
@@ -60,6 +61,7 @@ class AccountUpdate(BaseModel):
     parent_id: UUID | None = None
     is_group: bool | None = None
     is_active: bool | None = None
+    is_blocked: bool | None = None
     currency_id: UUID | None = None
 
     @field_validator("code")
@@ -88,12 +90,15 @@ class AccountResponse(BaseModel):
     account_type: AccountType
     account_subtype: AccountSubtype
     parent_id: UUID | None
+    parent_code: str | None = None
+    parent_name: str | None = None
     depth: int
     is_group: bool
     is_system: bool
     system_role: AccountSystemRole | None
     currency_id: UUID | None
     is_active: bool
+    is_blocked: bool = False
     created_at: datetime
     updated_at: datetime
     created_by: UUID | None = None
@@ -109,6 +114,24 @@ class AccountBalanceResponse(BaseModel):
     credit: Decimal
     signed_balance: Decimal
     currency_code: str | None = None
+
+
+class AccountPeriodBalance(BaseModel):
+    period: int
+    from_date: date
+    to_date: date
+    debit: Decimal
+    credit: Decimal
+    closing: Decimal
+
+
+class AccountPeriodBalancesResponse(BaseModel):
+    account_id: UUID
+    fiscal_year: int
+    currency_code: str
+    opening: Decimal
+    periods: list[AccountPeriodBalance]
+    closing: Decimal
 
 
 class AccountTreeNode(AccountResponse):

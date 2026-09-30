@@ -32,6 +32,7 @@ class ErrorCode(StrEnum):
     SUPPLIER_SKU_NOT_MAPPED = "SUPPLIER_SKU_NOT_MAPPED"
     GRN_OVER_RECEIPT = "GRN_OVER_RECEIPT"
     GRN_CANNOT_CANCEL = "GRN_CANNOT_CANCEL"
+    CHARGE_ALLOCATION_BASIS_MISSING = "CHARGE_ALLOCATION_BASIS_MISSING"
     DELIVERY_NOTE_CANNOT_CANCEL = "DELIVERY_NOTE_CANNOT_CANCEL"
     SALES_RETURN_CANNOT_CANCEL = "SALES_RETURN_CANNOT_CANCEL"
     PURCHASE_RETURN_CANNOT_CANCEL = "PURCHASE_RETURN_CANNOT_CANCEL"
@@ -59,11 +60,9 @@ class ErrorCode(StrEnum):
     PAYMENT_ACCOUNT_INVALID = "PAYMENT_ACCOUNT_INVALID"
     PAYMENT_NOTHING_TO_APPLY = "PAYMENT_NOTHING_TO_APPLY"
     CREDIT_LIMIT_EXCEEDED = "CREDIT_LIMIT_EXCEEDED"
+    CREDIT_HOLD = "CREDIT_HOLD"
+    CREDIT_OVERDUE = "CREDIT_OVERDUE"
     INSUFFICIENT_CASH = "INSUFFICIENT_CASH"
-    LANDED_COST_WEIGHT_REQUIRED = "LANDED_COST_WEIGHT_REQUIRED"
-    LANDED_COST_VOLUME_REQUIRED = "LANDED_COST_VOLUME_REQUIRED"
-    LANDED_COST_LINE_OVER_ALLOCATED = "LANDED_COST_LINE_OVER_ALLOCATED"
-    LANDED_COST_CANNOT_CANCEL = "LANDED_COST_CANNOT_CANCEL"
     INTEGRATION_ERROR = "INTEGRATION_ERROR"
     INTERNAL_ERROR = "INTERNAL_ERROR"
     RATE_LIMITED = "RATE_LIMITED"
@@ -236,6 +235,12 @@ class GrnCannotCancelError(AppError):
     default_code = ErrorCode.GRN_CANNOT_CANCEL
     default_status = HTTPStatus.CONFLICT
     default_message = "This goods receipt cannot be cancelled"
+
+
+class ChargeAllocationBasisMissingError(AppError):
+    default_code = ErrorCode.CHARGE_ALLOCATION_BASIS_MISSING
+    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
+    default_message = "Charge allocation basis totals zero for all lines"
 
 
 class DeliveryNoteCannotCancelError(AppError):
@@ -412,34 +417,22 @@ class CreditLimitExceededError(AppError):
     default_message = "This document exceeds the customer credit limit"
 
 
+class CreditHoldError(AppError):
+    default_code = ErrorCode.CREDIT_HOLD
+    default_status = HTTPStatus.CONFLICT
+    default_message = "Customer is on credit hold"
+
+
+class CreditOverdueError(AppError):
+    default_code = ErrorCode.CREDIT_OVERDUE
+    default_status = HTTPStatus.CONFLICT
+    default_message = "Customer has overdue receivables beyond the allowed threshold"
+
+
 class InsufficientCashError(AppError):
     default_code = ErrorCode.INSUFFICIENT_CASH
     default_status = HTTPStatus.CONFLICT
     default_message = "This payment would overdraw the cash or bank account."
-
-
-class LandedCostWeightRequiredError(AppError):
-    default_code = ErrorCode.LANDED_COST_WEIGHT_REQUIRED
-    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
-    default_message = "Weight allocation requires net weight on every goods receipt line"
-
-
-class LandedCostVolumeRequiredError(AppError):
-    default_code = ErrorCode.LANDED_COST_VOLUME_REQUIRED
-    default_status = HTTPStatus.UNPROCESSABLE_ENTITY
-    default_message = "Volume allocation requires volume on every goods receipt line"
-
-
-class LandedCostLineOverAllocatedError(AppError):
-    default_code = ErrorCode.LANDED_COST_LINE_OVER_ALLOCATED
-    default_status = HTTPStatus.CONFLICT
-    default_message = "This bill line is already fully allocated to landed cost"
-
-
-class LandedCostCannotCancelError(AppError):
-    default_code = ErrorCode.LANDED_COST_CANNOT_CANCEL
-    default_status = HTTPStatus.CONFLICT
-    default_message = "This landed cost cannot be cancelled"
 
 
 class InternalError(AppError):

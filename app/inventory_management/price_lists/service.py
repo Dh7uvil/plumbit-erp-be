@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -76,6 +77,12 @@ class PriceListService:
     ) -> PriceListResponse:
         async with transaction(self.session):
             await self.currencies.require_id(tenant_id, payload.currency_id)
+            self._assert_validity(payload.valid_from, payload.valid_to)
+            await self._assert_no_overlap(
+                tenant_id,
+                valid_from=payload.valid_from,
+                valid_to=payload.valid_to,
+            )
             try:
                 row = await self.repo.create(
                     tenant_id,
@@ -84,6 +91,8 @@ class PriceListService:
                         "currency_id": payload.currency_id,
                         "list_type": payload.list_type.value,
                         "percent": payload.percent,
+                        "valid_from": payload.valid_from,
+                        "valid_to": payload.valid_to,
                         "created_by": actor_user_id,
                         "updated_by": actor_user_id,
                     },
@@ -108,6 +117,15 @@ class PriceListService:
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
             existing = await self._require(tenant_id, price_list_id)
+            valid_from = values.get("valid_from", existing.valid_from)
+            valid_to = values.get("valid_to", existing.valid_to)
+            self._assert_validity(valid_from, valid_to)
+            await self._assert_no_overlap(
+                tenant_id,
+                valid_from=valid_from,
+                valid_to=valid_to,
+                exclude_id=price_list_id,
+            )
             old_values = await self._price_list_snapshot(tenant_id, existing)
             if values.get("is_active") is False and existing.is_active:
                 await assert_master_not_referenced(
@@ -249,6 +267,31 @@ class PriceListService:
         percent = price_list.percent or Decimal("0")
         return quantize_money(selling_rate * (Decimal("1") + percent / Decimal("100")))
 
+    def _assert_validity(self, valid_from: date | None, valid_to: date | None) -> None:
+        if valid_from is not None and valid_to is not None and valid_from > valid_to:
+            raise ValidationError("valid_from must be before or equal to valid_to")
+
+    async def _assert_no_overlap(
+        self,
+        tenant_id: UUID,
+        *,
+        valid_from: date | None,
+        valid_to: date | None,
+        exclude_id: UUID | None = None,
+    ) -> None:
+        overlaps = await self.repo.list_overlapping_validity(
+            tenant_id,
+            valid_from=valid_from,
+            valid_to=valid_to,
+            exclude_id=exclude_id,
+        )
+        if overlaps:
+            names = ", ".join(row.name for row in overlaps[:3])
+            raise ValidationError(
+                f"Price list validity overlaps an active list: {names}",
+                details={"overlapping_price_list_ids": [str(row.id) for row in overlaps]},
+            )
+
     async def _price_list_snapshot(self, tenant_id: UUID, row: PriceList) -> dict[str, object]:
         currency = await self.currencies.get(tenant_id, row.currency_id)
         return {
@@ -256,6 +299,8 @@ class PriceListService:
             "currency": currency.code,
             "list_type": row.list_type,
             "percent": row.percent,
+            "valid_from": row.valid_from,
+            "valid_to": row.valid_to,
             "is_active": row.is_active,
         }
 
@@ -277,6 +322,8 @@ class PriceListService:
             currency_id=row.currency_id,
             list_type=PriceListType(row.list_type),
             percent=row.percent,
+            valid_from=row.valid_from,
+            valid_to=row.valid_to,
             is_active=row.is_active,
             items=[PriceListItemResponse.model_validate(item) for item in items],
             created_at=row.created_at,

@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
+from app.common.schemas.warnings import DocumentWarning
 from app.common.schemas.packing import PackingFields
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.core.enums import (
@@ -150,6 +151,7 @@ class ProformaInvoiceCreate(BaseModel):
     shipping_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    prices_include_tax: bool | None = None
     source_quotation_id: UUID | None = None
     source_sales_order_id: UUID | None = None
     incoterm: Incoterm | None = None
@@ -204,6 +206,7 @@ class ProformaInvoiceUpdate(BaseModel):
     shipping_amount: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     adjustment_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
+    prices_include_tax: bool | None = None
     incoterm: Incoterm | None = None
     incoterm_place: str | None = Field(default=None, max_length=120)
     port_of_loading: str | None = Field(default=None, max_length=120)
@@ -325,6 +328,7 @@ class ProformaInvoiceResponse(BaseModel):
     subtotal: Decimal
     tax_amount: Decimal
     grand_total: Decimal
+    prices_include_tax: bool = False
     foreign_amount: Decimal
     base_amount: Decimal
     source_quotation_id: UUID | None
@@ -356,6 +360,7 @@ class ProformaInvoiceResponse(BaseModel):
     advance_outstanding: Decimal = Decimal("0")
     available_actions: list[str] = Field(default_factory=list)
     related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
+    warnings: list[DocumentWarning] = Field(default_factory=list)
     lines: list[ProformaInvoiceLineResponse] = Field(default_factory=list)
     milestones: list[ProformaInvoiceMilestoneResponse] = Field(default_factory=list)
     created_at: datetime

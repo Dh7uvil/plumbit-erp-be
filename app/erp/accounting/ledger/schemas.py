@@ -115,9 +115,10 @@ class JournalEntryCreate(BaseModel):
     cost_center_id: UUID | None = None
     narration: str | None = None
     reference: str | None = Field(default=None, max_length=100)
+    external_reference: str | None = Field(default=None, max_length=100)
     lines: list[JournalLineInput] = Field(min_length=1)
 
-    @field_validator("narration", "reference")
+    @field_validator("narration", "reference", "external_reference")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -134,10 +135,11 @@ class JournalEntryUpdate(BaseModel):
     cost_center_id: UUID | None = None
     narration: str | None = None
     reference: str | None = Field(default=None, max_length=100)
+    external_reference: str | None = Field(default=None, max_length=100)
     lines: list[JournalLineInput] | None = Field(default=None, min_length=1)
     version: int | None = Field(default=None, ge=1)
 
-    @field_validator("narration", "reference")
+    @field_validator("narration", "reference", "external_reference")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -178,6 +180,8 @@ class JournalEntryResponse(BaseModel):
     cost_center_id: UUID | None
     narration: str | None
     reference: str | None
+    external_reference: str | None = None
+    period: int | None = None
     posted_at: datetime | None
     posted_by: UUID | None
     total_debit_base: Decimal

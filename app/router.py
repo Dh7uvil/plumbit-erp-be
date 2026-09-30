@@ -6,12 +6,14 @@ from app.auth.router import router as auth_router
 from app.common.activity.router import router as activity_router
 from app.common.attachments.router import router as attachments_router
 from app.common.notification_preferences.router import router as notification_preferences_router
+from app.common.notifications.router import router as notifications_router
 from app.common.outbox.router import router as outbox_router
 from app.common.table_preferences.router import router as table_preferences_router
 from app.crm.router import router as crm_router
 from app.erp.router import router as erp_router
 from app.inventory_management.router import router as inventory_management_router
 from app.logistics.router import router as logistics_router
+from app.integrations.ai.router import router as ai_router
 from app.task_management.router import router as task_management_router
 
 api_router = APIRouter(prefix="/api/v1")
@@ -20,6 +22,7 @@ api_router = APIRouter(prefix="/api/v1")
 # version prefix.
 api_router.include_router(table_preferences_router)
 api_router.include_router(notification_preferences_router)
+api_router.include_router(notifications_router)
 api_router.include_router(auth_router)
 api_router.include_router(activity_router)
 api_router.include_router(attachments_router)
@@ -29,3 +32,4 @@ api_router.include_router(erp_router)
 api_router.include_router(inventory_management_router)
 api_router.include_router(logistics_router)
 api_router.include_router(task_management_router)
+api_router.include_router(ai_router)

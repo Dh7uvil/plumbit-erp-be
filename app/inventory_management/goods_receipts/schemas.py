@@ -10,7 +10,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.related_documents import RelatedDocumentRef
-from app.core.enums import PlaceOfSupply, QcStatus, StockDocumentStatus, TaxTreatment
+from app.core.enums import (
+    ChargeAllocationMethod,
+    PlaceOfSupply,
+    QcStatus,
+    StockDocumentStatus,
+    TaxTreatment,
+)
 
 
 class GoodsReceiptFilter(BaseFilter):
@@ -35,6 +41,36 @@ class GoodsReceiptFilter(BaseFilter):
         ):
             raise ValueError("document_date_from must be before or equal to document_date_to")
         return self
+
+
+class GoodsReceiptChargeInput(BaseModel):
+    charge_type_id: UUID
+    amount: Decimal = Field(gt=0, max_digits=18, decimal_places=4)
+    description: str | None = None
+    supplier_id: UUID | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("description", "notes")
+    @classmethod
+    def normalize_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
+class GoodsReceiptChargeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    line_number: int
+    charge_type_id: UUID
+    description: str | None
+    amount: Decimal
+    base_amount: Decimal
+    allocation_basis: ChargeAllocationMethod | None
+    supplier_id: UUID | None
+    notes: str | None
 
 
 class GoodsReceiptLineInput(BaseModel):
@@ -82,6 +118,8 @@ class GoodsReceiptLineResponse(BaseModel):
     qty_on_hold: Decimal
     qty_returned: Decimal = Decimal("0")
     qty_billed: Decimal = Decimal("0")
+    allocated_charge_amount: Decimal = Decimal("0")
+    incoming_consumed: Decimal = Decimal("0")
 
 
 class GoodsReceiptCreate(BaseModel):
@@ -100,6 +138,7 @@ class GoodsReceiptCreate(BaseModel):
     bl_number: str | None = Field(default=None, max_length=80)
     notes: str | None = None
     lines: list[GoodsReceiptLineInput] = Field(min_length=1)
+    charges: list[GoodsReceiptChargeInput] = Field(default_factory=list)
 
     @field_validator(
         "supplier_invoice_number",
@@ -122,6 +161,7 @@ class GoodsReceiptCreateFromPurchaseOrder(BaseModel):
     warehouse_id: UUID | None = None
     document_date: date | None = None
     notes: str | None = None
+    charges: list[GoodsReceiptChargeInput] = Field(default_factory=list)
 
     @field_validator("notes")
     @classmethod
@@ -138,6 +178,7 @@ class GoodsReceiptCreateFromPurchaseInvoice(BaseModel):
     document_date: date | None = None
     notes: str | None = None
     lines: list[ConversionLineInput] | None = None
+    charges: list[GoodsReceiptChargeInput] = Field(default_factory=list)
 
     @field_validator("notes")
     @classmethod
@@ -161,6 +202,7 @@ class GoodsReceiptUpdate(BaseModel):
     bl_number: str | None = Field(default=None, max_length=80)
     notes: str | None = None
     lines: list[GoodsReceiptLineInput] | None = Field(default=None, min_length=1)
+    charges: list[GoodsReceiptChargeInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
     @field_validator(
@@ -231,6 +273,9 @@ class GoodsReceiptResponse(BaseModel):
     period_locked: bool = False
     related_documents: list[RelatedDocumentRef] = Field(default_factory=list)
     lines: list[GoodsReceiptLineResponse] = Field(default_factory=list)
+    charges: list[GoodsReceiptChargeResponse] = Field(default_factory=list)
+    charges_total: Decimal = Decimal("0")
+    charges_total_base: Decimal = Decimal("0")
     created_at: datetime
     updated_at: datetime
     created_by: UUID | None = None

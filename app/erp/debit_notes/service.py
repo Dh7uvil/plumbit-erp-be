@@ -21,6 +21,7 @@ from app.auth.catalog import (
     PURCHASE_MODULE,
     SUPPLIER_PAYMENT_CREATE,
 )
+from app.auth.models import Tenant
 from app.auth.org_service import OrganizationService
 from app.common.idempotency.service import IdempotencyService
 from app.common.outbox.service import OutboxService
@@ -284,6 +285,7 @@ class DebitNoteService:
                 adjustment_amount=invoice.adjustment_amount if first_debit else _ZERO,
                 round_off_amount=invoice.round_off_amount if first_debit else _ZERO,
                 place_of_supply=PlaceOfSupply(invoice.place_of_supply),
+                prices_include_tax=invoice.prices_include_tax,
                 lines=lines,
             )
             response = await self._persist_composed(
@@ -1045,20 +1047,26 @@ class DebitNoteService:
             if invoice is not None
             else supplier.tax_treatment
         )
+        prices_include_tax = await self._resolve_prices_include_tax(
+            tenant_id, payload.prices_include_tax
+        )
         line_rows, line_nets, line_taxes = await self._build_lines(
             tenant_id,
             payload.lines,
             tax_treatment=tax_treatment,
             place_of_supply=place,
+            prices_include_tax=prices_include_tax,
         )
         round_off = quantize_money(payload.round_off_amount)
-        subtotal, doc_discount, tax_total, grand, adjusted_taxes = compute_header_totals(
-            line_nets=line_nets,
-            line_taxes=line_taxes,
-            discount_type=payload.discount_type,
-            discount_value=payload.discount_value,
-            shipping_amount=quantize_money(payload.shipping_amount),
-            adjustment_amount=quantize_money(payload.adjustment_amount),
+        subtotal, doc_discount, tax_total, grand, adjusted_taxes, adjustment_amount = (
+            compute_header_totals(
+                line_nets=line_nets,
+                line_taxes=line_taxes,
+                discount_type=payload.discount_type,
+                discount_value=payload.discount_value,
+                shipping_amount=quantize_money(payload.shipping_amount),
+                adjustment_amount=quantize_money(payload.adjustment_amount),
+            )
         )
         apply_adjusted_line_taxes(line_rows, adjusted_taxes)
         grand = quantize_money(grand + round_off)
@@ -1079,11 +1087,12 @@ class DebitNoteService:
             "discount_value": payload.discount_value,
             "discount_amount": doc_discount,
             "shipping_amount": quantize_money(payload.shipping_amount),
-            "adjustment_amount": quantize_money(payload.adjustment_amount),
+            "adjustment_amount": adjustment_amount,
             "round_off_amount": round_off,
             "subtotal": subtotal,
             "tax_amount": tax_total,
             "grand_total": grand,
+            "prices_include_tax": prices_include_tax,
             "foreign_amount": grand,
             "base_amount": quantize_money(grand * resolved.rate),
             "notes": payload.notes,
@@ -1092,6 +1101,14 @@ class DebitNoteService:
         }
         return header, line_rows
 
+    async def _resolve_prices_include_tax(
+        self, tenant_id: UUID, explicit: bool | None
+    ) -> bool:
+        if explicit is not None:
+            return explicit
+        tenant = await self.session.get(Tenant, tenant_id)
+        return bool(tenant and tenant.prices_include_tax_default)
+
     async def _build_lines(
         self,
         tenant_id: UUID,
@@ -1099,6 +1116,7 @@ class DebitNoteService:
         *,
         tax_treatment: TaxTreatment,
         place_of_supply: PlaceOfSupply,
+        prices_include_tax: bool = False,
     ) -> tuple[builtins.list[dict[str, object]], builtins.list[Decimal], builtins.list[Decimal]]:
         built: builtins.list[dict[str, object]] = []
         nets: builtins.list[Decimal] = []
@@ -1145,6 +1163,7 @@ class DebitNoteService:
                 discount_type=line.discount_type,
                 discount_value=line.discount_value,
                 tax_rate=chosen_tax.rate,
+                prices_include_tax=prices_include_tax,
             )
             built.append(
                 {
@@ -1220,6 +1239,7 @@ class DebitNoteService:
                 if "place_of_supply" in values
                 else PlaceOfSupply(existing.place_of_supply)
             ),
+            prices_include_tax=values.get("prices_include_tax", existing.prices_include_tax),
             lines=lines,
         )
 
@@ -1239,6 +1259,7 @@ class DebitNoteService:
             adjustment_amount=row.adjustment_amount,
             round_off_amount=row.round_off_amount,
             place_of_supply=PlaceOfSupply(row.place_of_supply),
+            prices_include_tax=row.prices_include_tax,
             lines=[
                 DebitNoteLineInput(
                     product_id=line.product_id,

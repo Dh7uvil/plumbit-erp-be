@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -27,11 +28,14 @@ from app.erp.accounting.accounts.repository import AccountRepository
 from app.erp.accounting.accounts.schemas import (
     AccountBalanceResponse,
     AccountCreate,
+    AccountPeriodBalance,
+    AccountPeriodBalancesResponse,
     AccountResponse,
     AccountTreeNode,
     AccountUpdate,
     SystemRoleMapping,
 )
+from app.erp.accounting.fiscal import FiscalYearConfig
 from app.erp.exchange_rates.service import CurrencyService
 
 _CONTROL_SUBTYPES = frozenset(
@@ -123,9 +127,13 @@ class PartyAccountResolver:
         row = await self.repo.get(tenant_id, account_id)
         if row is None:
             raise ResourceNotFoundError("Account not found")
-        if row.is_group or not row.is_active:
+        if row.is_group or not row.is_active or row.is_blocked:
             raise AccountNotPostableError(
-                details={"account_id": str(account_id), "is_group": row.is_group}
+                details={
+                    "account_id": str(account_id),
+                    "is_group": row.is_group,
+                    "is_blocked": row.is_blocked,
+                }
             )
         if row.account_subtype != subtype.value:
             raise ValidationError(
@@ -167,7 +175,8 @@ class AccountService:
         rows, total = await self.repo.list(
             tenant_id, page=page, common_filter=common_filter, filters=filters or None
         )
-        return [AccountResponse.model_validate(row) for row in rows], total
+        parent_map = await self._parent_map(tenant_id, rows)
+        return [self._to_response(row, parent_map) for row in rows], total
 
     async def tree(self, tenant_id: UUID) -> list[AccountTreeNode]:
         rows = await self.repo.list_all(tenant_id)
@@ -183,19 +192,23 @@ class AccountService:
 
     async def get(self, tenant_id: UUID, account_id: UUID) -> AccountResponse:
         row = await self._require(tenant_id, account_id)
-        response = AccountResponse.model_validate(row)
-        return response.model_copy(
-            update={
-                "has_children": await self.repo.count_children(tenant_id, account_id) > 0,
-                "has_journal_lines": await self._has_gl_lines(tenant_id, account_id),
-            }
+        parent_map = await self._parent_map(tenant_id, [row])
+        return self._to_response(
+            row,
+            parent_map,
+            has_children=await self.repo.count_children(tenant_id, account_id) > 0,
+            has_journal_lines=await self._has_gl_lines(tenant_id, account_id),
         )
 
     async def require_postable(self, tenant_id: UUID, account_id: UUID) -> Account:
         row = await self._require(tenant_id, account_id)
-        if row.is_group or not row.is_active:
+        if row.is_group or not row.is_active or row.is_blocked:
             raise AccountNotPostableError(
-                details={"account_id": str(account_id), "is_group": row.is_group}
+                details={
+                    "account_id": str(account_id),
+                    "is_group": row.is_group,
+                    "is_blocked": row.is_blocked,
+                }
             )
         return row
 
@@ -277,6 +290,7 @@ class AccountService:
                         "parent_id": payload.parent_id,
                         "depth": depth,
                         "is_group": payload.is_group,
+                        "is_blocked": payload.is_blocked,
                         "is_system": False,
                         "currency_id": payload.currency_id,
                         "created_by": actor_user_id,
@@ -294,7 +308,8 @@ class AccountService:
                 entity_id=row.id,
                 new_values=_account_snapshot(row),
             )
-            return AccountResponse.model_validate(row)
+            parent_map = await self._parent_map(tenant_id, [row])
+            return self._to_response(row, parent_map)
 
     async def update(
         self,
@@ -324,9 +339,17 @@ class AccountService:
                 values["account_type"] = requested
             if "account_subtype" in values and values["account_subtype"] is not None:
                 subtype = values["account_subtype"]
-                values["account_subtype"] = (
+                requested_subtype = (
                     subtype.value if isinstance(subtype, AccountSubtype) else str(subtype)
                 )
+                if (
+                    requested_subtype != existing.account_subtype
+                    and await self._has_gl_lines(tenant_id, account_id)
+                ):
+                    raise ValidationError(
+                        "Account subtype cannot change once journal lines exist"
+                    )
+                values["account_subtype"] = requested_subtype
             parent_id = values.get("parent_id", existing.parent_id)
             account_type = values.get("account_type", existing.account_type)
             account_subtype = values.get("account_subtype", existing.account_subtype)
@@ -417,6 +440,95 @@ class AccountService:
             credit=credit,
             signed_balance=signed,
             currency_code=currency_code,
+        )
+
+    async def get_period_balances(
+        self,
+        tenant_id: UUID,
+        account_id: UUID,
+        *,
+        fiscal_year: int | None = None,
+    ) -> AccountPeriodBalancesResponse:
+        from app.common.utils.currency import quantize_money
+        from app.core.enums import JournalEntryStatus
+        from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
+
+        row = await self._require(tenant_id, account_id)
+        config = await FiscalYearConfig.load(self.session, tenant_id)
+        year = fiscal_year if fiscal_year is not None else config.year_for(date.today())
+        fy_start, fy_end = config.bounds(year)
+        currency_code = (await CurrencyService(self.session).get_base(tenant_id)).code
+
+        statement = (
+            select(
+                JournalEntry.entry_date,
+                JournalEntryLine.debit_base,
+                JournalEntryLine.credit_base,
+            )
+            .select_from(JournalEntryLine)
+            .join(
+                JournalEntry,
+                (JournalEntry.id == JournalEntryLine.journal_entry_id)
+                & (JournalEntry.tenant_id == tenant_id)
+                & (JournalEntry.deleted_at.is_(None))
+                & (JournalEntry.status == JournalEntryStatus.POSTED.value),
+            )
+            .where(
+                JournalEntryLine.tenant_id == tenant_id,
+                JournalEntryLine.account_id == account_id,
+                JournalEntry.entry_date <= fy_end,
+            )
+        )
+        rows = (await self.session.execute(statement)).all()
+        period_ranges = config.period_bounds(year)
+        period_totals: dict[int, tuple[Decimal, Decimal]] = {
+            period: (Decimal("0"), Decimal("0")) for period, _, _ in period_ranges
+        }
+        opening_debit = Decimal("0")
+        opening_credit = Decimal("0")
+        for entry_date, debit, credit in rows:
+            debit = Decimal(debit)
+            credit = Decimal(credit)
+            if entry_date < fy_start:
+                opening_debit += debit
+                opening_credit += credit
+                continue
+            for period, start, end in period_ranges:
+                if start <= entry_date <= end:
+                    current = period_totals[period]
+                    period_totals[period] = (current[0] + debit, current[1] + credit)
+                    break
+
+        def signed_balance(debit_total: Decimal, credit_total: Decimal) -> Decimal:
+            if row.account_type in {AccountType.ASSET.value, AccountType.EXPENSE.value}:
+                return quantize_money(debit_total - credit_total)
+            return quantize_money(credit_total - debit_total)
+
+        opening = signed_balance(opening_debit, opening_credit)
+        running_debit = opening_debit
+        running_credit = opening_credit
+        periods: list[AccountPeriodBalance] = []
+        for period, start, end in period_ranges:
+            debit, credit = period_totals[period]
+            running_debit += debit
+            running_credit += credit
+            periods.append(
+                AccountPeriodBalance(
+                    period=period,
+                    from_date=start,
+                    to_date=end,
+                    debit=quantize_money(debit),
+                    credit=quantize_money(credit),
+                    closing=signed_balance(running_debit, running_credit),
+                )
+            )
+        return AccountPeriodBalancesResponse(
+            account_id=row.id,
+            fiscal_year=year,
+            currency_code=currency_code,
+            opening=opening,
+            periods=periods,
+            closing=signed_balance(running_debit, running_credit),
         )
 
     async def delete(
@@ -542,6 +654,33 @@ class AccountService:
             raise ResourceNotFoundError("Account not found")
         return row
 
+    async def _parent_map(
+        self, tenant_id: UUID, rows: list[Account]
+    ) -> dict[UUID, Account]:
+        parent_ids = {row.parent_id for row in rows if row.parent_id is not None}
+        if not parent_ids:
+            return {}
+        parents = await self.repo.get_many(tenant_id, parent_ids)
+        return {parent.id: parent for parent in parents}
+
+    def _to_response(
+        self,
+        row: Account,
+        parent_map: dict[UUID, Account],
+        *,
+        has_children: bool = False,
+        has_journal_lines: bool = False,
+    ) -> AccountResponse:
+        parent = parent_map.get(row.parent_id) if row.parent_id is not None else None
+        return AccountResponse.model_validate(row).model_copy(
+            update={
+                "parent_code": parent.code if parent is not None else None,
+                "parent_name": parent.name if parent is not None else None,
+                "has_children": has_children,
+                "has_journal_lines": has_journal_lines,
+            }
+        )
+
 
 def _account_snapshot(row: Account) -> dict[str, object]:
     return {
@@ -554,4 +693,5 @@ def _account_snapshot(row: Account) -> dict[str, object]:
         "is_system": row.is_system,
         "system_role": row.system_role,
         "is_active": row.is_active,
+        "is_blocked": row.is_blocked,
     }

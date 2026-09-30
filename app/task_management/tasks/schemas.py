@@ -169,6 +169,25 @@ class TaskAssign(BaseModel):
     assignee_id: UUID | None = None
 
 
+class TaskBulkAssignItem(BaseModel):
+    task_id: UUID
+    assignee_id: UUID | None = None
+
+
+class TaskBulkAssign(BaseModel):
+    items: list[TaskBulkAssignItem] = Field(min_length=1)
+
+
+class TaskBulkStatusItem(BaseModel):
+    task_id: UUID
+    status: TaskStatus
+    sort_order: int | None = Field(default=None, ge=0)
+
+
+class TaskBulkStatus(BaseModel):
+    items: list[TaskBulkStatusItem] = Field(min_length=1)
+
+
 class TaskLabelSet(BaseModel):
     label_ids: list[UUID] = Field(default_factory=list)
 
@@ -287,3 +306,16 @@ class TaskResponse(BaseModel):
     updated_at: datetime
     created_by: UUID | None = None
     updated_by: UUID | None = None
+
+
+class TaskBulkResultItem(BaseModel):
+    task_id: UUID
+    success: bool
+    error: str | None = None
+    data: TaskResponse | None = None
+
+
+class TaskBulkResult(BaseModel):
+    items: list[TaskBulkResultItem] = Field(default_factory=list)
+    success_count: int = 0
+    error_count: int = 0

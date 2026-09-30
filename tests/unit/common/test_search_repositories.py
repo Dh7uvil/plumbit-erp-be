@@ -23,7 +23,6 @@ from app.erp.accounting.supplier_payments.repository import SupplierPaymentRepos
 from app.erp.credit_notes.repository import CreditNoteRepository
 from app.erp.debit_notes.repository import DebitNoteRepository
 from app.erp.exchange_rates.repository import CurrencyRepository
-from app.erp.landed_costs.repository import LandedCostRepository
 from app.erp.proforma_invoices.repository import ProformaInvoiceRepository
 from app.erp.purchase_invoices.repository import PurchaseInvoiceRepository
 from app.erp.purchase_orders.repository import PurchaseOrderRepository
@@ -68,7 +67,6 @@ def test_list_repositories_construct_with_valid_search_config() -> None:
     CreditNoteRepository(session)
     DebitNoteRepository(session)
     CurrencyRepository(session)
-    LandedCostRepository(session)
     ProformaInvoiceRepository(session)
     PurchaseInvoiceRepository(session)
     PurchaseOrderRepository(session)
