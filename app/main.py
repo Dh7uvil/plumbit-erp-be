@@ -348,9 +348,17 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         poller = asyncio.create_task(
             run_forever(batch=20, interval=2.0, worker_id=f"inprocess-{os.getpid()}")
         )
+    connection_manager = None
+    if settings.feature_communication_enabled:
+        from app.communication.realtime.connection_manager import get_connection_manager
+
+        connection_manager = get_connection_manager()
+        await connection_manager.start()
     try:
         yield
     finally:
+        if connection_manager is not None:
+            await connection_manager.stop()
         if poller is not None:
             poller.cancel()
             with suppress(asyncio.CancelledError):

@@ -74,6 +74,19 @@
     "accounting.write_off.reverse",
     "accounting.year_end.manage",
     "ai.assistant.use",
+    "communication.call.create",
+    "communication.call.end",
+    "communication.call.join",
+    "communication.call.read",
+    "communication.conversation.create",
+    "communication.conversation.delete",
+    "communication.conversation.read",
+    "communication.conversation.update",
+    "communication.message.create",
+    "communication.message.delete",
+    "communication.message.read",
+    "communication.message.update",
+    "communication.presence.read",
     "crm.activity.create",
     "crm.activity.delete",
     "crm.activity.read",
@@ -988,6 +1001,29 @@
     "ai": {
       "assistant": [
         "use"
+      ]
+    },
+    "communication": {
+      "conversation": [
+        "create",
+        "read",
+        "update",
+        "delete"
+      ],
+      "message": [
+        "create",
+        "read",
+        "update",
+        "delete"
+      ],
+      "call": [
+        "create",
+        "read",
+        "join",
+        "end"
+      ],
+      "presence": [
+        "read"
       ]
     }
   }

@@ -100,7 +100,24 @@ AWS_REGION=us-east-1
 ```
 
 Leave `S3_ENDPOINT_URL` unset in production so boto3 talks to AWS S3. The MinIO console is at
-http://127.0.0.1:9001 (`minioadmin` / `minioadmin`). Organization logos are uploaded with
+http://127.0.0.1:9001 (`minioadmin` / `minioadmin`).
+
+Chat attachments larger than the API multipart limit use presigned PUT URLs. Community MinIO does
+not support bucket-level CORS (`mc cors set`); `docker-compose.yml` sets cluster-wide
+`MINIO_API_CORS_ALLOW_ORIGIN` for local frontend origins. If MinIO was already running, recreate
+it:
+
+```bash
+./scripts/configure-minio-cors.sh
+```
+
+For AWS S3 in production, apply bucket CORS with `PUT` allowed (see `docs/s3-cors.example.json`).
+
+When the frontend is exposed via ngrok (or any host other than localhost), chat image previews use
+same-origin API URLs (`/api/v1/communication/attachments/{id}/content`) instead of presigned
+MinIO links to `127.0.0.1:9000`, which remote browsers cannot reach.
+
+Organization logos are uploaded with
 `POST /api/v1/tenants/current/logo` (not `/attachments`); authenticated and public tenant
 responses include a short-lived `logo_url` for display.
 
@@ -109,6 +126,21 @@ Start the API after the application entry point is available:
 ```bash
 uv run uvicorn app.main:app --reload
 ```
+
+## Communication and calls (local dev)
+
+For real-time call invites and message delivery, set `FEATURE_AGORA_SIGNALING_ENABLED=true`
+and provide Agora REST credentials (`AGORA_CUSTOMER_ID`, `AGORA_CUSTOMER_SECRET`) in `.env`.
+
+Ring timeouts and other outbox jobs (for example `communication.call.ring_timeout`) are
+processed by the in-process outbox poller. Enable it locally when testing call lifecycle:
+
+```bash
+FEATURE_BACKGROUND_WORKERS_ENABLED=true
+```
+
+Without the worker, stale `RINGING` calls are still expired lazily on `GET /calls` and
+`GET /calls/{id}` after `CALL_RING_TIMEOUT_SECONDS` (default 45s).
 
 ## Tests
 

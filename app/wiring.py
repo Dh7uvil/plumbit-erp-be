@@ -66,6 +66,8 @@ from app.auth.catalog import (
     SUPPLIER_UPDATE,
     TASK_READ,
     TASK_UPDATE,
+    MESSAGE_CREATE,
+    MESSAGE_READ,
 )
 from app.common.attachments.entities import AttachmentEntitySpec, EntityRef, Probe, register
 from app.common.outbox.models import OutboxEvent
@@ -765,6 +767,14 @@ def _register_attachment_entities() -> None:
             _probe_via_get(_task_get),
         )
     )
+    register(
+        AttachmentEntitySpec(
+            AttachmentEntityType.CHAT_MESSAGE,
+            MESSAGE_READ,
+            MESSAGE_CREATE,
+            _probe_chat_message,
+        )
+    )
 
 
 def _register_task_related_entities() -> None:
@@ -873,6 +883,17 @@ async def _task_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> 
     from app.task_management.tasks.service import TaskService
 
     return await TaskService(session).get(tenant_id, entity_id)
+
+
+async def _probe_chat_message(
+    session: AsyncSession, tenant_id: UUID, entity_id: UUID
+) -> EntityRef:
+    from app.communication.messages.service import MessageService
+
+    row = await MessageService(session).get_for_attachment_probe(tenant_id, entity_id)
+    if row is None:
+        return EntityRef(exists=False)
+    return EntityRef(exists=True)
 
 
 async def _customer_get(session: AsyncSession, tenant_id: UUID, entity_id: UUID) -> object:
@@ -1116,6 +1137,18 @@ def _register_outbox_handlers() -> None:
 
     register_outbox(RECURRING_GENERATE_EVENT, handle_recurring_generate)
     register_outbox(REPORT_EXPORT_EVENT, handle_report_export)
+
+    from app.communication.calls.outbox_handlers import (
+        RING_TIMEOUT_EVENT,
+        handle_call_ring_timeout,
+    )
+    from app.communication.shared.signaling_outbox_handlers import (
+        SIGNALING_PUBLISH_EVENT,
+        handle_signaling_publish,
+    )
+
+    register_outbox(RING_TIMEOUT_EVENT, handle_call_ring_timeout)
+    register_outbox(SIGNALING_PUBLISH_EVENT, handle_signaling_publish)
 
 
 async def _log_outbox_event(event: OutboxEvent) -> None:

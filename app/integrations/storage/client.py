@@ -27,6 +27,8 @@ class S3ClientProtocol(Protocol):
 
     def generate_presigned_url(self, *args: Any, **kwargs: Any) -> str: ...
 
+    def head_object(self, **kwargs: Any) -> Any: ...
+
 
 def build_object_key(
     *,
@@ -95,7 +97,20 @@ class S3Storage:
         """Return a short-lived GET URL for a private object."""
 
         ttl = self._presign_ttl_seconds if expires_in is None else expires_in
-        return await asyncio.to_thread(self._presign_sync, key, ttl)
+        return await asyncio.to_thread(self._presign_get_sync, key, ttl)
+
+    async def presigned_put_url(
+        self, *, key: str, content_type: str, expires_in: int | None = None
+    ) -> str:
+        """Return a short-lived PUT URL for a direct client upload."""
+
+        ttl = self._presign_ttl_seconds if expires_in is None else expires_in
+        return await asyncio.to_thread(self._presign_put_sync, key, content_type, ttl)
+
+    async def head_object(self, *, key: str) -> dict[str, object]:
+        """Return object metadata without downloading the body."""
+
+        return await asyncio.to_thread(self._head_object_sync, key)
 
     def _upload_sync(self, key: str, body: bytes, content_type: str) -> None:
         try:
@@ -123,7 +138,7 @@ class S3Storage:
         except (BotoCoreError, ClientError) as exc:
             raise IntegrationError("Failed to read stored file") from exc
 
-    def _presign_sync(self, key: str, expires_in: int) -> str:
+    def _presign_get_sync(self, key: str, expires_in: int) -> str:
         try:
             return self._client.generate_presigned_url(
                 "get_object",
@@ -132,6 +147,30 @@ class S3Storage:
             )
         except (BotoCoreError, ClientError) as exc:
             raise IntegrationError("Failed to create download URL") from exc
+
+    def _presign_put_sync(self, key: str, content_type: str, expires_in: int) -> str:
+        try:
+            return self._client.generate_presigned_url(
+                "put_object",
+                Params={
+                    "Bucket": self._bucket,
+                    "Key": key,
+                    "ContentType": content_type,
+                },
+                ExpiresIn=expires_in,
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise IntegrationError("Failed to create upload URL") from exc
+
+    def _head_object_sync(self, key: str) -> dict[str, object]:
+        try:
+            response = self._client.head_object(Bucket=self._bucket, Key=key)
+            return {
+                "content_length": int(response.get("ContentLength") or 0),
+                "content_type": str(response.get("ContentType") or "application/octet-stream"),
+            }
+        except (BotoCoreError, ClientError) as exc:
+            raise IntegrationError("Failed to inspect stored file") from exc
 
 
 def _build_boto3_client(settings: Settings) -> S3ClientProtocol:

@@ -668,7 +668,8 @@
           "ACCOUNT",
           "CUSTOMER_PAYMENT",
           "SUPPLIER_PAYMENT",
-          "TASK"
+          "TASK",
+          "CHAT_MESSAGE"
         ],
         "title": "AttachmentEntityType"
       },

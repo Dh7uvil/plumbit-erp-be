@@ -51,6 +51,7 @@ class OutboxService:
         payload: Mapping[str, object] | None = None,
         dedupe_key: str | None = None,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+        available_at: datetime | None = None,
     ) -> OutboxEvent:
         """Stage an event in the caller's transaction. Does not commit."""
 
@@ -59,7 +60,7 @@ class OutboxService:
             if existing is not None:
                 return existing
 
-        now = utcnow()
+        now = available_at or utcnow()
         request_id = get_request_id()
         row = OutboxEvent(
             tenant_id=tenant_id,

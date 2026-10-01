@@ -123,9 +123,25 @@ class Settings(BaseSettings):
     whatsapp_business_account_id: str | None = None
     whatsapp_webhook_verify_token: SecretStr | None = None
 
+    # Agora (communication)
+    agora_app_id: str | None = None
+    agora_app_certificate: SecretStr | None = None
+    agora_rtc_token_ttl_seconds: int = Field(default=3600, ge=60)
+    agora_webhook_secret: SecretStr | None = None
+    call_ring_timeout_seconds: int = Field(default=45, ge=5)
+    presence_offline_after_seconds: int = Field(default=120, ge=30)
+    chat_message_edit_window_seconds: int = Field(default=900, ge=0)
+    chat_max_group_members: int = Field(default=256, ge=2)
+    chat_attachment_image_max_mb: int = Field(default=16, ge=1)
+    chat_attachment_video_max_mb: int = Field(default=64, ge=1)
+    chat_attachment_document_max_mb: int = Field(default=100, ge=1)
+    chat_attachment_voice_max_mb: int = Field(default=16, ge=1)
+    chat_malware_scan_enabled: bool = False
+
     # Feature flags
     feature_email_enabled: bool = False
     feature_whatsapp_enabled: bool = False
+    feature_communication_enabled: bool = False
     # In-process outbox poller. Leave False for API-only local/dev and pytest.
     # Set True in production (and local when you want after-commit dispatch
     # instead of waiting out the poll interval). The poller remains the source
@@ -164,7 +180,29 @@ class Settings(BaseSettings):
         return parse_allowed_upload_mime_types(value)
 
 
+def validate_communication_settings(settings: Settings) -> None:
+    """Fail fast when communication is enabled without required Agora credentials."""
+
+    if settings.env == "testing":
+        return
+    if not settings.feature_communication_enabled:
+        return
+    missing: list[str] = []
+    if not settings.agora_app_id:
+        missing.append("agora_app_id")
+    if not settings.agora_app_certificate:
+        missing.append("agora_app_certificate")
+    if missing:
+        msg = (
+            "feature_communication_enabled is true but required Agora settings are missing: "
+            + ", ".join(missing)
+        )
+        raise RuntimeError(msg)
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Return the process-wide validated settings instance."""
-    return Settings()
+    settings = Settings()
+    validate_communication_settings(settings)
+    return settings

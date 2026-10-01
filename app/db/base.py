@@ -101,3 +101,8 @@ import app.inventory_management.warehouses.models as _warehouses  # noqa: E402, 
 import app.logistics.shipments.models as _shipments  # noqa: E402, F401
 import app.task_management.task_labels.models as _task_labels  # noqa: E402, F401
 import app.task_management.tasks.models as _tasks  # noqa: E402, F401
+import app.communication.calls.models as _communication_calls  # noqa: E402, F401
+import app.communication.conversations.models as _communication_conversations  # noqa: E402, F401
+import app.communication.messages.models as _communication_messages  # noqa: E402, F401
+import app.communication.extended.models as _communication_extended  # noqa: E402, F401
+import app.communication.presence.models as _presence  # noqa: E402, F401

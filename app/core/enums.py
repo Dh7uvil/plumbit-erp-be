@@ -587,6 +587,80 @@ class ChatType(StrEnum):
     GROUP = "GROUP"
 
 
+class ConversationKind(StrEnum):
+    DIRECT = "DIRECT"
+    GROUP = "GROUP"
+
+
+class ParticipantRole(StrEnum):
+    OWNER = "OWNER"
+    ADMIN = "ADMIN"
+    MEMBER = "MEMBER"
+
+
+class MessageKind(StrEnum):
+    TEXT = "TEXT"
+    ATTACHMENT = "ATTACHMENT"
+    SYSTEM = "SYSTEM"
+    CALL_EVENT = "CALL_EVENT"
+
+
+class ChatAttachmentKind(StrEnum):
+    IMAGE = "IMAGE"
+    VIDEO = "VIDEO"
+    DOCUMENT = "DOCUMENT"
+    VOICE = "VOICE"
+
+
+class CallKind(StrEnum):
+    AUDIO = "AUDIO"
+    VIDEO = "VIDEO"
+
+
+class CallScope(StrEnum):
+    DIRECT = "DIRECT"
+    GROUP = "GROUP"
+
+
+class CallStatus(StrEnum):
+    RINGING = "RINGING"
+    ACTIVE = "ACTIVE"
+    REJECTED = "REJECTED"
+    MISSED = "MISSED"
+    CANCELLED = "CANCELLED"
+    ENDED = "ENDED"
+
+
+class CallParticipantStatus(StrEnum):
+    RINGING = "RINGING"
+    JOINED = "JOINED"
+    LEFT = "LEFT"
+    REJECTED = "REJECTED"
+    MISSED = "MISSED"
+    BUSY = "BUSY"
+
+
+class CallEventType(StrEnum):
+    RING = "RING"
+    ACCEPT = "ACCEPT"
+    REJECT = "REJECT"
+    JOIN = "JOIN"
+    LEAVE = "LEAVE"
+    END = "END"
+
+
+class CallEventSource(StrEnum):
+    API = "API"
+    WEBHOOK = "WEBHOOK"
+
+
+class PresenceStatus(StrEnum):
+    ONLINE = "ONLINE"
+    AWAY = "AWAY"
+    BUSY = "BUSY"
+    OFFLINE = "OFFLINE"
+
+
 class MeetingType(StrEnum):
     INTERNAL = "INTERNAL"
     CUSTOMER = "CUSTOMER"
@@ -690,6 +764,7 @@ class AttachmentEntityType(StrEnum):
     CUSTOMER_PAYMENT = "CUSTOMER_PAYMENT"
     SUPPLIER_PAYMENT = "SUPPLIER_PAYMENT"
     TASK = "TASK"
+    CHAT_MESSAGE = "CHAT_MESSAGE"
 
 
 class AttachmentCategory(StrEnum):

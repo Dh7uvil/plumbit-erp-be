@@ -76,6 +76,14 @@ async def run_forever(*, batch: int, interval: float, worker_id: str) -> None:
                 await enqueue_due_recurring()
             except Exception:
                 logger.exception("recurring_scan_failed")
+            try:
+                from app.communication.shared.maintenance_worker import (
+                    run_communication_maintenance,
+                )
+
+                await run_communication_maintenance()
+            except Exception:
+                logger.exception("communication_maintenance_failed")
         _wake.clear()
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(_wake.wait(), timeout=interval)

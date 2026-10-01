@@ -20,6 +20,7 @@ REPORTS_MODULE = "reports"
 MASTERS_MODULE = "masters"
 TASKS_MODULE = "tasks"
 AI_MODULE = "ai"
+COMMUNICATION_MODULE = "communication"
 
 _IMEX_ACTIONS: tuple[str, ...] = ("import", "export")
 
@@ -185,6 +186,15 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
     AI_MODULE: {
         "assistant": ("use",),
     },
+    COMMUNICATION_MODULE: {
+        "conversation": ("create", "read", "update", "delete"),
+        "message": ("create", "read", "update", "delete"),
+        "call": ("create", "read", "join", "end"),
+        "presence": ("read",),
+        "group": ("manage",),
+        "attachment": ("read",),
+        "search": ("read",),
+    },
 }
 
 
@@ -242,6 +252,7 @@ REPORTS_PERMISSIONS: tuple[str, ...] = _permissions_for(REPORTS_MODULE)
 MASTERS_PERMISSIONS: tuple[str, ...] = _permissions_for(MASTERS_MODULE)
 TASKS_PERMISSIONS: tuple[str, ...] = _permissions_for(TASKS_MODULE)
 AI_PERMISSIONS: tuple[str, ...] = _permissions_for(AI_MODULE)
+COMMUNICATION_PERMISSIONS: tuple[str, ...] = _permissions_for(COMMUNICATION_MODULE)
 CATALOG_PERMISSIONS: tuple[str, ...] = (
     IDENTITY_PERMISSIONS +
     CRM_PERMISSIONS +
@@ -253,7 +264,8 @@ CATALOG_PERMISSIONS: tuple[str, ...] = (
     REPORTS_PERMISSIONS +
     MASTERS_PERMISSIONS +
     TASKS_PERMISSIONS +
-    AI_PERMISSIONS
+    AI_PERMISSIONS +
+    COMMUNICATION_PERMISSIONS
 )
 
 
@@ -691,6 +703,23 @@ TASK_WATCHER_READ = build_permission(TASKS_MODULE, "watcher", "read")
 TASK_WATCHER_DELETE = build_permission(TASKS_MODULE, "watcher", "delete")
 
 AI_ASSISTANT_USE = build_permission(AI_MODULE, "assistant", "use")
+
+CONVERSATION_CREATE = build_permission(COMMUNICATION_MODULE, "conversation", "create")
+CONVERSATION_READ = build_permission(COMMUNICATION_MODULE, "conversation", "read")
+CONVERSATION_UPDATE = build_permission(COMMUNICATION_MODULE, "conversation", "update")
+CONVERSATION_DELETE = build_permission(COMMUNICATION_MODULE, "conversation", "delete")
+MESSAGE_CREATE = build_permission(COMMUNICATION_MODULE, "message", "create")
+MESSAGE_READ = build_permission(COMMUNICATION_MODULE, "message", "read")
+MESSAGE_UPDATE = build_permission(COMMUNICATION_MODULE, "message", "update")
+MESSAGE_DELETE = build_permission(COMMUNICATION_MODULE, "message", "delete")
+CALL_CREATE = build_permission(COMMUNICATION_MODULE, "call", "create")
+CALL_READ = build_permission(COMMUNICATION_MODULE, "call", "read")
+CALL_JOIN = build_permission(COMMUNICATION_MODULE, "call", "join")
+CALL_END = build_permission(COMMUNICATION_MODULE, "call", "end")
+PRESENCE_READ = build_permission(COMMUNICATION_MODULE, "presence", "read")
+GROUP_MANAGE = build_permission(COMMUNICATION_MODULE, "group", "manage")
+COMMUNICATION_ATTACHMENT_READ = build_permission(COMMUNICATION_MODULE, "attachment", "read")
+COMMUNICATION_SEARCH_READ = build_permission(COMMUNICATION_MODULE, "search", "read")
 
 SYSTEM_ADMIN_ROLE_NAME = "Superadmin"
 

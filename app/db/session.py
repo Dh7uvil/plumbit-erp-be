@@ -52,6 +52,11 @@ async def transaction(session: AsyncSession) -> AsyncIterator[AsyncSession]:
     if session.in_transaction():
         try:
             yield session
+            from app.communication.shared.signaling_publisher import (
+                enqueue_scheduled_signaling_outbox,
+            )
+
+            await enqueue_scheduled_signaling_outbox(session)
             await session.commit()
         except Exception:
             await session.rollback()
@@ -60,3 +65,8 @@ async def transaction(session: AsyncSession) -> AsyncIterator[AsyncSession]:
 
     async with session.begin():
         yield session
+        from app.communication.shared.signaling_publisher import (
+            enqueue_scheduled_signaling_outbox,
+        )
+
+        await enqueue_scheduled_signaling_outbox(session)

@@ -13,6 +13,7 @@ from app.crm.router import router as crm_router
 from app.erp.router import router as erp_router
 from app.inventory_management.router import router as inventory_management_router
 from app.logistics.router import router as logistics_router
+from app.communication.router import router as communication_router
 from app.integrations.ai.router import router as ai_router
 from app.task_management.router import router as task_management_router
 
@@ -33,3 +34,4 @@ api_router.include_router(inventory_management_router)
 api_router.include_router(logistics_router)
 api_router.include_router(task_management_router)
 api_router.include_router(ai_router)
+api_router.include_router(communication_router)
