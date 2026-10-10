@@ -39,6 +39,7 @@ class StockTransferLineInput(BaseModel):
     product_id: UUID
     unit_id: UUID | None = None
     qty: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
+    reservation_number: str | None = Field(default=None, max_length=80)
     notes: str | None = None
 
     @field_validator("notes")
@@ -61,6 +62,7 @@ class StockTransferLineResponse(BaseModel):
     qty_transferred: Decimal
     qty_source_before: Decimal | None
     qty_dest_before: Decimal | None
+    reservation_number: str | None = None
     notes: str | None
 
 
@@ -71,6 +73,8 @@ class StockTransferCreate(BaseModel):
     branch_id: UUID | None = None
     reason: str | None = Field(default=None, max_length=200)
     reference: str | None = Field(default=None, max_length=100)
+    reference_date: date | None = None
+    reference_stock_transfer_id: UUID | None = None
     notes: str | None = None
     lines: list[StockTransferLineInput] = Field(min_length=1)
 
@@ -96,6 +100,8 @@ class StockTransferUpdate(BaseModel):
     branch_id: UUID | None = None
     reason: str | None = Field(default=None, max_length=200)
     reference: str | None = Field(default=None, max_length=100)
+    reference_date: date | None = None
+    reference_stock_transfer_id: UUID | None = None
     notes: str | None = None
     lines: list[StockTransferLineInput] | None = Field(default=None, min_length=1)
     version: int | None = Field(default=None, ge=1)
@@ -137,6 +143,8 @@ class StockTransferResponse(BaseModel):
     branch_id: UUID | None
     reason: str | None
     reference: str | None
+    reference_date: date | None = None
+    reference_stock_transfer_id: UUID | None = None
     notes: str | None
     posted_at: datetime | None
     posted_by: UUID | None

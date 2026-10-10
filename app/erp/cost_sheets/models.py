@@ -5,6 +5,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     Date,
     ForeignKey,
     Index,
@@ -98,6 +99,32 @@ class CostSheet(AuditUserMixin, SoftDeleteTenantModel):
         String(20), nullable=False, server_default=text("'VALUE'")
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sheet_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'PLANNING'")
+    )
+    purchase_invoice_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("purchase_invoices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    imp_reference: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    journal_entry_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("journal_entries.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reversal_journal_entry_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("journal_entries.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    goods_receipt_charge_adjustment_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("goods_receipt_charge_adjustments.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     lines: Mapped[list["CostSheetLine"]] = relationship(
         back_populates="cost_sheet",
@@ -109,6 +136,51 @@ class CostSheet(AuditUserMixin, SoftDeleteTenantModel):
         cascade="all, delete-orphan",
         order_by="CostSheetCharge.line_number",
     )
+    journal_lines: Mapped[list["CostSheetJournalLine"]] = relationship(
+        back_populates="cost_sheet",
+        cascade="all, delete-orphan",
+        order_by="CostSheetJournalLine.line_number",
+    )
+
+
+class CostSheetJournalLine(TenantModel):
+    """Dr/Cr grid for cost sheet journal mode."""
+
+    __tablename__ = "cost_sheet_journal_lines"
+    __table_args__ = (
+        UniqueConstraint(
+            "cost_sheet_id",
+            "line_number",
+            name="uq_cost_sheet_journal_lines_header_line",
+        ),
+        Index("ix_cost_sheet_journal_lines_cost_sheet_id", "cost_sheet_id"),
+    )
+
+    cost_sheet_id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("cost_sheets.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    line_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    line_kind: Mapped[str] = mapped_column(String(1), nullable=False, server_default=text("'G'"))
+    account_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    party_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    debit: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
+    credit: Mapped[Decimal] = mapped_column(_MONEY, nullable=False, server_default=text("0"))
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    capitalize: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+
+    cost_sheet: Mapped[CostSheet] = relationship(back_populates="journal_lines")
 
 
 class CostSheetLine(TenantModel):

@@ -12,6 +12,7 @@ from app.common.schemas.related_documents import QuantityProgress, RelatedDocume
 from app.core.enums import (
     BillingStatus,
     DiscountType,
+    OrderType,
     PlaceOfSupply,
     PurchaseOrderStatus,
     ReceiptStatus,
@@ -118,6 +119,8 @@ class PurchaseOrderCreate(BaseModel):
     warehouse_id: UUID | None = None
     order_date: date | None = None
     expected_delivery_date: date | None = None
+    ship_date: date | None = None
+    order_type: OrderType = OrderType.LOCAL
     reference_number: str | None = Field(default=None, max_length=60)
     currency_id: UUID | None = None
     payment_terms_id: UUID | None = None
@@ -147,6 +150,8 @@ class PurchaseOrderUpdate(BaseModel):
     warehouse_id: UUID | None = None
     order_date: date | None = None
     expected_delivery_date: date | None = None
+    ship_date: date | None = None
+    order_type: OrderType | None = None
     reference_number: str | None = Field(default=None, max_length=60)
     currency_id: UUID | None = None
     payment_terms_id: UUID | None = None
@@ -209,6 +214,8 @@ class PurchaseOrderResponse(BaseModel):
     order_date: date
     document_date: date
     expected_delivery_date: date | None
+    ship_date: date | None = None
+    order_type: OrderType = OrderType.LOCAL
     branch_id: UUID | None
     warehouse_id: UUID | None
     supplier_id: UUID

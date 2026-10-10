@@ -55,6 +55,7 @@ from app.core.enums import (
     DiscountType,
     DocumentType,
     ItemType,
+    OrderType,
     PlaceOfSupply,
     PurchaseOrderStatus,
     ReceiptStatus,
@@ -1175,6 +1176,8 @@ class PurchaseOrderService:
         header: dict[str, object] = {
             "order_date": order_date,
             "expected_delivery_date": payload.expected_delivery_date,
+            "ship_date": payload.ship_date,
+            "order_type": payload.order_type.value,
             "reference_number": payload.reference_number,
             "branch_id": payload.branch_id,
             "warehouse_id": warehouse_id,
@@ -1363,6 +1366,12 @@ class PurchaseOrderService:
             expected_delivery_date=values.get(
                 "expected_delivery_date", existing.expected_delivery_date
             ),
+            ship_date=values.get("ship_date", existing.ship_date),
+            order_type=(
+                OrderType(values["order_type"])
+                if values.get("order_type") is not None
+                else OrderType(existing.order_type)
+            ),
             reference_number=values.get("reference_number", existing.reference_number),
             currency_id=values.get("currency_id", existing.currency_id),
             payment_terms_id=values.get("payment_terms_id", existing.payment_terms_id),
@@ -1443,6 +1452,8 @@ class PurchaseOrderService:
             order_date=row.order_date,
             document_date=row.order_date,
             expected_delivery_date=row.expected_delivery_date,
+            ship_date=row.ship_date,
+            order_type=OrderType(row.order_type),
             branch_id=row.branch_id,
             warehouse_id=row.warehouse_id,
             supplier_id=row.supplier_id,

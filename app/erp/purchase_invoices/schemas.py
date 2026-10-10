@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import ClassVar
+from typing import ClassVar, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -14,6 +14,7 @@ from app.core.enums import (
     DiscountType,
     ExpenseCategory,
     InvoiceDocumentStatus,
+    PaymentMode,
     PaymentStatus,
     PlaceOfSupply,
     PurchaseInvoiceLineType,
@@ -39,6 +40,7 @@ class PurchaseInvoiceFilter(BaseFilter):
     purchase_order_id: UUID | None = None
     goods_receipt_id: UUID | None = None
     bill_type: BillType | None = None
+    payment_mode: PaymentMode | None = None
     payment_status: PaymentStatus | None = None
     invoice_date_from: date | None = None
     invoice_date_to: date | None = None
@@ -148,6 +150,20 @@ class PurchaseInvoiceCreate(BaseModel):
     place_of_supply: PlaceOfSupply | None = None
     is_reverse_charge: bool | None = None
     prices_include_tax: bool | None = None
+    payment_mode: PaymentMode = PaymentMode.CREDIT
+    reference_number: str | None = Field(default=None, max_length=80)
+    reference_date: date | None = None
+    marks: str | None = Field(default=None, max_length=500)
+    discount_account_id: UUID | None = None
+    freight_account_id: UUID | None = None
+    credit_account_id: UUID | None = None
+    auto_stock_document: bool = False
+    source_of_supply_country: str | None = Field(default=None, max_length=2)
+    import_doc_number: str | None = Field(default=None, max_length=80)
+    import_doc_date: date | None = None
+    boe_number: str | None = Field(default=None, max_length=80)
+    cargo_permit_number: str | None = Field(default=None, max_length=80)
+    document_series: Literal["BILL", "LC"] | None = None
     lines: list[PurchaseInvoiceLineInput] = Field(min_length=1)
 
     @field_validator("notes", "supplier_invoice_number")
@@ -178,6 +194,19 @@ class PurchaseInvoiceUpdate(BaseModel):
     round_off_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
     is_reverse_charge: bool | None = None
+    payment_mode: PaymentMode | None = None
+    reference_number: str | None = Field(default=None, max_length=80)
+    reference_date: date | None = None
+    marks: str | None = Field(default=None, max_length=500)
+    discount_account_id: UUID | None = None
+    freight_account_id: UUID | None = None
+    credit_account_id: UUID | None = None
+    auto_stock_document: bool | None = None
+    source_of_supply_country: str | None = Field(default=None, max_length=2)
+    import_doc_number: str | None = Field(default=None, max_length=80)
+    import_doc_date: date | None = None
+    boe_number: str | None = Field(default=None, max_length=80)
+    cargo_permit_number: str | None = Field(default=None, max_length=80)
     lines: list[PurchaseInvoiceLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
@@ -263,6 +292,21 @@ class PurchaseInvoiceResponse(BaseModel):
     cancelled_at: datetime | None
     cancelled_by: UUID | None
     cancel_reason: str | None
+    payment_mode: PaymentMode = PaymentMode.CREDIT
+    reference_number: str | None = None
+    reference_date: date | None = None
+    marks: str | None = None
+    discount_account_id: UUID | None = None
+    freight_account_id: UUID | None = None
+    credit_account_id: UUID | None = None
+    auto_stock_document: bool = False
+    is_printed: bool = False
+    source_of_supply_country: str | None = None
+    import_doc_number: str | None = None
+    import_doc_date: date | None = None
+    boe_number: str | None = None
+    cargo_permit_number: str | None = None
+    import_expense_lcy: Decimal | None = None
     is_overdue: bool = False
     is_partially_debited: bool = False
     is_fully_debited: bool = False

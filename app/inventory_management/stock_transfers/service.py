@@ -504,6 +504,35 @@ class StockTransferService:
         )
         return await self.create(tenant_id, payload, actor_user_id=actor_user_id)
 
+    async def create_reverse(
+        self, tenant_id: UUID, transfer_id: UUID, *, actor_user_id: UUID
+    ) -> StockTransferResponse:
+        source = await self._require(tenant_id, transfer_id)
+        if StockDocumentStatus(source.status) != StockDocumentStatus.POSTED:
+            raise ValidationError("Reverse transfer requires a posted stock transfer")
+        payload = StockTransferCreate(
+            from_warehouse_id=source.to_warehouse_id,
+            to_warehouse_id=source.from_warehouse_id,
+            document_date=None,
+            branch_id=source.branch_id,
+            reason=f"Reverse of {source.document_number}",
+            reference=source.reference,
+            reference_date=source.reference_date,
+            reference_stock_transfer_id=source.id,
+            notes=source.notes,
+            lines=[
+                StockTransferLineInput(
+                    product_id=line.product_id,
+                    unit_id=line.unit_id,
+                    qty=line.qty_transferred or line.qty,
+                    reservation_number=line.reservation_number,
+                    notes=line.notes,
+                )
+                for line in source.lines
+            ],
+        )
+        return await self.create(tenant_id, payload, actor_user_id=actor_user_id)
+
     async def _build_draft(
         self, tenant_id: UUID, payload: StockTransferCreate
     ) -> tuple[dict[str, Any], builtins.list[dict[str, Any]]]:
@@ -524,6 +553,8 @@ class StockTransferService:
             "branch_id": payload.branch_id,
             "reason": payload.reason,
             "reference": payload.reference,
+            "reference_date": payload.reference_date,
+            "reference_stock_transfer_id": payload.reference_stock_transfer_id,
             "notes": payload.notes,
         }
         return header, line_rows
@@ -557,6 +588,7 @@ class StockTransferService:
                     "qty_source_before": None,
                     "qty_dest_before": None,
                     "notes": line.notes,
+                    "reservation_number": line.reservation_number,
                 }
             )
         return built
@@ -584,6 +616,10 @@ class StockTransferService:
             branch_id=values.get("branch_id", existing.branch_id),
             reason=values.get("reason", existing.reason),
             reference=values.get("reference", existing.reference),
+            reference_date=values.get("reference_date", existing.reference_date),
+            reference_stock_transfer_id=values.get(
+                "reference_stock_transfer_id", existing.reference_stock_transfer_id
+            ),
             notes=values.get("notes", existing.notes),
             lines=lines,
         )
@@ -690,6 +726,10 @@ class StockTransferService:
                 actions.append(action)
         if has_permission(self.actor_permissions, STOCK_TRANSFER_CREATE):
             actions.append("clone")
+        if status == StockDocumentStatus.POSTED and has_permission(
+            self.actor_permissions, STOCK_TRANSFER_CREATE
+        ):
+            actions.append("reverse")
         if status == StockDocumentStatus.DRAFT and has_permission(
             self.actor_permissions, STOCK_TRANSFER_DELETE
         ):
@@ -713,6 +753,8 @@ class StockTransferService:
             branch_id=row.branch_id,
             reason=row.reason,
             reference=row.reference,
+            reference_date=row.reference_date,
+            reference_stock_transfer_id=row.reference_stock_transfer_id,
             notes=row.notes,
             posted_at=row.posted_at,
             posted_by=row.posted_by,

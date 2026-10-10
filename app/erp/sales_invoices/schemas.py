@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import ClassVar
+from typing import ClassVar, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -48,6 +48,7 @@ class SalesInvoiceFilter(BaseFilter):
     payment_mode: PaymentMode | None = None
     is_printed: bool | None = None
     reference_number: str | None = None
+    is_export: bool | None = None
     invoice_date_from: date | None = None
     invoice_date_to: date | None = None
 
@@ -158,6 +159,7 @@ class SalesInvoiceCreate(DiscountFieldsMixin):
     discount_account_id: UUID | None = None
     freight_account_id: UUID | None = None
     auto_stock_document: bool = False
+    document_series: Literal["INV", "EXP"] | None = None
     lines: list[SalesInvoiceLineInput] = Field(min_length=1)
 
     @field_validator("notes", "terms_and_conditions")

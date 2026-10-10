@@ -57,6 +57,7 @@ class SalesInvoiceRepository:
                     "payment_status",
                     "payment_mode",
                     "is_printed",
+                    "is_export",
                 }
             ),
             search_fields=frozenset(

@@ -90,6 +90,7 @@ async def list_sales_invoices(
         payment_mode=filters.payment_mode.value if filters.payment_mode else None,
         is_printed=filters.is_printed,
         reference_number=filters.reference_number,
+        is_export=filters.is_export,
         invoice_date_from=filters.invoice_date_from,
         invoice_date_to=filters.invoice_date_to,
     )

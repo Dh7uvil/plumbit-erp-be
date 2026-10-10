@@ -166,6 +166,38 @@ class PurchaseInvoice(AuditUserMixin, SoftDeleteTenantModel):
         nullable=True,
     )
     cancel_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'CREDIT'")
+    )
+    reference_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    reference_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    marks: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    discount_account_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    freight_account_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    auto_stock_document: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    is_printed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    source_of_supply_country: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    import_doc_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    import_doc_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    boe_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    cargo_permit_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    credit_account_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     lines: Mapped[list["PurchaseInvoiceLine"]] = relationship(
         back_populates="purchase_invoice",

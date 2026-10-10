@@ -217,3 +217,16 @@ async def clone_stock_transfer(
 ) -> ApiResponse[StockTransferResponse]:
     row = await service.clone(tenant.tenant_id, transfer_id, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Stock transfer cloned as a new draft")
+
+
+@router.post("/{transfer_id}/reverse", response_model=ApiResponse[StockTransferResponse])
+async def reverse_stock_transfer(
+    transfer_id: UUID,
+    tenant: TenantContextDependency,
+    service: StockTransferServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(STOCK_TRANSFER_CREATE))],
+) -> ApiResponse[StockTransferResponse]:
+    row = await service.create_reverse(
+        tenant.tenant_id, transfer_id, actor_user_id=tenant.user_id
+    )
+    return ApiResponse(data=row, message="Reverse stock transfer draft created")

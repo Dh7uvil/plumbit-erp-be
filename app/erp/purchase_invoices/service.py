@@ -9,9 +9,11 @@ from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
+    COST_SHEET_CREATE,
     DEBIT_NOTE_CREATE,
     GOODS_RECEIPT_CREATE,
     PERIOD_OVERRIDE,
@@ -56,6 +58,7 @@ from app.core.enums import (
     InvoiceDocumentStatus,
     JournalType,
     PartyType,
+    PaymentMode,
     PaymentStatus,
     PlaceOfSupply,
     PurchaseInvoiceLineType,
@@ -113,6 +116,7 @@ from app.inventory_management.units.service import UnitService
 _ZERO = Decimal("0")
 _HUNDRED = Decimal("100")
 _SERIES = "BILL"
+_SERIES_IMPORT = "LC"
 _ACTION_PERMISSIONS: dict[str, str] = {
     "post": PURCHASE_INVOICE_POST,
     "cancel": PURCHASE_INVOICE_CANCEL,
@@ -165,6 +169,7 @@ class PurchaseInvoiceService:
         purchase_order_id: UUID | None = None,
         goods_receipt_id: UUID | None = None,
         bill_type: str | None = None,
+        payment_mode: str | None = None,
         payment_status: str | None = None,
         invoice_date_from: date | None = None,
         invoice_date_to: date | None = None,
@@ -180,6 +185,8 @@ class PurchaseInvoiceService:
             filters["goods_receipt_id"] = goods_receipt_id
         if bill_type is not None:
             filters["bill_type"] = bill_type
+        if payment_mode is not None:
+            filters["payment_mode"] = payment_mode
         if payment_status is not None:
             filters["payment_status"] = payment_status
         extra: list[Any] = []
@@ -201,7 +208,14 @@ class PurchaseInvoiceService:
     async def get(self, tenant_id: UUID, invoice_id: UUID) -> PurchaseInvoiceResponse:
         row = await self._require(tenant_id, invoice_id)
         await self._ensure_policy(tenant_id)
-        response = self._to_response(row, today=await self._today(tenant_id))
+        import_expense_lcy = None
+        if BillType(row.bill_type) == BillType.IMPORT:
+            import_expense_lcy = await self._import_expense_lcy(tenant_id, row.id)
+        response = self._to_response(
+            row,
+            today=await self._today(tenant_id),
+            import_expense_lcy=import_expense_lcy,
+        )
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
 
@@ -247,12 +261,17 @@ class PurchaseInvoiceService:
             invoice_date = cast(date, header["invoice_date"])
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(invoice_date, can_override=self._can_override)
+            series = (
+                _SERIES_IMPORT
+                if payload.document_series == "LC" or payload.bill_type == BillType.IMPORT
+                else _SERIES
+            )
             number = await self.sequences.allocate(
                 tenant_id,
                 document_type=DocumentType.PURCHASE_INVOICE,
-                series=_SERIES,
+                series=series,
                 fiscal_year=await year_for(self.session, tenant_id, invoice_date),
-                prefix=_SERIES,
+                prefix=series,
                 party_id=cast(UUID, header["supplier_id"]),
             )
             row = await self.repo.create(
@@ -612,6 +631,16 @@ class PurchaseInvoiceService:
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
+            if row.auto_stock_document:
+                from app.erp.common.direct_stock import post_purchase_invoice_stock_if_requested
+
+                await post_purchase_invoice_stock_if_requested(
+                    self.session,
+                    tenant_id,
+                    invoice_id=invoice_id,
+                    actor_user_id=actor_user_id,
+                    actor_permissions=self.actor_permissions,
+                )
             await self.session.refresh(row, attribute_names=["updated_at"])
             loaded = await self._require(tenant_id, invoice_id)
             await self.audit.write(
@@ -675,6 +704,19 @@ class PurchaseInvoiceService:
             current = InvoiceDocumentStatus(row.status)
             old_values = await self._snapshot(tenant_id, row)
             if current == InvoiceDocumentStatus.POSTED:
+                if row.auto_stock_document:
+                    from app.erp.common.direct_stock import (
+                        cancel_purchase_invoice_auto_stock_if_any,
+                    )
+
+                    await cancel_purchase_invoice_auto_stock_if_any(
+                        self.session,
+                        tenant_id,
+                        invoice_id=invoice_id,
+                        actor_user_id=actor_user_id,
+                        reason=reason,
+                        actor_permissions=self.actor_permissions,
+                    )
                 await self._cancel_posted(tenant_id, row, actor_user_id=actor_user_id)
             target = next_status(current, "cancel")
             row.status = target.value
@@ -1297,6 +1339,19 @@ class PurchaseInvoiceService:
             "amount_written_off": _ZERO,
             "balance_due": grand,
             "payment_status": PaymentStatus.UNPAID.value,
+            "payment_mode": payload.payment_mode.value,
+            "reference_number": payload.reference_number,
+            "reference_date": payload.reference_date,
+            "marks": payload.marks,
+            "discount_account_id": payload.discount_account_id,
+            "freight_account_id": payload.freight_account_id,
+            "credit_account_id": payload.credit_account_id,
+            "auto_stock_document": payload.auto_stock_document,
+            "source_of_supply_country": payload.source_of_supply_country,
+            "import_doc_number": payload.import_doc_number,
+            "import_doc_date": payload.import_doc_date,
+            "boe_number": payload.boe_number,
+            "cargo_permit_number": payload.cargo_permit_number,
         }
         return header, line_rows
 
@@ -1523,6 +1578,29 @@ class PurchaseInvoiceService:
                 else PlaceOfSupply(existing.place_of_supply)
             ),
             is_reverse_charge=values.get("is_reverse_charge", existing.is_reverse_charge),
+            payment_mode=values.get(
+                "payment_mode", PaymentMode(existing.payment_mode)
+            ),
+            reference_number=values.get("reference_number", existing.reference_number),
+            reference_date=values.get("reference_date", existing.reference_date),
+            marks=values.get("marks", existing.marks),
+            discount_account_id=values.get(
+                "discount_account_id", existing.discount_account_id
+            ),
+            freight_account_id=values.get("freight_account_id", existing.freight_account_id),
+            credit_account_id=values.get("credit_account_id", existing.credit_account_id),
+            auto_stock_document=values.get(
+                "auto_stock_document", existing.auto_stock_document
+            ),
+            source_of_supply_country=values.get(
+                "source_of_supply_country", existing.source_of_supply_country
+            ),
+            import_doc_number=values.get("import_doc_number", existing.import_doc_number),
+            import_doc_date=values.get("import_doc_date", existing.import_doc_date),
+            boe_number=values.get("boe_number", existing.boe_number),
+            cargo_permit_number=values.get(
+                "cargo_permit_number", existing.cargo_permit_number
+            ),
             lines=lines,
         )
 
@@ -1547,6 +1625,19 @@ class PurchaseInvoiceService:
             round_off_amount=row.round_off_amount,
             place_of_supply=PlaceOfSupply(row.place_of_supply),
             is_reverse_charge=row.is_reverse_charge,
+            payment_mode=PaymentMode(row.payment_mode),
+            reference_number=row.reference_number,
+            reference_date=row.reference_date,
+            marks=row.marks,
+            discount_account_id=row.discount_account_id,
+            freight_account_id=row.freight_account_id,
+            credit_account_id=row.credit_account_id,
+            auto_stock_document=row.auto_stock_document,
+            source_of_supply_country=row.source_of_supply_country,
+            import_doc_number=row.import_doc_number,
+            import_doc_date=row.import_doc_date,
+            boe_number=row.boe_number,
+            cargo_permit_number=row.cargo_permit_number,
             lines=[
                 PurchaseInvoiceLineInput(
                     line_type=PurchaseInvoiceLineType(line.line_type),
@@ -1637,10 +1728,42 @@ class PurchaseInvoiceService:
             )
         ):
             actions.append("create_goods_receipt")
+        if (
+            status == InvoiceDocumentStatus.POSTED
+            and BillType(row.bill_type) == BillType.IMPORT
+            and has_permission(self.actor_permissions, COST_SHEET_CREATE)
+        ):
+            actions.append("create_cost_sheet")
         return actions
 
+    async def _import_expense_lcy(self, tenant_id: UUID, purchase_invoice_id: UUID) -> Decimal:
+        from app.core.enums import CostSheetMode, CostSheetStatus
+        from app.erp.cost_sheets.models import CostSheet, CostSheetJournalLine
+
+        statement = (
+            select(CostSheetJournalLine.debit, CostSheet.exchange_rate)
+            .join(CostSheet, CostSheetJournalLine.cost_sheet_id == CostSheet.id)
+            .where(
+                CostSheet.tenant_id == tenant_id,
+                CostSheetJournalLine.tenant_id == tenant_id,
+                CostSheet.purchase_invoice_id == purchase_invoice_id,
+                CostSheet.deleted_at.is_(None),
+                CostSheet.sheet_mode == CostSheetMode.JOURNAL.value,
+                CostSheet.status == CostSheetStatus.CONFIRMED.value,
+                CostSheetJournalLine.capitalize.is_(True),
+            )
+        )
+        total = _ZERO
+        for debit, rate in (await self.session.execute(statement)).all():
+            total += quantize_money(quantize_money(debit) * rate)
+        return quantize_money(total)
+
     def _to_response(
-        self, row: PurchaseInvoice, *, today: date | None = None
+        self,
+        row: PurchaseInvoice,
+        *,
+        today: date | None = None,
+        import_expense_lcy: Decimal | None = None,
     ) -> PurchaseInvoiceResponse:
         status = InvoiceDocumentStatus(row.status)
         period_locked = self._date_in_locked_period(row.invoice_date)
@@ -1707,6 +1830,21 @@ class PurchaseInvoiceService:
             cancelled_at=row.cancelled_at,
             cancelled_by=row.cancelled_by,
             cancel_reason=row.cancel_reason,
+            payment_mode=PaymentMode(row.payment_mode),
+            reference_number=row.reference_number,
+            reference_date=row.reference_date,
+            marks=row.marks,
+            discount_account_id=row.discount_account_id,
+            freight_account_id=row.freight_account_id,
+            credit_account_id=row.credit_account_id,
+            auto_stock_document=row.auto_stock_document,
+            is_printed=row.is_printed,
+            source_of_supply_country=row.source_of_supply_country,
+            import_doc_number=row.import_doc_number,
+            import_doc_date=row.import_doc_date,
+            boe_number=row.boe_number,
+            cargo_permit_number=row.cargo_permit_number,
+            import_expense_lcy=import_expense_lcy,
             is_overdue=is_overdue,
             is_partially_debited=is_partially_debited,
             is_fully_debited=is_fully_debited,

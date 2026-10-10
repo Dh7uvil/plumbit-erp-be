@@ -200,3 +200,43 @@ async def pull_cost_sheet_actuals(
     )
     return ApiResponse(data=row, message="Actuals refreshed from posted documents")
 
+
+@router.post("/{cost_sheet_id}/post", response_model=ApiResponse[CostSheetResponse])
+async def post_cost_sheet_journal(
+    cost_sheet_id: UUID,
+    payload: CostSheetVersionRequest,
+    tenant: TenantContextDependency,
+    service: CostSheetServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(COST_SHEET_CONFIRM))],
+    if_match: IfMatch = None,
+) -> ApiResponse[CostSheetResponse]:
+    expected = require_document_version(if_match=if_match, body_version=payload.version)
+    row = await service.post_journal(
+        tenant.tenant_id,
+        cost_sheet_id,
+        actor_user_id=tenant.user_id,
+        expected_version=expected,
+        version=payload.version,
+    )
+    return ApiResponse(data=row, message="Cost sheet posted")
+
+
+@router.post("/{cost_sheet_id}/cancel-journal", response_model=ApiResponse[CostSheetResponse])
+async def cancel_cost_sheet_journal(
+    cost_sheet_id: UUID,
+    payload: CostSheetVersionRequest,
+    tenant: TenantContextDependency,
+    service: CostSheetServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(COST_SHEET_UPDATE))],
+    if_match: IfMatch = None,
+) -> ApiResponse[CostSheetResponse]:
+    expected = require_document_version(if_match=if_match, body_version=payload.version)
+    row = await service.cancel_journal(
+        tenant.tenant_id,
+        cost_sheet_id,
+        actor_user_id=tenant.user_id,
+        expected_version=expected,
+        version=payload.version,
+    )
+    return ApiResponse(data=row, message="Cost sheet journal cancelled")
+

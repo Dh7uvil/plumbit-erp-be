@@ -48,6 +48,7 @@ class PurchaseInvoiceRepository:
                     "purchase_order_id",
                     "goods_receipt_id",
                     "bill_type",
+                    "payment_mode",
                     "payment_status",
                 }
             ),

@@ -58,6 +58,10 @@ class PurchaseOrder(AuditUserMixin, SoftDeleteTenantModel):
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     reference_number: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    order_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'LOCAL'")
+    )
+    ship_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     order_date: Mapped[date] = mapped_column(Date, nullable=False)
     expected_delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     branch_id: Mapped[UUID | None] = mapped_column(

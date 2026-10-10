@@ -13,7 +13,12 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.common.repositories.base import BaseRepository
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
-from app.erp.cost_sheets.models import CostSheet, CostSheetCharge, CostSheetLine
+from app.erp.cost_sheets.models import (
+    CostSheet,
+    CostSheetCharge,
+    CostSheetJournalLine,
+    CostSheetLine,
+)
 
 
 class CostSheetRepository:
@@ -47,7 +52,11 @@ class CostSheetRepository:
         )
 
     def _with_children(self) -> tuple[Any, ...]:
-        return (selectinload(CostSheet.lines), selectinload(CostSheet.charges))
+        return (
+            selectinload(CostSheet.lines),
+            selectinload(CostSheet.charges),
+            selectinload(CostSheet.journal_lines),
+        )
 
     async def get(
         self, tenant_id: UUID, cost_sheet_id: UUID, *, for_update: bool = False
@@ -108,7 +117,12 @@ class CostSheetRepository:
         *,
         lines: Sequence[Mapping[str, object]],
         charges: Sequence[Mapping[str, object]],
-    ) -> tuple[builtins.list[CostSheetLine], builtins.list[CostSheetCharge]]:
+        journal_lines: Sequence[Mapping[str, object]] | None = None,
+    ) -> tuple[
+        builtins.list[CostSheetLine],
+        builtins.list[CostSheetCharge],
+        builtins.list[CostSheetJournalLine],
+    ]:
         await self.session.execute(
             delete(CostSheetLine).where(
                 CostSheetLine.tenant_id == tenant_id,
@@ -135,5 +149,20 @@ class CostSheetRepository:
                 setattr(charge_row, name, value)
             self.session.add(charge_row)
             created_charges.append(charge_row)
+        await self.session.execute(
+            delete(CostSheetJournalLine).where(
+                CostSheetJournalLine.tenant_id == tenant_id,
+                CostSheetJournalLine.cost_sheet_id == cost_sheet_id,
+            )
+        )
+        created_journal: builtins.list[CostSheetJournalLine] = []
+        for values in journal_lines or ():
+            journal_row = CostSheetJournalLine(
+                tenant_id=tenant_id, cost_sheet_id=cost_sheet_id
+            )
+            for name, value in values.items():
+                setattr(journal_row, name, value)
+            self.session.add(journal_row)
+            created_journal.append(journal_row)
         await self.session.flush()
-        return created_lines, created_charges
+        return created_lines, created_charges, created_journal

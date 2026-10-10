@@ -67,6 +67,7 @@ async def list_purchase_invoices(
         purchase_order_id=filters.purchase_order_id,
         goods_receipt_id=filters.goods_receipt_id,
         bill_type=filters.bill_type.value if filters.bill_type else None,
+        payment_mode=filters.payment_mode.value if filters.payment_mode else None,
         payment_status=filters.payment_status.value if filters.payment_status else None,
         invoice_date_from=filters.invoice_date_from,
         invoice_date_to=filters.invoice_date_to,

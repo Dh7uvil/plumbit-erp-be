@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import builtins
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
 from typing import Any, cast
@@ -27,10 +28,14 @@ from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone
 from app.core.enums import (
     AuditAction,
+    CostSheetMode,
     CostSheetStatus,
     CostSheetType,
     DocumentType,
     ChargeAllocationMethod,
+    JournalType,
+    LedgerLineKind,
+    PartyType,
     StockDocumentStatus,
 )
 from app.core.exceptions import DocumentStaleError, ResourceNotFoundError, ValidationError
@@ -39,12 +44,22 @@ from app.db.session import transaction
 from app.erp.accounting.charge_types.repository import ChargeTypeRepository
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import DocumentSequenceService
-from app.erp.cost_sheets.models import CostSheet, CostSheetCharge, CostSheetLine
+from app.erp.accounting.accounts.service import AccountService
+from app.erp.accounting.ledger.posting import DocumentPostingService
+from app.erp.accounting.ledger.schemas import JournalLineInput
+from app.erp.cost_sheets.models import (
+    CostSheet,
+    CostSheetCharge,
+    CostSheetJournalLine,
+    CostSheetLine,
+)
 from app.erp.cost_sheets.repository import CostSheetRepository
 from app.erp.cost_sheets.schemas import (
     CostSheetChargeInput,
     CostSheetChargeResponse,
     CostSheetCreate,
+    CostSheetJournalLineInput,
+    CostSheetJournalLineResponse,
     CostSheetLineInput,
     CostSheetLineResponse,
     CostSheetResponse,
@@ -55,14 +70,23 @@ from app.erp.cost_sheets.workflow import assert_editable, next_status, transitio
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 from app.erp.proforma_invoices.models import ProformaInvoice
 from app.inventory_management.costing.service import CostingService
+from app.inventory_management.goods_receipt_charge_adjustments.schemas import (
+    GoodsReceiptChargeAdjustmentCreate,
+    GoodsReceiptChargeAdjustmentLineInput,
+)
+from app.inventory_management.goods_receipt_charge_adjustments.service import (
+    GoodsReceiptChargeAdjustmentService,
+)
 from app.inventory_management.goods_receipts.models import (
     GoodsReceipt,
     GoodsReceiptCharge,
     GoodsReceiptLine,
 )
+from app.inventory_management.goods_receipts.repository import GoodsReceiptRepository
 from app.inventory_management.stock.service import SOURCE_GOODS_RECEIPT
 
 _ZERO = Decimal("0")
+_SOURCE_COST_SHEET = "cost_sheet"
 _IMPORT_SERIES = "CSI"
 _EXPORT_SERIES = "CSE"
 _OTHER_SERIES = "CSO"
@@ -92,6 +116,8 @@ class CostSheetService:
         self.sequences = DocumentSequenceService(session)
         self.idempotency = IdempotencyService(session)
         self.audit = AuditWriter(session)
+        self.accounts = AccountService(session)
+        self.posting = DocumentPostingService(session, actor_permissions=actor_permissions)
 
     async def list(
         self,
@@ -168,8 +194,17 @@ class CostSheetService:
                     "updated_by": actor_user_id,
                 },
             )
+            journal_rows = (
+                self._journal_line_rows(payload.journal_lines)
+                if payload.journal_lines is not None
+                else [self._journal_line_dict(line) for line in row.journal_lines]
+            )
             await self.repo.replace_children(
-                tenant_id, cost_sheet_id, lines=lines, charges=charges
+                tenant_id,
+                cost_sheet_id,
+                lines=lines,
+                charges=charges,
+                journal_lines=journal_rows,
             )
             loaded = await self._require(tenant_id, cost_sheet_id)
             await self._sync_base_amounts(loaded)
@@ -320,7 +355,14 @@ class CostSheetService:
                 "updated_by": actor_user_id,
             },
         )
-        await self.repo.replace_children(tenant_id, row.id, lines=lines, charges=charges)
+        journal_rows = self._journal_line_rows(payload.journal_lines)
+        await self.repo.replace_children(
+            tenant_id,
+            row.id,
+            lines=lines,
+            charges=charges,
+            journal_lines=journal_rows,
+        )
         loaded = await self._require(tenant_id, row.id)
         await self._sync_base_amounts(loaded)
         loaded = await self._require(tenant_id, row.id)
@@ -334,6 +376,114 @@ class CostSheetService:
             new_values={"document_number": number, "sheet_type": payload.sheet_type.value},
         )
         return await self._to_response(loaded)
+
+    async def post_journal(
+        self,
+        tenant_id: UUID,
+        cost_sheet_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int | None,
+        version: int | None,
+    ) -> CostSheetResponse:
+        if not has_permission(self.actor_permissions, COST_SHEET_CONFIRM):
+            raise ValidationError("Missing permission for post")
+        async with transaction(self.session):
+            row = await self._require(tenant_id, cost_sheet_id, for_update=True)
+            self._assert_version(row, expected_version, version)
+            if CostSheetMode(row.sheet_mode) != CostSheetMode.JOURNAL:
+                raise ValidationError("Only journal-mode cost sheets can be posted")
+            if CostSheetStatus(row.status) != CostSheetStatus.DRAFT:
+                raise ValidationError("Only draft cost sheets can be posted")
+            if row.journal_entry_id is not None:
+                raise ValidationError("Cost sheet is already posted")
+            self._assert_journal_balanced(row.journal_lines)
+            adjustment_id = await self._post_capitalize_charge_adjustment(
+                tenant_id, row, actor_user_id=actor_user_id
+            )
+            if adjustment_id is not None:
+                row.goods_receipt_charge_adjustment_id = adjustment_id
+            journal_lines = await self._posting_journal_lines(tenant_id, row)
+            journal = await self.posting.post_for_document(
+                tenant_id,
+                source_type=_SOURCE_COST_SHEET,
+                source_id=row.id,
+                entry_date=row.document_date,
+                lines=journal_lines,
+                currency_id=row.currency_id,
+                exchange_rate=row.exchange_rate,
+                narration=row.notes or f"Cost sheet {row.document_number}",
+                branch_id=None,
+                actor_id=actor_user_id,
+                journal_type=JournalType.SYSTEM,
+                reference=row.document_number,
+            )
+            row.journal_entry_id = journal.id
+            row.status = CostSheetStatus.CONFIRMED.value
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            loaded = await self._require(tenant_id, cost_sheet_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.POST,
+                module=ACCOUNTING_MODULE,
+                entity_type="cost_sheet",
+                entity_id=cost_sheet_id,
+                new_values={"journal_entry_id": str(journal.id)},
+            )
+            return await self._to_response(loaded)
+
+    async def cancel_journal(
+        self,
+        tenant_id: UUID,
+        cost_sheet_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int | None,
+        version: int | None,
+    ) -> CostSheetResponse:
+        if not has_permission(self.actor_permissions, COST_SHEET_UPDATE):
+            raise ValidationError("Missing permission for cancel")
+        async with transaction(self.session):
+            row = await self._require(tenant_id, cost_sheet_id, for_update=True)
+            self._assert_version(row, expected_version, version)
+            if CostSheetMode(row.sheet_mode) != CostSheetMode.JOURNAL:
+                raise ValidationError("Only journal-mode cost sheets support cancel")
+            if row.journal_entry_id is None:
+                raise ValidationError("Cost sheet has no posted journal to cancel")
+            if row.goods_receipt_charge_adjustment_id is not None:
+                await self._reverse_capitalize_charge_adjustment(
+                    tenant_id,
+                    row,
+                    actor_user_id=actor_user_id,
+                )
+                row.goods_receipt_charge_adjustment_id = None
+            reversal = await self.posting.reverse(
+                tenant_id,
+                row.journal_entry_id,
+                reversal_date=row.document_date,
+                reason=f"Cancel cost sheet {row.document_number}",
+                actor_id=actor_user_id,
+            )
+            row.reversal_journal_entry_id = reversal.id
+            row.journal_entry_id = None
+            row.status = CostSheetStatus.DRAFT.value
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            loaded = await self._require(tenant_id, cost_sheet_id)
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.CANCEL,
+                module=ACCOUNTING_MODULE,
+                entity_type="cost_sheet",
+                entity_id=cost_sheet_id,
+                new_values={"reversal_journal_entry_id": str(reversal.id)},
+            )
+            return await self._to_response(loaded)
 
     async def _transition(
         self,
@@ -414,6 +564,9 @@ class CostSheetService:
                 "port_of_discharge": payload.port_of_discharge,
                 "allocation_method": payload.allocation_method.value,
                 "notes": payload.notes,
+                "sheet_mode": payload.sheet_mode.value,
+                "purchase_invoice_id": payload.purchase_invoice_id,
+                "imp_reference": payload.imp_reference,
             },
             line_rows,
             charge_rows,
@@ -438,10 +591,14 @@ class CostSheetService:
             "port_of_loading",
             "port_of_discharge",
             "notes",
+            "purchase_invoice_id",
+            "imp_reference",
         ):
             value = getattr(payload, field)
             if value is not None:
                 header[field] = value
+        if payload.sheet_mode is not None:
+            header["sheet_mode"] = payload.sheet_mode.value
         if payload.currency_id is not None:
             header["currency_id"] = payload.currency_id
         if payload.exchange_rate is not None:
@@ -459,6 +616,238 @@ class CostSheetService:
         else:
             charges = [self._charge_dict(charge) for charge in row.charges]
         return header, lines, charges
+
+    def _journal_line_rows(
+        self, lines: builtins.list[CostSheetJournalLineInput]
+    ) -> builtins.list[dict[str, object]]:
+        return [
+            {
+                "line_number": index + 1,
+                "line_kind": line.line_kind.value,
+                "account_id": line.account_id,
+                "party_id": line.party_id,
+                "debit": quantize_money(line.debit),
+                "credit": quantize_money(line.credit),
+                "description": line.description,
+                "capitalize": line.capitalize,
+            }
+            for index, line in enumerate(lines)
+        ]
+
+    def _journal_line_dict(self, line: CostSheetJournalLine) -> dict[str, object]:
+        return {
+            "line_number": line.line_number,
+            "line_kind": line.line_kind,
+            "account_id": line.account_id,
+            "party_id": line.party_id,
+            "debit": line.debit,
+            "credit": line.credit,
+            "description": line.description,
+            "capitalize": line.capitalize,
+        }
+
+    @staticmethod
+    def _assert_journal_balanced(lines: Sequence[CostSheetJournalLine]) -> None:
+        debit = sum((quantize_money(line.debit) for line in lines), _ZERO)
+        credit = sum((quantize_money(line.credit) for line in lines), _ZERO)
+        if debit != credit:
+            raise ValidationError("Journal lines must balance before posting")
+        if debit <= _ZERO:
+            raise ValidationError("Journal lines must have a non-zero total")
+
+    def _capitalize_debit_total(self, row: CostSheet) -> Decimal:
+        total = _ZERO
+        for line in row.journal_lines:
+            if (
+                LedgerLineKind(line.line_kind) == LedgerLineKind.G
+                and line.capitalize
+                and quantize_money(line.debit) > _ZERO
+            ):
+                total += quantize_money(line.debit)
+        return quantize_money(total)
+
+    async def _posted_grn_for_purchase_invoice(
+        self, tenant_id: UUID, purchase_invoice_id: UUID
+    ) -> GoodsReceipt | None:
+        repo = GoodsReceiptRepository(self.session)
+        grns = await repo.list_for_purchase_invoice(tenant_id, purchase_invoice_id)
+        posted = [
+            grn
+            for grn in grns
+            if StockDocumentStatus(grn.status) == StockDocumentStatus.POSTED
+        ]
+        if not posted:
+            return None
+        return posted[-1]
+
+    def _allocate_capitalize_to_grn_charges(
+        self, total: Decimal, charges: Sequence[GoodsReceiptCharge]
+    ) -> list[tuple[GoodsReceiptCharge, Decimal]]:
+        if total <= _ZERO or not charges:
+            return []
+        weights = [quantize_money(charge.amount) for charge in charges]
+        weight_sum = sum(weights, _ZERO)
+        if weight_sum <= _ZERO:
+            equal = quantize_money(total / Decimal(len(charges)))
+            return [(charge, equal) for charge in charges]
+        allocated: list[tuple[GoodsReceiptCharge, Decimal]] = []
+        running = _ZERO
+        for index, charge in enumerate(charges):
+            if index == len(charges) - 1:
+                share = quantize_money(total - running)
+            else:
+                share = quantize_money(total * weights[index] / weight_sum)
+                running += share
+            if share != _ZERO:
+                allocated.append((charge, share))
+        return allocated
+
+    async def _post_capitalize_charge_adjustment(
+        self,
+        tenant_id: UUID,
+        row: CostSheet,
+        *,
+        actor_user_id: UUID,
+    ) -> UUID | None:
+        capitalize_total = self._capitalize_debit_total(row)
+        if capitalize_total <= _ZERO:
+            return None
+        if row.purchase_invoice_id is None:
+            raise ValidationError(
+                "Capitalize journal lines require a linked import purchase invoice"
+            )
+        grn = await self._posted_grn_for_purchase_invoice(tenant_id, row.purchase_invoice_id)
+        if grn is None:
+            raise ValidationError(
+                "A posted goods receipt linked to the import bill is required to capitalize costs"
+            )
+        if not grn.charges:
+            raise ValidationError(
+                "The linked goods receipt has no charge rows to allocate capitalized amounts"
+            )
+        allocations = self._allocate_capitalize_to_grn_charges(capitalize_total, grn.charges)
+        if not allocations:
+            return None
+        adjustment_service = GoodsReceiptChargeAdjustmentService(
+            self.session,
+            actor_permissions=self.actor_permissions,
+        )
+        created = await adjustment_service.create(
+            tenant_id,
+            GoodsReceiptChargeAdjustmentCreate(
+                goods_receipt_id=grn.id,
+                document_date=row.document_date,
+                notes=f"Cost sheet {row.document_number} capitalize",
+                lines=[
+                    GoodsReceiptChargeAdjustmentLineInput(
+                        goods_receipt_charge_id=charge.id,
+                        adjustment_amount=amount,
+                        notes=f"Cost sheet {row.document_number}",
+                    )
+                    for charge, amount in allocations
+                ],
+            ),
+            actor_user_id=actor_user_id,
+        )
+        posted = await adjustment_service.post(
+            tenant_id,
+            created.id,
+            actor_user_id=actor_user_id,
+            expected_version=created.version,
+            idempotency_key=f"cost-sheet-{row.id}-capitalize",
+            request_hash=f"cost-sheet-{row.id}",
+            endpoint=f"/cost-sheets/{row.id}/post",
+        )
+        return posted.id
+
+    async def _reverse_capitalize_charge_adjustment(
+        self,
+        tenant_id: UUID,
+        row: CostSheet,
+        *,
+        actor_user_id: UUID,
+    ) -> None:
+        adjustment_id = row.goods_receipt_charge_adjustment_id
+        if adjustment_id is None:
+            return
+        adjustment_service = GoodsReceiptChargeAdjustmentService(
+            self.session,
+            actor_permissions=self.actor_permissions,
+        )
+        existing = await adjustment_service.get(tenant_id, adjustment_id)
+        if StockDocumentStatus(existing.status) != StockDocumentStatus.POSTED:
+            return
+        reversed_doc = await adjustment_service.create(
+            tenant_id,
+            GoodsReceiptChargeAdjustmentCreate(
+                goods_receipt_id=existing.goods_receipt_id,
+                document_date=row.document_date,
+                notes=f"Reverse cost sheet {row.document_number} capitalize",
+                lines=[
+                    GoodsReceiptChargeAdjustmentLineInput(
+                        goods_receipt_charge_id=line.goods_receipt_charge_id,
+                        adjustment_amount=-line.adjustment_amount,
+                        notes=f"Reverse {existing.document_number}",
+                    )
+                    for line in existing.lines
+                ],
+            ),
+            actor_user_id=actor_user_id,
+        )
+        await adjustment_service.post(
+            tenant_id,
+            reversed_doc.id,
+            actor_user_id=actor_user_id,
+            expected_version=reversed_doc.version,
+            idempotency_key=f"cost-sheet-{row.id}-capitalize-reverse",
+            request_hash=f"cost-sheet-{row.id}-reverse",
+            endpoint=f"/cost-sheets/{row.id}/cancel-journal",
+        )
+
+    async def _posting_journal_lines(
+        self, tenant_id: UUID, row: CostSheet
+    ) -> list[JournalLineInput]:
+        built: list[JournalLineInput] = []
+        for line in row.journal_lines:
+            kind = LedgerLineKind(line.line_kind)
+            if (
+                kind == LedgerLineKind.G
+                and line.capitalize
+                and quantize_money(line.debit) > _ZERO
+            ):
+                continue
+            account_id = line.account_id
+            party_type: PartyType | None = None
+            party_id = line.party_id
+            if kind == LedgerLineKind.S:
+                if party_id is None:
+                    raise ValidationError("Supplier lines require a party")
+                account = await self.accounts.party_resolver.resolve_payable(
+                    tenant_id, party_id
+                )
+                account_id = account.id
+                party_type = PartyType.SUPPLIER
+            elif kind == LedgerLineKind.C:
+                if party_id is None:
+                    raise ValidationError("Customer lines require a party")
+                account = await self.accounts.party_resolver.resolve_receivable(
+                    tenant_id, party_id
+                )
+                account_id = account.id
+                party_type = PartyType.CUSTOMER
+            elif account_id is None:
+                raise ValidationError("Ledger lines require an account")
+            built.append(
+                JournalLineInput(
+                    account_id=account_id,
+                    debit=line.debit,
+                    credit=line.credit,
+                    party_type=party_type,
+                    party_id=party_id if party_type is not None else None,
+                    description=line.description,
+                )
+            )
+        return built
 
     def _line_rows(
         self, lines: builtins.list[CostSheetLineInput]
@@ -610,7 +999,10 @@ class CostSheetService:
             row, charge_type_map=charge_type_map
         )
         status = CostSheetStatus(row.status)
+        sheet_mode = CostSheetMode(row.sheet_mode)
         actions = transition_actions(status)
+        if sheet_mode == CostSheetMode.JOURNAL:
+            actions = [action for action in actions if action not in {"confirm", "close"}]
         if status != CostSheetStatus.CLOSED:
             if has_permission(self.actor_permissions, COST_SHEET_UPDATE):
                 actions = [*actions, "pull_actuals"]
@@ -618,14 +1010,61 @@ class CostSheetService:
             self.actor_permissions, COST_SHEET_DELETE
         ):
             actions.append("delete")
+        if sheet_mode == CostSheetMode.JOURNAL:
+            if (
+                status == CostSheetStatus.DRAFT
+                and row.journal_entry_id is None
+                and has_permission(self.actor_permissions, COST_SHEET_CONFIRM)
+            ):
+                actions.append("post")
+            if row.journal_entry_id is not None and has_permission(
+                self.actor_permissions, COST_SHEET_UPDATE
+            ):
+                actions.append("cancel_journal")
+        purchase_invoice_number = None
+        if row.purchase_invoice_id is not None:
+            from app.erp.purchase_invoices.models import PurchaseInvoice
+
+            pi = (
+                await self.session.execute(
+                    select(PurchaseInvoice).where(
+                        PurchaseInvoice.tenant_id == row.tenant_id,
+                        PurchaseInvoice.id == row.purchase_invoice_id,
+                        PurchaseInvoice.deleted_at.is_(None),
+                    )
+                )
+            ).scalar_one_or_none()
+            if pi is not None:
+                purchase_invoice_number = pi.document_number
+        journal_responses = [
+            CostSheetJournalLineResponse(
+                id=line.id,
+                line_number=line.line_number,
+                line_kind=LedgerLineKind(line.line_kind),
+                account_id=line.account_id,
+                party_id=line.party_id,
+                debit=line.debit,
+                credit=line.credit,
+                description=line.description,
+                capitalize=line.capitalize,
+            )
+            for line in row.journal_lines
+        ]
         return CostSheetResponse(
             id=row.id,
             tenant_id=row.tenant_id,
             document_number=row.document_number,
             sheet_type=CostSheetType(row.sheet_type),
+            sheet_mode=sheet_mode,
             status=status,
             version=row.version,
             document_date=row.document_date,
+            purchase_invoice_id=row.purchase_invoice_id,
+            imp_reference=row.imp_reference,
+            purchase_invoice_number=purchase_invoice_number,
+            journal_entry_id=row.journal_entry_id,
+            reversal_journal_entry_id=row.reversal_journal_entry_id,
+            goods_receipt_charge_adjustment_id=row.goods_receipt_charge_adjustment_id,
             shipment_id=row.shipment_id,
             purchase_order_id=row.purchase_order_id,
             supplier_id=row.supplier_id,
@@ -644,6 +1083,7 @@ class CostSheetService:
             available_actions=actions,
             lines=line_responses,
             charges=charge_responses,
+            journal_lines=journal_responses,
             created_at=row.created_at,
             updated_at=row.updated_at,
             created_by=row.created_by,

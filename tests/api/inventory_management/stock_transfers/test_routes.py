@@ -48,3 +48,54 @@ async def test_stock_transfer_moves_on_hand_between_warehouses(client: AsyncClie
     by_warehouse = {row["warehouse_id"]: row for row in stock.json()["data"]}
     assert Decimal(by_warehouse[from_warehouse_id]["qty_on_hand"]) == Decimal("6")
     assert Decimal(by_warehouse[to_warehouse_id]["qty_on_hand"]) == Decimal("4")
+
+
+@pytest.mark.asyncio
+async def test_posted_stock_transfer_reverse_creates_swapped_draft(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ctx = await _receive_stock(client, headers, quantity="5")
+    product_id = str(ctx["product_id"])
+    from_warehouse_id = str(ctx["warehouse_id"])
+    to_warehouse_id = await _create_warehouse(client, headers)
+
+    created = await client.post(
+        "/api/v1/stock-transfers",
+        headers=headers,
+        json={
+            "from_warehouse_id": from_warehouse_id,
+            "to_warehouse_id": to_warehouse_id,
+            "reference_date": "2026-01-15",
+            "lines": [
+                {
+                    "product_id": product_id,
+                    "qty": "2",
+                    "reservation_number": "RSV-1",
+                }
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    transfer = created.json()["data"]
+    assert transfer["reference_date"] == "2026-01-15"
+    assert transfer["lines"][0]["reservation_number"] == "RSV-1"
+
+    posted = await client.post(
+        f"/api/v1/stock-transfers/{transfer['id']}/post",
+        headers=_idempotent(headers, transfer["version"]),
+    )
+    assert posted.status_code == 200, posted.text
+    posted_body = posted.json()["data"]
+    assert "reverse" in posted_body["available_actions"]
+
+    reversed_resp = await client.post(
+        f"/api/v1/stock-transfers/{posted_body['id']}/reverse",
+        headers=headers,
+    )
+    assert reversed_resp.status_code == 200, reversed_resp.text
+    reverse_draft = reversed_resp.json()["data"]
+    assert reverse_draft["status"] == "DRAFT"
+    assert reverse_draft["from_warehouse_id"] == to_warehouse_id
+    assert reverse_draft["to_warehouse_id"] == from_warehouse_id
+    assert reverse_draft["reference_stock_transfer_id"] == posted_body["id"]
+    assert reverse_draft["lines"][0]["reservation_number"] == "RSV-1"

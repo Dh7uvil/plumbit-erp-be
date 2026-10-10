@@ -68,6 +68,13 @@ class StockTransfer(AuditUserMixin, SoftDeleteTenantModel):
     )
     reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    reference_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    reference_stock_transfer_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("stock_transfers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     posted_by: Mapped[UUID | None] = mapped_column(
@@ -129,6 +136,7 @@ class StockTransferLine(TenantModel):
     qty_transferred: Mapped[Decimal] = mapped_column(_QTY, nullable=False, server_default=text("0"))
     qty_source_before: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     qty_dest_before: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
+    reservation_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     transfer: Mapped[StockTransfer] = relationship(back_populates="lines")

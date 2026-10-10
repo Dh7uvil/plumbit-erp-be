@@ -8,7 +8,13 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.schemas.filters import BaseFilter
-from app.core.enums import ChargeAllocationMethod, CostSheetStatus, CostSheetType
+from app.core.enums import (
+    ChargeAllocationMethod,
+    CostSheetMode,
+    CostSheetStatus,
+    CostSheetType,
+    LedgerLineKind,
+)
 
 
 class CostSheetFilter(BaseFilter):
@@ -53,6 +59,24 @@ class CostSheetLineInput(BaseModel):
     goods_receipt_line_id: UUID | None = None
 
 
+class CostSheetJournalLineInput(BaseModel):
+    line_kind: LedgerLineKind = LedgerLineKind.G
+    account_id: UUID | None = None
+    party_id: UUID | None = None
+    debit: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
+    credit: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
+    description: str | None = Field(default=None, max_length=500)
+    capitalize: bool = True
+
+    @field_validator("description")
+    @classmethod
+    def strip_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
 class CostSheetChargeInput(BaseModel):
     charge_type_id: UUID
     estimated_amount: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
@@ -64,6 +88,9 @@ class CostSheetChargeInput(BaseModel):
 
 class CostSheetCreate(BaseModel):
     sheet_type: CostSheetType
+    sheet_mode: CostSheetMode = CostSheetMode.PLANNING
+    purchase_invoice_id: UUID | None = None
+    imp_reference: str | None = Field(default=None, max_length=80)
     document_date: date | None = None
     shipment_id: UUID | None = None
     purchase_order_id: UUID | None = None
@@ -77,10 +104,20 @@ class CostSheetCreate(BaseModel):
     port_of_discharge: str | None = Field(default=None, max_length=120)
     allocation_method: ChargeAllocationMethod = ChargeAllocationMethod.VALUE
     notes: str | None = None
-    lines: list[CostSheetLineInput] = Field(min_length=1)
+    lines: list[CostSheetLineInput] = Field(default_factory=list)
     charges: list[CostSheetChargeInput] = Field(default_factory=list)
+    journal_lines: list[CostSheetJournalLineInput] = Field(default_factory=list)
 
-    @field_validator("notes", "incoterm", "port_of_loading", "port_of_discharge")
+    @model_validator(mode="after")
+    def validate_mode_lines(self) -> "CostSheetCreate":
+        if self.sheet_mode == CostSheetMode.JOURNAL:
+            if not self.journal_lines:
+                raise ValueError("Journal mode requires at least one journal line")
+        elif not self.lines:
+            raise ValueError("Planning mode requires at least one product line")
+        return self
+
+    @field_validator("notes", "incoterm", "port_of_loading", "port_of_discharge", "imp_reference")
     @classmethod
     def strip_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -90,6 +127,9 @@ class CostSheetCreate(BaseModel):
 
 
 class CostSheetUpdate(BaseModel):
+    sheet_mode: CostSheetMode | None = None
+    purchase_invoice_id: UUID | None = None
+    imp_reference: str | None = Field(default=None, max_length=80)
     document_date: date | None = None
     shipment_id: UUID | None = None
     purchase_order_id: UUID | None = None
@@ -103,11 +143,12 @@ class CostSheetUpdate(BaseModel):
     port_of_discharge: str | None = Field(default=None, max_length=120)
     allocation_method: ChargeAllocationMethod | None = None
     notes: str | None = None
-    lines: list[CostSheetLineInput] | None = Field(default=None, min_length=1)
+    lines: list[CostSheetLineInput] | None = None
     charges: list[CostSheetChargeInput] | None = None
+    journal_lines: list[CostSheetJournalLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
-    @field_validator("notes", "incoterm", "port_of_loading", "port_of_discharge")
+    @field_validator("notes", "incoterm", "port_of_loading", "port_of_discharge", "imp_reference")
     @classmethod
     def strip_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -132,6 +173,20 @@ class CostSheetLineResponse(BaseModel):
     estimated_landed_unit_cost: Decimal
     actual_landed_unit_cost: Decimal | None
     expected_margin_pct: Decimal | None
+
+
+class CostSheetJournalLineResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    line_number: int
+    line_kind: LedgerLineKind
+    account_id: UUID | None
+    party_id: UUID | None
+    debit: Decimal
+    credit: Decimal
+    description: str | None
+    capitalize: bool
 
 
 class CostSheetChargeResponse(BaseModel):
@@ -170,9 +225,16 @@ class CostSheetResponse(BaseModel):
     tenant_id: UUID
     document_number: str
     sheet_type: CostSheetType
+    sheet_mode: CostSheetMode = CostSheetMode.PLANNING
     status: CostSheetStatus
     version: int
     document_date: date
+    purchase_invoice_id: UUID | None = None
+    imp_reference: str | None = None
+    purchase_invoice_number: str | None = None
+    journal_entry_id: UUID | None = None
+    reversal_journal_entry_id: UUID | None = None
+    goods_receipt_charge_adjustment_id: UUID | None = None
     shipment_id: UUID | None
     purchase_order_id: UUID | None
     supplier_id: UUID | None
@@ -191,6 +253,7 @@ class CostSheetResponse(BaseModel):
     available_actions: list[str] = Field(default_factory=list)
     lines: list[CostSheetLineResponse] = Field(default_factory=list)
     charges: list[CostSheetChargeResponse] = Field(default_factory=list)
+    journal_lines: list[CostSheetJournalLineResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     created_by: UUID | None = None

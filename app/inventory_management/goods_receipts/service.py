@@ -105,6 +105,7 @@ from app.inventory_management.warehouses.service import WarehouseService
 
 _ZERO = Decimal("0")
 _SERIES = "GRN"
+AUTO_STOCK_GRN_NOTE_PREFIX = "Auto stock (Update Stock)"
 _ACTION_PERMISSIONS: dict[str, str] = {
     "post": GOODS_RECEIPT_POST,
     "cancel": GOODS_RECEIPT_UPDATE,
@@ -545,6 +546,169 @@ class GoodsReceiptService:
             )
             return response
 
+    async def create_and_post_from_purchase_invoice_auto_stock(
+        self,
+        tenant_id: UUID,
+        *,
+        invoice_id: UUID,
+        actor_user_id: UUID,
+    ) -> UUID | None:
+        """Create and post a goods receipt for Update Stock. No nested transaction."""
+
+        invoice = await self.purchase_invoices._require(tenant_id, invoice_id, for_update=True)
+        if InvoiceDocumentStatus(invoice.status) != InvoiceDocumentStatus.POSTED:
+            raise ValidationError("Auto stock requires a posted purchase invoice")
+        if not getattr(invoice, "auto_stock_document", False):
+            return None
+        for existing in await self.repo.list_for_purchase_invoice(tenant_id, invoice_id):
+            if (existing.notes or "").startswith(AUTO_STOCK_GRN_NOTE_PREFIX):
+                if StockDocumentStatus(existing.status) == StockDocumentStatus.POSTED:
+                    return existing.id
+                if StockDocumentStatus(existing.status) == StockDocumentStatus.DRAFT:
+                    posted = await self._execute_post_receipt(
+                        tenant_id,
+                        existing.id,
+                        actor_user_id=actor_user_id,
+                        expected_version=existing.version,
+                    )
+                    return posted.id
+
+        product_lines = [
+            line
+            for line in invoice.lines
+            if line.product_id is not None and line.line_type == "PRODUCT"
+        ]
+        allocations = allocate_conversion_qty(
+            lines=[(line.id, line.quantity, line.qty_received) for line in product_lines],
+            requested=None,
+            empty_message="This purchase invoice has no remaining quantity to receive",
+        )
+        by_id = {line.id: line for line in invoice.lines}
+        lines = [
+            GoodsReceiptLineInput(
+                source_purchase_invoice_line_id=line_id,
+                purchase_order_line_id=by_id[line_id].purchase_order_line_id,
+                product_id=by_id[line_id].product_id,
+                supplier_product_id=by_id[line_id].supplier_product_id,
+                supplier_sku=by_id[line_id].supplier_sku,
+                description=by_id[line_id].description,
+                quantity=qty,
+                unit_id=by_id[line_id].unit_id,
+                rate=by_id[line_id].rate,
+            )
+            for line_id, qty in allocations
+        ]
+        warehouse_id = None
+        if invoice.purchase_order_id is not None:
+            order = await self.purchase_orders.get(tenant_id, invoice.purchase_order_id)
+            warehouse_id = order.warehouse_id if order is not None else None
+        if warehouse_id is None:
+            default_warehouse = await self.warehouses.get_default(tenant_id)
+            if default_warehouse is None:
+                raise ValidationError("A warehouse is required to update stock")
+            warehouse_id = default_warehouse.id
+        create_payload = GoodsReceiptCreate(
+            supplier_id=invoice.supplier_id,
+            warehouse_id=warehouse_id,
+            document_date=invoice.invoice_date,
+            purchase_order_id=invoice.purchase_order_id,
+            branch_id=invoice.branch_id,
+            currency_id=invoice.currency_id,
+            notes=AUTO_STOCK_GRN_NOTE_PREFIX,
+            lines=lines,
+            charges=[],
+        )
+        header, line_rows = await self._build_draft_from_invoice(
+            tenant_id, create_payload, invoice
+        )
+        charge_rows = await self._build_charges(
+            tenant_id, create_payload.charges, cast(Decimal, header["exchange_rate"])
+        )
+        policy = await self._ensure_policy(tenant_id)
+        policy.assert_open(header["document_date"], can_override=self._can_override)
+        number = await self.sequences.allocate(
+            tenant_id,
+            document_type=DocumentType.GOODS_RECEIPT,
+            series=_SERIES,
+            fiscal_year=await year_for(
+                self.session, tenant_id, cast(date, header["document_date"])
+            ),
+            prefix=_SERIES,
+            party_id=cast(UUID, header["supplier_id"]),
+        )
+        row = await self.repo.create(
+            tenant_id,
+            {
+                **header,
+                "source_purchase_invoice_id": invoice.id,
+                "document_number": number,
+                "status": StockDocumentStatus.DRAFT.value,
+                "version": 1,
+                "is_posted": False,
+                "qc_status": QcStatus.NOT_REQUIRED.value,
+                "created_by": actor_user_id,
+                "updated_by": actor_user_id,
+            },
+        )
+        await self.repo.replace_lines(tenant_id, row.id, line_rows)
+        await self.repo.replace_charges(tenant_id, row.id, charge_rows)
+        loaded = await self._require(tenant_id, row.id)
+        await self.audit.write(
+            tenant_id=tenant_id,
+            user_id=actor_user_id,
+            action=AuditAction.CREATE,
+            module=PURCHASE_MODULE,
+            entity_type="goods_receipt",
+            entity_id=row.id,
+            new_values=await self._snapshot(tenant_id, loaded),
+        )
+        posted = await self._execute_post_receipt(
+            tenant_id,
+            row.id,
+            actor_user_id=actor_user_id,
+            expected_version=1,
+        )
+        return posted.id
+
+    async def cancel_auto_stock_receipts_for_purchase_invoice(
+        self,
+        tenant_id: UUID,
+        *,
+        invoice_id: UUID,
+        actor_user_id: UUID,
+        reason: str | None = None,
+    ) -> None:
+        """Cancel posted auto-stock goods receipts linked to a purchase invoice."""
+
+        receipts = await self.repo.list_for_purchase_invoice(tenant_id, invoice_id)
+        for receipt in receipts:
+            if not (receipt.notes or "").startswith(AUTO_STOCK_GRN_NOTE_PREFIX):
+                continue
+            if StockDocumentStatus(receipt.status) == StockDocumentStatus.CANCELLED:
+                continue
+            row = await self._require(tenant_id, receipt.id, for_update=True)
+            old_values = await self._snapshot(tenant_id, row)
+            if StockDocumentStatus(row.status) == StockDocumentStatus.POSTED:
+                await self._cancel_posted(tenant_id, row, actor_user_id=actor_user_id)
+            target = next_status(StockDocumentStatus(row.status), "cancel")
+            row.status = target.value
+            row.cancelled_at = utcnow()
+            row.cancelled_by = actor_user_id
+            row.cancel_reason = reason
+            row.version += 1
+            row.updated_by = actor_user_id
+            await self.session.flush()
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.CANCEL,
+                module=PURCHASE_MODULE,
+                entity_type="goods_receipt",
+                entity_id=receipt.id,
+                old_values=old_values,
+                new_values=await self._snapshot(tenant_id, row),
+            )
+
     async def update(
         self,
         tenant_id: UUID,
@@ -623,6 +787,185 @@ class GoodsReceiptService:
             )
             return response
 
+    async def _execute_post_receipt(
+        self,
+        tenant_id: UUID,
+        receipt_id: UUID,
+        *,
+        actor_user_id: UUID,
+        expected_version: int,
+    ) -> GoodsReceipt:
+        row = await self._require(tenant_id, receipt_id, for_update=True)
+        if StockDocumentStatus(row.status) == StockDocumentStatus.POSTED:
+            return row
+        self._assert_version(row, expected_version)
+        target = next_status(StockDocumentStatus(row.status), "post")
+        if not row.lines:
+            raise ValidationError("At least one line is required to post")
+        policy = await self._ensure_policy(tenant_id)
+        policy.assert_open(row.document_date, can_override=self._can_override)
+        old_values = await self._snapshot(tenant_id, row)
+        inbound = await self.org.get_inbound_settings(tenant_id)
+        outstanding: dict[UUID, Decimal] = {}
+        if row.purchase_order_id is not None:
+            outstanding = await self.purchase_orders.outstanding_by_line(
+                tenant_id, row.purchase_order_id
+            )
+        invoice = None
+        pi_lines: dict[UUID, Any] = {}
+        if row.source_purchase_invoice_id is not None:
+            invoice = await self.purchase_invoices._require(
+                tenant_id, row.source_purchase_invoice_id, for_update=True
+            )
+            pi_lines = {line.id: line for line in invoice.lines}
+        po_receipts: dict[UUID, Decimal] = {}
+        invoice_receipts: dict[UUID, Decimal] = {}
+        needs_qc = False
+        occurred_at = utcnow()
+        movement_type = self._movement_type(row)
+        received_this_doc: dict[UUID, Decimal] = {}
+        inventory_value = _ZERO
+        allocated_by_line, charge_credits = await self._compute_charge_allocations(
+            tenant_id, row
+        )
+        stockable_lines: builtins.list[GoodsReceiptLine] = []
+        for line in row.lines:
+            stockable = await self._is_stockable(tenant_id, line.product_id)
+            if stockable and line.product_id is not None and line.quantity > _ZERO:
+                stockable_lines.append(line)
+        charge_per_unit_by_line = self._charge_per_unit_by_line(
+            stockable_lines, allocated_by_line
+        )
+        for line in row.lines:
+            await self._assert_supplier_sku_mapped(tenant_id, row.supplier_id, line)
+            stockable = await self._is_stockable(tenant_id, line.product_id)
+            if line.source_purchase_invoice_line_id is not None:
+                pi_line = pi_lines.get(line.source_purchase_invoice_line_id)
+                if pi_line is None:
+                    raise ValidationError("Purchase invoice line not found on this invoice")
+                outstanding_pi = remaining_qty(pi_line.quantity, pi_line.qty_received)
+                if line.quantity > outstanding_pi:
+                    raise ValidationError(
+                        "Receipt quantity exceeds outstanding quantity on the purchase invoice line"
+                    )
+            if line.purchase_order_line_id is not None:
+                previous = received_this_doc.get(line.purchase_order_line_id, _ZERO)
+                remaining = outstanding.get(line.purchase_order_line_id, _ZERO)
+                self._assert_over_receipt_qty(
+                    line,
+                    remaining=remaining - previous,
+                    allow_over=inbound.allow_over_receipt,
+                    tolerance_pct=inbound.over_receipt_tolerance_pct,
+                )
+                received_this_doc[line.purchase_order_line_id] = previous + line.quantity
+                po_receipts[line.purchase_order_line_id] = received_this_doc[
+                    line.purchase_order_line_id
+                ]
+            if line.quantity > _ZERO and line.product_id is None:
+                raise ValidationError("Stock-moving goods receipt lines require a product")
+            if not stockable or line.product_id is None:
+                continue
+            product = await self.products.require_active(tenant_id, line.product_id)
+            unit_cost = quantize_money(line.rate * row.exchange_rate)
+            allocated_charge = allocated_by_line.get(line.id, _ZERO)
+            line.allocated_charge_amount = allocated_charge
+            charge_per_unit = charge_per_unit_by_line.get(line.id, _ZERO)
+            landed_unit_cost = quantize_money(unit_cost + charge_per_unit)
+            hold_delta = line.quantity if product.requires_qc else _ZERO
+            if product.requires_qc:
+                needs_qc = True
+                line.qty_on_hold = line.quantity
+            locked = await self.stock.lock_balance(
+                tenant_id,
+                warehouse_id=row.warehouse_id,
+                product_id=line.product_id,
+                document_date=row.document_date,
+                can_override_soft_lock=self._can_override,
+            )
+            result = await self.stock.apply_locked(
+                tenant_id,
+                locked,
+                qty=line.quantity,
+                movement_type=movement_type,
+                source_type=SOURCE_GOODS_RECEIPT,
+                source_id=row.id,
+                source_line_id=line.id,
+                document_date=row.document_date,
+                notes=line.description or row.notes,
+                occurred_at=occurred_at,
+                unit_id=line.unit_id,
+                unit_cost=unit_cost,
+                landed_unit_cost=landed_unit_cost,
+                quality_hold_delta=hold_delta,
+            )
+            if result.movement.value is not None:
+                inventory_value += result.movement.value
+            if row.purchase_order_id is not None:
+                consumed = min(locked.row.qty_incoming, line.quantity)
+                line.incoming_consumed = consumed
+                await self.stock.adjust_incoming_locked(locked, qty=-consumed)
+            if line.source_purchase_invoice_line_id is not None:
+                invoice_receipts[line.source_purchase_invoice_line_id] = (
+                    invoice_receipts.get(line.source_purchase_invoice_line_id, _ZERO)
+                    + line.quantity
+                )
+        if invoice_receipts and row.source_purchase_invoice_id is not None:
+            await self._apply_invoice_line_receipts(invoice, invoice_receipts)
+        if po_receipts:
+            if row.purchase_order_id is None:
+                raise ValidationError("Purchase order is required to apply receipts")
+            await self.purchase_orders.apply_line_receipts(
+                tenant_id, row.purchase_order_id, po_receipts
+            )
+        row.status = target.value
+        row.is_posted = True
+        row.posted_at = occurred_at
+        row.posted_by = actor_user_id
+        row.qc_status = QcStatus.PENDING.value if needs_qc else QcStatus.NOT_REQUIRED.value
+        row.version += 1
+        row.updated_by = actor_user_id
+        await self.session.flush()
+        await self.inventory_ledger.post_goods_receipt_with_charges(
+            tenant_id,
+            source_id=row.id,
+            entry_date=row.document_date,
+            goods_amount=inventory_value,
+            charge_credits=charge_credits,
+            actor_id=actor_user_id,
+            branch_id=row.branch_id,
+            document_number=row.document_number,
+        )
+        if needs_qc:
+            from app.inventory_management.quality_inspections.service import (
+                QualityInspectionService,
+            )
+
+            await QualityInspectionService(
+                self.session, actor_permissions=self.actor_permissions
+            ).create_draft_for_goods_receipt(tenant_id, row.id, actor_user_id=actor_user_id)
+        await self.session.refresh(row, attribute_names=["updated_at"])
+        loaded = await self._require(tenant_id, receipt_id)
+        await self._ensure_policy(tenant_id)
+        await self.audit.write(
+            tenant_id=tenant_id,
+            user_id=actor_user_id,
+            action=AuditAction.POST,
+            module=PURCHASE_MODULE,
+            entity_type="goods_receipt",
+            entity_id=receipt_id,
+            old_values=old_values,
+            new_values=await self._snapshot(tenant_id, loaded),
+        )
+        await self.outbox.enqueue(
+            tenant_id,
+            event_type="purchase.goods_receipt.posted",
+            aggregate_type="goods_receipt",
+            aggregate_id=receipt_id,
+            payload={"goods_receipt_id": str(receipt_id)},
+            dedupe_key=f"goods-receipt-posted:{receipt_id}",
+        )
+        return loaded
+
     async def post(
         self,
         tenant_id: UUID,
@@ -648,171 +991,11 @@ class GoodsReceiptService:
                     tenant_id, idempotency_key, response.model_dump(mode="json")
                 )
                 return response
-            self._assert_version(row, expected_version)
-            target = next_status(StockDocumentStatus(row.status), "post")
-            if not row.lines:
-                raise ValidationError("At least one line is required to post")
-            policy = await self._ensure_policy(tenant_id)
-            policy.assert_open(row.document_date, can_override=self._can_override)
-            old_values = await self._snapshot(tenant_id, row)
-            inbound = await self.org.get_inbound_settings(tenant_id)
-            outstanding: dict[UUID, Decimal] = {}
-            if row.purchase_order_id is not None:
-                outstanding = await self.purchase_orders.outstanding_by_line(
-                    tenant_id, row.purchase_order_id
-                )
-            invoice = None
-            pi_lines: dict[UUID, Any] = {}
-            if row.source_purchase_invoice_id is not None:
-                invoice = await self.purchase_invoices._require(
-                    tenant_id, row.source_purchase_invoice_id, for_update=True
-                )
-                pi_lines = {line.id: line for line in invoice.lines}
-            po_receipts: dict[UUID, Decimal] = {}
-            invoice_receipts: dict[UUID, Decimal] = {}
-            needs_qc = False
-            occurred_at = utcnow()
-            movement_type = self._movement_type(row)
-            received_this_doc: dict[UUID, Decimal] = {}
-            inventory_value = _ZERO
-            allocated_by_line, charge_credits = await self._compute_charge_allocations(
-                tenant_id, row
-            )
-            stockable_lines: builtins.list[GoodsReceiptLine] = []
-            for line in row.lines:
-                stockable = await self._is_stockable(tenant_id, line.product_id)
-                if stockable and line.product_id is not None and line.quantity > _ZERO:
-                    stockable_lines.append(line)
-            charge_per_unit_by_line = self._charge_per_unit_by_line(
-                stockable_lines, allocated_by_line
-            )
-            for line in row.lines:
-                await self._assert_supplier_sku_mapped(tenant_id, row.supplier_id, line)
-                stockable = await self._is_stockable(tenant_id, line.product_id)
-                if line.source_purchase_invoice_line_id is not None:
-                    pi_line = pi_lines.get(line.source_purchase_invoice_line_id)
-                    if pi_line is None:
-                        raise ValidationError("Purchase invoice line not found on this invoice")
-                    outstanding_pi = remaining_qty(pi_line.quantity, pi_line.qty_received)
-                    if line.quantity > outstanding_pi:
-                        raise ValidationError(
-                            "Receipt quantity exceeds outstanding quantity on the purchase invoice line"
-                        )
-                if line.purchase_order_line_id is not None:
-                    previous = received_this_doc.get(line.purchase_order_line_id, _ZERO)
-                    remaining = outstanding.get(line.purchase_order_line_id, _ZERO)
-                    self._assert_over_receipt_qty(
-                        line,
-                        remaining=remaining - previous,
-                        allow_over=inbound.allow_over_receipt,
-                        tolerance_pct=inbound.over_receipt_tolerance_pct,
-                    )
-                    received_this_doc[line.purchase_order_line_id] = previous + line.quantity
-                    po_receipts[line.purchase_order_line_id] = received_this_doc[
-                        line.purchase_order_line_id
-                    ]
-                if line.quantity > _ZERO and line.product_id is None:
-                    raise ValidationError("Stock-moving goods receipt lines require a product")
-                if not stockable or line.product_id is None:
-                    continue
-                product = await self.products.require_active(tenant_id, line.product_id)
-                unit_cost = quantize_money(line.rate * row.exchange_rate)
-                allocated_charge = allocated_by_line.get(line.id, _ZERO)
-                line.allocated_charge_amount = allocated_charge
-                charge_per_unit = charge_per_unit_by_line.get(line.id, _ZERO)
-                landed_unit_cost = quantize_money(unit_cost + charge_per_unit)
-                hold_delta = line.quantity if product.requires_qc else _ZERO
-                if product.requires_qc:
-                    needs_qc = True
-                    line.qty_on_hold = line.quantity
-                locked = await self.stock.lock_balance(
-                    tenant_id,
-                    warehouse_id=row.warehouse_id,
-                    product_id=line.product_id,
-                    document_date=row.document_date,
-                    can_override_soft_lock=self._can_override,
-                )
-                result = await self.stock.apply_locked(
-                    tenant_id,
-                    locked,
-                    qty=line.quantity,
-                    movement_type=movement_type,
-                    source_type=SOURCE_GOODS_RECEIPT,
-                    source_id=row.id,
-                    source_line_id=line.id,
-                    document_date=row.document_date,
-                    notes=line.description or row.notes,
-                    occurred_at=occurred_at,
-                    unit_id=line.unit_id,
-                    unit_cost=unit_cost,
-                    landed_unit_cost=landed_unit_cost,
-                    quality_hold_delta=hold_delta,
-                )
-                if result.movement.value is not None:
-                    inventory_value += result.movement.value
-                if row.purchase_order_id is not None:
-                    consumed = min(locked.row.qty_incoming, line.quantity)
-                    line.incoming_consumed = consumed
-                    await self.stock.adjust_incoming_locked(locked, qty=-consumed)
-                if line.source_purchase_invoice_line_id is not None:
-                    invoice_receipts[line.source_purchase_invoice_line_id] = (
-                        invoice_receipts.get(line.source_purchase_invoice_line_id, _ZERO)
-                        + line.quantity
-                    )
-            if invoice_receipts and row.source_purchase_invoice_id is not None:
-                await self._apply_invoice_line_receipts(invoice, invoice_receipts)
-            if po_receipts:
-                if row.purchase_order_id is None:
-                    raise ValidationError("Purchase order is required to apply receipts")
-                await self.purchase_orders.apply_line_receipts(
-                    tenant_id, row.purchase_order_id, po_receipts
-                )
-            row.status = target.value
-            row.is_posted = True
-            row.posted_at = occurred_at
-            row.posted_by = actor_user_id
-            row.qc_status = QcStatus.PENDING.value if needs_qc else QcStatus.NOT_REQUIRED.value
-            row.version += 1
-            row.updated_by = actor_user_id
-            await self.session.flush()
-            await self.inventory_ledger.post_goods_receipt_with_charges(
+            loaded = await self._execute_post_receipt(
                 tenant_id,
-                source_id=row.id,
-                entry_date=row.document_date,
-                goods_amount=inventory_value,
-                charge_credits=charge_credits,
-                actor_id=actor_user_id,
-                branch_id=row.branch_id,
-                document_number=row.document_number,
-            )
-            if needs_qc:
-                from app.inventory_management.quality_inspections.service import (
-                    QualityInspectionService,
-                )
-
-                await QualityInspectionService(
-                    self.session, actor_permissions=self.actor_permissions
-                ).create_draft_for_goods_receipt(tenant_id, row.id, actor_user_id=actor_user_id)
-            await self.session.refresh(row, attribute_names=["updated_at"])
-            loaded = await self._require(tenant_id, receipt_id)
-            await self._ensure_policy(tenant_id)
-            await self.audit.write(
-                tenant_id=tenant_id,
-                user_id=actor_user_id,
-                action=AuditAction.POST,
-                module=PURCHASE_MODULE,
-                entity_type="goods_receipt",
-                entity_id=receipt_id,
-                old_values=old_values,
-                new_values=await self._snapshot(tenant_id, loaded),
-            )
-            await self.outbox.enqueue(
-                tenant_id,
-                event_type="purchase.goods_receipt.posted",
-                aggregate_type="goods_receipt",
-                aggregate_id=receipt_id,
-                payload={"goods_receipt_id": str(receipt_id)},
-                dedupe_key=f"goods-receipt-posted:{receipt_id}",
+                receipt_id,
+                actor_user_id=actor_user_id,
+                expected_version=expected_version,
             )
             response = self._to_response(loaded)
             await self.idempotency.store(

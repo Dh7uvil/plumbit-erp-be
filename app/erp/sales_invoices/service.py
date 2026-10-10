@@ -126,6 +126,7 @@ from app.inventory_management.units.service import UnitService
 _ZERO = Decimal("0")
 _HUNDRED = Decimal("100")
 _SERIES = "INV"
+_SERIES_EXPORT = "EXP"
 _ACTION_PERMISSIONS: dict[str, str] = {
     "post": SALES_INVOICE_POST,
     "cancel": SALES_INVOICE_CANCEL,
@@ -185,6 +186,7 @@ class SalesInvoiceService:
         payment_mode: str | None = None,
         is_printed: bool | None = None,
         reference_number: str | None = None,
+        is_export: bool | None = None,
         invoice_date_from: date | None = None,
         invoice_date_to: date | None = None,
     ) -> tuple[list[SalesInvoiceResponse], int]:
@@ -211,6 +213,8 @@ class SalesInvoiceService:
             filters["is_printed"] = is_printed
         if reference_number is not None:
             filters["reference_number"] = reference_number
+        if is_export is not None:
+            filters["is_export"] = is_export
         extra: list[Any] = []
         if invoice_date_from is not None:
             extra.append(SalesInvoice.invoice_date >= invoice_date_from)
@@ -392,12 +396,17 @@ class SalesInvoiceService:
             invoice_date = cast(date, header["invoice_date"])
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(invoice_date, can_override=self._can_override)
+            series = (
+                _SERIES_EXPORT
+                if payload.document_series == "EXP"
+                else _SERIES
+            )
             number = await self.sequences.allocate(
                 tenant_id,
                 document_type=DocumentType.SALES_INVOICE,
-                series=_SERIES,
+                series=series,
                 fiscal_year=await year_for(self.session, tenant_id, invoice_date),
-                prefix=_SERIES,
+                prefix=series,
                 party_id=cast(UUID, header["customer_id"]),
             )
             row = await self.repo.create(
@@ -1141,20 +1150,6 @@ class SalesInvoiceService:
             )
             row.journal_entry_id = journal.id
             await self._apply_source_quantities(tenant_id, row, sign=Decimal("1"))
-            evidence_ok = True
-            if row.is_export:
-                dn_ids = list(
-                    {
-                        line.delivery_note_id
-                        for line in row.lines
-                        if line.delivery_note_id is not None
-                    }
-                )
-                evidence_ok = bool(dn_ids) and await has_export_evidence(
-                    self.session, tenant_id, dn_ids
-                )
-            row.export_evidence_ok = evidence_ok
-            row.export_evidence_checked_at = utcnow()
             row.status = target.value
             row.is_posted = True
             row.posted_at = utcnow()
@@ -1162,6 +1157,33 @@ class SalesInvoiceService:
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
+            if row.auto_stock_document:
+                from app.erp.common.direct_stock import post_sales_invoice_stock_if_requested
+
+                await post_sales_invoice_stock_if_requested(
+                    self.session,
+                    tenant_id,
+                    invoice_id=invoice_id,
+                    actor_user_id=actor_user_id,
+                    actor_permissions=self.actor_permissions,
+                )
+            evidence_ok = True
+            if row.is_export:
+                dn_ids = {
+                    line.delivery_note_id
+                    for line in row.lines
+                    if line.delivery_note_id is not None
+                }
+                for note in await self.delivery_notes.repo.list_for_sales_invoice(
+                    tenant_id, invoice_id
+                ):
+                    if StockDocumentStatus(note.status) == StockDocumentStatus.POSTED:
+                        dn_ids.add(note.id)
+                evidence_ok = bool(dn_ids) and await has_export_evidence(
+                    self.session, tenant_id, list(dn_ids)
+                )
+                row.export_evidence_ok = evidence_ok
+                row.export_evidence_checked_at = utcnow()
             await self.session.refresh(row, attribute_names=["updated_at"])
             loaded = await self._require(tenant_id, invoice_id)
             await self.audit.write(
@@ -1233,6 +1255,17 @@ class SalesInvoiceService:
             current = InvoiceDocumentStatus(row.status)
             old_values = await self._snapshot(tenant_id, row)
             if current == InvoiceDocumentStatus.POSTED:
+                if row.auto_stock_document:
+                    from app.erp.common.direct_stock import cancel_sales_invoice_auto_stock_if_any
+
+                    await cancel_sales_invoice_auto_stock_if_any(
+                        self.session,
+                        tenant_id,
+                        invoice_id=invoice_id,
+                        actor_user_id=actor_user_id,
+                        reason=reason,
+                        actor_permissions=self.actor_permissions,
+                    )
                 await self._cancel_posted(tenant_id, row, actor_user_id=actor_user_id)
             target = next_status(current, "cancel")
             row.status = target.value
@@ -1672,11 +1705,16 @@ class SalesInvoiceService:
         if terms_body is None:
             default_terms = await self.terms.get_default(tenant_id)
             terms_body = default_terms.body if default_terms else None
-        tax_treatment = TaxTreatment(customer.tax_treatment)
-        is_export = (
-            tax_treatment in {TaxTreatment.EXPORT, TaxTreatment.GCC}
-            or place == PlaceOfSupply.OUTSIDE_UAE
-        )
+        if payload.document_series == "EXP":
+            tax_treatment = TaxTreatment.EXPORT
+            place = payload.place_of_supply or PlaceOfSupply.OUTSIDE_UAE
+            is_export = True
+        else:
+            tax_treatment = TaxTreatment(customer.tax_treatment)
+            is_export = (
+                tax_treatment in {TaxTreatment.EXPORT, TaxTreatment.GCC}
+                or place == PlaceOfSupply.OUTSIDE_UAE
+            )
         prices_include_tax = await self._resolve_prices_include_tax(
             tenant_id, payload.prices_include_tax
         )
