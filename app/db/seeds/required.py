@@ -75,6 +75,8 @@ _DOCUMENT_SEQUENCES: tuple[tuple[DocumentType, str], ...] = (
     (DocumentType.BANK_RECEIPT_VOUCHER, "BRV"),
     (DocumentType.BANK_PAYMENT_VOUCHER, "BPV"),
     (DocumentType.CONTRA_VOUCHER, "CON"),
+    (DocumentType.GENERAL_PURCHASE_VOUCHER, "GP"),
+    (DocumentType.PAYMENT_VOUCHER, "PV"),
 )
 
 _SEQUENCE_PADDING = 6

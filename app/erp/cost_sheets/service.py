@@ -45,7 +45,7 @@ from app.erp.accounting.charge_types.repository import ChargeTypeRepository
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import DocumentSequenceService
 from app.erp.accounting.accounts.service import AccountService
-from app.erp.accounting.ledger.posting import DocumentPostingService
+from app.erp.accounting.ledger.posting import LedgerPostingService
 from app.erp.accounting.ledger.schemas import JournalLineInput
 from app.erp.cost_sheets.models import (
     CostSheet,
@@ -117,7 +117,7 @@ class CostSheetService:
         self.idempotency = IdempotencyService(session)
         self.audit = AuditWriter(session)
         self.accounts = AccountService(session)
-        self.posting = DocumentPostingService(session, actor_permissions=actor_permissions)
+        self.posting = LedgerPostingService(session, actor_permissions=actor_permissions)
 
     async def list(
         self,

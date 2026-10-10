@@ -243,6 +243,7 @@ class AgingResponse(ReportCurrencyMixin):
 
 class PartyStatementLine(BaseModel):
     document_type: str
+    type_code: str | None = None
     document_id: UUID
     document_number: str
     document_date: date
@@ -252,7 +253,10 @@ class PartyStatementLine(BaseModel):
     debit: Decimal
     credit: Decimal
     running_balance: Decimal
+    balance_side: str | None = None
     description: str | None = None
+    cheque_number: str | None = None
+    cheque_date: date | None = None
 
 
 class PartyStatementResponse(ReportCurrencyMixin):
@@ -262,7 +266,9 @@ class PartyStatementResponse(ReportCurrencyMixin):
     from_date: date
     to_date: date
     opening_balance: Decimal
+    opening_balance_side: str | None = None
     closing_balance: Decimal
+    closing_balance_side: str | None = None
     lines: list[PartyStatementLine] = Field(default_factory=list)
 
 

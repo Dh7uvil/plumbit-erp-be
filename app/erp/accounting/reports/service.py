@@ -31,6 +31,7 @@ from app.core.enums import (
     PartyType,
     PurchaseOrderStatus,
     StockDocumentStatus,
+    VoucherType,
 )
 from app.core.exceptions import ValidationError
 from app.crm.customers.models import Customer
@@ -2013,6 +2014,25 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             available_credit=available,
         )
 
+    @staticmethod
+    def _legacy_party_type_code(document_type: str) -> str:
+        mapping = {
+            "SALES_INVOICE": "SI",
+            "PURCHASE_INVOICE": "PI",
+            "CREDIT_NOTE": "CN",
+            "DEBIT_NOTE": "DN",
+            "CUSTOMER_PAYMENT": "CR",
+            "SUPPLIER_PAYMENT": "PV",
+            "VOUCHER_CASH_RECEIPT": "CR",
+            "VOUCHER_BANK_RECEIPT": "BR",
+            "VOUCHER_CASH_PAYMENT": "CP",
+            "VOUCHER_BANK_PAYMENT": "BP",
+            "VOUCHER_JOURNAL": "JV",
+            "VOUCHER_GENERAL_PURCHASE": "GP",
+            "VOUCHER_PAYMENT_VOUCHER": "PV",
+        }
+        return mapping.get(document_type, document_type.replace("_", "")[:4])
+
     async def _party_document_statement(
         self,
         tenant_id: UUID,
@@ -2031,8 +2051,8 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         from app.erp.accounting.supplier_payments.models import SupplierPayment
         from app.erp.credit_notes.models import CreditNote
         from app.erp.debit_notes.models import DebitNote
+        from app.erp.accounting.vouchers.models import Voucher
         from app.erp.purchase_invoices.models import PurchaseInvoice
-
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
         role = CUSTOMER_PARTY_ROLE if party_type == PartyType.CUSTOMER else SUPPLIER_PARTY_ROLE
@@ -2233,6 +2253,71 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                         row.exchange_rate,
                     )
                 )
+        party_type_value = PartyType.CUSTOMER.value if party_type == PartyType.CUSTOMER else PartyType.SUPPLIER.value
+        vouchers = (
+            (
+                await self.session.execute(
+                    select(Voucher).where(
+                        Voucher.tenant_id == tenant_id,
+                        Voucher.party_id == party_id,
+                        Voucher.party_type == party_type_value,
+                        Voucher.deleted_at.is_(None),
+                        Voucher.status == InvoiceDocumentStatus.POSTED.value,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for row in vouchers:
+            amount = payment_base_amount(row.total_amount, row.exchange_rate)
+            voucher_type = VoucherType(row.voucher_type)
+            debit = _ZERO
+            credit = _ZERO
+            if party_type == PartyType.CUSTOMER:
+                if voucher_type in {
+                    VoucherType.CASH_RECEIPT,
+                    VoucherType.BANK_RECEIPT,
+                }:
+                    credit = amount
+                elif voucher_type in {
+                    VoucherType.CASH_PAYMENT,
+                    VoucherType.BANK_PAYMENT,
+                    VoucherType.PAYMENT_VOUCHER,
+                }:
+                    debit = amount
+            else:
+                if voucher_type in {
+                    VoucherType.CASH_PAYMENT,
+                    VoucherType.BANK_PAYMENT,
+                    VoucherType.PAYMENT_VOUCHER,
+                }:
+                    debit = amount
+                elif voucher_type in {
+                    VoucherType.CASH_RECEIPT,
+                    VoucherType.BANK_RECEIPT,
+                }:
+                    credit = amount
+            if debit == _ZERO and credit == _ZERO:
+                continue
+            doc_type = f"VOUCHER_{voucher_type.value}"
+            events.append(
+                (
+                    row.voucher_date,
+                    doc_type,
+                    row.id,
+                    row.document_number,
+                    debit,
+                    credit,
+                    None,
+                    row.reference or row.narration,
+                    row.currency_id,
+                    row.exchange_rate,
+                    self._legacy_party_type_code(doc_type),
+                    row.cheque_number,
+                    row.cheque_date,
+                )
+            )
         events.sort(key=lambda item: (item[0], item[3]))
         currency_codes = await self.currencies.codes_by_ids(
             tenant_id, [event[8] for event in events]
@@ -2240,18 +2325,29 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         opening = _ZERO
         lines: list[PartyStatementLine] = []
         running = _ZERO
-        for (
-            doc_date,
-            doc_type,
-            doc_id,
-            number,
-            debit,
-            credit,
-            due,
-            description,
-            currency_id,
-            exchange_rate,
-        ) in events:
+        for raw in events:
+            if len(raw) == 10:
+                raw = (
+                    *raw,
+                    self._legacy_party_type_code(raw[1]),
+                    None,
+                    None,
+                )
+            (
+                doc_date,
+                doc_type,
+                doc_id,
+                number,
+                debit,
+                credit,
+                due,
+                description,
+                currency_id,
+                exchange_rate,
+                type_code,
+                cheque_number,
+                cheque_date,
+            ) = raw
             signed = quantize_money(debit - credit)
             if doc_date < from_date:
                 opening = quantize_money(opening + signed)
@@ -2264,6 +2360,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             lines.append(
                 PartyStatementLine(
                     document_type=doc_type,
+                    type_code=type_code,
                     document_id=doc_id,
                     document_number=number,
                     document_date=doc_date,
@@ -2273,7 +2370,10 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                     debit=debit,
                     credit=credit,
                     running_balance=running,
+                    balance_side=_balance_side(running),
                     description=description,
+                    cheque_number=cheque_number,
+                    cheque_date=cheque_date,
                 )
             )
         if not lines:
@@ -2286,6 +2386,8 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             from_date=from_date,
             to_date=to_date,
             opening_balance=opening,
+            opening_balance_side=_balance_side(opening) if opening != _ZERO else None,
             closing_balance=running,
+            closing_balance_side=_balance_side(running) if running != _ZERO else None,
             lines=lines,
         )

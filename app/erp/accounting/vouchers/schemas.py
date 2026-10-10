@@ -103,7 +103,13 @@ _ACTIVE_VOUCHER_TYPES = frozenset(
         VoucherType.BANK_RECEIPT,
         VoucherType.BANK_PAYMENT,
         VoucherType.JOURNAL,
+        VoucherType.GENERAL_PURCHASE,
+        VoucherType.PAYMENT_VOUCHER,
     }
+)
+
+_JOURNAL_LIKE_VOUCHER_TYPES = frozenset(
+    {VoucherType.JOURNAL, VoucherType.GENERAL_PURCHASE},
 )
 
 
@@ -146,7 +152,7 @@ class VoucherCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_type_specific(self) -> Self:
-        if self.voucher_type == VoucherType.JOURNAL:
+        if self.voucher_type in _JOURNAL_LIKE_VOUCHER_TYPES:
             if self.payment_account_id is not None:
                 raise ValueError("Journal vouchers must not set payment_account_id")
             if self.payment_method is not None:

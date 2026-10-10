@@ -1,5 +1,7 @@
 """Pipeline and stage persistence."""
 
+from __future__ import annotations
+
 from collections.abc import Mapping, Sequence
 from uuid import UUID
 

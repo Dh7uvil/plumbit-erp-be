@@ -9,6 +9,7 @@ from app.erp.accounting.budgets.router import router as budgets_router
 from app.erp.accounting.charge_types.router import router as charge_types_router
 from app.erp.accounting.cheques.router import router as cheques_router
 from app.erp.accounting.cost_centers.router import router as cost_centers_router
+from app.erp.accounting.entry_books.router import router as entry_books_router
 from app.erp.accounting.financial_categories.router import (
     router as financial_categories_router,
 )
@@ -61,6 +62,7 @@ router.include_router(accounts_router)
 router.include_router(charge_types_router)
 router.include_router(cost_centers_router)
 router.include_router(financial_categories_router)
+router.include_router(entry_books_router)
 router.include_router(dunning_rules_router)
 router.include_router(journals_router)
 router.include_router(opening_balances_router)

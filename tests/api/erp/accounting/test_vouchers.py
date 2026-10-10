@@ -245,6 +245,80 @@ async def test_journal_voucher_via_vouchers_endpoint(client: AsyncClient) -> Non
 
 
 @pytest.mark.asyncio
+async def test_general_purchase_voucher_dr_cr_grid(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    expense = await _counter_account(client, headers)
+    ap_account = await _account_by_subtype(client, headers, "ACCOUNTS_PAYABLE")
+    created = await client.post(
+        "/api/v1/vouchers",
+        headers=headers,
+        json={
+            "voucher_type": "GENERAL_PURCHASE",
+            "external_reference": "IMP-2026-001",
+            "narration": "Import charges",
+            "lines": [
+                {"account_id": expense, "debit": "120", "credit": "0"},
+                {"account_id": ap_account, "debit": "0", "credit": "120"},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    voucher = created.json()["data"]
+    assert voucher["voucher_type"] == "GENERAL_PURCHASE"
+    assert voucher["external_reference"] == "IMP-2026-001"
+
+
+@pytest.mark.asyncio
+async def test_general_purchase_post_splits_vat_from_account_default_tax(
+    client: AsyncClient,
+) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    expense = await _counter_account(client, headers)
+    taxes = await client.get("/api/v1/taxes", headers=headers)
+    assert taxes.status_code == 200, taxes.text
+    tax_rows = taxes.json()["data"]
+    assert tax_rows, "expected seeded tax"
+    tax_id = tax_rows[0]["id"]
+    patched = await client.patch(
+        f"/api/v1/accounts/{expense}",
+        headers=headers,
+        json={"default_tax_id": tax_id},
+    )
+    assert patched.status_code == 200, patched.text
+    ap_account = await _account_by_subtype(client, headers, "ACCOUNTS_PAYABLE")
+    gross = Decimal("115")
+    created = await client.post(
+        "/api/v1/vouchers",
+        headers=headers,
+        json={
+            "voucher_type": "GENERAL_PURCHASE",
+            "narration": "GP with VAT",
+            "lines": [
+                {"account_id": expense, "debit": str(gross), "credit": "0"},
+                {"account_id": ap_account, "debit": "0", "credit": str(gross)},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    voucher = created.json()["data"]
+    posted = await client.post(
+        f"/api/v1/vouchers/{voucher['id']}/post",
+        headers=_idempotent(headers, voucher["version"]),
+    )
+    assert posted.status_code == 200, posted.text
+    journal_id = posted.json()["data"]["journal_entry_id"]
+    assert journal_id is not None
+    journal = await client.get(f"/api/v1/journals/{journal_id}", headers=headers)
+    assert journal.status_code == 200, journal.text
+    lines = journal.json()["data"]["lines"]
+    assert len(lines) >= 3
+
+
+@pytest.mark.asyncio
 async def test_voucher_print_includes_amount_in_words(client: AsyncClient) -> None:
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)

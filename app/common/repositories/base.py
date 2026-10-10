@@ -1,5 +1,7 @@
 """Generic, tenant-isolated async repository primitives."""
 
+from __future__ import annotations
+
 from collections.abc import Mapping, Sequence
 from typing import Any
 from uuid import UUID

@@ -164,8 +164,28 @@ _VOUCHER_META: dict[VoucherType, tuple[DocumentType, str, str, AccountSubtype | 
         "journal_entry",
         None,
     ),
+    VoucherType.GENERAL_PURCHASE: (
+        DocumentType.GENERAL_PURCHASE_VOUCHER,
+        "GP",
+        "general_purchase_voucher",
+        None,
+    ),
+    VoucherType.PAYMENT_VOUCHER: (
+        DocumentType.PAYMENT_VOUCHER,
+        "PV",
+        "payment_voucher",
+        AccountSubtype.BANK,
+    ),
 }
+_JOURNAL_LIKE = frozenset({VoucherType.JOURNAL, VoucherType.GENERAL_PURCHASE})
+_PAYMENT_LIKE = frozenset(
+    {VoucherType.CASH_PAYMENT, VoucherType.BANK_PAYMENT, VoucherType.PAYMENT_VOUCHER}
+)
 SOURCE_VOUCHER_ALLOCATION = "voucher_allocation"
+
+
+def _is_journal_like(voucher_type: VoucherType) -> bool:
+    return voucher_type in _JOURNAL_LIKE
 
 
 class VoucherService:
@@ -426,7 +446,8 @@ class VoucherService:
             await self._validate_for_post(tenant_id, row)
             lines = await self._post_journal_lines(tenant_id, row)
             if (
-                voucher_type not in {VoucherType.CONTRA, VoucherType.JOURNAL}
+                voucher_type != VoucherType.CONTRA
+                and not _is_journal_like(voucher_type)
                 and not self._is_receipt(voucher_type)
             ):
                 if row.payment_account_id is None:
@@ -467,13 +488,13 @@ class VoucherService:
                 actor_id=actor_user_id,
                 journal_type=(
                     JournalType.MANUAL
-                    if voucher_type == VoucherType.JOURNAL
+                    if _is_journal_like(voucher_type)
                     else JournalType.SYSTEM
                 ),
                 reference=row.document_number,
             )
             row.journal_entry_id = journal.id
-            if voucher_type not in {VoucherType.CONTRA, VoucherType.JOURNAL}:
+            if voucher_type != VoucherType.CONTRA and not _is_journal_like(voucher_type):
                 await self._apply_live_allocations(tenant_id, row, actor_user_id=actor_user_id)
             await self._ensure_pdc_cheque(tenant_id, row, actor_user_id=actor_user_id)
             row.status = target.value
@@ -614,6 +635,13 @@ class VoucherService:
             cast(date, values["voucher_date"]), can_override=self._can_override
         )
         doc_type, series, _, _ = _VOUCHER_META[payload.voucher_type]
+        from app.erp.accounting.entry_books.service import EntryBookService
+
+        entry_prefix = await EntryBookService(self.session).resolve_series_prefix(
+            tenant_id, payload.voucher_type
+        )
+        if entry_prefix:
+            series = entry_prefix
         document_number = await self.sequences.allocate(
             tenant_id,
             document_type=doc_type,
@@ -675,7 +703,7 @@ class VoucherService:
         resolved_type = (
             voucher_type if isinstance(voucher_type, VoucherType) else VoucherType(voucher_type)
         )
-        is_journal = resolved_type == VoucherType.JOURNAL
+        is_journal = _is_journal_like(resolved_type)
         voucher_date = payload.voucher_date or today_in_timezone(
             await self.org.get_timezone(tenant_id)
         )
@@ -748,7 +776,7 @@ class VoucherService:
         line_inputs: list[VoucherLineInput]
         if isinstance(payload, Voucher):
             voucher_type = VoucherType(payload.voucher_type)
-            is_journal = voucher_type == VoucherType.JOURNAL
+            is_journal = _is_journal_like(voucher_type)
             line_inputs = [
                 VoucherLineInput(
                     account_id=line.account_id,
@@ -766,10 +794,13 @@ class VoucherService:
             ]
         elif isinstance(payload, VoucherCreate):
             voucher_type = payload.voucher_type
-            line_inputs = payload.lines
+            line_inputs = payload.lines or []
         else:
             raise ValidationError("voucher_type is required")
-        is_journal = voucher_type == VoucherType.JOURNAL
+        if not isinstance(voucher_type, VoucherType):
+            voucher_type = VoucherType(voucher_type)
+        is_journal = _is_journal_like(voucher_type)
+        is_general_purchase = voucher_type == VoucherType.GENERAL_PURCHASE
         receipt = self._is_receipt(voucher_type)
         rows: builtins.list[dict[str, object]] = []
         for index, line in enumerate(line_inputs, start=1):
@@ -793,6 +824,9 @@ class VoucherService:
                     credit = amount
                 else:
                     debit = amount
+            tax_id = line.tax_id
+            if is_general_purchase and tax_id is None and account.default_tax_id is not None:
+                tax_id = account.default_tax_id
             rows.append(
                 {
                     "line_number": index,
@@ -802,7 +836,7 @@ class VoucherService:
                     "credit": credit,
                     "party_type": line.party_type,
                     "party_id": line.party_id,
-                    "tax_id": line.tax_id,
+                    "tax_id": tax_id,
                     "branch_id": line.branch_id,
                     "cost_center_id": line.cost_center_id,
                     "description": line.description,
@@ -816,7 +850,7 @@ class VoucherService:
             raise ValidationError("Contra vouchers are not supported")
         if not payload.lines:
             raise ValidationError("Voucher requires at least one counter line")
-        if voucher_type == VoucherType.JOURNAL:
+        if _is_journal_like(voucher_type):
             if payload.payment_account_id is not None:
                 raise ValidationError("Journal vouchers must not set payment_account_id")
             if payload.allocations:
@@ -849,7 +883,7 @@ class VoucherService:
         await self._validate_allocations(tenant_id, payload)
 
     async def _validate_for_post(self, tenant_id: UUID, row: Voucher) -> None:
-        is_journal = VoucherType(row.voucher_type) == VoucherType.JOURNAL
+        is_journal = _is_journal_like(VoucherType(row.voucher_type))
         payload = VoucherCreate(
             voucher_type=VoucherType(row.voucher_type),
             voucher_date=row.voucher_date,
@@ -898,7 +932,7 @@ class VoucherService:
             if isinstance(payload, VoucherCreate)
             else getattr(payload, "voucher_type", None)
         )
-        if voucher_type in {VoucherType.CONTRA, VoucherType.JOURNAL}:
+        if voucher_type == VoucherType.CONTRA or _is_journal_like(voucher_type):
             return
         lines = payload.lines or []
         ar_ap_total = _ZERO
@@ -924,11 +958,53 @@ class VoucherService:
         if payload.party_id is None:
             raise ValidationError("Party is required when settling AR/AP lines")
 
+    async def _expand_general_purchase_vat(
+        self,
+        tenant_id: UUID,
+        row: Voucher,
+        lines: builtins.list[JournalLineInput],
+    ) -> builtins.list[JournalLineInput]:
+        from app.erp.accounting.service import TaxService
+
+        vat_input = await self.resolver.require(tenant_id, AccountSystemRole.VAT_INPUT)
+        taxes = TaxService(self.session)
+        expanded: builtins.list[JournalLineInput] = []
+        for line in lines:
+            if line.debit <= _ZERO or line.tax_id is None:
+                expanded.append(line)
+                continue
+            tax = await taxes.get(tenant_id, line.tax_id)
+            rate = tax.rate
+            if rate <= _ZERO:
+                expanded.append(line)
+                continue
+            gross = line.debit
+            divisor = Decimal("1") + (rate / Decimal("100"))
+            net = quantize_money(gross / divisor)
+            vat_amount = quantize_money(gross - net)
+            if vat_amount <= _ZERO:
+                expanded.append(line)
+                continue
+            expanded.append(line.model_copy(update={"debit": net}))
+            expanded.append(
+                JournalLineInput(
+                    account_id=vat_input.id,
+                    debit=vat_amount,
+                    currency_id=line.currency_id,
+                    exchange_rate=line.exchange_rate,
+                    tax_id=line.tax_id,
+                    branch_id=line.branch_id,
+                    cost_center_id=line.cost_center_id,
+                    description=line.description or f"Input VAT {row.document_number}",
+                )
+            )
+        return expanded
+
     async def _post_journal_lines(
         self, tenant_id: UUID, row: Voucher
     ) -> builtins.list[JournalLineInput]:
         voucher_type = VoucherType(row.voucher_type)
-        if voucher_type == VoucherType.JOURNAL:
+        if _is_journal_like(voucher_type):
             journal_lines: builtins.list[JournalLineInput] = []
             for line in row.lines:
                 journal_lines.append(
@@ -947,6 +1023,8 @@ class VoucherService:
                     )
                 )
             row.amount_unapplied = _ZERO
+            if voucher_type == VoucherType.GENERAL_PURCHASE:
+                return await self._expand_general_purchase_vat(tenant_id, row, journal_lines)
             return journal_lines
         if voucher_type == VoucherType.CONTRA:
             destination_id = row.counter_account_id
@@ -1455,7 +1533,7 @@ class VoucherService:
         actor_user_id: UUID,
     ) -> None:
         voucher_type = VoucherType(row.voucher_type)
-        if voucher_type in {VoucherType.CONTRA, VoucherType.JOURNAL}:
+        if voucher_type == VoucherType.CONTRA or _is_journal_like(voucher_type):
             return
         receivable = self._is_receipt(voucher_type)
         live = await self.allocations.list_live_for_payment(
@@ -1724,7 +1802,7 @@ class VoucherService:
 
     def _has_voucher_permission(self, action: str, voucher_type: VoucherType) -> bool:
         voucher_permission = _ACTION_PERMISSIONS[action]
-        if voucher_type != VoucherType.JOURNAL:
+        if not _is_journal_like(voucher_type):
             return has_permission(self.actor_permissions, voucher_permission)
         journal_permission = _JOURNAL_ACTION_PERMISSIONS[action]
         return has_permission(self.actor_permissions, voucher_permission) or has_permission(

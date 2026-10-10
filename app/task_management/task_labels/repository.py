@@ -1,5 +1,7 @@
 """Task label persistence."""
 
+from __future__ import annotations
+
 from collections.abc import Mapping
 from uuid import UUID
 
