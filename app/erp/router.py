@@ -9,6 +9,9 @@ from app.erp.accounting.budgets.router import router as budgets_router
 from app.erp.accounting.charge_types.router import router as charge_types_router
 from app.erp.accounting.cheques.router import router as cheques_router
 from app.erp.accounting.cost_centers.router import router as cost_centers_router
+from app.erp.accounting.financial_categories.router import (
+    router as financial_categories_router,
+)
 from app.erp.accounting.customer_payments.router import router as customer_payments_router
 from app.erp.accounting.dunning.router import router as dunning_rules_router
 from app.erp.accounting.fx_revaluation.router import router as fx_revaluation_router
@@ -30,6 +33,7 @@ from app.erp.purchase_invoices.router import router as purchase_invoices_router
 from app.erp.purchase_orders.router import router as purchase_orders_router
 from app.erp.quotation.router import router as quotation_router
 from app.erp.sales_invoices.router import router as sales_invoices_router
+from app.erp.salesmen.router import router as salesmen_router
 from app.erp.sales_orders.router import router as sales_orders_router
 from app.erp.supplier_products.router import router as supplier_products_router
 from app.erp.suppliers.router import router as suppliers_router
@@ -45,6 +49,7 @@ router.include_router(quotation_router)
 router.include_router(proforma_invoices_router)
 router.include_router(sales_orders_router)
 router.include_router(sales_invoices_router)
+router.include_router(salesmen_router)
 router.include_router(credit_notes_router)
 router.include_router(customer_payments_router)
 router.include_router(purchase_orders_router)
@@ -55,6 +60,7 @@ router.include_router(supplier_payments_router)
 router.include_router(accounts_router)
 router.include_router(charge_types_router)
 router.include_router(cost_centers_router)
+router.include_router(financial_categories_router)
 router.include_router(dunning_rules_router)
 router.include_router(journals_router)
 router.include_router(opening_balances_router)

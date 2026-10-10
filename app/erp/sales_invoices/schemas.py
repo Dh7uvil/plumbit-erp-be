@@ -17,6 +17,7 @@ from app.core.enums import (
     CogsStatus,
     DiscountType,
     InvoiceDocumentStatus,
+    PaymentMode,
     PaymentStatus,
     PlaceOfSupply,
     TaxTreatment,
@@ -44,6 +45,9 @@ class SalesInvoiceFilter(BaseFilter):
     branch_id: UUID | None = None
     currency_id: UUID | None = None
     payment_status: PaymentStatus | None = None
+    payment_mode: PaymentMode | None = None
+    is_printed: bool | None = None
+    reference_number: str | None = None
     invoice_date_from: date | None = None
     invoice_date_to: date | None = None
 
@@ -146,6 +150,14 @@ class SalesInvoiceCreate(DiscountFieldsMixin):
     round_off_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
     prices_include_tax: bool | None = None
+    payment_mode: PaymentMode = PaymentMode.CREDIT
+    supply_date: date | None = None
+    reference_number: str | None = Field(default=None, max_length=80)
+    reference_date: date | None = None
+    marks: str | None = Field(default=None, max_length=500)
+    discount_account_id: UUID | None = None
+    freight_account_id: UUID | None = None
+    auto_stock_document: bool = False
     lines: list[SalesInvoiceLineInput] = Field(min_length=1)
 
     @field_validator("notes", "terms_and_conditions")
@@ -182,6 +194,14 @@ class SalesInvoiceUpdate(DiscountFieldsMixin):
     round_off_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
     prices_include_tax: bool | None = None
+    payment_mode: PaymentMode | None = None
+    supply_date: date | None = None
+    reference_number: str | None = Field(default=None, max_length=80)
+    reference_date: date | None = None
+    marks: str | None = Field(default=None, max_length=500)
+    discount_account_id: UUID | None = None
+    freight_account_id: UUID | None = None
+    auto_stock_document: bool | None = None
     lines: list[SalesInvoiceLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
@@ -291,6 +311,15 @@ class SalesInvoiceResponse(BaseModel):
     cancelled_at: datetime | None
     cancelled_by: UUID | None
     cancel_reason: str | None
+    payment_mode: PaymentMode = PaymentMode.CREDIT
+    supply_date: date | None = None
+    reference_number: str | None = None
+    reference_date: date | None = None
+    marks: str | None = None
+    discount_account_id: UUID | None = None
+    freight_account_id: UUID | None = None
+    auto_stock_document: bool = False
+    is_printed: bool = False
     is_overdue: bool = False
     is_partially_credited: bool = False
     is_fully_credited: bool = False

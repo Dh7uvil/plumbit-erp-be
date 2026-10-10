@@ -87,6 +87,9 @@ async def list_sales_invoices(
         branch_id=filters.branch_id,
         currency_id=filters.currency_id,
         payment_status=filters.payment_status.value if filters.payment_status else None,
+        payment_mode=filters.payment_mode.value if filters.payment_mode else None,
+        is_printed=filters.is_printed,
+        reference_number=filters.reference_number,
         invoice_date_from=filters.invoice_date_from,
         invoice_date_to=filters.invoice_date_to,
     )

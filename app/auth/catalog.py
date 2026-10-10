@@ -64,6 +64,7 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "credit_note": _with_imex('create', 'read', 'update', 'delete', 'post', 'cancel'),
         "customer_payment": _with_imex('create', 'read', 'update', 'delete', 'post', 'cancel'),
         "sales_return": _with_imex('create', 'read', 'update', 'delete', 'post'),
+        "salesman": ('read', 'update'),
     },
     PURCHASE_MODULE: {
         "supplier": _with_imex('create', 'read', 'update', 'delete', 'history'),
@@ -128,6 +129,7 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "write_off": ('create', 'reverse'),
         "dunning": ('read', 'manage', 'send'),
         "charge_type": ('create', 'read', 'update', 'delete'),
+        "financial_category": ('create', 'read', 'update', 'delete'),
         "cost_sheet": _with_imex(
             "create",
             "read",
@@ -613,6 +615,18 @@ COST_CENTER_CREATE = build_permission(MASTERS_MODULE, "cost_center", "create")
 COST_CENTER_READ = build_permission(MASTERS_MODULE, "cost_center", "read")
 COST_CENTER_UPDATE = build_permission(MASTERS_MODULE, "cost_center", "update")
 COST_CENTER_DELETE = build_permission(MASTERS_MODULE, "cost_center", "delete")
+FINANCIAL_CATEGORY_CREATE = build_permission(
+    ACCOUNTING_MODULE, "financial_category", "create"
+)
+FINANCIAL_CATEGORY_READ = build_permission(ACCOUNTING_MODULE, "financial_category", "read")
+FINANCIAL_CATEGORY_UPDATE = build_permission(
+    ACCOUNTING_MODULE, "financial_category", "update"
+)
+FINANCIAL_CATEGORY_DELETE = build_permission(
+    ACCOUNTING_MODULE, "financial_category", "delete"
+)
+SALESMAN_READ = build_permission(SALES_MODULE, "salesman", "read")
+SALESMAN_UPDATE = build_permission(SALES_MODULE, "salesman", "update")
 CHARGE_TYPE_CREATE = build_permission(ACCOUNTING_MODULE, "charge_type", "create")
 CHARGE_TYPE_READ = build_permission(ACCOUNTING_MODULE, "charge_type", "read")
 CHARGE_TYPE_UPDATE = build_permission(ACCOUNTING_MODULE, "charge_type", "update")

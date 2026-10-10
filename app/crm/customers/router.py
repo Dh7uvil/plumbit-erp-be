@@ -27,7 +27,7 @@ from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.core.enums import InvoiceDocumentStatus
 from app.crm.contacts.dependencies import ContactServiceDependency
-from app.crm.customers.dependencies import CustomerServiceDependency
+from app.crm.customers.dependencies import CustomerServiceDependency, PartyBalanceServiceDependency
 from app.crm.customers.schemas import (
     CustomerCreate,
     CustomerExtraAddressCreate,
@@ -35,6 +35,8 @@ from app.crm.customers.schemas import (
     CustomerFilter,
     CustomerResponse,
     CustomerUpdate,
+    PartyPdcBalanceResponse,
+    PartyPeriodBalancesResponse,
 )
 from app.erp.accounting.customer_payments.dependencies import CustomerPaymentServiceDependency
 from app.erp.accounting.customer_payments.schemas import CustomerPaymentResponse
@@ -302,6 +304,41 @@ async def get_customer_outstanding_summary(
 ) -> ApiResponse[OutstandingSummary]:
     return ApiResponse(
         data=await reports.customer_outstanding(tenant.tenant_id, customer_id, as_of=as_of)
+    )
+
+
+@router.get("/{customer_id}/pdc-balance", response_model=ApiResponse[PartyPdcBalanceResponse])
+async def get_customer_pdc_balance(
+    customer_id: UUID,
+    tenant: TenantContextDependency,
+    balances: PartyBalanceServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_READ))],
+) -> ApiResponse[PartyPdcBalanceResponse]:
+    return ApiResponse(
+        data=await balances.pdc_balance(tenant.tenant_id, customer_id, receivable=True)
+    )
+
+
+@router.get(
+    "/{customer_id}/period-balances",
+    response_model=ApiResponse[PartyPeriodBalancesResponse],
+)
+async def get_customer_period_balances(
+    customer_id: UUID,
+    tenant: TenantContextDependency,
+    balances: PartyBalanceServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_READ))],
+    currency_mode: Annotated[str, Query(pattern="^(home|party)$")] = "home",
+    fiscal_year: Annotated[int | None, Query()] = None,
+) -> ApiResponse[PartyPeriodBalancesResponse]:
+    return ApiResponse(
+        data=await balances.period_balances(
+            tenant.tenant_id,
+            customer_id,
+            receivable=True,
+            currency_mode=currency_mode,
+            fiscal_year=fiscal_year,
+        )
     )
 
 

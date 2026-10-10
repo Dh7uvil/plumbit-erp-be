@@ -1,7 +1,7 @@
 """Customer schemas."""
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import ClassVar
 from uuid import UUID
@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.auth.schemas import AddressPayload, AddressResponse
 from app.common.schemas.filters import BaseFilter
 from app.common.utils.validators import blank_to_none, normalize_required_text
-from app.core.enums import CompanyType, TaxTreatment
+from app.core.enums import CompanyType, CustomerInvoiceType, SupplierOrigin, TaxTreatment
 from app.crm.customers.codes import is_valid_party_code
 
 _TRN_PATTERN = re.compile(r"^\d{15}$")
@@ -63,6 +63,11 @@ class CustomerCreate(BaseModel):
     billing_address: AddressPayload | None = None
     shipping_address: AddressPayload | None = None
     notes: str | None = Field(default=None, max_length=2000)
+    fax: str | None = Field(default=None, max_length=40)
+    email: str | None = Field(default=None, max_length=200)
+    phone: str | None = Field(default=None, max_length=40)
+    invoice_type: CustomerInvoiceType = CustomerInvoiceType.ALL
+    supplier_origin: SupplierOrigin = SupplierOrigin.LOCAL
 
     @field_validator("name")
     @classmethod
@@ -112,6 +117,11 @@ class CustomerUpdate(BaseModel):
     billing_address: AddressPayload | None = None
     shipping_address: AddressPayload | None = None
     notes: str | None = Field(default=None, max_length=2000)
+    fax: str | None = Field(default=None, max_length=40)
+    email: str | None = Field(default=None, max_length=200)
+    phone: str | None = Field(default=None, max_length=40)
+    invoice_type: CustomerInvoiceType | None = None
+    supplier_origin: SupplierOrigin | None = None
     is_active: bool | None = None
 
     @field_validator("name")
@@ -164,8 +174,42 @@ class CustomerResponse(BaseModel):
     shipping_address: AddressResponse | None = None
     extra_addresses: list[CustomerExtraAddressResponse] = Field(default_factory=list)
     notes: str | None
+    fax: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    invoice_type: CustomerInvoiceType = CustomerInvoiceType.ALL
+    supplier_origin: SupplierOrigin = SupplierOrigin.LOCAL
     is_active: bool
     created_at: datetime
     updated_at: datetime
     created_by: UUID | None = None
     updated_by: UUID | None = None
+
+
+class PartyPdcBalanceResponse(BaseModel):
+    party_id: UUID
+    cheque_count: int
+    amount: Decimal
+    base_amount: Decimal
+    currency_code: str
+    base_currency_code: str
+
+
+class PartyPeriodBalance(BaseModel):
+    period: int
+    from_date: date
+    to_date: date
+    debit: Decimal
+    credit: Decimal
+    closing: Decimal
+
+
+class PartyPeriodBalancesResponse(BaseModel):
+    party_id: UUID
+    account_id: UUID
+    fiscal_year: int
+    currency_code: str
+    currency_mode: str
+    opening: Decimal
+    periods: list[PartyPeriodBalance]
+    closing: Decimal

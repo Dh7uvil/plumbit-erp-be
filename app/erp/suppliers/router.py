@@ -26,6 +26,8 @@ from app.common.imex.service import export_response, preview_file, template_resp
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.core.enums import InvoiceDocumentStatus
+from app.crm.customers.dependencies import PartyBalanceServiceDependency
+from app.crm.customers.schemas import PartyPdcBalanceResponse, PartyPeriodBalancesResponse
 from app.erp.accounting.open_items.dependencies import OpenItemsServiceDependency
 from app.erp.accounting.open_items.schemas import OpenItemRow
 from app.erp.accounting.reports.dependencies import ReportServiceDependency
@@ -255,6 +257,41 @@ async def get_supplier_outstanding_summary(
 ) -> ApiResponse[OutstandingSummary]:
     return ApiResponse(
         data=await reports.supplier_outstanding(tenant.tenant_id, supplier_id, as_of=as_of)
+    )
+
+
+@router.get("/{supplier_id}/pdc-balance", response_model=ApiResponse[PartyPdcBalanceResponse])
+async def get_supplier_pdc_balance(
+    supplier_id: UUID,
+    tenant: TenantContextDependency,
+    balances: PartyBalanceServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_READ))],
+) -> ApiResponse[PartyPdcBalanceResponse]:
+    return ApiResponse(
+        data=await balances.pdc_balance(tenant.tenant_id, supplier_id, receivable=False)
+    )
+
+
+@router.get(
+    "/{supplier_id}/period-balances",
+    response_model=ApiResponse[PartyPeriodBalancesResponse],
+)
+async def get_supplier_period_balances(
+    supplier_id: UUID,
+    tenant: TenantContextDependency,
+    balances: PartyBalanceServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_READ))],
+    currency_mode: Annotated[str, Query(pattern="^(home|party)$")] = "home",
+    fiscal_year: Annotated[int | None, Query()] = None,
+) -> ApiResponse[PartyPeriodBalancesResponse]:
+    return ApiResponse(
+        data=await balances.period_balances(
+            tenant.tenant_id,
+            supplier_id,
+            receivable=False,
+            currency_mode=currency_mode,
+            fiscal_year=fiscal_year,
+        )
     )
 
 

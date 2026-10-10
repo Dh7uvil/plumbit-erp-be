@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from app.auth.schemas import AddressResponse, format_address_label
 from app.common.utils.currency import quantize_money, quantize_quantity
@@ -170,3 +170,19 @@ def place_of_supply_from_address(address: AddressResponse | None) -> PlaceOfSupp
 
 def format_address_snapshot(address: AddressResponse | None) -> str | None:
     return format_address_label(address)
+
+
+RoundOffRule = str  # "NONE" | "0.05" | "0.25" | "1.00"
+
+
+def apply_round_off(grand_total: Decimal, rule: RoundOffRule) -> tuple[Decimal, Decimal]:
+    """Return (round_off_amount, net_total). rule NONE keeps net equal to grand_total."""
+
+    if rule in {"", "NONE"}:
+        return _ZERO, quantize_money(grand_total)
+    step = Decimal(rule)
+    if step <= _ZERO:
+        return _ZERO, quantize_money(grand_total)
+    rounded = quantize_money((grand_total / step).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * step)
+    round_off = quantize_money(rounded - grand_total)
+    return round_off, rounded

@@ -193,12 +193,13 @@ class AccountService:
     async def get(self, tenant_id: UUID, account_id: UUID) -> AccountResponse:
         row = await self._require(tenant_id, account_id)
         parent_map = await self._parent_map(tenant_id, [row])
-        return self._to_response(
+        response = self._to_response(
             row,
             parent_map,
             has_children=await self.repo.count_children(tenant_id, account_id) > 0,
             has_journal_lines=await self._has_gl_lines(tenant_id, account_id),
         )
+        return await self._attach_ledger_meta(tenant_id, row, response)
 
     async def require_postable(self, tenant_id: UUID, account_id: UUID) -> Account:
         row = await self._require(tenant_id, account_id)
@@ -278,6 +279,11 @@ class AccountService:
             )
             if payload.currency_id is not None:
                 await self.currencies.require_id(tenant_id, payload.currency_id)
+            await self._validate_ledger_extras(
+                tenant_id,
+                default_tax_id=payload.default_tax_id,
+                financial_category_id=payload.financial_category_id,
+            )
             try:
                 row = await self.repo.create(
                     tenant_id,
@@ -293,6 +299,8 @@ class AccountService:
                         "is_blocked": payload.is_blocked,
                         "is_system": False,
                         "currency_id": payload.currency_id,
+                        "default_tax_id": payload.default_tax_id,
+                        "financial_category_id": payload.financial_category_id,
                         "created_by": actor_user_id,
                         "updated_by": actor_user_id,
                     },
@@ -309,7 +317,9 @@ class AccountService:
                 new_values=_account_snapshot(row),
             )
             parent_map = await self._parent_map(tenant_id, [row])
-            return self._to_response(row, parent_map)
+            return await self._attach_ledger_meta(
+                tenant_id, row, self._to_response(row, parent_map)
+            )
 
     async def update(
         self,
@@ -378,6 +388,13 @@ class AccountService:
                 )
             if values.get("currency_id") is not None:
                 await self.currencies.require_id(tenant_id, values["currency_id"])
+            await self._validate_ledger_extras(
+                tenant_id,
+                default_tax_id=values.get("default_tax_id", existing.default_tax_id),
+                financial_category_id=values.get(
+                    "financial_category_id", existing.financial_category_id
+                ),
+            )
             try:
                 row = await self.repo.update(tenant_id, account_id, values)
             except IntegrityError as exc:
@@ -662,6 +679,50 @@ class AccountService:
             return {}
         parents = await self.repo.get_many(tenant_id, parent_ids)
         return {parent.id: parent for parent in parents}
+
+    async def _validate_ledger_extras(
+        self,
+        tenant_id: UUID,
+        *,
+        default_tax_id: UUID | None,
+        financial_category_id: UUID | None,
+    ) -> None:
+        if default_tax_id is not None:
+            from app.erp.accounting.service import TaxService
+
+            await TaxService(self.session).require_id(tenant_id, default_tax_id)
+        if financial_category_id is not None:
+            from app.erp.accounting.financial_categories.service import (
+                FinancialCategoryService,
+            )
+
+            await FinancialCategoryService(self.session).get(tenant_id, financial_category_id)
+
+    async def _attach_ledger_meta(
+        self, tenant_id: UUID, row: Account, response: AccountResponse
+    ) -> AccountResponse:
+        default_tax_rate = None
+        if row.default_tax_id is not None:
+            from app.erp.accounting.service import TaxService
+
+            tax = await TaxService(self.session).get(tenant_id, row.default_tax_id)
+            default_tax_rate = tax.rate
+        financial_category_name = None
+        if row.financial_category_id is not None:
+            from app.erp.accounting.financial_categories.service import (
+                FinancialCategoryService,
+            )
+
+            category = await FinancialCategoryService(self.session).get(
+                tenant_id, row.financial_category_id
+            )
+            financial_category_name = category.name
+        return response.model_copy(
+            update={
+                "default_tax_rate": default_tax_rate,
+                "financial_category_name": financial_category_name,
+            }
+        )
 
     def _to_response(
         self,

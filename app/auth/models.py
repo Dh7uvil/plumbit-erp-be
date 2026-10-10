@@ -332,6 +332,7 @@ class Address(SoftDeleteTenantModel):
     address_type: Mapped[str] = mapped_column(String(30), nullable=False)
     address_line_1: Mapped[str | None] = mapped_column(String(250), nullable=True)
     address_line_2: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    address_line_3: Mapped[str | None] = mapped_column(String(250), nullable=True)
     city: Mapped[str | None] = mapped_column(String(100), nullable=True)
     state: Mapped[str | None] = mapped_column(String(100), nullable=True)
     country: Mapped[str | None] = mapped_column(String(100), nullable=True)

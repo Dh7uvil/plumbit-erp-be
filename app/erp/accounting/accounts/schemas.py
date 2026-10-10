@@ -32,6 +32,8 @@ class AccountCreate(BaseModel):
     is_group: bool = False
     is_blocked: bool = False
     currency_id: UUID | None = None
+    default_tax_id: UUID | None = None
+    financial_category_id: UUID | None = None
 
     @field_validator("code")
     @classmethod
@@ -63,6 +65,8 @@ class AccountUpdate(BaseModel):
     is_active: bool | None = None
     is_blocked: bool | None = None
     currency_id: UUID | None = None
+    default_tax_id: UUID | None = None
+    financial_category_id: UUID | None = None
 
     @field_validator("code")
     @classmethod
@@ -97,6 +101,10 @@ class AccountResponse(BaseModel):
     is_system: bool
     system_role: AccountSystemRole | None
     currency_id: UUID | None
+    default_tax_id: UUID | None = None
+    financial_category_id: UUID | None = None
+    default_tax_rate: Decimal | None = None
+    financial_category_name: str | None = None
     is_active: bool
     is_blocked: bool = False
     created_at: datetime

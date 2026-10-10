@@ -23,7 +23,15 @@ from app.erp.accounting.service import TaxService
 from app.inventory_management.categories.service import CategoryService
 from app.inventory_management.products.models import Product
 from app.inventory_management.products.repository import ProductRepository
-from app.inventory_management.products.schemas import ProductCreate, ProductResponse, ProductUpdate
+from app.inventory_management.products.schemas import (
+    ProductCreate,
+    ProductInquiryResponse,
+    ProductPriceBulkUpdate,
+    ProductRenameSkuRequest,
+    ProductResponse,
+    ProductUpdate,
+    ProductWarehouseQty,
+)
 from app.inventory_management.units.service import UnitService
 
 
@@ -349,3 +357,157 @@ class ProductService:
         if row is None:
             raise ResourceNotFoundError("Product not found")
         return row
+
+    async def inquiry(self, tenant_id: UUID, product_id: UUID) -> ProductInquiryResponse:
+        from app.common.schemas.pagination import PageParams
+        from app.inventory_management.costing.repository import CostingRepository
+        from app.inventory_management.history.schemas import TradingHistoryFilter
+        from app.inventory_management.history.service import HistoryService
+        from app.inventory_management.stock.service import StockService
+
+        product = await self._require(tenant_id, product_id)
+        stock = StockService(self.session)
+        balances, _ = await stock.list_balances(
+            tenant_id,
+            page=PageParams(page=1, page_size=200),
+            product_id=product_id,
+        )
+        qty_on_hand = Decimal("0")
+        qty_reserved = Decimal("0")
+        qty_available = Decimal("0")
+        qty_incoming = Decimal("0")
+        warehouses: list[ProductWarehouseQty] = []
+        for row in balances:
+            qty_on_hand += row.qty_on_hand
+            qty_reserved += row.qty_reserved
+            qty_available += row.qty_available
+            qty_incoming += row.qty_incoming
+            warehouses.append(
+                ProductWarehouseQty(
+                    warehouse_id=row.warehouse_id,
+                    warehouse_name=row.warehouse_name,
+                    qty_on_hand=row.qty_on_hand,
+                    qty_reserved=row.qty_reserved,
+                    qty_available=row.qty_available,
+                )
+            )
+        packing_label: str | None = None
+        unit2_breakdown: str | None = None
+        if product.secondary_unit_id and product.secondary_unit_factor:
+            factor = product.secondary_unit_factor
+            if factor > 0:
+                cartons = int(qty_on_hand // factor)
+                pieces = qty_on_hand - Decimal(cartons) * factor
+                unit_code = ""
+                if product.unit_id:
+                    unit_code = (await self.units.get(tenant_id, product.unit_id)).code
+                sec_code = (await self.units.get(tenant_id, product.secondary_unit_id)).code
+                packing_label = f"{factor} {unit_code} / {sec_code}"
+                unit2_breakdown = f"{cartons} {sec_code} & {pieces} {unit_code}"
+
+        avg_cost: Decimal | None = None
+        lc_price: Decimal | None = None
+        lc_currency: str | None = None
+        cost_repo = CostingRepository(self.session)
+        all_layers = []
+        for wh in warehouses:
+            all_layers.extend(
+                await cost_repo.list_positive_fifo(tenant_id, wh.warehouse_id, product_id)
+            )
+        if all_layers:
+            total_qty = sum(layer.qty_remaining for layer in all_layers)
+            if total_qty > 0:
+                weighted = sum(layer.qty_remaining * layer.landed_unit_cost for layer in all_layers)
+                avg_cost = weighted / total_qty
+            latest = max(all_layers, key=lambda layer: layer.created_at)
+            lc_price = latest.landed_unit_cost
+
+        history = HistoryService(self.session)
+        history_filter = TradingHistoryFilter(sort_by="document_date", sort_order="desc")
+        sales, _ = await history.product_sales_history(
+            tenant_id,
+            product_id,
+            page=PageParams(page=1, page_size=1),
+            filters=history_filter,
+        )
+        purchases, _ = await history.product_purchase_history(
+            tenant_id,
+            product_id,
+            page=PageParams(page=1, page_size=1),
+            filters=history_filter,
+        )
+        last_sale = sales[0] if sales else None
+        last_purchase = purchases[0] if purchases else None
+
+        return ProductInquiryResponse(
+            product_id=product_id,
+            packing_label=packing_label,
+            qty_on_hand=qty_on_hand,
+            qty_reserved=qty_reserved,
+            qty_available=qty_available,
+            qty_incoming=qty_incoming,
+            unit2_breakdown=unit2_breakdown,
+            warehouses=warehouses,
+            avg_cost=avg_cost,
+            lc_price=lc_price,
+            lc_currency_code=lc_currency,
+            last_sale_date=str(last_sale.document_date) if last_sale else None,
+            last_sale_price=last_sale.rate if last_sale else None,
+            last_sale_quantity=last_sale.quantity if last_sale else None,
+            last_purchase_date=str(last_purchase.document_date) if last_purchase else None,
+            last_purchase_price=last_purchase.rate if last_purchase else None,
+            last_purchase_quantity=last_purchase.quantity if last_purchase else None,
+        )
+
+    async def bulk_update_prices(
+        self,
+        tenant_id: UUID,
+        payload: ProductPriceBulkUpdate,
+        *,
+        actor_user_id: UUID,
+    ) -> list[ProductResponse]:
+        updated: list[ProductResponse] = []
+        async with transaction(self.session):
+            for item in payload.items:
+                values = item.model_dump(exclude={"id"}, exclude_unset=True)
+                if not values:
+                    continue
+                values["updated_by"] = actor_user_id
+                row = await self.repo.update(tenant_id, item.id, values)
+                if row is None:
+                    raise ResourceNotFoundError(f"Product {item.id} not found")
+                updated.append(ProductResponse.model_validate(row))
+        return updated
+
+    async def rename_sku(
+        self,
+        tenant_id: UUID,
+        product_id: UUID,
+        payload: ProductRenameSkuRequest,
+        *,
+        actor_user_id: UUID,
+    ) -> ProductResponse:
+        async with transaction(self.session):
+            existing = await self._require(tenant_id, product_id)
+            old = existing.sku
+            try:
+                row = await self.repo.update(
+                    tenant_id,
+                    product_id,
+                    {"sku": payload.sku, "updated_by": actor_user_id},
+                )
+            except IntegrityError as exc:
+                raise DuplicateResourceError("A product with this SKU already exists") from exc
+            if row is None:
+                raise ResourceNotFoundError("Product not found")
+            await self.audit.write(
+                tenant_id=tenant_id,
+                user_id=actor_user_id,
+                action=AuditAction.UPDATE,
+                module=INVENTORY_MODULE,
+                entity_type="product",
+                entity_id=product_id,
+                old_values={"sku": old},
+                new_values={"sku": payload.sku},
+            )
+            return ProductResponse.model_validate(row)

@@ -55,6 +55,8 @@ class SalesInvoiceRepository:
                     "branch_id",
                     "currency_id",
                     "payment_status",
+                    "payment_mode",
+                    "is_printed",
                 }
             ),
             search_fields=frozenset(
@@ -64,6 +66,8 @@ class SalesInvoiceRepository:
                     "customer_trn",
                     "bl_number",
                     "container_number",
+                    "reference_number",
+                    "marks",
                     "bill_to_snapshot",
                     "ship_to_snapshot",
                 }

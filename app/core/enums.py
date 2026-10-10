@@ -839,3 +839,49 @@ class RecordScope(StrEnum):
     BRANCH = "branch"
     TEAM = "team"
     OWN = "own"
+
+
+class PaymentMode(StrEnum):
+    CASH = "CASH"
+    CREDIT = "CREDIT"
+    BANK = "BANK"
+
+
+class PriceBasis(StrEnum):
+    DEFAULT = "DEFAULT"
+    PRICE_1 = "PRICE_1"
+    PRICE_2 = "PRICE_2"
+
+
+class SupplierOrigin(StrEnum):
+    LOCAL = "LOCAL"
+    IMPORT = "IMPORT"
+
+
+class OrderType(StrEnum):
+    LOCAL = "LOCAL"
+    IMPORT = "IMPORT"
+
+
+class LedgerLineKind(StrEnum):
+    G = "G"
+    C = "C"
+    S = "S"
+
+
+class CustomerInvoiceType(StrEnum):
+    ALL = "ALL"
+    CASH = "CASH"
+    CREDIT = "CREDIT"
+
+
+class CostSheetMode(StrEnum):
+    PLANNING = "PLANNING"
+    JOURNAL = "JOURNAL"
+
+
+class RoundOffRule(StrEnum):
+    NONE = "NONE"
+    CENTS_5 = "0.05"
+    CENTS_25 = "0.25"
+    WHOLE = "1.00"

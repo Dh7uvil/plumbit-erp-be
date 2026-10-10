@@ -198,6 +198,29 @@ class SalesInvoice(AuditUserMixin, SoftDeleteTenantModel):
         nullable=True,
     )
     cancel_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'CREDIT'")
+    )
+    supply_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    reference_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    reference_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    marks: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    discount_account_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    freight_account_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    auto_stock_document: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    is_printed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
 
     lines: Mapped[list["SalesInvoiceLine"]] = relationship(
         back_populates="sales_invoice",

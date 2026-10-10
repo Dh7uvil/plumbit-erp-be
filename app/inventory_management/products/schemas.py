@@ -40,6 +40,27 @@ class ProductCreate(BaseModel):
     requires_qc: bool | None = None
     income_account_id: UUID | None = None
     purchase_account_id: UUID | None = None
+    brand: str | None = Field(default=None, max_length=120)
+    origin_country_code: str | None = Field(default=None, max_length=2)
+    engine: str | None = Field(default=None, max_length=80)
+    alias_2: str | None = Field(default=None, max_length=80)
+    alias_3: str | None = Field(default=None, max_length=80)
+    alias_4: str | None = Field(default=None, max_length=80)
+    rem: str | None = Field(default=None, max_length=200)
+    remarks: str | None = None
+    max_level: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
+    default_reorder_level: Decimal | None = Field(
+        default=None, ge=0, max_digits=18, decimal_places=6
+    )
+    net_weight: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
+    gross_weight: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
+    price_1: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
+    price_2: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
+    stock_input_disabled: bool = False
+    secondary_unit_id: UUID | None = None
+    secondary_unit_factor: Decimal | None = Field(
+        default=None, gt=0, max_digits=18, decimal_places=6
+    )
 
     @field_validator("sku")
     @classmethod
@@ -77,6 +98,27 @@ class ProductUpdate(BaseModel):
     is_active: bool | None = None
     income_account_id: UUID | None = None
     purchase_account_id: UUID | None = None
+    brand: str | None = Field(default=None, max_length=120)
+    origin_country_code: str | None = Field(default=None, max_length=2)
+    engine: str | None = Field(default=None, max_length=80)
+    alias_2: str | None = Field(default=None, max_length=80)
+    alias_3: str | None = Field(default=None, max_length=80)
+    alias_4: str | None = Field(default=None, max_length=80)
+    rem: str | None = Field(default=None, max_length=200)
+    remarks: str | None = None
+    max_level: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
+    default_reorder_level: Decimal | None = Field(
+        default=None, ge=0, max_digits=18, decimal_places=6
+    )
+    net_weight: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
+    gross_weight: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=6)
+    price_1: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
+    price_2: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
+    stock_input_disabled: bool | None = None
+    secondary_unit_id: UUID | None = None
+    secondary_unit_factor: Decimal | None = Field(
+        default=None, gt=0, max_digits=18, decimal_places=6
+    )
 
     @field_validator("name")
     @classmethod
@@ -92,6 +134,55 @@ class ProductUpdate(BaseModel):
             return None
         normalized = value.strip()
         return normalized or None
+
+
+class ProductPriceBulkItem(BaseModel):
+    id: UUID
+    selling_rate: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
+    price_1: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
+    price_2: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
+    purchase_rate: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
+
+
+class ProductPriceBulkUpdate(BaseModel):
+    items: list[ProductPriceBulkItem] = Field(min_length=1)
+
+
+class ProductRenameSkuRequest(BaseModel):
+    sku: str = Field(min_length=1, max_length=80)
+
+    @field_validator("sku")
+    @classmethod
+    def normalize_sku(cls, value: str) -> str:
+        return normalize_required_text(value, field_name="sku").upper()
+
+
+class ProductWarehouseQty(BaseModel):
+    warehouse_id: UUID
+    warehouse_name: str
+    qty_on_hand: Decimal
+    qty_reserved: Decimal
+    qty_available: Decimal
+
+
+class ProductInquiryResponse(BaseModel):
+    product_id: UUID
+    packing_label: str | None = None
+    qty_on_hand: Decimal
+    qty_reserved: Decimal
+    qty_available: Decimal
+    qty_incoming: Decimal
+    unit2_breakdown: str | None = None
+    warehouses: list[ProductWarehouseQty]
+    avg_cost: Decimal | None = None
+    lc_price: Decimal | None = None
+    lc_currency_code: str | None = None
+    last_sale_date: str | None = None
+    last_sale_price: Decimal | None = None
+    last_sale_quantity: Decimal | None = None
+    last_purchase_date: str | None = None
+    last_purchase_price: Decimal | None = None
+    last_purchase_quantity: Decimal | None = None
 
 
 class ProductResponse(BaseModel):
@@ -115,6 +206,23 @@ class ProductResponse(BaseModel):
     requires_qc: bool
     income_account_id: UUID | None = None
     purchase_account_id: UUID | None = None
+    brand: str | None = None
+    origin_country_code: str | None = None
+    engine: str | None = None
+    alias_2: str | None = None
+    alias_3: str | None = None
+    alias_4: str | None = None
+    rem: str | None = None
+    remarks: str | None = None
+    max_level: Decimal | None = None
+    default_reorder_level: Decimal | None = None
+    net_weight: Decimal | None = None
+    gross_weight: Decimal | None = None
+    price_1: Decimal
+    price_2: Decimal
+    stock_input_disabled: bool
+    secondary_unit_id: UUID | None = None
+    secondary_unit_factor: Decimal | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime

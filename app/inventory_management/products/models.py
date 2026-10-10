@@ -87,3 +87,48 @@ class Product(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
         nullable=True,
         index=True,
     )
+    brand: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    origin_country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    engine: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    alias_2: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    alias_3: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    alias_4: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    rem: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    max_level: Mapped[Decimal | None] = mapped_column(
+        Numeric(QUANTITY_PRECISION, QUANTITY_SCALE), nullable=True
+    )
+    default_reorder_level: Mapped[Decimal | None] = mapped_column(
+        Numeric(QUANTITY_PRECISION, QUANTITY_SCALE), nullable=True
+    )
+    net_weight: Mapped[Decimal | None] = mapped_column(
+        Numeric(QUANTITY_PRECISION, QUANTITY_SCALE), nullable=True
+    )
+    gross_weight: Mapped[Decimal | None] = mapped_column(
+        Numeric(QUANTITY_PRECISION, QUANTITY_SCALE), nullable=True
+    )
+    price_1: Mapped[Decimal] = mapped_column(
+        Numeric(MONEY_PRECISION, MONEY_SCALE),
+        nullable=False,
+        server_default=text("0"),
+    )
+    price_2: Mapped[Decimal] = mapped_column(
+        Numeric(MONEY_PRECISION, MONEY_SCALE),
+        nullable=False,
+        server_default=text("0"),
+    )
+    stock_input_disabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    secondary_unit_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("units.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    secondary_unit_factor: Mapped[Decimal | None] = mapped_column(
+        Numeric(QUANTITY_PRECISION, QUANTITY_SCALE), nullable=True
+    )

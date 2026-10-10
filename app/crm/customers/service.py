@@ -15,7 +15,14 @@ from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
 from app.common.services.master_usage import assert_master_not_referenced
-from app.core.enums import AddressType, AuditAction, CompanyType, TaxTreatment
+from app.core.enums import (
+    AddressType,
+    AuditAction,
+    CompanyType,
+    CustomerInvoiceType,
+    SupplierOrigin,
+    TaxTreatment,
+)
 from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
 from app.crm.customers.models import Customer, CustomerAddress
 from app.crm.customers.repository import CustomerRepository
@@ -258,6 +265,11 @@ class CustomerService:
                         "billing_address_id": billing_id,
                         "shipping_address_id": shipping_id,
                         "notes": payload.notes,
+                        "fax": payload.fax,
+                        "email": payload.email,
+                        "phone": payload.phone,
+                        "invoice_type": payload.invoice_type.value,
+                        "supplier_origin": payload.supplier_origin.value,
                         "created_by": actor_user_id,
                         "updated_by": actor_user_id,
                     },
@@ -287,6 +299,10 @@ class CustomerService:
         shipping_payload = values.pop("shipping_address", None)
         if "tax_treatment" in values and values["tax_treatment"] is not None:
             values["tax_treatment"] = str(values["tax_treatment"])
+        if "invoice_type" in values and values["invoice_type"] is not None:
+            values["invoice_type"] = CustomerInvoiceType(values["invoice_type"]).value
+        if "supplier_origin" in values and values["supplier_origin"] is not None:
+            values["supplier_origin"] = SupplierOrigin(values["supplier_origin"]).value
         if "company_type" in values:
             if values["company_type"] is None:
                 raise ValidationError("company_type cannot be null")
@@ -504,6 +520,11 @@ class CustomerService:
             "credit_hold": row.credit_hold,
             "salesperson": await self.org.employee_audit_label(tenant_id, row.salesperson_id),
             "notes": row.notes,
+            "fax": row.fax,
+            "email": row.email,
+            "phone": row.phone,
+            "invoice_type": row.invoice_type,
+            "supplier_origin": row.supplier_origin,
             "is_active": row.is_active,
         }
         billing = format_address_label(
@@ -609,6 +630,11 @@ class CustomerService:
                 if item.address_id in extra_addresses
             ],
             notes=row.notes,
+            fax=row.fax,
+            email=row.email,
+            phone=row.phone,
+            invoice_type=CustomerInvoiceType(row.invoice_type),
+            supplier_origin=SupplierOrigin(row.supplier_origin),
             is_active=row.is_active,
             created_at=row.created_at,
             updated_at=row.updated_at,

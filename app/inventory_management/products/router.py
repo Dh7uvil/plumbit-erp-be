@@ -35,6 +35,9 @@ from app.inventory_management.products.dependencies import ProductServiceDepende
 from app.inventory_management.products.schemas import (
     ProductCreate,
     ProductFilter,
+    ProductInquiryResponse,
+    ProductPriceBulkUpdate,
+    ProductRenameSkuRequest,
     ProductResponse,
     ProductUpdate,
 )
@@ -61,6 +64,19 @@ async def list_products(
         is_active=filters.is_active,
     )
     return paginated_response(rows, params=page, total=total)
+
+
+@router.patch("/prices", response_model=ApiResponse[list[ProductResponse]])
+async def bulk_update_product_prices(
+    payload: ProductPriceBulkUpdate,
+    tenant: TenantContextDependency,
+    service: ProductServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(PRODUCT_UPDATE))],
+) -> ApiResponse[list[ProductResponse]]:
+    rows = await service.bulk_update_prices(
+        tenant.tenant_id, payload, actor_user_id=tenant.user_id
+    )
+    return ApiResponse(data=rows, message="Prices updated")
 
 
 IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
@@ -174,6 +190,31 @@ async def delete_product(
 ) -> ApiResponse[ProductResponse]:
     row = await service.delete(tenant.tenant_id, product_id, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Product deleted successfully")
+
+
+@router.get("/{product_id}/inquiry", response_model=ApiResponse[ProductInquiryResponse])
+async def get_product_inquiry(
+    product_id: UUID,
+    tenant: TenantContextDependency,
+    service: ProductServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(PRODUCT_READ))],
+) -> ApiResponse[ProductInquiryResponse]:
+    row = await service.inquiry(tenant.tenant_id, product_id)
+    return ApiResponse(data=row)
+
+
+@router.post("/{product_id}/rename-sku", response_model=ApiResponse[ProductResponse])
+async def rename_product_sku(
+    product_id: UUID,
+    payload: ProductRenameSkuRequest,
+    tenant: TenantContextDependency,
+    service: ProductServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(PRODUCT_UPDATE))],
+) -> ApiResponse[ProductResponse]:
+    row = await service.rename_sku(
+        tenant.tenant_id, product_id, payload, actor_user_id=tenant.user_id
+    )
+    return ApiResponse(data=row, message="SKU renamed")
 
 
 @router.get("/{product_id}/customers", response_model=ApiResponse[list[TradingPartyAggregate]])

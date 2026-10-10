@@ -154,6 +154,7 @@ class UserSummary(BaseModel):
 class AddressPayload(BaseModel):
     address_line_1: str | None = Field(default=None, max_length=250)
     address_line_2: str | None = Field(default=None, max_length=250)
+    address_line_3: str | None = Field(default=None, max_length=250)
     city: str | None = Field(default=None, max_length=100)
     state: str | None = Field(default=None, max_length=100)
     country: str | None = Field(default=None, max_length=100)
@@ -163,6 +164,7 @@ class AddressPayload(BaseModel):
     @field_validator(
         "address_line_1",
         "address_line_2",
+        "address_line_3",
         "city",
         "state",
         "country",

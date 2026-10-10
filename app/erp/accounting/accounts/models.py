@@ -61,3 +61,13 @@ class Account(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
         nullable=True,
         index=True,
     )
+    default_tax_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("taxes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    financial_category_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("financial_categories.id", ondelete="SET NULL"),
+        nullable=True,
+    )

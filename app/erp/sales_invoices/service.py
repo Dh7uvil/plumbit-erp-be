@@ -68,6 +68,7 @@ from app.core.enums import (
     ItemType,
     JournalType,
     PartyType,
+    PaymentMode,
     PaymentStatus,
     PlaceOfSupply,
     QuotationStatus,
@@ -181,6 +182,9 @@ class SalesInvoiceService:
         branch_id: UUID | None = None,
         currency_id: UUID | None = None,
         payment_status: str | None = None,
+        payment_mode: str | None = None,
+        is_printed: bool | None = None,
+        reference_number: str | None = None,
         invoice_date_from: date | None = None,
         invoice_date_to: date | None = None,
     ) -> tuple[list[SalesInvoiceResponse], int]:
@@ -201,6 +205,12 @@ class SalesInvoiceService:
             filters["currency_id"] = currency_id
         if payment_status is not None:
             filters["payment_status"] = payment_status
+        if payment_mode is not None:
+            filters["payment_mode"] = payment_mode
+        if is_printed is not None:
+            filters["is_printed"] = is_printed
+        if reference_number is not None:
+            filters["reference_number"] = reference_number
         extra: list[Any] = []
         if invoice_date_from is not None:
             extra.append(SalesInvoice.invoice_date >= invoice_date_from)
@@ -1741,6 +1751,14 @@ class SalesInvoiceService:
             "cogs_amount": _ZERO,
             "cogs_status": CogsStatus.NOT_APPLICABLE.value,
             "export_evidence_ok": True,
+            "payment_mode": payload.payment_mode.value,
+            "supply_date": payload.supply_date,
+            "reference_number": payload.reference_number,
+            "reference_date": payload.reference_date,
+            "marks": payload.marks,
+            "discount_account_id": payload.discount_account_id,
+            "freight_account_id": payload.freight_account_id,
+            "auto_stock_document": payload.auto_stock_document,
         }
         return header, line_rows
 
@@ -1904,6 +1922,21 @@ class SalesInvoiceService:
                 else PlaceOfSupply(existing.place_of_supply)
             ),
             prices_include_tax=values.get("prices_include_tax", existing.prices_include_tax),
+            payment_mode=values.get(
+                "payment_mode",
+                PaymentMode(existing.payment_mode),
+            ),
+            supply_date=values.get("supply_date", existing.supply_date),
+            reference_number=values.get("reference_number", existing.reference_number),
+            reference_date=values.get("reference_date", existing.reference_date),
+            marks=values.get("marks", existing.marks),
+            discount_account_id=values.get(
+                "discount_account_id", existing.discount_account_id
+            ),
+            freight_account_id=values.get("freight_account_id", existing.freight_account_id),
+            auto_stock_document=values.get(
+                "auto_stock_document", existing.auto_stock_document
+            ),
             lines=lines,
         )
 
@@ -1931,6 +1964,14 @@ class SalesInvoiceService:
             round_off_amount=row.round_off_amount,
             place_of_supply=PlaceOfSupply(row.place_of_supply),
             prices_include_tax=row.prices_include_tax,
+            payment_mode=PaymentMode(row.payment_mode),
+            supply_date=row.supply_date,
+            reference_number=row.reference_number,
+            reference_date=row.reference_date,
+            marks=row.marks,
+            discount_account_id=row.discount_account_id,
+            freight_account_id=row.freight_account_id,
+            auto_stock_document=row.auto_stock_document,
             lines=[
                 SalesInvoiceLineInput(
                     product_id=line.product_id,

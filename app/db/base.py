@@ -60,6 +60,7 @@ import app.erp.accounting.budgets.models as _budgets  # noqa: E402, F401
 import app.erp.accounting.charge_types.models as _charge_types  # noqa: E402, F401
 import app.erp.accounting.cheques.models as _cheques  # noqa: E402, F401
 import app.erp.accounting.cost_centers.models as _cost_centers  # noqa: E402, F401
+import app.erp.accounting.financial_categories.models as _financial_categories  # noqa: E402, F401
 import app.erp.accounting.customer_payments.models as _customer_payments  # noqa: E402, F401
 import app.erp.accounting.dunning.models as _dunning  # noqa: E402, F401
 import app.erp.accounting.fx_revaluation.models as _fx_revaluation  # noqa: E402, F401
@@ -80,6 +81,7 @@ import app.erp.purchase_invoices.models as _purchase_invoices  # noqa: E402, F40
 import app.erp.purchase_orders.models as _purchase_orders  # noqa: E402, F401
 import app.erp.quotation.models as _quotation  # noqa: E402, F401
 import app.erp.sales_invoices.models as _sales_invoices  # noqa: E402, F401
+import app.erp.salesmen.models as _salesmen  # noqa: E402, F401
 import app.erp.sales_orders.models as _sales_orders  # noqa: E402, F401
 import app.erp.supplier_products.models as _supplier_products  # noqa: E402, F401
 import app.inventory_management.categories.models as _categories  # noqa: E402, F401
