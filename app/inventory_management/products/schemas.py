@@ -29,6 +29,7 @@ class ProductCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     sales_description: str | None = None
     unit_id: UUID | None = None
+    pieces_per_unit: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=6)
     category_id: UUID | None = None
     selling_rate: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     purchase_rate: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
@@ -86,6 +87,7 @@ class ProductUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     sales_description: str | None = None
     unit_id: UUID | None = None
+    pieces_per_unit: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=6)
     category_id: UUID | None = None
     selling_rate: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
     purchase_rate: Decimal | None = Field(default=None, ge=0, max_digits=18, decimal_places=4)
@@ -195,6 +197,7 @@ class ProductResponse(BaseModel):
     name: str
     sales_description: str | None
     unit_id: UUID | None
+    pieces_per_unit: Decimal | None = None
     category_id: UUID | None
     selling_rate: Decimal
     purchase_rate: Decimal

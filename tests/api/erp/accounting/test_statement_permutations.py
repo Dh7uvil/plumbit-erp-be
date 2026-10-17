@@ -154,3 +154,40 @@ async def test_account_statement_exclude_opening_balance(client: AsyncClient) ->
     assert len(data["lines"]) == 1
     assert Decimal(data["lines"][0]["debit"]) == Decimal("25.0000")
     assert Decimal(data["lines"][0]["running_balance"]) == Decimal("25.0000")
+
+
+@pytest.mark.asyncio
+async def test_customer_statement_csv_export(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    invoice = await _posted_invoice(client, headers)
+    customer_id = invoice["customer_id"]
+    from_date = invoice["invoice_date"]
+    to_date = invoice["invoice_date"]
+    json_resp = await client.get(
+        "/api/v1/reports/customer-statement",
+        headers=headers,
+        params={"customer_id": customer_id, "from": from_date, "to": to_date},
+    )
+    assert json_resp.status_code == 200, json_resp.text
+    json_lines = json_resp.json()["data"]["lines"]
+    csv_resp = await client.get(
+        "/api/v1/reports/customer-statement",
+        headers=headers,
+        params={
+            "customer_id": customer_id,
+            "from": from_date,
+            "to": to_date,
+            "format": "csv",
+            "include_pdc": "true",
+        },
+    )
+    assert csv_resp.status_code == 200, csv_resp.text
+    content_type = csv_resp.headers.get("content-type", "")
+    assert "text/csv" in content_type
+    csv_rows = [line for line in csv_resp.text.splitlines() if line.strip()]
+    if json_lines:
+        assert len(csv_rows) >= len(json_lines)
+    else:
+        assert len(csv_rows) >= 1

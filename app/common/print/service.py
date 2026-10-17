@@ -237,7 +237,7 @@ class PrintService:
         journal_lines: list[PrintJournalLine],
     ) -> PrintDocumentResponse:
         letterhead = await self.letterhead(tenant_id)
-        family = template_family if template_family in {"uae", "china"} else "uae"
+        family = "uae"
         return PrintDocumentResponse(
             document_type=document_type,
             document_id=document_id,

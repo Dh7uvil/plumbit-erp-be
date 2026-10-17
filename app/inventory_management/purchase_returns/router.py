@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, Request, status
+from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
 
 from app.auth.catalog import (
     PURCHASE_RETURN_CANCEL,
@@ -22,6 +22,8 @@ from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
+from app.erp.common.dependencies import PartyDefaultsServiceDependency
+from app.erp.common.party_defaults_schemas import SupplierDocumentComposeDefaults
 from app.inventory_management.purchase_returns.dependencies import PurchaseReturnServiceDependency
 from app.inventory_management.purchase_returns.schemas import (
     PurchaseReturnCancelRequest,
@@ -35,6 +37,17 @@ router = APIRouter(prefix="/purchase-returns", tags=["Purchase Returns"])
 
 IfMatch = Annotated[str | None, Header()]
 IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
+
+
+@router.get("/compose-defaults", response_model=ApiResponse[SupplierDocumentComposeDefaults])
+async def compose_defaults(
+    tenant: TenantContextDependency,
+    party_defaults: PartyDefaultsServiceDependency,
+    supplier_id: Annotated[UUID, Query()],
+    _: Annotated[CurrentUser, Depends(require_permission(PURCHASE_RETURN_READ))],
+) -> ApiResponse[SupplierDocumentComposeDefaults]:
+    data = await party_defaults.supplier_document_defaults(tenant.tenant_id, supplier_id)
+    return ApiResponse(data=data)
 
 
 @router.get("", response_model=ApiResponse[list[PurchaseReturnResponse]])

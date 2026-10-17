@@ -272,7 +272,7 @@ class GoodsReceiptService:
         supplier = await self.suppliers.get(tenant_id, row.supplier_id)
         currency = await self.currencies.get(tenant_id, row.currency_id)
         printer = PrintService(self.session)
-        family = template_family if template_family in {"uae", "china"} else "uae"
+        family = "uae"
         return await printer.assemble(
             tenant_id,
             document_type=DocumentType.GOODS_RECEIPT.value,
@@ -304,9 +304,7 @@ class GoodsReceiptService:
         self, tenant_id: UUID, payload: GoodsReceiptCreate, *, actor_user_id: UUID
     ) -> GoodsReceiptResponse:
         header, line_rows = await self._build_draft(tenant_id, payload)
-        charge_rows = await self._build_charges(
-            tenant_id, payload.charges, cast(Decimal, header["exchange_rate"])
-        )
+        charge_rows = await self._build_charges(tenant_id, payload.charges)
         document_date = cast(date, header["document_date"])
         policy = await self._ensure_policy(tenant_id)
         policy.assert_open(document_date, can_override=self._can_override)
@@ -499,9 +497,7 @@ class GoodsReceiptService:
             header, line_rows = await self._build_draft_from_invoice(
                 tenant_id, create_payload, invoice
             )
-            charge_rows = await self._build_charges(
-                tenant_id, payload.charges, cast(Decimal, header["exchange_rate"])
-            )
+            charge_rows = await self._build_charges(tenant_id, payload.charges)
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(header["document_date"], can_override=self._can_override)
             number = await self.sequences.allocate(
@@ -621,9 +617,7 @@ class GoodsReceiptService:
         header, line_rows = await self._build_draft_from_invoice(
             tenant_id, create_payload, invoice
         )
-        charge_rows = await self._build_charges(
-            tenant_id, create_payload.charges, cast(Decimal, header["exchange_rate"])
-        )
+        charge_rows = await self._build_charges(tenant_id, create_payload.charges)
         policy = await self._ensure_policy(tenant_id)
         policy.assert_open(header["document_date"], can_override=self._can_override)
         number = await self.sequences.allocate(
@@ -733,11 +727,7 @@ class GoodsReceiptService:
                 )
             else:
                 header, line_rows = await self._build_draft(tenant_id, create_payload)
-            charge_rows = await self._build_charges(
-                tenant_id,
-                create_payload.charges,
-                cast(Decimal, header["exchange_rate"]),
-            )
+            charge_rows = await self._build_charges(tenant_id, create_payload.charges)
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(cast(date, header["document_date"]), can_override=self._can_override)
             header["updated_by"] = actor_user_id
@@ -1393,7 +1383,6 @@ class GoodsReceiptService:
         self,
         tenant_id: UUID,
         charges: Sequence[GoodsReceiptChargeInput],
-        exchange_rate: Decimal,
     ) -> builtins.list[dict[str, Any]]:
         if not charges:
             return []
@@ -1413,13 +1402,15 @@ class GoodsReceiptService:
                     f"Charge {charge_type.code} does not apply to goods receipt import charges"
                 )
             basis = charge_type.allocation_basis or ChargeAllocationMethod.VALUE.value
+            # Import charges are entered in base currency; do not apply the document FX rate.
+            charge_amount = quantize_money(charge.amount)
             built.append(
                 {
                     "line_number": index,
                     "charge_type_id": charge.charge_type_id,
                     "description": charge.description or charge_type.name,
-                    "amount": quantize_money(charge.amount),
-                    "base_amount": quantize_money(charge.amount * exchange_rate),
+                    "amount": charge_amount,
+                    "base_amount": charge_amount,
                     "allocation_basis": basis,
                     "supplier_id": charge.supplier_id,
                     "notes": charge.notes,

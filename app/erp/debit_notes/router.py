@@ -24,6 +24,8 @@ from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
+from app.erp.common.dependencies import PartyDefaultsServiceDependency
+from app.erp.common.party_defaults_schemas import SupplierDocumentComposeDefaults
 from app.erp.debit_notes.dependencies import DebitNoteServiceDependency
 from app.erp.debit_notes.schemas import (
     DebitNoteCancelRequest,
@@ -40,6 +42,17 @@ router = APIRouter(prefix="/debit-notes", tags=["Debit Notes"])
 
 IfMatch = Annotated[str | None, Header()]
 IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
+
+
+@router.get("/compose-defaults", response_model=ApiResponse[SupplierDocumentComposeDefaults])
+async def compose_defaults(
+    tenant: TenantContextDependency,
+    party_defaults: PartyDefaultsServiceDependency,
+    supplier_id: Annotated[UUID, Query()],
+    _: Annotated[CurrentUser, Depends(require_permission(DEBIT_NOTE_READ))],
+) -> ApiResponse[SupplierDocumentComposeDefaults]:
+    data = await party_defaults.supplier_document_defaults(tenant.tenant_id, supplier_id)
+    return ApiResponse(data=data)
 
 
 @router.get("", response_model=ApiResponse[list[DebitNoteResponse]])

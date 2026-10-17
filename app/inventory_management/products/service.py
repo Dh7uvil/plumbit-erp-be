@@ -193,6 +193,8 @@ class ProductService:
             )
             values = payload.model_dump()
             values["item_type"] = payload.item_type.value
+            if payload.unit_id is None:
+                values["pieces_per_unit"] = None
             if payload.requires_qc is None:
                 inbound = await self.org.get_inbound_settings(tenant_id)
                 values["requires_qc"] = inbound.qc_required_default
@@ -219,6 +221,8 @@ class ProductService:
         values = payload.model_dump(exclude_unset=True)
         if payload.item_type is not None:
             values["item_type"] = payload.item_type.value
+        if "unit_id" in values and values.get("unit_id") is None:
+            values["pieces_per_unit"] = None
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
             existing = await self._require(tenant_id, product_id)
@@ -317,6 +321,7 @@ class ProductService:
             "name": row.name,
             "sales_description": row.sales_description,
             "unit": unit_code,
+            "pieces_per_unit": row.pieces_per_unit,
             "category": category_name,
             "selling_rate": row.selling_rate,
             "purchase_rate": row.purchase_rate,

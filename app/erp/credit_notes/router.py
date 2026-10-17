@@ -24,6 +24,8 @@ from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
 from app.erp.accounting.ledger.schemas import JournalEntryResponse
+from app.erp.common.dependencies import PartyDefaultsServiceDependency
+from app.erp.common.party_defaults_schemas import CustomerDocumentComposeDefaults
 from app.erp.credit_notes.dependencies import CreditNoteServiceDependency
 from app.erp.credit_notes.schemas import (
     CreditNoteCancelRequest,
@@ -40,6 +42,19 @@ router = APIRouter(prefix="/credit-notes", tags=["Credit Notes"])
 
 IfMatch = Annotated[str | None, Header()]
 IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
+
+
+@router.get("/compose-defaults", response_model=ApiResponse[CustomerDocumentComposeDefaults])
+async def compose_defaults(
+    tenant: TenantContextDependency,
+    party_defaults: PartyDefaultsServiceDependency,
+    customer_id: Annotated[UUID, Query()],
+    _: Annotated[CurrentUser, Depends(require_permission(CREDIT_NOTE_READ))],
+) -> ApiResponse[CustomerDocumentComposeDefaults]:
+    data = await party_defaults.customer_document_defaults(
+        tenant.tenant_id, customer_id, include_price_list=False
+    )
+    return ApiResponse(data=data)
 
 
 @router.get("", response_model=ApiResponse[list[CreditNoteResponse]])

@@ -240,7 +240,7 @@ async def test_baseline_grn_charges_capitalize_into_inventory(
     row = stock.json()["data"][0]
     layers = await client.get(f"/api/v1/stock/{row['id']}/layers", headers=headers)
     expected_unit_cost = quantize_money(Decimal("40.0000") * fx_rate)
-    charge_base = quantize_money(Decimal("20.0000") * fx_rate)
+    charge_base = quantize_money(Decimal("20.0000"))
     layer = layers.json()["data"][0]
     assert Decimal(layer["unit_cost"]) == expected_unit_cost
     assert Decimal(layer["landed_unit_cost"]) == quantize_money(expected_unit_cost + charge_base)

@@ -48,6 +48,8 @@ from app.erp.accounting.write_offs.schemas import (
     InvoiceWriteOffRequest,
     InvoiceWriteOffReverseRequest,
 )
+from app.erp.common.dependencies import PartyDefaultsServiceDependency
+from app.erp.common.party_defaults_schemas import CustomerDocumentComposeDefaults
 from app.erp.sales_invoices.dependencies import SalesInvoiceServiceDependency
 from app.erp.sales_invoices.schemas import (
     SalesInvoiceCancelRequest,
@@ -65,6 +67,19 @@ router = APIRouter(prefix="/sales-invoices", tags=["Sales Invoices"])
 IfMatch = Annotated[str | None, Header()]
 IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
 CreditOverrideHeader = Annotated[str | None, Header(alias="X-Credit-Override")]
+
+
+@router.get("/compose-defaults", response_model=ApiResponse[CustomerDocumentComposeDefaults])
+async def compose_defaults(
+    tenant: TenantContextDependency,
+    party_defaults: PartyDefaultsServiceDependency,
+    customer_id: Annotated[UUID, Query()],
+    _: Annotated[CurrentUser, Depends(require_permission(SALES_INVOICE_READ))],
+) -> ApiResponse[CustomerDocumentComposeDefaults]:
+    data = await party_defaults.customer_document_defaults(
+        tenant.tenant_id, customer_id, include_price_list=False
+    )
+    return ApiResponse(data=data)
 
 
 @router.get("", response_model=ApiResponse[list[SalesInvoiceResponse]])

@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, Request, status
+from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
 
 from app.auth.catalog import (
     CUSTOMER_PAYMENT_CANCEL,
@@ -21,6 +21,8 @@ from app.common.idempotency.service import hash_request, require_idempotency_key
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
+from app.erp.common.dependencies import PartyDefaultsServiceDependency
+from app.erp.common.party_defaults_schemas import CustomerPaymentComposeDefaults
 from app.erp.accounting.customer_payments.dependencies import CustomerPaymentServiceDependency
 from app.erp.accounting.customer_payments.schemas import (
     CustomerPaymentCreate,
@@ -39,6 +41,17 @@ router = APIRouter(prefix="/customer-payments", tags=["Customer Payments"])
 
 IfMatch = Annotated[str | None, Header()]
 IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
+
+
+@router.get("/compose-defaults", response_model=ApiResponse[CustomerPaymentComposeDefaults])
+async def compose_defaults(
+    tenant: TenantContextDependency,
+    party_defaults: PartyDefaultsServiceDependency,
+    customer_id: Annotated[UUID, Query()],
+    _: Annotated[CurrentUser, Depends(require_permission(CUSTOMER_PAYMENT_READ))],
+) -> ApiResponse[CustomerPaymentComposeDefaults]:
+    data = await party_defaults.customer_payment_defaults(tenant.tenant_id, customer_id)
+    return ApiResponse(data=data)
 
 
 @router.get("", response_model=ApiResponse[list[CustomerPaymentResponse]])

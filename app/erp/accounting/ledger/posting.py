@@ -129,6 +129,7 @@ class LedgerPostingService:
         actor_id: UUID,
         journal_type: JournalType = JournalType.SYSTEM,
         reference: str | None = None,
+        relax_control_party: bool = False,
     ) -> JournalEntry:
         existing = await self.repo.get_posted_for_source(
             tenant_id, source_type, source_id, for_update=True
@@ -146,6 +147,7 @@ class LedgerPostingService:
             header_rate=exchange_rate,
             entry_date=entry_date,
             journal_type=journal_type,
+            relax_control_party=relax_control_party,
         )
         number = await self.sequences.allocate(
             tenant_id,
@@ -292,6 +294,7 @@ class LedgerPostingService:
         header_rate: Decimal,
         entry_date: date,
         journal_type: JournalType = JournalType.MANUAL,
+        relax_control_party: bool = False,
     ) -> list[PreparedLine]:
         if len(lines) < 2:
             raise JournalLineInvalidError(details={"reason": "at_least_two_lines"})
@@ -306,6 +309,7 @@ class LedgerPostingService:
                     header_rate=header_rate,
                     entry_date=entry_date,
                     journal_type=journal_type,
+                    relax_control_party=relax_control_party,
                 )
             )
         debit_base, credit_base = _totals(prepared)
@@ -325,6 +329,7 @@ class LedgerPostingService:
         header_rate: Decimal,
         entry_date: date,
         journal_type: JournalType = JournalType.MANUAL,
+        relax_control_party: bool = False,
     ) -> PreparedLine:
         if isinstance(line, JournalEntryLine):
             account_id = line.account_id
@@ -359,7 +364,7 @@ class LedgerPostingService:
         if debit_nonzero == credit_nonzero:
             raise JournalLineInvalidError(details={"line_number": line_number})
         account = await self.accounts.require_postable(tenant_id, account_id)
-        if account.account_subtype in _CONTROL_SUBTYPES:
+        if account.account_subtype in _CONTROL_SUBTYPES and not relax_control_party:
             if party_id is None:
                 raise PartyRequiredForControlAccountError(
                     details={"account_id": str(account_id), "line_number": line_number}

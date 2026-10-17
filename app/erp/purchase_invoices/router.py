@@ -33,6 +33,8 @@ from app.erp.accounting.write_offs.schemas import (
     InvoiceWriteOffRequest,
     InvoiceWriteOffReverseRequest,
 )
+from app.erp.common.dependencies import PartyDefaultsServiceDependency
+from app.erp.common.party_defaults_schemas import SupplierDocumentComposeDefaults
 from app.erp.purchase_invoices.dependencies import PurchaseInvoiceServiceDependency
 from app.erp.purchase_invoices.schemas import (
     PurchaseInvoiceCancelRequest,
@@ -48,6 +50,17 @@ router = APIRouter(prefix="/purchase-invoices", tags=["Purchase Invoices"])
 
 IfMatch = Annotated[str | None, Header()]
 IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
+
+
+@router.get("/compose-defaults", response_model=ApiResponse[SupplierDocumentComposeDefaults])
+async def compose_defaults(
+    tenant: TenantContextDependency,
+    party_defaults: PartyDefaultsServiceDependency,
+    supplier_id: Annotated[UUID, Query()],
+    _: Annotated[CurrentUser, Depends(require_permission(PURCHASE_INVOICE_READ))],
+) -> ApiResponse[SupplierDocumentComposeDefaults]:
+    data = await party_defaults.supplier_document_defaults(tenant.tenant_id, supplier_id)
+    return ApiResponse(data=data)
 
 
 @router.get("", response_model=ApiResponse[list[PurchaseInvoiceResponse]])

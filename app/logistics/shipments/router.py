@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, Header, Query, status
 
 from app.auth.catalog import (
     SHIPMENT_CLOSE,
@@ -20,6 +20,8 @@ from app.common.dependencies.tenant import TenantContextDependency
 from app.common.schemas.pagination import paginated_response
 from app.common.schemas.response import ApiResponse
 from app.common.utils.concurrency import require_document_version
+from app.erp.common.dependencies import PartyDefaultsServiceDependency
+from app.erp.common.party_defaults_schemas import SupplierDocumentComposeDefaults
 from app.logistics.shipments.dependencies import ShipmentServiceDependency
 from app.logistics.shipments.schemas import (
     ShipmentAttachNotesRequest,
@@ -33,6 +35,17 @@ from app.logistics.shipments.schemas import (
 router = APIRouter(prefix="/shipments", tags=["Shipments"])
 
 IfMatch = Annotated[str | None, Header()]
+
+
+@router.get("/compose-defaults", response_model=ApiResponse[SupplierDocumentComposeDefaults])
+async def compose_defaults(
+    tenant: TenantContextDependency,
+    party_defaults: PartyDefaultsServiceDependency,
+    supplier_id: Annotated[UUID, Query()],
+    _: Annotated[CurrentUser, Depends(require_permission(SHIPMENT_READ))],
+) -> ApiResponse[SupplierDocumentComposeDefaults]:
+    data = await party_defaults.supplier_document_defaults(tenant.tenant_id, supplier_id)
+    return ApiResponse(data=data)
 
 
 @router.get("", response_model=ApiResponse[list[ShipmentResponse]])

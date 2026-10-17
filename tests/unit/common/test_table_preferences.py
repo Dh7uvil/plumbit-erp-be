@@ -230,7 +230,16 @@ def test_audit_actor_columns_hidden_on_masters() -> None:
         "selling_rate",
         "is_active",
     ]
-    for key in ("created_at", "updated_at", "created_by", "updated_by", "tax", "purchase_rate"):
+    for key in (
+        "created_at",
+        "updated_at",
+        "created_by",
+        "updated_by",
+        "tax",
+        "purchase_rate",
+        "pieces_per_unit",
+        "packing",
+    ):
         assert key in entry.allowed_keys(frozenset())
         assert key not in entry.default_visible(frozenset())
 

@@ -185,7 +185,7 @@ class SalesReturnService:
             tenant_id, order.currency_id if order is not None else note.currency_id
         )
         printer = PrintService(self.session)
-        family = template_family if template_family in {"uae", "china"} else "uae"
+        family = "uae"
         print_lines = []
         for index, line in enumerate(row.lines, start=1):
             description = "Returned item"

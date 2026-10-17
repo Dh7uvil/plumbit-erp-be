@@ -144,7 +144,7 @@ async def print_package(
     tenant: TenantContextDependency,
     service: PackageServiceDependency,
     _: Annotated[CurrentUser, Depends(require_permission(PACKAGE_READ))],
-    template_family: Annotated[str, Query()] = "china",
+    template_family: Annotated[str, Query()] = "uae",
 ) -> ApiResponse[PrintDocumentResponse]:
     return ApiResponse(
         data=await service.print_document(

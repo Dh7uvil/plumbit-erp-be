@@ -36,6 +36,9 @@ class Product(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
         nullable=True,
         index=True,
     )
+    pieces_per_unit: Mapped[Decimal | None] = mapped_column(
+        Numeric(QUANTITY_PRECISION, QUANTITY_SCALE), nullable=True
+    )
     category_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("categories.id", ondelete="SET NULL"),

@@ -372,7 +372,7 @@ class GoodsReceiptChargeAdjustmentService:
             grn_charge = charge_by_id.get(line.goods_receipt_charge_id)
             if grn_charge is None:
                 raise ValidationError("Goods receipt charge not found on the selected GRN")
-            base_delta = quantize_money(line.adjustment_amount * grn.exchange_rate)
+            base_delta = quantize_money(line.adjustment_amount)
             built_lines.append(
                 {
                     "line_number": index,

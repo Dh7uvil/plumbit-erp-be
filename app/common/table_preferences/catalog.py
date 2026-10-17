@@ -394,6 +394,8 @@ TABLE_CATALOG: dict[str, TableCatalogEntry] = {
             *_hidden(
                 "category",
                 "unit",
+                "pieces_per_unit",
+                "packing",
                 "hs_code",
                 "sales_description",
                 "purchase_rate",

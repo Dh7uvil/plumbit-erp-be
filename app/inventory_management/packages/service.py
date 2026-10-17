@@ -110,7 +110,7 @@ class PackageService:
         tenant_id: UUID,
         package_id: UUID,
         *,
-        template_family: str = "china",
+        template_family: str = "uae",
     ) -> PrintDocumentResponse:
         from app.common.utils.document_totals import format_address_snapshot
         from app.crm.customers.service import CustomerService
@@ -119,7 +119,7 @@ class PackageService:
         order = await self.sales_orders.get(tenant_id, row.sales_order_id)
         customer = await CustomerService(self.session).get(tenant_id, order.customer_id)
         printer = PrintService(self.session)
-        family = template_family if template_family in {"uae", "china"} else "china"
+        family = "uae"
         return await printer.assemble(
             tenant_id,
             document_type=DocumentType.PACKAGE.value,

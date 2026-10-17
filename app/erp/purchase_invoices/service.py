@@ -230,7 +230,7 @@ class PurchaseInvoiceService:
         supplier = await self.suppliers.get(tenant_id, row.supplier_id)
         currency = await self.currencies.get(tenant_id, row.currency_id)
         printer = PrintService(self.session)
-        family = template_family if template_family in {"uae", "china"} else "uae"
+        family = "uae"
         return await printer.assemble(
             tenant_id,
             document_type=DocumentType.PURCHASE_INVOICE.value,

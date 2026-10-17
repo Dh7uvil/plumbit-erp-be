@@ -193,7 +193,7 @@ class DebitNoteService:
         supplier = await self.suppliers.get(tenant_id, row.supplier_id)
         currency = await self.currencies.get(tenant_id, row.currency_id)
         printer = PrintService(self.session)
-        family = template_family if template_family in {"uae", "china"} else "uae"
+        family = "uae"
         return await printer.assemble(
             tenant_id,
             document_type=DocumentType.DEBIT_NOTE.value,
@@ -324,6 +324,11 @@ class DebitNoteService:
                 raise ValidationError(
                     "Debit notes can only be created from a posted purchase return"
                 )
+            from app.inventory_management.goods_receipts.service import GoodsReceiptService
+
+            grn = await GoodsReceiptService(
+                self.session, actor_permissions=self.actor_permissions
+            ).get(tenant_id, purchase_return.goods_receipt_id)
             invoice = await self._posted_invoice_for_goods_receipt(
                 tenant_id, purchase_return.goods_receipt_id
             )
@@ -370,7 +375,7 @@ class DebitNoteService:
                     invoice.supplier_id if invoice is not None else purchase_return.supplier_id
                 ),
                 reason_code=payload.reason_code,
-                branch_id=invoice.branch_id if invoice is not None else None,
+                branch_id=invoice.branch_id if invoice is not None else grn.branch_id,
                 debit_note_date=payload.debit_note_date,
                 currency_id=invoice.currency_id if invoice is not None else None,
                 notes=payload.notes or purchase_return.notes,

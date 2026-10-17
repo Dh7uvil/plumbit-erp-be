@@ -47,9 +47,43 @@ def ensure_test_db_migrated() -> None:
 
     from alembic import command
     from alembic.config import Config
+    from alembic.util.exc import CommandError
 
     alembic_cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
-    command.upgrade(alembic_cfg, "head")
+    try:
+        command.upgrade(alembic_cfg, "head")
+    except CommandError as exc:
+        message = str(exc)
+        if "Can't locate revision" not in message:
+            raise
+        # Orphan alembic_version: stamp to last known good revision, then upgrade.
+        command.stamp(alembic_cfg, "q2r3s4t5u678")
+        command.upgrade(alembic_cfg, "head")
+        return
+
+    import asyncio
+
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    async def _accounts_missing_default_tax_id() -> bool:
+        engine = create_async_engine(str(_SETTINGS.database_url))
+        try:
+            async with engine.connect() as conn:
+                result = await conn.execute(
+                    text(
+                        "SELECT 1 FROM information_schema.columns "
+                        "WHERE table_schema = 'public' AND table_name = 'accounts' "
+                        "AND column_name = 'default_tax_id'"
+                    )
+                )
+                return result.scalar() is None
+        finally:
+            await engine.dispose()
+
+    if asyncio.run(_accounts_missing_default_tax_id()):
+        command.stamp(alembic_cfg, "q2r3s4t5u678")
+        command.upgrade(alembic_cfg, "head")
 
 
 def unique_trn(*, prefix: str = "1") -> str:

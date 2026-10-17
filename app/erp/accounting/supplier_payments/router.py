@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Header, Request, status
+from fastapi import APIRouter, Body, Depends, Header, Query, Request, status
 
 from app.auth.catalog import (
     SUPPLIER_PAYMENT_CANCEL,
@@ -27,6 +27,8 @@ from app.erp.accounting.open_items.schemas import (
     PaymentAllocationRecordResponse,
     PaymentCancelRequest,
 )
+from app.erp.common.dependencies import PartyDefaultsServiceDependency
+from app.erp.common.party_defaults_schemas import SupplierPaymentComposeDefaults
 from app.erp.accounting.supplier_payments.dependencies import SupplierPaymentServiceDependency
 from app.erp.accounting.supplier_payments.schemas import (
     SupplierPaymentCreate,
@@ -39,6 +41,17 @@ router = APIRouter(prefix="/supplier-payments", tags=["Supplier Payments"])
 
 IfMatch = Annotated[str | None, Header()]
 IdempotencyKeyHeader = Annotated[str | None, Header(alias="Idempotency-Key")]
+
+
+@router.get("/compose-defaults", response_model=ApiResponse[SupplierPaymentComposeDefaults])
+async def compose_defaults(
+    tenant: TenantContextDependency,
+    party_defaults: PartyDefaultsServiceDependency,
+    supplier_id: Annotated[UUID, Query()],
+    _: Annotated[CurrentUser, Depends(require_permission(SUPPLIER_PAYMENT_READ))],
+) -> ApiResponse[SupplierPaymentComposeDefaults]:
+    data = await party_defaults.supplier_payment_defaults(tenant.tenant_id, supplier_id)
+    return ApiResponse(data=data)
 
 
 @router.get("", response_model=ApiResponse[list[SupplierPaymentResponse]])

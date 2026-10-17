@@ -1723,9 +1723,15 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         *,
         from_date: date,
         to_date: date,
+        include_pdc: bool = False,
     ) -> PartyStatementResponse:
         return await self._party_document_statement(
-            tenant_id, PartyType.CUSTOMER, customer_id, from_date=from_date, to_date=to_date
+            tenant_id,
+            PartyType.CUSTOMER,
+            customer_id,
+            from_date=from_date,
+            to_date=to_date,
+            include_pdc=include_pdc,
         )
 
     async def supplier_statement(
@@ -1735,9 +1741,15 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         *,
         from_date: date,
         to_date: date,
+        include_pdc: bool = False,
     ) -> PartyStatementResponse:
         return await self._party_document_statement(
-            tenant_id, PartyType.SUPPLIER, supplier_id, from_date=from_date, to_date=to_date
+            tenant_id,
+            PartyType.SUPPLIER,
+            supplier_id,
+            from_date=from_date,
+            to_date=to_date,
+            include_pdc=include_pdc,
         )
 
     async def customer_outstanding(
@@ -2041,6 +2053,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         *,
         from_date: date,
         to_date: date,
+        include_pdc: bool = False,
     ) -> PartyStatementResponse:
         from app.crm.customers.service import (
             CUSTOMER_PARTY_ROLE,
@@ -2318,6 +2331,36 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                     row.cheque_date,
                 )
             )
+        if include_pdc:
+            pdc_rows = await self._uncleared_cheques_for_statement(
+                tenant_id,
+                from_date=from_date,
+                to_date=to_date,
+                party_type=party_type.value,
+                party_id=party_id,
+                account_id=None,
+                currency_id=None,
+            )
+            for cheque in pdc_rows:
+                debit, credit = self._pdc_amounts(cheque, currency_id=None)
+                entry_date = cheque.due_date or cheque.cheque_date
+                events.append(
+                    (
+                        entry_date,
+                        "CHEQUE_PDC",
+                        cheque.id,
+                        cheque.document_number,
+                        debit,
+                        credit,
+                        cheque.due_date,
+                        cheque.narration or f"PDC {cheque.cheque_number}",
+                        cheque.currency_id,
+                        cheque.exchange_rate or _ZERO,
+                        "PD",
+                        cheque.cheque_number,
+                        cheque.cheque_date,
+                    )
+                )
         events.sort(key=lambda item: (item[0], item[3]))
         currency_codes = await self.currencies.codes_by_ids(
             tenant_id, [event[8] for event in events]

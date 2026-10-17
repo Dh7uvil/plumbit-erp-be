@@ -492,6 +492,7 @@ class VoucherService:
                     else JournalType.SYSTEM
                 ),
                 reference=row.document_number,
+                relax_control_party=(voucher_type == VoucherType.GENERAL_PURCHASE),
             )
             row.journal_entry_id = journal.id
             if voucher_type != VoucherType.CONTRA and not _is_journal_like(voucher_type):
@@ -805,8 +806,10 @@ class VoucherService:
         rows: builtins.list[dict[str, object]] = []
         for index, line in enumerate(line_inputs, start=1):
             account = await self.accounts.require_postable(tenant_id, line.account_id)
-            if account.account_subtype in _CONTROL_SUBTYPES and (
-                line.party_type is None or line.party_id is None
+            if (
+                not is_journal
+                and account.account_subtype in _CONTROL_SUBTYPES
+                and (line.party_type is None or line.party_id is None)
             ):
                 raise ValidationError(
                     "AR/AP voucher lines require party_type and party_id",

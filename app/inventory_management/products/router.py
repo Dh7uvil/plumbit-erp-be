@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Header, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, Query, UploadFile, status
 
 from app.auth.catalog import (
     PRODUCT_CREATE,
@@ -31,6 +31,8 @@ from app.inventory_management.history.schemas import (
     TradingHistoryLine,
     TradingPartyAggregate,
 )
+from app.erp.common.dependencies import PartyDefaultsServiceDependency
+from app.erp.common.party_defaults_schemas import ProductLineDefaults
 from app.inventory_management.products.dependencies import ProductServiceDependency
 from app.inventory_management.products.schemas import (
     ProductCreate,
@@ -157,6 +159,28 @@ async def create_product(
 ) -> ApiResponse[ProductResponse]:
     row = await service.create(tenant.tenant_id, payload, actor_user_id=tenant.user_id)
     return ApiResponse(data=row, message="Product created successfully")
+
+
+@router.get("/{product_id}/line-defaults", response_model=ApiResponse[ProductLineDefaults])
+async def product_line_defaults(
+    product_id: UUID,
+    tenant: TenantContextDependency,
+    party_defaults: PartyDefaultsServiceDependency,
+    _: Annotated[CurrentUser, Depends(require_permission(PRODUCT_READ))],
+    warehouse_id: Annotated[UUID | None, Query()] = None,
+    price_list_id: Annotated[UUID | None, Query()] = None,
+    currency_id: Annotated[UUID | None, Query()] = None,
+    purchase_side: Annotated[bool, Query()] = False,
+) -> ApiResponse[ProductLineDefaults]:
+    data = await party_defaults.product_line_defaults(
+        tenant.tenant_id,
+        product_id,
+        warehouse_id=warehouse_id,
+        price_list_id=price_list_id,
+        currency_id=currency_id,
+        purchase_side=purchase_side,
+    )
+    return ApiResponse(data=data)
 
 
 @router.get("/{product_id}", response_model=ApiResponse[ProductResponse])

@@ -745,7 +745,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "default": "china",
+              "default": "uae",
               "title": "Template Family"
             }
           }
