@@ -47,6 +47,7 @@ async def list_accounts(
         account_subtype=filters.account_subtype.value if filters.account_subtype else None,
         is_group=filters.is_group,
         is_active=filters.is_active,
+        is_standalone_ledger=filters.is_standalone_ledger,
     )
     return paginated_response(rows, params=page, total=total)
 

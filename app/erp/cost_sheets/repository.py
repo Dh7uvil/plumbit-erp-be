@@ -3,7 +3,7 @@
 import builtins
 from collections.abc import Mapping, Sequence
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -158,7 +158,9 @@ class CostSheetRepository:
         created_journal: builtins.list[CostSheetJournalLine] = []
         for values in journal_lines or ():
             journal_row = CostSheetJournalLine(
-                tenant_id=tenant_id, cost_sheet_id=cost_sheet_id
+                id=uuid4(),
+                tenant_id=tenant_id,
+                cost_sheet_id=cost_sheet_id,
             )
             for name, value in values.items():
                 setattr(journal_row, name, value)

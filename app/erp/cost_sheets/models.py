@@ -169,6 +169,12 @@ class CostSheetJournalLine(TenantModel):
         nullable=True,
         index=True,
     )
+    charge_type_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("charge_types.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     party_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("customers.id", ondelete="SET NULL"),

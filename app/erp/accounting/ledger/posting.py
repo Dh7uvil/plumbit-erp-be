@@ -34,6 +34,7 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.core.permissions import has_permission
+from app.erp.accounting.accounts.control_resolver import ControlAccountResolver
 from app.erp.accounting.accounts.service import AccountService
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
@@ -74,6 +75,7 @@ class LedgerPostingService:
         self.actor_permissions = actor_permissions
         self.repo = JournalEntryRepository(session)
         self.accounts = AccountService(session)
+        self.control_accounts = ControlAccountResolver(session)
         self.currencies = CurrencyService(session)
         self.rates = ExchangeRateService(session)
         self.org = OrganizationService(session)
@@ -365,12 +367,16 @@ class LedgerPostingService:
             raise JournalLineInvalidError(details={"line_number": line_number})
         account = await self.accounts.require_postable(tenant_id, account_id)
         if account.account_subtype in _CONTROL_SUBTYPES and not relax_control_party:
-            if party_id is None:
-                raise PartyRequiredForControlAccountError(
-                    details={"account_id": str(account_id), "line_number": line_number}
-                )
+            party_type, party_id = await self.control_accounts.resolve_line_party(
+                tenant_id,
+                account,
+                party_type=party_type,
+                party_id=party_id,
+                line_number=line_number,
+            )
             if (
                 journal_type == JournalType.MANUAL
+                and party_id is not None
                 and not has_permission(self.actor_permissions, JOURNAL_POST_CONTROL)
             ):
                 raise ValidationError(

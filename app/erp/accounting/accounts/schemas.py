@@ -2,14 +2,14 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import ClassVar
+from typing import ClassVar, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.common.schemas.filters import BaseFilter
 from app.common.utils.validators import normalize_required_text
-from app.core.enums import AccountSubtype, AccountSystemRole, AccountType
+from app.core.enums import AccountSubtype, AccountSystemRole, AccountType, PartyType
 
 
 class AccountFilter(BaseFilter):
@@ -20,6 +20,14 @@ class AccountFilter(BaseFilter):
     account_subtype: AccountSubtype | None = None
     is_group: bool | None = None
     is_active: bool | None = None
+    is_standalone_ledger: bool | None = None
+
+
+class AccountPartyLink(BaseModel):
+    mode: Literal["new", "existing"]
+    party_type: PartyType
+    party_id: UUID | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class AccountCreate(BaseModel):
@@ -34,6 +42,8 @@ class AccountCreate(BaseModel):
     currency_id: UUID | None = None
     default_tax_id: UUID | None = None
     financial_category_id: UUID | None = None
+    is_standalone_ledger: bool = False
+    party_link: AccountPartyLink | None = None
 
     @field_validator("code")
     @classmethod
@@ -67,6 +77,8 @@ class AccountUpdate(BaseModel):
     currency_id: UUID | None = None
     default_tax_id: UUID | None = None
     financial_category_id: UUID | None = None
+    is_standalone_ledger: bool | None = None
+    party_link: AccountPartyLink | None = None
 
     @field_validator("code")
     @classmethod
@@ -107,6 +119,10 @@ class AccountResponse(BaseModel):
     financial_category_name: str | None = None
     is_active: bool
     is_blocked: bool = False
+    is_standalone_ledger: bool = False
+    linked_party_id: UUID | None = None
+    linked_party_name: str | None = None
+    linked_party_type: PartyType | None = None
     created_at: datetime
     updated_at: datetime
     created_by: UUID | None = None

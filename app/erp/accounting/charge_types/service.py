@@ -14,6 +14,7 @@ from app.common.services.audit import AuditWriter
 from app.core.enums import AuditAction
 from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
 from app.db.session import transaction
+from app.erp.accounting.accounts.control_resolver import ControlAccountResolver
 from app.erp.accounting.accounts.service import AccountService
 from app.erp.accounting.charge_types.models import ChargeType
 from app.erp.accounting.charge_types.repository import ChargeTypeRepository
@@ -44,6 +45,7 @@ class ChargeTypeService:
         self.session = session
         self.repo = ChargeTypeRepository(session)
         self.accounts = AccountService(session)
+        self.control_accounts = ControlAccountResolver(session)
         self.audit = AuditWriter(session)
 
     async def list(
@@ -77,7 +79,8 @@ class ChargeTypeService:
     async def create(
         self, tenant_id: UUID, payload: ChargeTypeCreate, *, actor_user_id: UUID
     ) -> ChargeTypeResponse:
-        await self.accounts.require_postable(tenant_id, payload.default_account_id)
+        account = await self.accounts.require_postable(tenant_id, payload.default_account_id)
+        await self.control_accounts.assert_assignable_ar_ap(tenant_id, account)
         if payload.default_tax_id is not None:
             await self._require_tax(tenant_id, payload.default_tax_id)
         async with transaction(self.session):
@@ -118,7 +121,10 @@ class ChargeTypeService:
     ) -> ChargeTypeResponse:
         values = payload.model_dump(exclude_unset=True)
         if "default_account_id" in values and values["default_account_id"] is not None:
-            await self.accounts.require_postable(tenant_id, values["default_account_id"])
+            account = await self.accounts.require_postable(
+                tenant_id, values["default_account_id"]
+            )
+            await self.control_accounts.assert_assignable_ar_ap(tenant_id, account)
         if "default_tax_id" in values and values["default_tax_id"] is not None:
             await self._require_tax(tenant_id, values["default_tax_id"])
         if "allocation_basis" in values:

@@ -27,6 +27,7 @@ from app.common.services.audit import AuditWriter
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone
 from app.core.enums import (
+    AccountSubtype,
     AuditAction,
     CostSheetMode,
     CostSheetStatus,
@@ -44,7 +45,9 @@ from app.db.session import transaction
 from app.erp.accounting.charge_types.repository import ChargeTypeRepository
 from app.erp.accounting.fiscal import year_for
 from app.erp.accounting.service import DocumentSequenceService
+from app.erp.accounting.accounts.control_resolver import ControlAccountResolver
 from app.erp.accounting.accounts.service import AccountService
+from app.erp.accounting.charge_types.service import ChargeTypeService
 from app.erp.accounting.ledger.posting import LedgerPostingService
 from app.erp.accounting.ledger.schemas import JournalLineInput
 from app.erp.cost_sheets.models import (
@@ -86,6 +89,43 @@ from app.inventory_management.goods_receipts.repository import GoodsReceiptRepos
 from app.inventory_management.stock.service import SOURCE_GOODS_RECEIPT
 
 _ZERO = Decimal("0")
+
+
+def _allocation_weight(
+    basis: ChargeAllocationMethod,
+    quantity: Decimal,
+    goods_value: Decimal,
+    product: Any | None,
+) -> Decimal:
+    if basis == ChargeAllocationMethod.QUANTITY:
+        return quantity
+    if basis == ChargeAllocationMethod.WEIGHT and product is not None:
+        weight = product.gross_weight or product.net_weight
+        if weight is not None and weight > _ZERO:
+            return quantize_quantity(weight * quantity)
+    if basis == ChargeAllocationMethod.VOLUME and product is not None:
+        if product.volume is not None and product.volume > _ZERO:
+            return quantize_quantity(product.volume * quantity)
+    return goods_value
+
+
+def _split_proportional(total: Decimal, weights: Sequence[Decimal]) -> list[Decimal]:
+    if total <= _ZERO or not weights:
+        return [_ZERO for _ in weights]
+    weight_sum = sum(weights, _ZERO)
+    if weight_sum <= _ZERO:
+        equal = quantize_money(total / Decimal(len(weights)))
+        return [equal for _ in weights]
+    allocated: list[Decimal] = []
+    running = _ZERO
+    for index, weight in enumerate(weights):
+        if index == len(weights) - 1:
+            share = quantize_money(total - running)
+        else:
+            share = quantize_money(total * weight / weight_sum)
+            running += share
+        allocated.append(share)
+    return allocated
 _SOURCE_COST_SHEET = "cost_sheet"
 _IMPORT_SERIES = "CSI"
 _EXPORT_SERIES = "CSE"
@@ -117,6 +157,8 @@ class CostSheetService:
         self.idempotency = IdempotencyService(session)
         self.audit = AuditWriter(session)
         self.accounts = AccountService(session)
+        self.control_accounts = ControlAccountResolver(session)
+        self.charge_type_service = ChargeTypeService(session)
         self.posting = LedgerPostingService(session, actor_permissions=actor_permissions)
 
     async def list(
@@ -625,6 +667,7 @@ class CostSheetService:
                 "line_number": index + 1,
                 "line_kind": line.line_kind.value,
                 "account_id": line.account_id,
+                "charge_type_id": line.charge_type_id,
                 "party_id": line.party_id,
                 "debit": quantize_money(line.debit),
                 "credit": quantize_money(line.credit),
@@ -639,6 +682,7 @@ class CostSheetService:
             "line_number": line.line_number,
             "line_kind": line.line_kind,
             "account_id": line.account_id,
+            "charge_type_id": line.charge_type_id,
             "party_id": line.party_id,
             "debit": line.debit,
             "credit": line.credit,
@@ -819,6 +863,12 @@ class CostSheetService:
             account_id = line.account_id
             party_type: PartyType | None = None
             party_id = line.party_id
+            if kind == LedgerLineKind.G and line.charge_type_id is not None:
+                charge_type = await self.charge_type_service.require_active(
+                    tenant_id, line.charge_type_id
+                )
+                if account_id is None:
+                    account_id = charge_type.default_account_id
             if kind == LedgerLineKind.S:
                 if party_id is None:
                     raise ValidationError("Supplier lines require a party")
@@ -837,13 +887,25 @@ class CostSheetService:
                 party_type = PartyType.CUSTOMER
             elif account_id is None:
                 raise ValidationError("Ledger lines require an account")
+            account = await self.accounts.require_postable(tenant_id, account_id)
+            if kind == LedgerLineKind.G and account.account_subtype in {
+                AccountSubtype.ACCOUNTS_RECEIVABLE.value,
+                AccountSubtype.ACCOUNTS_PAYABLE.value,
+            }:
+                party_type, party_id = await self.control_accounts.resolve_line_party(
+                    tenant_id,
+                    account,
+                    party_type=party_type,
+                    party_id=party_id,
+                    line_number=line.line_number,
+                )
             built.append(
                 JournalLineInput(
                     account_id=account_id,
                     debit=line.debit,
                     credit=line.credit,
                     party_type=party_type,
-                    party_id=party_id if party_type is not None else None,
+                    party_id=party_id,
                     description=line.description,
                 )
             )
@@ -1186,16 +1248,53 @@ class CostSheetService:
             goods_value = quantize_money(line.quantity * line.base_rate)
             line_goods_total += goods_value
             line_values.append((line.quantity, goods_value))
-        allocation_base = line_goods_total if line_goods_total > _ZERO else None
+
+        from app.inventory_management.products.models import Product
+
+        product_ids = {line.product_id for line in row.lines}
+        products_by_id: dict[UUID, Product] = {}
+        if product_ids:
+            statement = select(Product).where(
+                Product.tenant_id == row.tenant_id,
+                Product.id.in_(product_ids),
+                Product.deleted_at.is_(None),
+            )
+            for product in (await self.session.execute(statement)).scalars():
+                products_by_id[product.id] = product
+
+        header_method = ChargeAllocationMethod(row.allocation_method)
+        fx_rate = row.exchange_rate if row.exchange_rate is not None else Decimal("1")
+        line_allocated_est = [_ZERO for _ in row.lines]
+        for charge in row.charges:
+            if not charge_type_map.get(charge.charge_type_id, False):
+                continue
+            basis = charge.allocation_basis or header_method
+            if isinstance(basis, str):
+                basis = ChargeAllocationMethod(basis)
+            weights = [
+                _allocation_weight(
+                    basis,
+                    qty,
+                    goods_value,
+                    products_by_id.get(line.product_id),
+                )
+                for line, (qty, goods_value) in zip(row.lines, line_values, strict=True)
+            ]
+            if sum(weights, _ZERO) <= _ZERO:
+                weights = [goods_value for _, goods_value in line_values]
+            shares = _split_proportional(charge.estimated_amount, weights)
+            for index, share in enumerate(shares):
+                line_allocated_est[index] = quantize_money(line_allocated_est[index] + share)
 
         weighted_est: Decimal | None = None
         weighted_act: Decimal | None = None
         total_qty = sum((qty for qty, _ in line_values), _ZERO)
-        if total_qty > _ZERO and allocation_base:
-            for line, (qty, goods_value) in zip(row.lines, line_values, strict=True):
-                share = goods_value / allocation_base if allocation_base else _ZERO
-                allocated_est = quantize_money(inventoriable_est * share)
+        if total_qty > _ZERO:
+            for line, (qty, goods_value), allocated_est in zip(
+                row.lines, line_values, line_allocated_est, strict=True
+            ):
                 est_landed = quantize_money((goods_value + allocated_est) / qty)
+                est_landed_base = quantize_money(est_landed * fx_rate)
                 actual_landed = None
                 if line.goods_receipt_line_id is not None:
                     grn_line = await self._grn_line(row.tenant_id, line.goods_receipt_line_id)
@@ -1210,14 +1309,16 @@ class CostSheetService:
                             actual_landed = layers[0].landed_unit_cost
                 margin = None
                 if line.target_selling_price and line.target_selling_price > _ZERO:
-                    basis = actual_landed if actual_landed is not None else est_landed
+                    basis = (
+                        actual_landed if actual_landed is not None else est_landed_base
+                    )
                     margin = quantize_money(
                         (line.target_selling_price - basis) / line.target_selling_price * 100
                     )
                 line_base = (
                     line.base_amount
                     if line.base_amount is not None
-                    else quantize_money(goods_value * row.exchange_rate)
+                    else quantize_money(goods_value * fx_rate)
                 )
                 line_responses.append(
                     CostSheetLineResponse(
@@ -1238,7 +1339,11 @@ class CostSheetService:
                 )
             weighted_est = quantize_money(
                 sum(
-                    (resp.estimated_landed_unit_cost * resp.quantity for resp in line_responses),
+                    (
+                        quantize_money(resp.estimated_landed_unit_cost * fx_rate)
+                        * resp.quantity
+                        for resp in line_responses
+                    ),
                     _ZERO,
                 )
                 / total_qty
@@ -1247,7 +1352,7 @@ class CostSheetService:
                 weighted_act = quantize_money(
                     sum(
                         (
-                            (resp.actual_landed_unit_cost or resp.estimated_landed_unit_cost)
+                            (resp.actual_landed_unit_cost or quantize_money(resp.estimated_landed_unit_cost * fx_rate))
                             * resp.quantity
                             for resp in line_responses
                         ),

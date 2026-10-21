@@ -12,6 +12,9 @@ from app.common.repositories.base import BaseRepository
 from app.common.repositories.search import account_search
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.core.enums import PartyType
+from app.crm.customers.models import Customer
+from app.erp.accounting.accounts.linked_party import LinkedParty
 from app.erp.accounting.accounts.models import Account
 
 
@@ -25,7 +28,14 @@ class AccountRepository:
                 {"created_at", "updated_at", "code", "name", "account_type", "depth"}
             ),
             allowed_filter_fields=frozenset(
-                {"account_type", "account_subtype", "is_group", "is_active", "parent_id"}
+                {
+                    "account_type",
+                    "account_subtype",
+                    "is_group",
+                    "is_active",
+                    "is_standalone_ledger",
+                    "parent_id",
+                }
             ),
             search_fields=frozenset({"code", "name", "description", "system_role"}),
             related_searches=(account_search("parent_id"),),
@@ -99,6 +109,58 @@ class AccountRepository:
             )
         )
         return int(await self.session.scalar(statement) or 0)
+
+    async def find_parties_linked_to_account(
+        self,
+        tenant_id: UUID,
+        account_id: UUID,
+        *,
+        account_subtype: str | None = None,
+    ) -> list[LinkedParty]:
+        from app.core.enums import AccountSubtype
+
+        link_receivable = account_subtype in (
+            None,
+            AccountSubtype.ACCOUNTS_RECEIVABLE.value,
+        )
+        link_payable = account_subtype in (
+            None,
+            AccountSubtype.ACCOUNTS_PAYABLE.value,
+        )
+        clauses = []
+        if link_receivable:
+            clauses.append(Customer.receivable_account_id == account_id)
+        if link_payable:
+            clauses.append(Customer.payable_account_id == account_id)
+        if not clauses:
+            return []
+        from sqlalchemy import or_
+
+        statement = select(Customer).where(
+            Customer.tenant_id == tenant_id,
+            Customer.deleted_at.is_(None),
+            or_(*clauses),
+        )
+        rows = list((await self.session.execute(statement)).scalars().all())
+        out: list[LinkedParty] = []
+        for row in rows:
+            if link_receivable and row.receivable_account_id == account_id:
+                out.append(
+                    LinkedParty(
+                        party_id=row.id,
+                        party_name=row.name,
+                        party_type=PartyType.CUSTOMER,
+                    )
+                )
+            if link_payable and row.payable_account_id == account_id:
+                out.append(
+                    LinkedParty(
+                        party_id=row.id,
+                        party_name=row.name,
+                        party_type=PartyType.SUPPLIER,
+                    )
+                )
+        return out
 
     async def create(self, tenant_id: UUID, values: Mapping[str, object]) -> Account:
         return await self._repo.create(tenant_id, values)

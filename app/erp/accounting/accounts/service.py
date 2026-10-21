@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -14,7 +15,15 @@ from app.auth.catalog import ACCOUNTING_MODULE
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
-from app.core.enums import AccountSubtype, AccountSystemRole, AccountType, AuditAction
+from app.core.enums import (
+    AccountSubtype,
+    AccountSystemRole,
+    AccountType,
+    AuditAction,
+    CompanyType,
+    PartyType,
+    TaxTreatment,
+)
 from app.core.exceptions import (
     AccountNotPostableError,
     AccountRoleUnmappedError,
@@ -23,11 +32,14 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.db.session import transaction
+from app.erp.accounting.accounts.control_resolver import ControlAccountResolver
+from app.erp.accounting.accounts.linked_party import LinkedParty
 from app.erp.accounting.accounts.models import Account
 from app.erp.accounting.accounts.repository import AccountRepository
 from app.erp.accounting.accounts.schemas import (
     AccountBalanceResponse,
     AccountCreate,
+    AccountPartyLink,
     AccountPeriodBalance,
     AccountPeriodBalancesResponse,
     AccountResponse,
@@ -151,6 +163,7 @@ class AccountService:
         self.party_resolver = PartyAccountResolver(session)
         self.currencies = CurrencyService(session)
         self.audit = AuditWriter(session)
+        self.control_resolver = ControlAccountResolver(session)
 
     async def list(
         self,
@@ -162,6 +175,7 @@ class AccountService:
         account_subtype: str | None = None,
         is_group: bool | None = None,
         is_active: bool | None = None,
+        is_standalone_ledger: bool | None = None,
     ) -> tuple[list[AccountResponse], int]:
         filters: dict[str, object] = {}
         if account_type is not None:
@@ -172,11 +186,17 @@ class AccountService:
             filters["is_group"] = is_group
         if is_active is not None:
             filters["is_active"] = is_active
+        if is_standalone_ledger is not None:
+            filters["is_standalone_ledger"] = is_standalone_ledger
         rows, total = await self.repo.list(
             tenant_id, page=page, common_filter=common_filter, filters=filters or None
         )
         parent_map = await self._parent_map(tenant_id, rows)
-        return [self._to_response(row, parent_map) for row in rows], total
+        linked_map = await self._linked_party_map(tenant_id, rows)
+        return [
+            self._to_response(row, parent_map, linked_party=linked_map.get(row.id))
+            for row in rows
+        ], total
 
     async def tree(self, tenant_id: UUID) -> list[AccountTreeNode]:
         rows = await self.repo.list_all(tenant_id)
@@ -193,11 +213,13 @@ class AccountService:
     async def get(self, tenant_id: UUID, account_id: UUID) -> AccountResponse:
         row = await self._require(tenant_id, account_id)
         parent_map = await self._parent_map(tenant_id, [row])
+        linked = await self.control_resolver.find_linked_party(tenant_id, row)
         response = self._to_response(
             row,
             parent_map,
             has_children=await self.repo.count_children(tenant_id, account_id) > 0,
             has_journal_lines=await self._has_gl_lines(tenant_id, account_id),
+            linked_party=linked,
         )
         return await self._attach_ledger_meta(tenant_id, row, response)
 
@@ -284,6 +306,12 @@ class AccountService:
                 default_tax_id=payload.default_tax_id,
                 financial_category_id=payload.financial_category_id,
             )
+            self._validate_ledger_kind(
+                payload.account_subtype,
+                is_group=payload.is_group,
+                is_standalone_ledger=payload.is_standalone_ledger,
+                party_link=payload.party_link,
+            )
             try:
                 row = await self.repo.create(
                     tenant_id,
@@ -297,6 +325,7 @@ class AccountService:
                         "depth": depth,
                         "is_group": payload.is_group,
                         "is_blocked": payload.is_blocked,
+                        "is_standalone_ledger": payload.is_standalone_ledger,
                         "is_system": False,
                         "currency_id": payload.currency_id,
                         "default_tax_id": payload.default_tax_id,
@@ -307,6 +336,10 @@ class AccountService:
                 )
             except IntegrityError as exc:
                 raise DuplicateResourceError("An account with this code already exists") from exc
+            if payload.party_link is not None:
+                await self._apply_party_link(
+                    tenant_id, row, payload.party_link, actor_user_id=actor_user_id
+                )
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -317,8 +350,11 @@ class AccountService:
                 new_values=_account_snapshot(row),
             )
             parent_map = await self._parent_map(tenant_id, [row])
+            linked = await self.control_resolver.find_linked_party(tenant_id, row)
             return await self._attach_ledger_meta(
-                tenant_id, row, self._to_response(row, parent_map)
+                tenant_id,
+                row,
+                self._to_response(row, parent_map, linked_party=linked),
             )
 
     async def update(
@@ -329,7 +365,9 @@ class AccountService:
         *,
         actor_user_id: UUID,
     ) -> AccountResponse:
-        values = payload.model_dump(exclude_unset=True)
+        raw = payload.model_dump(exclude_unset=True)
+        party_link = raw.pop("party_link", None)
+        values = raw
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
             existing = await self._require(tenant_id, account_id)
@@ -395,12 +433,37 @@ class AccountService:
                     "financial_category_id", existing.financial_category_id
                 ),
             )
+            next_is_group = bool(values.get("is_group", existing.is_group))
+            next_standalone = bool(
+                values.get("is_standalone_ledger", existing.is_standalone_ledger)
+            )
+            raw_subtype = values.get("account_subtype", existing.account_subtype)
+            next_subtype = (
+                raw_subtype
+                if isinstance(raw_subtype, AccountSubtype)
+                else AccountSubtype(str(raw_subtype))
+            )
+            link_payload = (
+                AccountPartyLink.model_validate(party_link) if party_link is not None else None
+            )
+            self._validate_ledger_kind(
+                next_subtype,
+                is_group=next_is_group,
+                is_standalone_ledger=next_standalone,
+                party_link=link_payload,
+            )
+            if "is_standalone_ledger" in values:
+                values["is_standalone_ledger"] = next_standalone
             try:
                 row = await self.repo.update(tenant_id, account_id, values)
             except IntegrityError as exc:
                 raise DuplicateResourceError("An account with this code already exists") from exc
             if row is None:
                 raise ResourceNotFoundError("Account not found")
+            if link_payload is not None:
+                await self._apply_party_link(
+                    tenant_id, row, link_payload, actor_user_id=actor_user_id
+                )
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -698,6 +761,102 @@ class AccountService:
 
             await FinancialCategoryService(self.session).get(tenant_id, financial_category_id)
 
+    def _validate_ledger_kind(
+        self,
+        account_subtype: AccountSubtype,
+        *,
+        is_group: bool,
+        is_standalone_ledger: bool,
+        party_link: AccountPartyLink | None,
+    ) -> None:
+        is_control = account_subtype.value in _CONTROL_SUBTYPES
+        if is_standalone_ledger and not is_control:
+            raise ValidationError("Standalone ledger flag applies only to AR/AP accounts")
+        if is_standalone_ledger and is_group:
+            raise ValidationError("Group accounts cannot be standalone ledgers")
+        if party_link is not None:
+            if not is_control:
+                raise ValidationError("Party link applies only to AR/AP accounts")
+            if is_group:
+                raise ValidationError("Group accounts cannot be party-linked")
+            if is_standalone_ledger:
+                raise ValidationError("Cannot combine party link with standalone ledger")
+            if party_link.mode == "new" and not (party_link.name or "").strip():
+                raise ValidationError("Party name is required when creating a new party")
+            if party_link.mode == "existing" and party_link.party_id is None:
+                raise ValidationError("party_id is required when linking an existing party")
+            expected = (
+                PartyType.CUSTOMER
+                if account_subtype == AccountSubtype.ACCOUNTS_RECEIVABLE
+                else PartyType.SUPPLIER
+            )
+            if party_link.party_type != expected:
+                raise ValidationError(
+                    "Party type must match account subtype",
+                    details={
+                        "expected_party_type": expected.value,
+                        "party_type": party_link.party_type.value,
+                    },
+                )
+
+    async def _apply_party_link(
+        self,
+        tenant_id: UUID,
+        account: Account,
+        party_link: AccountPartyLink,
+        *,
+        actor_user_id: UUID,
+    ) -> None:
+        from app.crm.customers.schemas import CustomerCreate, CustomerUpdate
+        from app.crm.customers.service import CUSTOMER_PARTY_ROLE, CustomerService, SUPPLIER_PARTY_ROLE
+
+        is_receivable = account.account_subtype == AccountSubtype.ACCOUNTS_RECEIVABLE.value
+        if party_link.mode == "new":
+            company_type = (
+                CompanyType.CUSTOMER if is_receivable else CompanyType.SUPPLIER
+            )
+            role = CUSTOMER_PARTY_ROLE if is_receivable else SUPPLIER_PARTY_ROLE
+            create_payload = CustomerCreate(
+                name=party_link.name or account.name,
+                company_type=company_type,
+                tax_treatment=TaxTreatment.UNREGISTERED,
+                receivable_account_id=account.id if is_receivable else None,
+                payable_account_id=account.id if not is_receivable else None,
+            )
+            await CustomerService(self.session, role=role).create_record(
+                tenant_id, create_payload, actor_user_id=actor_user_id
+            )
+            return
+        role = CUSTOMER_PARTY_ROLE if is_receivable else SUPPLIER_PARTY_ROLE
+        customers = CustomerService(self.session, role=role)
+        party_id = party_link.party_id
+        if party_id is None:
+            raise ValidationError("party_id is required when linking an existing party")
+        await customers.get(tenant_id, party_id)
+        update_fields: dict[str, UUID] = {}
+        if is_receivable:
+            update_fields["receivable_account_id"] = account.id
+        else:
+            update_fields["payable_account_id"] = account.id
+        await customers.update(
+            tenant_id,
+            party_id,
+            CustomerUpdate(**update_fields),
+            actor_user_id=actor_user_id,
+        )
+
+    async def _linked_party_map(
+        self, tenant_id: UUID, rows: Sequence[Account]
+    ) -> dict[UUID, LinkedParty]:
+        result: dict[UUID, LinkedParty] = {}
+        for row in rows:
+            if row.account_subtype not in _CONTROL_SUBTYPES or row.is_standalone_ledger:
+                continue
+            linked = await self.control_resolver.find_linked_party(tenant_id, row)
+            if linked is not None:
+                result[row.id] = linked
+        return result
+
     async def _attach_ledger_meta(
         self, tenant_id: UUID, row: Account, response: AccountResponse
     ) -> AccountResponse:
@@ -731,6 +890,7 @@ class AccountService:
         *,
         has_children: bool = False,
         has_journal_lines: bool = False,
+        linked_party: LinkedParty | None = None,
     ) -> AccountResponse:
         parent = parent_map.get(row.parent_id) if row.parent_id is not None else None
         return AccountResponse.model_validate(row).model_copy(
@@ -739,6 +899,9 @@ class AccountService:
                 "parent_name": parent.name if parent is not None else None,
                 "has_children": has_children,
                 "has_journal_lines": has_journal_lines,
+                "linked_party_id": linked_party.party_id if linked_party else None,
+                "linked_party_name": linked_party.party_name if linked_party else None,
+                "linked_party_type": linked_party.party_type if linked_party else None,
             }
         )
 
@@ -755,4 +918,5 @@ def _account_snapshot(row: Account) -> dict[str, object]:
         "system_role": row.system_role,
         "is_active": row.is_active,
         "is_blocked": row.is_blocked,
+        "is_standalone_ledger": row.is_standalone_ledger,
     }

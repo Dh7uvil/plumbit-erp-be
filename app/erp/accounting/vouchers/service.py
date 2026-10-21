@@ -59,6 +59,7 @@ from app.core.exceptions import (
 )
 from app.core.permissions import has_permission
 from app.db.session import transaction
+from app.erp.accounting.accounts.control_resolver import ControlAccountResolver
 from app.erp.accounting.accounts.service import (
     AccountResolver,
     AccountService,
@@ -208,6 +209,7 @@ class VoucherService:
         self.audit = AuditWriter(session)
         self.outbox = OutboxService(session)
         self.accounts = AccountService(session)
+        self.control_accounts = ControlAccountResolver(session)
         self.resolver = AccountResolver(session)
         self.party_accounts = PartyAccountResolver(session)
         self.open_items = OpenItemsService(session)
@@ -806,10 +808,24 @@ class VoucherService:
         rows: builtins.list[dict[str, object]] = []
         for index, line in enumerate(line_inputs, start=1):
             account = await self.accounts.require_postable(tenant_id, line.account_id)
+            resolved_type: PartyType | None = line.party_type
+            resolved_id = line.party_id
+            if account.account_subtype in _CONTROL_SUBTYPES:
+                pt, pid = await self.control_accounts.resolve_line_party(
+                    tenant_id,
+                    account,
+                    party_type=line.party_type,
+                    party_id=line.party_id,
+                    line_number=index,
+                )
+                if pt is not None:
+                    resolved_type = pt
+                resolved_id = pid
             if (
                 not is_journal
                 and account.account_subtype in _CONTROL_SUBTYPES
-                and (line.party_type is None or line.party_id is None)
+                and resolved_id is None
+                and not account.is_standalone_ledger
             ):
                 raise ValidationError(
                     "AR/AP voucher lines require party_type and party_id",
@@ -837,8 +853,8 @@ class VoucherService:
                     "amount": amount,
                     "debit": debit,
                     "credit": credit,
-                    "party_type": line.party_type,
-                    "party_id": line.party_id,
+                    "party_type": resolved_type,
+                    "party_id": resolved_id,
                     "tax_id": tax_id,
                     "branch_id": line.branch_id,
                     "cost_center_id": line.cost_center_id,
@@ -939,10 +955,20 @@ class VoucherService:
             return
         lines = payload.lines or []
         ar_ap_total = _ZERO
-        for line in lines:
+        for index, line in enumerate(lines, start=1):
             account = await self.accounts.require_postable(tenant_id, line.account_id)
-            if account.account_subtype in _CONTROL_SUBTYPES:
-                ar_ap_total = quantize_money(ar_ap_total + cast(Decimal, line.amount))
+            if account.account_subtype not in _CONTROL_SUBTYPES:
+                continue
+            _, party_id = await self.control_accounts.resolve_line_party(
+                tenant_id,
+                account,
+                party_type=line.party_type,
+                party_id=line.party_id,
+                line_number=index,
+            )
+            if party_id is None:
+                continue
+            ar_ap_total = quantize_money(ar_ap_total + cast(Decimal, line.amount))
         if ar_ap_total == _ZERO:
             return
         allocations = payload.allocations or []
