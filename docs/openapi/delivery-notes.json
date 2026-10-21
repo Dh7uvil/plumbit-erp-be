@@ -12,6 +12,54 @@
     }
   ],
   "paths": {
+    "/api/v1/delivery-notes/compose-defaults": {
+      "get": {
+        "tags": [
+          "Delivery Notes"
+        ],
+        "summary": "Compose Defaults",
+        "operationId": "compose_defaults_api_v1_delivery_notes_compose_defaults_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CustomerDocumentComposeDefaults_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/delivery-notes": {
       "get": {
         "tags": [
@@ -1053,6 +1101,40 @@
   },
   "components": {
     "schemas": {
+      "ApiResponse_CustomerDocumentComposeDefaults_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/CustomerDocumentComposeDefaults"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[CustomerDocumentComposeDefaults]"
+      },
       "ApiResponse_DeliveryNoteResponse_": {
         "properties": {
           "success": {
@@ -1254,6 +1336,151 @@
           "quantity"
         ],
         "title": "ConversionLineInput"
+      },
+      "CustomerDocumentComposeDefaults": {
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Customer Id"
+          },
+          "customer_name": {
+            "type": "string",
+            "title": "Customer Name"
+          },
+          "customer_trn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Trn"
+          },
+          "tax_treatment": {
+            "$ref": "#/components/schemas/TaxTreatment"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "price_list_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price List Id"
+          },
+          "payment_terms_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Terms Id"
+          },
+          "salesperson_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Salesperson Id"
+          },
+          "contact_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Id"
+          },
+          "warehouse_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warehouse Id"
+          },
+          "place_of_supply": {
+            "$ref": "#/components/schemas/PlaceOfSupply"
+          },
+          "bill_to_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bill To Snapshot"
+          },
+          "ship_to_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ship To Snapshot"
+          },
+          "terms_and_conditions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms And Conditions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "customer_id",
+          "customer_name",
+          "customer_trn",
+          "tax_treatment",
+          "currency_id",
+          "payment_terms_id",
+          "salesperson_id",
+          "contact_id",
+          "warehouse_id",
+          "place_of_supply",
+          "bill_to_snapshot",
+          "ship_to_snapshot",
+          "terms_and_conditions"
+        ],
+        "title": "CustomerDocumentComposeDefaults"
       },
       "DeliveryNoteCancelRequest": {
         "properties": {

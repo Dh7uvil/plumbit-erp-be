@@ -801,6 +801,154 @@
           }
         }
       }
+    },
+    "/api/v1/cost-sheets/{cost_sheet_id}/post": {
+      "post": {
+        "tags": [
+          "Cost Sheets"
+        ],
+        "summary": "Post Cost Sheet Journal",
+        "operationId": "post_cost_sheet_journal_api_v1_cost_sheets__cost_sheet_id__post_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cost_sheet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cost Sheet Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostSheetVersionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CostSheetResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/cost-sheets/{cost_sheet_id}/cancel-journal": {
+      "post": {
+        "tags": [
+          "Cost Sheets"
+        ],
+        "summary": "Cancel Cost Sheet Journal",
+        "operationId": "cancel_cost_sheet_journal_api_v1_cost_sheets__cost_sheet_id__cancel_journal_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "cost_sheet_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cost Sheet Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CostSheetVersionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CostSheetResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1069,6 +1217,34 @@
           "sheet_type": {
             "$ref": "#/components/schemas/CostSheetType"
           },
+          "sheet_mode": {
+            "$ref": "#/components/schemas/CostSheetMode",
+            "default": "PLANNING"
+          },
+          "purchase_invoice_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Invoice Id"
+          },
+          "imp_reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imp Reference"
+          },
           "document_date": {
             "anyOf": [
               {
@@ -1225,7 +1401,6 @@
               "$ref": "#/components/schemas/CostSheetLineInput"
             },
             "type": "array",
-            "minItems": 1,
             "title": "Lines"
           },
           "charges": {
@@ -1234,14 +1409,177 @@
             },
             "type": "array",
             "title": "Charges"
+          },
+          "journal_lines": {
+            "items": {
+              "$ref": "#/components/schemas/CostSheetJournalLineInput"
+            },
+            "type": "array",
+            "title": "Journal Lines"
           }
         },
         "type": "object",
         "required": [
-          "sheet_type",
-          "lines"
+          "sheet_type"
         ],
         "title": "CostSheetCreate"
+      },
+      "CostSheetJournalLineInput": {
+        "properties": {
+          "line_kind": {
+            "$ref": "#/components/schemas/LedgerLineKind",
+            "default": "G"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "party_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Id"
+          },
+          "debit": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              }
+            ],
+            "title": "Debit",
+            "default": "0"
+          },
+          "credit": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,14}|(?=[\\d.]{1,19}0*$)\\d{0,14}\\.\\d{0,4}0*$)"
+              }
+            ],
+            "title": "Credit",
+            "default": "0"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "capitalize": {
+            "type": "boolean",
+            "title": "Capitalize",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "CostSheetJournalLineInput"
+      },
+      "CostSheetJournalLineResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "line_number": {
+            "type": "integer",
+            "title": "Line Number"
+          },
+          "line_kind": {
+            "$ref": "#/components/schemas/LedgerLineKind"
+          },
+          "account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "party_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Id"
+          },
+          "debit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Debit"
+          },
+          "credit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Credit"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "capitalize": {
+            "type": "boolean",
+            "title": "Capitalize"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "line_number",
+          "line_kind",
+          "account_id",
+          "party_id",
+          "debit",
+          "credit",
+          "description",
+          "capitalize"
+        ],
+        "title": "CostSheetJournalLineResponse"
       },
       "CostSheetLineInput": {
         "properties": {
@@ -1438,6 +1776,14 @@
         ],
         "title": "CostSheetLineResponse"
       },
+      "CostSheetMode": {
+        "type": "string",
+        "enum": [
+          "PLANNING",
+          "JOURNAL"
+        ],
+        "title": "CostSheetMode"
+      },
       "CostSheetResponse": {
         "properties": {
           "id": {
@@ -1457,6 +1803,10 @@
           "sheet_type": {
             "$ref": "#/components/schemas/CostSheetType"
           },
+          "sheet_mode": {
+            "$ref": "#/components/schemas/CostSheetMode",
+            "default": "PLANNING"
+          },
           "status": {
             "$ref": "#/components/schemas/CostSheetStatus"
           },
@@ -1468,6 +1818,76 @@
             "type": "string",
             "format": "date",
             "title": "Document Date"
+          },
+          "purchase_invoice_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Invoice Id"
+          },
+          "imp_reference": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imp Reference"
+          },
+          "purchase_invoice_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Invoice Number"
+          },
+          "journal_entry_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal Entry Id"
+          },
+          "reversal_journal_entry_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reversal Journal Entry Id"
+          },
+          "goods_receipt_charge_adjustment_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goods Receipt Charge Adjustment Id"
           },
           "shipment_id": {
             "anyOf": [
@@ -1626,6 +2046,13 @@
             },
             "type": "array",
             "title": "Charges"
+          },
+          "journal_lines": {
+            "items": {
+              "$ref": "#/components/schemas/CostSheetJournalLineResponse"
+            },
+            "type": "array",
+            "title": "Journal Lines"
           },
           "created_at": {
             "type": "string",
@@ -1836,6 +2263,40 @@
       },
       "CostSheetUpdate": {
         "properties": {
+          "sheet_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostSheetMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "purchase_invoice_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Invoice Id"
+          },
+          "imp_reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imp Reference"
+          },
           "document_date": {
             "anyOf": [
               {
@@ -1999,8 +2460,7 @@
                 "items": {
                   "$ref": "#/components/schemas/CostSheetLineInput"
                 },
-                "type": "array",
-                "minItems": 1
+                "type": "array"
               },
               {
                 "type": "null"
@@ -2021,6 +2481,20 @@
               }
             ],
             "title": "Charges"
+          },
+          "journal_lines": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CostSheetJournalLineInput"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal Lines"
           },
           "version": {
             "anyOf": [
@@ -2068,6 +2542,15 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "LedgerLineKind": {
+        "type": "string",
+        "enum": [
+          "G",
+          "C",
+          "S"
+        ],
+        "title": "LedgerLineKind"
       },
       "ValidationError": {
         "properties": {

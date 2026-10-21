@@ -2,7 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import ClassVar
+from typing import ClassVar, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, model_validator
@@ -79,6 +79,7 @@ class TradingHistoryFilter(BaseFilter):
     warehouse_id: UUID | None = None
     document_date_from: date | None = None
     document_date_to: date | None = None
+    posting_status: Literal["POSTED", "ALL", "UNPOSTED"] = "POSTED"
 
     @model_validator(mode="after")
     def validate_document_date_range(self) -> "TradingHistoryFilter":
@@ -89,6 +90,40 @@ class TradingHistoryFilter(BaseFilter):
         ):
             raise ValueError("document_date_from must be before or equal to document_date_to")
         return self
+
+
+class ProductPurchaseDetailsFilter(BaseFilter):
+    allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
+        {"document_date", "document_number", "quantity", "rate", "amount", "party_name"}
+    )
+    sort_by: str = "document_date"
+    kind: Literal["LOCAL", "IMPORT"]
+    posting_status: Literal["ALL", "POSTED", "UNPOSTED"] = "ALL"
+    name: str | None = None
+
+
+class ProductPurchaseDetailLine(BaseModel):
+    document_id: UUID
+    document_number: str
+    document_date: date
+    product_id: UUID
+    description: str
+    party_id: UUID
+    party_name: str
+    quantity: Decimal
+    rate: Decimal
+    amount: Decimal
+    warehouse_id: UUID | None = None
+    warehouse_name: str | None = None
+    supplier_invoice_number: str | None = None
+    lc_date: date | None = None
+    lc_number: str | None = None
+    fc_rate: Decimal | None = None
+    rate_lcy: Decimal | None = None
+    exchange_rate: Decimal | None = None
+    branch_id: UUID | None = None
+    branch_name: str | None = None
+    is_posted: bool = False
 
 
 class TradingAggregateFilter(BaseFilter):

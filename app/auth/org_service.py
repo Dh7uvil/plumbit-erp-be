@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -841,6 +841,18 @@ class OrganizationService:
         tenant = await self._require_tenant(tenant_id)
         settings = TenantSettings.model_validate(tenant.settings or {})
         return settings.purchase_order_requires_approval
+
+    async def prefetch_system_admin_creator_ids(
+        self,
+        tenant_id: UUID,
+        created_by_values: Iterable[UUID | None],
+    ) -> frozenset[UUID]:
+        user_ids = [value for value in created_by_values if value is not None]
+        return await self.access.filter_users_with_system_admin_role(tenant_id, user_ids)
+
+    async def user_has_system_admin_role(self, tenant_id: UUID, user_id: UUID) -> bool:
+        admins = await self.access.filter_users_with_system_admin_role(tenant_id, [user_id])
+        return user_id in admins
 
     async def get_bank_details(self, tenant_id: UUID) -> str | None:
         """Return free-text bank details from tenant settings, if present."""

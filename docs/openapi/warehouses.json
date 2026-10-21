@@ -401,6 +401,18 @@
             ],
             "title": "Address Line 2"
           },
+          "address_line_3": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 250
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Line 3"
+          },
           "city": {
             "anyOf": [
               {
@@ -490,6 +502,18 @@
               }
             ],
             "title": "Address Line 2"
+          },
+          "address_line_3": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 250
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Line 3"
           },
           "city": {
             "anyOf": [
@@ -733,6 +757,10 @@
             "type": "boolean",
             "title": "Is Designated Zone",
             "default": false
+          },
+          "location_type": {
+            "$ref": "#/components/schemas/WarehouseLocationType",
+            "default": "WAREHOUSE"
           }
         },
         "type": "object",
@@ -741,6 +769,14 @@
           "name"
         ],
         "title": "WarehouseCreate"
+      },
+      "WarehouseLocationType": {
+        "type": "string",
+        "enum": [
+          "SHOP",
+          "WAREHOUSE"
+        ],
+        "title": "WarehouseLocationType"
       },
       "WarehouseResponse": {
         "properties": {
@@ -791,6 +827,9 @@
             "type": "boolean",
             "title": "Is Designated Zone"
           },
+          "location_type": {
+            "$ref": "#/components/schemas/WarehouseLocationType"
+          },
           "is_active": {
             "type": "boolean",
             "title": "Is Active"
@@ -839,6 +878,7 @@
           "phone",
           "is_default",
           "is_designated_zone",
+          "location_type",
           "is_active",
           "created_at",
           "updated_at"
@@ -903,6 +943,16 @@
               }
             ],
             "title": "Is Designated Zone"
+          },
+          "location_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WarehouseLocationType"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_active": {
             "anyOf": [

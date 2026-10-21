@@ -23,15 +23,23 @@ from app.erp.accounting.service import TaxService
 from app.inventory_management.categories.service import CategoryService
 from app.inventory_management.products.models import Product
 from app.inventory_management.products.repository import ProductRepository
+from app.inventory_management.products.inquiry_quantities import build_quantity_rows
+from app.inventory_management.products.inventory_list_repository import (
+    ProductInventoryListRepository,
+)
+from app.inventory_management.products.list_stats_repository import ProductListStatsRepository
 from app.inventory_management.products.schemas import (
+    InventoryListFilter,
     ProductCreate,
     ProductInquiryResponse,
+    ProductInventoryListRow,
     ProductPriceBulkUpdate,
     ProductRenameSkuRequest,
     ProductResponse,
     ProductUpdate,
     ProductWarehouseQty,
 )
+from app.core.enums import WarehouseLocationType
 from app.inventory_management.units.service import UnitService
 
 
@@ -39,6 +47,8 @@ class ProductService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repo = ProductRepository(session)
+        self.inventory_list_repo = ProductInventoryListRepository(session)
+        self.list_stats = ProductListStatsRepository(session)
         self.units = UnitService(session)
         self.categories = CategoryService(session)
         self.taxes = TaxService(session)
@@ -71,7 +81,67 @@ class ProductService:
         rows, total = await self.repo.list(
             tenant_id, page=page, common_filter=common_filter, filters=filters or None
         )
-        return [ProductResponse.model_validate(row) for row in rows], total
+        product_ids = [row.id for row in rows]
+        stats_map = await self.list_stats.batch(tenant_id, product_ids)
+        responses: list[ProductResponse] = []
+        for row in rows:
+            base = ProductResponse.model_validate(row)
+            stats = stats_map.get(row.id)
+            if stats is None:
+                responses.append(base)
+                continue
+            responses.append(
+                base.model_copy(
+                    update={
+                        "qty_on_hand": stats.qty_on_hand,
+                        "qty_opened": stats.qty_opened,
+                        "qty_committed": stats.qty_committed,
+                        "net_available": stats.net_available,
+                        "shop_qty": stats.shop_qty,
+                        "warehouse_qty": stats.warehouse_qty,
+                        "ordered_qty": stats.ordered_qty,
+                        "last_sale_date": stats.last_sale_date,
+                        "last_sale_price": stats.last_sale_price,
+                        "last_purchase_date": stats.last_purchase_date,
+                        "last_purchase_price": stats.last_purchase_price,
+                    }
+                )
+            )
+        return responses, total
+
+    async def sync_avg_cost_from_fifo(
+        self, tenant_id: UUID, product_ids: set[UUID] | frozenset[UUID]
+    ) -> None:
+        """Refresh product purchase_rate from weighted FIFO avg (Winsoft avg cost)."""
+        from app.common.utils.currency import quantize_money
+        from app.inventory_management.costing.repository import CostingRepository
+        from app.inventory_management.stock.repository import StockBalanceRepository
+
+        if not product_ids:
+            return
+        cost_repo = CostingRepository(self.session)
+        balance_repo = StockBalanceRepository(self.session)
+        for product_id in product_ids:
+            balances, _ = await balance_repo.list(
+                tenant_id,
+                page=PageParams(page=1, page_size=500),
+                filters={"product_id": product_id},
+            )
+            all_layers = []
+            for balance in balances:
+                all_layers.extend(
+                    await cost_repo.list_positive_fifo(
+                        tenant_id, balance.warehouse_id, product_id
+                    )
+                )
+            if not all_layers:
+                continue
+            total_qty = sum(layer.qty_remaining for layer in all_layers)
+            if total_qty <= 0:
+                continue
+            weighted = sum(layer.qty_remaining * layer.landed_unit_cost for layer in all_layers)
+            avg_cost = quantize_money(weighted / total_qty)
+            await self.repo.update(tenant_id, product_id, {"purchase_rate": avg_cost})
 
     async def get(self, tenant_id: UUID, product_id: UUID) -> ProductResponse:
         return ProductResponse.model_validate(await self._require(tenant_id, product_id))
@@ -381,12 +451,25 @@ class ProductService:
         qty_reserved = Decimal("0")
         qty_available = Decimal("0")
         qty_incoming = Decimal("0")
+        shop_qty = Decimal("0")
+        warehouse_qty = Decimal("0")
         warehouses: list[ProductWarehouseQty] = []
+        warehouse_cache: dict[UUID, object] = {}
         for row in balances:
             qty_on_hand += row.qty_on_hand
             qty_reserved += row.qty_reserved
             qty_available += row.qty_available
             qty_incoming += row.qty_incoming
+            wh = warehouse_cache.get(row.warehouse_id)
+            if wh is None:
+                from app.inventory_management.warehouses.service import WarehouseService
+
+                wh = await WarehouseService(self.session).get(tenant_id, row.warehouse_id)
+                warehouse_cache[row.warehouse_id] = wh
+            if wh.location_type == WarehouseLocationType.SHOP:
+                shop_qty += row.qty_on_hand
+            else:
+                warehouse_qty += row.qty_on_hand
             warehouses.append(
                 ProductWarehouseQty(
                     warehouse_id=row.warehouse_id,
@@ -396,6 +479,11 @@ class ProductService:
                     qty_available=row.qty_available,
                 )
             )
+        qty_opened = await self.inventory_list_repo.draft_opened_for_product(tenant_id, product_id)
+        qty_committed = qty_reserved
+        net_available = qty_on_hand - qty_opened - qty_committed
+        if net_available < 0:
+            net_available = Decimal("0")
         packing_label: str | None = None
         unit2_breakdown: str | None = None
         if product.secondary_unit_id and product.secondary_unit_factor:
@@ -444,6 +532,30 @@ class ProductService:
         last_sale = sales[0] if sales else None
         last_purchase = purchases[0] if purchases else None
 
+        factor = product.secondary_unit_factor if product.secondary_unit_factor else None
+        quantity_rows = build_quantity_rows(
+            qty_on_hand=qty_on_hand,
+            qty_opened=qty_opened,
+            qty_committed=qty_committed,
+            net_available=net_available,
+            factor=factor,
+        )
+        category_name: str | None = None
+        if product.category_id:
+            category_name = (await self.categories.get(tenant_id, product.category_id)).name
+        tax_name: str | None = None
+        tax_rate: Decimal | None = None
+        if product.tax_id:
+            tax_row = await self.taxes.get(tenant_id, product.tax_id)
+            tax_name = tax_row.name
+            tax_rate = tax_row.rate
+        unit_code: str | None = None
+        unit2_code: str | None = None
+        if product.unit_id:
+            unit_code = (await self.units.get(tenant_id, product.unit_id)).code
+        if product.secondary_unit_id:
+            unit2_code = (await self.units.get(tenant_id, product.secondary_unit_id)).code
+
         return ProductInquiryResponse(
             product_id=product_id,
             packing_label=packing_label,
@@ -451,7 +563,14 @@ class ProductService:
             qty_reserved=qty_reserved,
             qty_available=qty_available,
             qty_incoming=qty_incoming,
+            qty_opened=qty_opened,
+            qty_committed=qty_committed,
+            net_available=net_available,
+            ordered_qty=qty_incoming,
+            shop_qty=shop_qty,
+            warehouse_qty=warehouse_qty,
             unit2_breakdown=unit2_breakdown,
+            quantity_rows=quantity_rows,
             warehouses=warehouses,
             avg_cost=avg_cost,
             lc_price=lc_price,
@@ -462,7 +581,85 @@ class ProductService:
             last_purchase_date=str(last_purchase.document_date) if last_purchase else None,
             last_purchase_price=last_purchase.rate if last_purchase else None,
             last_purchase_quantity=last_purchase.quantity if last_purchase else None,
+            sku=product.sku,
+            name=product.name,
+            alias_2=product.alias_2,
+            alias_3=product.alias_3,
+            alias_4=product.alias_4,
+            volume=product.volume,
+            brand=product.brand,
+            origin_country_code=product.origin_country_code,
+            engine=product.engine,
+            category_name=category_name,
+            tax_name=tax_name,
+            tax_rate=tax_rate,
+            selling_rate=product.selling_rate,
+            price_1=product.price_1,
+            price_2=product.price_2,
+            purchase_rate=product.purchase_rate,
+            net_weight=product.net_weight,
+            gross_weight=product.gross_weight,
+            rem=product.rem,
+            remarks=product.remarks,
+            unit_code=unit_code,
+            unit2_code=unit2_code,
         )
+
+    async def inventory_list(
+        self,
+        tenant_id: UUID,
+        *,
+        page: PageParams,
+        filters: InventoryListFilter,
+    ) -> tuple[list[ProductInventoryListRow], int]:
+        rows, total = await self.inventory_list_repo.list_rows(
+            tenant_id,
+            page=page,
+            search=filters.search,
+            search_type=filters.search_type,
+            category_id=filters.category_id,
+            brand=filters.brand,
+            engine=filters.engine,
+            tracked_only=filters.tracked_only,
+            sort_by=filters.sort_by,
+            sort_order=filters.sort_order,
+        )
+        result: list[ProductInventoryListRow] = []
+        for row in rows:
+            packing_label: str | None = None
+            if row.secondary_unit_id and row.secondary_unit_factor and row.unit_id:
+                unit_code = (await self.units.get(tenant_id, row.unit_id)).code
+                sec_code = (await self.units.get(tenant_id, row.secondary_unit_id)).code
+                packing_label = f"{row.secondary_unit_factor} {unit_code} / {sec_code}"
+            net_avail = Decimal(row.net_available or 0)
+            result.append(
+                ProductInventoryListRow(
+                    product_id=row.id,
+                    sku=row.sku,
+                    name=row.name,
+                    net_quantity=net_avail,
+                    net_available=net_avail,
+                    volume=row.volume,
+                    alias_2=row.alias_2,
+                    alias_3=row.alias_3,
+                    alias_4=row.alias_4,
+                    brand=row.brand,
+                    engine=row.engine,
+                    packing_label=packing_label,
+                    selling_rate=row.selling_rate,
+                    price_1=row.price_1,
+                    price_2=row.price_2,
+                    purchase_rate=row.purchase_rate,
+                    avg_cost=row.purchase_rate,
+                    ordered_qty=Decimal(row.ordered_qty or 0),
+                    shop_qty=Decimal(row.shop_qty or 0),
+                    warehouse_qty=Decimal(row.warehouse_qty or 0),
+                    qty_on_hand=Decimal(row.qty_on_hand or 0),
+                    qty_opened=Decimal(row.qty_opened or 0),
+                    qty_committed=Decimal(row.qty_committed or 0),
+                )
+            )
+        return result, total
 
     async def bulk_update_prices(
         self,

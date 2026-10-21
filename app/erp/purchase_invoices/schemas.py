@@ -66,6 +66,7 @@ class PurchaseInvoiceLineInput(BaseModel):
     purchase_order_line_id: UUID | None = None
     goods_receipt_id: UUID | None = None
     goods_receipt_line_id: UUID | None = None
+    warehouse_id: UUID | None = None
     supplier_product_id: UUID | None = None
     supplier_sku: str | None = Field(default=None, max_length=80)
     expense_account_id: UUID | None = None
@@ -111,6 +112,11 @@ class PurchaseInvoiceLineResponse(BaseModel):
     purchase_order_line_id: UUID | None
     goods_receipt_id: UUID | None
     goods_receipt_line_id: UUID | None
+    warehouse_id: UUID | None = None
+    purchase_order_number: str | None = None
+    amount_fcy: Decimal | None = None
+    amount_lcy: Decimal | None = None
+    rate_lcy: Decimal | None = None
     supplier_product_id: UUID | None
     supplier_sku: str | None
     expense_account_id: UUID | None
@@ -164,6 +170,7 @@ class PurchaseInvoiceCreate(BaseModel):
     boe_number: str | None = Field(default=None, max_length=80)
     cargo_permit_number: str | None = Field(default=None, max_length=80)
     document_series: Literal["BILL", "LC"] | None = None
+    exchange_rate: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=6)
     lines: list[PurchaseInvoiceLineInput] = Field(min_length=1)
 
     @field_validator("notes", "supplier_invoice_number")
@@ -207,6 +214,7 @@ class PurchaseInvoiceUpdate(BaseModel):
     import_doc_date: date | None = None
     boe_number: str | None = Field(default=None, max_length=80)
     cargo_permit_number: str | None = Field(default=None, max_length=80)
+    exchange_rate: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=6)
     lines: list[PurchaseInvoiceLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
 

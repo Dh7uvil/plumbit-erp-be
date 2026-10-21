@@ -151,6 +151,9 @@ class PurchaseInvoiceService:
         self.journals = JournalEntryService(session, actor_permissions=actor_permissions)
         self.purchase_orders = PurchaseOrderService(session, actor_permissions=actor_permissions)
         self.goods_receipts = GoodsReceiptService(session, actor_permissions=actor_permissions)
+        from app.inventory_management.warehouses.service import WarehouseService
+
+        self.warehouses = WarehouseService(session)
         self.costing = CostingService(session)
         self.idempotency = IdempotencyService(session)
         self.outbox = OutboxService(session)
@@ -674,6 +677,8 @@ class PurchaseInvoiceService:
                     actor_user_id=actor_user_id,
                 )
                 loaded = await self._require(tenant_id, invoice_id)
+            product_ids = {line.product_id for line in loaded.lines if line.product_id}
+            await self.products.sync_avg_cost_from_fifo(tenant_id, product_ids)
             response = self._to_response(loaded)
             await self.idempotency.store(
                 tenant_id, idempotency_key, response.model_dump(mode="json")
@@ -1262,6 +1267,11 @@ class PurchaseInvoiceService:
             to_currency_id=base.id,
             on_date=invoice_date,
         )
+        fx_rate = (
+            quantize_money(payload.exchange_rate)
+            if payload.exchange_rate is not None
+            else resolved.rate
+        )
         place = payload.place_of_supply or place_of_supply_from_address(
             supplier.shipping_address or supplier.billing_address
         )
@@ -1320,7 +1330,7 @@ class PurchaseInvoiceService:
             "rcm_tax_amount": rcm_tax,
             "currency_id": currency_id,
             "base_currency_id": base.id,
-            "exchange_rate": resolved.rate,
+            "exchange_rate": fx_rate,
             "discount_type": payload.discount_type.value if payload.discount_type else None,
             "discount_value": payload.discount_value,
             "discount_amount": doc_discount,
@@ -1332,7 +1342,7 @@ class PurchaseInvoiceService:
             "grand_total": grand,
             "prices_include_tax": prices_include_tax,
             "foreign_amount": grand,
-            "base_amount": quantize_money(grand * resolved.rate),
+            "base_amount": quantize_money(grand * fx_rate),
             "notes": payload.notes,
             "amount_paid": _ZERO,
             "amount_debited": _ZERO,
@@ -1452,6 +1462,8 @@ class PurchaseInvoiceService:
                     needs_expense_account = False
                 if needs_expense_account and line.expense_account_id is None:
                     raise ValidationError("Expense lines require expense_account_id")
+            if line.warehouse_id is not None:
+                await self.warehouses.require_id(tenant_id, line.warehouse_id)
             if line.expense_account_id is not None:
                 await self.accounts.require_postable(tenant_id, line.expense_account_id)
             item_category: TaxCategory | None = None
@@ -1488,6 +1500,7 @@ class PurchaseInvoiceService:
                     "purchase_order_line_id": line.purchase_order_line_id,
                     "goods_receipt_id": line.goods_receipt_id,
                     "goods_receipt_line_id": line.goods_receipt_line_id,
+                    "warehouse_id": line.warehouse_id,
                     "supplier_product_id": line.supplier_product_id,
                     "supplier_sku": line.supplier_sku,
                     "expense_account_id": line.expense_account_id,
@@ -1529,6 +1542,7 @@ class PurchaseInvoiceService:
                     purchase_order_line_id=line.purchase_order_line_id,
                     goods_receipt_id=line.goods_receipt_id,
                     goods_receipt_line_id=line.goods_receipt_line_id,
+                    warehouse_id=line.warehouse_id,
                     supplier_product_id=line.supplier_product_id,
                     supplier_sku=line.supplier_sku,
                     expense_account_id=line.expense_account_id,
@@ -1601,6 +1615,7 @@ class PurchaseInvoiceService:
             cargo_permit_number=values.get(
                 "cargo_permit_number", existing.cargo_permit_number
             ),
+            exchange_rate=values.get("exchange_rate", existing.exchange_rate),
             lines=lines,
         )
 
@@ -1863,6 +1878,7 @@ class PurchaseInvoiceService:
                     purchase_order_line_id=line.purchase_order_line_id,
                     goods_receipt_id=line.goods_receipt_id,
                     goods_receipt_line_id=line.goods_receipt_line_id,
+                    warehouse_id=line.warehouse_id,
                     supplier_product_id=line.supplier_product_id,
                     supplier_sku=line.supplier_sku,
                     expense_account_id=line.expense_account_id,
@@ -1877,10 +1893,14 @@ class PurchaseInvoiceService:
                     tax_rate=line.tax_rate,
                     tax_amount=line.tax_amount,
                     amount=line.amount,
+                    amount_fcy=line.amount,
+                    amount_lcy=quantize_money(line.amount * row.exchange_rate),
+                    rate_lcy=quantize_money(line.rate * row.exchange_rate),
                     purchase_account_id=line.purchase_account_id,
                     grn_unit_cost=line.grn_unit_cost,
                     qty_debited=line.qty_debited,
                     qty_received=line.qty_received,
+                    purchase_order_number=None,
                 )
                 for line in row.lines
             ],

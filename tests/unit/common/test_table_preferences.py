@@ -36,6 +36,7 @@ def test_catalog_covers_list_tables() -> None:
         "erp.customer_payments",
         "erp.supplier_payments",
         "inventory.products",
+        "inventory.product_inventory_lookup",
         "inventory.categories",
         "inventory.units",
         "inventory.warehouses",

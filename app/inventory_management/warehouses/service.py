@@ -16,7 +16,7 @@ from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.services.audit import AuditWriter
 from app.common.services.master_usage import assert_master_not_referenced
-from app.core.enums import AddressType, AuditAction
+from app.core.enums import AddressType, AuditAction, WarehouseLocationType
 from app.core.exceptions import DuplicateResourceError, ResourceNotFoundError, ValidationError
 from app.db.session import transaction
 from app.inventory_management.warehouses.models import Warehouse
@@ -102,6 +102,7 @@ class WarehouseService:
                         "address_id": address_id,
                         "is_default": make_default,
                         "is_designated_zone": payload.is_designated_zone,
+                        "location_type": payload.location_type.value,
                         "created_by": actor_user_id,
                         "updated_by": actor_user_id,
                     },
@@ -129,6 +130,8 @@ class WarehouseService:
     ) -> WarehouseResponse:
         values = payload.model_dump(exclude_unset=True)
         address_payload = values.pop("address", None)
+        if "location_type" in values and values["location_type"] is not None:
+            values["location_type"] = values["location_type"].value
         values["updated_by"] = actor_user_id
         async with transaction(self.session):
             row = await self._require(tenant_id, warehouse_id)
@@ -201,6 +204,7 @@ class WarehouseService:
             "phone": row.phone,
             "is_default": row.is_default,
             "is_designated_zone": row.is_designated_zone,
+            "location_type": row.location_type,
             "is_active": row.is_active,
         }
         if row.address_id is not None:
@@ -228,6 +232,7 @@ class WarehouseService:
                 address=addresses.get(row.address_id) if row.address_id is not None else None,
                 is_default=row.is_default,
                 is_designated_zone=row.is_designated_zone,
+                location_type=WarehouseLocationType(row.location_type),
                 is_active=row.is_active,
                 created_at=row.created_at,
                 updated_at=row.updated_at,

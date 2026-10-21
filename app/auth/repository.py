@@ -640,6 +640,29 @@ class AccessRepository:
         )
         return int(await self.session.scalar(statement) or 0)
 
+    async def filter_users_with_system_admin_role(
+        self,
+        tenant_id: UUID,
+        user_ids: Sequence[UUID],
+    ) -> frozenset[UUID]:
+        unique_ids = list(dict.fromkeys(user_ids))
+        if not unique_ids:
+            return frozenset()
+        statement = (
+            select(UserRole.user_id)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(
+                UserRole.tenant_id == tenant_id,
+                UserRole.user_id.in_(unique_ids),
+                Role.tenant_id == tenant_id,
+                Role.name == "Superadmin",
+                Role.is_system_role.is_(True),
+            )
+            .distinct()
+        )
+        result = await self.session.execute(statement)
+        return frozenset(result.scalars().all())
+
     async def list_all_permissions(self, tenant_id: UUID) -> Sequence[Permission]:
         statement = (
             select(Permission)

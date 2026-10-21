@@ -259,6 +259,12 @@ class PurchaseInvoiceLine(TenantModel):
         ForeignKey("goods_receipt_lines.id", ondelete="RESTRICT"),
         nullable=True,
     )
+    warehouse_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("warehouses.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     supplier_product_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("supplier_products.id", ondelete="SET NULL"),

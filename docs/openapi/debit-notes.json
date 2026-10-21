@@ -12,6 +12,54 @@
     }
   ],
   "paths": {
+    "/api/v1/debit-notes/compose-defaults": {
+      "get": {
+        "tags": [
+          "Debit Notes"
+        ],
+        "summary": "Compose Defaults",
+        "operationId": "compose_defaults_api_v1_debit_notes_compose_defaults_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "supplier_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Supplier Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupplierDocumentComposeDefaults_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/debit-notes": {
       "get": {
         "tags": [
@@ -1095,6 +1143,40 @@
           "data"
         ],
         "title": "ApiResponse[PrintDocumentResponse]"
+      },
+      "ApiResponse_SupplierDocumentComposeDefaults_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/SupplierDocumentComposeDefaults"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[SupplierDocumentComposeDefaults]"
       },
       "ApiResponse_list_DebitNoteResponse__": {
         "properties": {
@@ -3679,6 +3761,138 @@
           "relationship"
         ],
         "title": "RelatedDocumentRef"
+      },
+      "SupplierDocumentComposeDefaults": {
+        "properties": {
+          "supplier_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Supplier Id"
+          },
+          "supplier_name": {
+            "type": "string",
+            "title": "Supplier Name"
+          },
+          "supplier_trn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Trn"
+          },
+          "tax_treatment": {
+            "$ref": "#/components/schemas/TaxTreatment"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "payment_terms_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Terms Id"
+          },
+          "contact_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Id"
+          },
+          "warehouse_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warehouse Id"
+          },
+          "place_of_supply": {
+            "$ref": "#/components/schemas/PlaceOfSupply"
+          },
+          "supplier_address_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Address Snapshot"
+          },
+          "deliver_to_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deliver To Snapshot"
+          },
+          "terms_and_conditions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms And Conditions"
+          },
+          "freight_forwarder_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Forwarder Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "supplier_id",
+          "supplier_name",
+          "supplier_trn",
+          "tax_treatment",
+          "currency_id",
+          "payment_terms_id",
+          "contact_id",
+          "warehouse_id",
+          "place_of_supply",
+          "supplier_address_snapshot",
+          "deliver_to_snapshot",
+          "terms_and_conditions"
+        ],
+        "title": "SupplierDocumentComposeDefaults"
       },
       "TaxTreatment": {
         "type": "string",

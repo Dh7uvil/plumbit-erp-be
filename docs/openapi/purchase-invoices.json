@@ -12,6 +12,54 @@
     }
   ],
   "paths": {
+    "/api/v1/purchase-invoices/compose-defaults": {
+      "get": {
+        "tags": [
+          "Purchase Invoices"
+        ],
+        "summary": "Compose Defaults",
+        "operationId": "compose_defaults_api_v1_purchase_invoices_compose_defaults_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "supplier_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Supplier Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupplierDocumentComposeDefaults_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/purchase-invoices": {
       "get": {
         "tags": [
@@ -202,6 +250,22 @@
                 }
               ],
               "title": "Bill Type"
+            }
+          },
+          {
+            "name": "payment_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PaymentMode"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payment Mode"
             }
           },
           {
@@ -1275,6 +1339,40 @@
         ],
         "title": "ApiResponse[PurchaseInvoiceResponse]"
       },
+      "ApiResponse_SupplierDocumentComposeDefaults_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/SupplierDocumentComposeDefaults"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[SupplierDocumentComposeDefaults]"
+      },
       "ApiResponse_list_PurchaseInvoiceResponse__": {
         "properties": {
           "success": {
@@ -2024,6 +2122,15 @@
           "amount"
         ],
         "title": "PaymentAllocationInput"
+      },
+      "PaymentMode": {
+        "type": "string",
+        "enum": [
+          "CASH",
+          "CREDIT",
+          "BANK"
+        ],
+        "title": "PaymentMode"
       },
       "PaymentStatus": {
         "type": "string",
@@ -2989,6 +3096,178 @@
             ],
             "title": "Prices Include Tax"
           },
+          "payment_mode": {
+            "$ref": "#/components/schemas/PaymentMode",
+            "default": "CREDIT"
+          },
+          "reference_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Number"
+          },
+          "reference_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Date"
+          },
+          "marks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marks"
+          },
+          "discount_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discount Account Id"
+          },
+          "freight_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Account Id"
+          },
+          "credit_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credit Account Id"
+          },
+          "auto_stock_document": {
+            "type": "boolean",
+            "title": "Auto Stock Document",
+            "default": false
+          },
+          "source_of_supply_country": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Of Supply Country"
+          },
+          "import_doc_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Doc Number"
+          },
+          "import_doc_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Doc Date"
+          },
+          "boe_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Boe Number"
+          },
+          "cargo_permit_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cargo Permit Number"
+          },
+          "document_series": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "BILL",
+                  "LC"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Series"
+          },
+          "exchange_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange Rate"
+          },
           "lines": {
             "items": {
               "$ref": "#/components/schemas/PurchaseInvoiceLineInput"
@@ -3186,6 +3465,18 @@
             ],
             "title": "Goods Receipt Line Id"
           },
+          "warehouse_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warehouse Id"
+          },
           "supplier_product_id": {
             "anyOf": [
               {
@@ -3373,6 +3664,65 @@
               }
             ],
             "title": "Goods Receipt Line Id"
+          },
+          "warehouse_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warehouse Id"
+          },
+          "purchase_order_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Order Number"
+          },
+          "amount_fcy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Fcy"
+          },
+          "amount_lcy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Lcy"
+          },
+          "rate_lcy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Lcy"
           },
           "supplier_product_id": {
             "anyOf": [
@@ -3932,6 +4282,158 @@
             ],
             "title": "Cancel Reason"
           },
+          "payment_mode": {
+            "$ref": "#/components/schemas/PaymentMode",
+            "default": "CREDIT"
+          },
+          "reference_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Number"
+          },
+          "reference_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Date"
+          },
+          "marks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marks"
+          },
+          "discount_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discount Account Id"
+          },
+          "freight_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Account Id"
+          },
+          "credit_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credit Account Id"
+          },
+          "auto_stock_document": {
+            "type": "boolean",
+            "title": "Auto Stock Document",
+            "default": false
+          },
+          "is_printed": {
+            "type": "boolean",
+            "title": "Is Printed",
+            "default": false
+          },
+          "source_of_supply_country": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Of Supply Country"
+          },
+          "import_doc_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Doc Number"
+          },
+          "import_doc_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Doc Date"
+          },
+          "boe_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Boe Number"
+          },
+          "cargo_permit_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cargo Permit Number"
+          },
+          "import_expense_lcy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Expense Lcy"
+          },
           "is_overdue": {
             "type": "boolean",
             "title": "Is Overdue",
@@ -4285,6 +4787,175 @@
             ],
             "title": "Is Reverse Charge"
           },
+          "payment_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaymentMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reference_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Number"
+          },
+          "reference_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Date"
+          },
+          "marks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marks"
+          },
+          "discount_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discount Account Id"
+          },
+          "freight_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Account Id"
+          },
+          "credit_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credit Account Id"
+          },
+          "auto_stock_document": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Stock Document"
+          },
+          "source_of_supply_country": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Of Supply Country"
+          },
+          "import_doc_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Doc Number"
+          },
+          "import_doc_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Doc Date"
+          },
+          "boe_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Boe Number"
+          },
+          "cargo_permit_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cargo Permit Number"
+          },
+          "exchange_rate": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,12}|(?=[\\d.]{1,19}0*$)\\d{0,12}\\.\\d{0,6}0*$)"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange Rate"
+          },
           "lines": {
             "anyOf": [
               {
@@ -4382,6 +5053,138 @@
           "relationship"
         ],
         "title": "RelatedDocumentRef"
+      },
+      "SupplierDocumentComposeDefaults": {
+        "properties": {
+          "supplier_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Supplier Id"
+          },
+          "supplier_name": {
+            "type": "string",
+            "title": "Supplier Name"
+          },
+          "supplier_trn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Trn"
+          },
+          "tax_treatment": {
+            "$ref": "#/components/schemas/TaxTreatment"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "payment_terms_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Terms Id"
+          },
+          "contact_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Id"
+          },
+          "warehouse_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warehouse Id"
+          },
+          "place_of_supply": {
+            "$ref": "#/components/schemas/PlaceOfSupply"
+          },
+          "supplier_address_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Address Snapshot"
+          },
+          "deliver_to_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deliver To Snapshot"
+          },
+          "terms_and_conditions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms And Conditions"
+          },
+          "freight_forwarder_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Forwarder Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "supplier_id",
+          "supplier_name",
+          "supplier_trn",
+          "tax_treatment",
+          "currency_id",
+          "payment_terms_id",
+          "contact_id",
+          "warehouse_id",
+          "place_of_supply",
+          "supplier_address_snapshot",
+          "deliver_to_snapshot",
+          "terms_and_conditions"
+        ],
+        "title": "SupplierDocumentComposeDefaults"
       },
       "TaxTreatment": {
         "type": "string",

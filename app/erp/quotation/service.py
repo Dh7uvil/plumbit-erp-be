@@ -25,6 +25,7 @@ from app.auth.catalog import (
 )
 from app.auth.models import Tenant
 from app.auth.org_service import OrganizationService
+from app.common.document_approval import effective_document_requires_approval
 from app.common.idempotency.service import IdempotencyService
 from app.common.outbox.service import OutboxService
 from app.common.print.schemas import PrintDocumentResponse
@@ -158,7 +159,7 @@ class QuotationService:
         currency_id: UUID | None = None,
     ) -> tuple[list[QuotationResponse], int]:
         today = await self._today(tenant_id)
-        requires_approval = await self.org.quotation_requires_approval(tenant_id)
+        org_requires = await self.org.quotation_requires_approval(tenant_id)
         filters: dict[str, object] = {}
         if customer_id is not None:
             filters["customer_id"] = customer_id
@@ -176,13 +177,27 @@ class QuotationService:
             status=status,
             today=today,
         )
+        admin_creator_ids = (
+            await self.org.prefetch_system_admin_creator_ids(
+                tenant_id, (row.created_by for row in rows)
+            )
+            if org_requires
+            else frozenset()
+        )
         return [
-            self._to_response(row, today, requires_approval=requires_approval) for row in rows
+            self._to_response(
+                row,
+                today,
+                requires_approval=effective_document_requires_approval(
+                    org_requires, row.created_by, admin_creator_ids
+                ),
+            )
+            for row in rows
         ], total
 
     async def get(self, tenant_id: UUID, quotation_id: UUID) -> QuotationResponse:
-        today, requires_approval = await self._response_context(tenant_id)
         row = await self._require(tenant_id, quotation_id)
+        today, requires_approval = await self._response_context(tenant_id, row)
         response = self._to_response(row, today, requires_approval=requires_approval)
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
@@ -478,7 +493,7 @@ class QuotationService:
                 new_values=await self._quotation_snapshot(tenant_id, row),
             )
             loaded = await self._require(tenant_id, row.id)
-            today, requires_approval = await self._response_context(tenant_id)
+            today, requires_approval = await self._response_context(tenant_id, loaded)
             response = self._to_response(
                 loaded, today, requires_approval=requires_approval, warnings=warnings
             )
@@ -500,7 +515,7 @@ class QuotationService:
         async with transaction(self.session):
             existing = await self._require(tenant_id, quotation_id, for_update=True)
             old_values = await self._quotation_snapshot(tenant_id, existing)
-            today, requires_approval = await self._response_context(tenant_id)
+            today, requires_approval = await self._response_context(tenant_id, existing)
             assert_editable(self._effective_status(existing, today))
             self._assert_version(existing, expected_version)
             create_payload = await self._update_to_create(tenant_id, existing, payload)
@@ -567,7 +582,7 @@ class QuotationService:
         async with transaction(self.session):
             row = await self._require(tenant_id, quotation_id, for_update=True)
             old_values = await self._quotation_snapshot(tenant_id, row)
-            today, requires_approval = await self._response_context(tenant_id)
+            today, requires_approval = await self._response_context(tenant_id, row)
             current = self._effective_status(row, today)
             self._assert_version(row, expected_version)
             if current == QuotationStatus.DRAFT and requires_approval:
@@ -633,7 +648,7 @@ class QuotationService:
         async with transaction(self.session):
             row = await self._require(tenant_id, quotation_id, for_update=True)
             old_values = await self._quotation_snapshot(tenant_id, row)
-            today, requires_approval = await self._response_context(tenant_id)
+            today, requires_approval = await self._response_context(tenant_id, row)
             current = self._effective_status(row, today)
             self._assert_version(row, expected_version)
             if row.converted_document_id is not None:
@@ -783,7 +798,7 @@ class QuotationService:
                 new_values=new_values,
             )
             loaded = await self._require(tenant_id, row.id)
-            today, requires_approval = await self._response_context(tenant_id)
+            today, requires_approval = await self._response_context(tenant_id, loaded)
             return self._to_response(loaded, today, requires_approval=requires_approval)
 
     async def delete(
@@ -796,7 +811,7 @@ class QuotationService:
     ) -> QuotationResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, quotation_id, for_update=True)
-            today, requires_approval = await self._response_context(tenant_id)
+            today, requires_approval = await self._response_context(tenant_id, row)
             current = self._effective_status(row, today)
             if current != QuotationStatus.DRAFT:
                 raise InvalidStatusTransitionError("Only draft quotations can be deleted")
@@ -819,7 +834,7 @@ class QuotationService:
         self, tenant_id: UUID, quotation_id: UUID, *, expected_version: int
     ) -> QuotationResponse:
         row = await self._require(tenant_id, quotation_id, for_update=True)
-        today, requires_approval = await self._response_context(tenant_id)
+        today, requires_approval = await self._response_context(tenant_id, row)
         current = self._effective_status(row, today)
         self._assert_version(row, expected_version)
         assert_convertible(current)
@@ -832,7 +847,7 @@ class QuotationService:
         self, tenant_id: UUID, quotation_id: UUID, *, expected_version: int
     ) -> QuotationResponse:
         row = await self._require(tenant_id, quotation_id, for_update=True)
-        today, requires_approval = await self._response_context(tenant_id)
+        today, requires_approval = await self._response_context(tenant_id, row)
         current = self._effective_status(row, today)
         self._assert_version(row, expected_version)
         assert_proforma_source(current)
@@ -847,7 +862,7 @@ class QuotationService:
         row = await self.repo.get(tenant_id, quotation_id, for_update=True)
         if row is None:
             return None
-        today, requires_approval = await self._response_context(tenant_id)
+        today, requires_approval = await self._response_context(tenant_id, row)
         if row.status == QuotationStatus.ACCEPTED.value:
             return self._to_response(row, today, requires_approval=requires_approval)
         if row.status != QuotationStatus.SENT.value:
@@ -903,7 +918,7 @@ class QuotationService:
     ) -> QuotationResponse:
         row = await self._require(tenant_id, quotation_id, for_update=True)
         old_values = await self._quotation_snapshot(tenant_id, row)
-        today, requires_approval = await self._response_context(tenant_id)
+        today, requires_approval = await self._response_context(tenant_id, row)
         current = self._effective_status(row, today)
         self._assert_version(row, expected_version)
         assert_convertible(current)
@@ -965,7 +980,7 @@ class QuotationService:
         async with transaction(self.session):
             row = await self._require(tenant_id, quotation_id, for_update=True)
             old_values = await self._quotation_snapshot(tenant_id, row)
-            today, requires_approval = await self._response_context(tenant_id)
+            today, requires_approval = await self._response_context(tenant_id, row)
             current = self._effective_status(row, today)
             self._assert_version(row, expected_version)
             target = next_status(current, action)
@@ -1372,9 +1387,17 @@ class QuotationService:
             updated_by=row.updated_by,
         )
 
-    async def _response_context(self, tenant_id: UUID) -> tuple[date, bool]:
+    async def _response_context(self, tenant_id: UUID, row: Quotation) -> tuple[date, bool]:
         today = await self._today(tenant_id)
-        requires_approval = await self.org.quotation_requires_approval(tenant_id)
+        org_requires = await self.org.quotation_requires_approval(tenant_id)
+        admin_creator_ids = (
+            await self.org.prefetch_system_admin_creator_ids(tenant_id, [row.created_by])
+            if org_requires
+            else frozenset()
+        )
+        requires_approval = effective_document_requires_approval(
+            org_requires, row.created_by, admin_creator_ids
+        )
         return today, requires_approval
 
     async def _today(self, tenant_id: UUID) -> date:

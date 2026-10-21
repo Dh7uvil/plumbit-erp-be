@@ -16,6 +16,8 @@ from app.crm.customers.service import CustomerService
 from app.erp.suppliers.service import SupplierService
 from app.inventory_management.history.repository import HistoryRepository
 from app.inventory_management.history.schemas import (
+    ProductPurchaseDetailLine,
+    ProductPurchaseDetailsFilter,
     TradingAggregateFilter,
     TradingHistoryFilter,
     TradingHistoryLine,
@@ -97,8 +99,60 @@ class HistoryService:
             search=filters.search,
             sort_by=filters.sort_by,
             sort_order=filters.sort_order,
+            posting_status=filters.posting_status,
         )
         return [self._sales_line(row) for row in rows], total
+
+    async def product_purchase_details(
+        self,
+        tenant_id: UUID,
+        product_id: UUID,
+        *,
+        page: PageParams,
+        filters: ProductPurchaseDetailsFilter,
+    ) -> tuple[list[ProductPurchaseDetailLine], int]:
+        await self.products.get(tenant_id, product_id)
+        rows, total = await self.repo.product_purchase_invoice_lines(
+            tenant_id,
+            product_id,
+            page=page,
+            kind=filters.kind,
+            posting_status=filters.posting_status,
+            name=filters.name or filters.search,
+            sort_by=filters.sort_by,
+            sort_order=filters.sort_order,
+        )
+        lines: list[ProductPurchaseDetailLine] = []
+        for row in rows:
+            exchange_rate = row[15] or _ZERO
+            rate = row[8] or _ZERO
+            lc_date = row[13] or row[2]
+            lines.append(
+                ProductPurchaseDetailLine(
+                    document_id=row[0],
+                    document_number=row[1],
+                    document_date=row[2],
+                    product_id=row[3],
+                    description=row[4],
+                    party_id=row[5],
+                    party_name=row[6],
+                    quantity=row[7] or _ZERO,
+                    rate=rate,
+                    amount=row[9] or _ZERO,
+                    warehouse_id=row[10],
+                    warehouse_name=row[11],
+                    supplier_invoice_number=row[12],
+                    lc_date=lc_date,
+                    lc_number=row[14],
+                    fc_rate=rate,
+                    rate_lcy=quantize_money(rate * exchange_rate) if exchange_rate else rate,
+                    exchange_rate=exchange_rate,
+                    branch_id=row[17],
+                    branch_name=row[18],
+                    is_posted=bool(row[16]),
+                )
+            )
+        return lines, total
 
     async def product_purchase_history(
         self,

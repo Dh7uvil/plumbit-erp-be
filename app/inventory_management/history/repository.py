@@ -13,13 +13,15 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.common.repositories.search import column_ilike, ilike_pattern
 from app.common.schemas.pagination import PageParams
-from app.core.enums import InvoiceDocumentStatus, StockDocumentStatus
+from app.core.enums import BillType, InvoiceDocumentStatus, PurchaseInvoiceLineType, StockDocumentStatus
 from app.crm.customers.models import Customer
 from app.erp.purchase_invoices.models import PurchaseInvoice, PurchaseInvoiceLine
 from app.erp.sales_invoices.models import SalesInvoice, SalesInvoiceLine
 from app.erp.sales_orders.models import SalesOrder
 from app.inventory_management.delivery_notes.models import DeliveryNote, DeliveryNoteLine
 from app.inventory_management.goods_receipts.models import GoodsReceipt, GoodsReceiptLine
+from app.inventory_management.warehouses.models import Warehouse
+from app.auth.models import Branch
 from app.inventory_management.products.models import Product
 from app.inventory_management.purchase_returns.models import PurchaseReturn, PurchaseReturnLine
 from app.inventory_management.sales_returns.models import SalesReturn, SalesReturnLine
@@ -283,6 +285,7 @@ class HistoryRepository:
         search: str | None = None,
         sort_by: str = "document_date",
         sort_order: str = "desc",
+        posting_status: str = "POSTED",
     ) -> tuple[Sequence[Any], int]:
         return await self._sales_lines(
             tenant_id,
@@ -295,6 +298,7 @@ class HistoryRepository:
             search=search,
             sort_by=sort_by,
             sort_order=sort_order,
+            posting_status=posting_status,
         )
 
     async def customer_products(
@@ -431,17 +435,35 @@ class HistoryRepository:
         search: str | None = None,
         sort_by: str = "document_date",
         sort_order: str = "desc",
+        posting_status: str = "POSTED",
     ) -> tuple[Sequence[Any], int]:
-        net_qty = DeliveryNoteLine.quantity - self._posted_return_qty(tenant_id)
+        if posting_status == "UNPOSTED":
+            net_qty = DeliveryNoteLine.quantity
+        else:
+            net_qty = DeliveryNoteLine.quantity - self._posted_return_qty(tenant_id)
         invoiced_amount = self._posted_invoice_amount_for_dn_line(tenant_id)
         criteria: list[ColumnElement[bool]] = [
             DeliveryNote.tenant_id == tenant_id,
             DeliveryNote.deleted_at.is_(None),
-            DeliveryNote.status == StockDocumentStatus.POSTED.value,
             DeliveryNoteLine.tenant_id == tenant_id,
             DeliveryNoteLine.product_id.is_not(None),
-            net_qty > 0,
         ]
+        if posting_status == "POSTED":
+            criteria.extend(
+                [
+                    DeliveryNote.status == StockDocumentStatus.POSTED.value,
+                    net_qty > 0,
+                ]
+            )
+        elif posting_status == "UNPOSTED":
+            criteria.append(DeliveryNote.status == StockDocumentStatus.DRAFT.value)
+        else:
+            criteria.append(
+                or_(
+                    DeliveryNote.status == StockDocumentStatus.DRAFT.value,
+                    (DeliveryNote.status == StockDocumentStatus.POSTED.value) & (net_qty > 0),
+                )
+            )
         if product_id is not None:
             criteria.append(DeliveryNoteLine.product_id == product_id)
         if party_id is not None:
@@ -642,6 +664,95 @@ class HistoryRepository:
         order_expr = sort_map.get(sort_by, GoodsReceipt.document_date)
         statement = (
             base.order_by(_ordered(order_expr, sort_order), GoodsReceipt.created_at.desc())
+            .offset(page.offset)
+            .limit(page.page_size)
+        )
+        rows = (await self.session.execute(statement)).all()
+        total = await self.session.scalar(count_statement)
+        return rows, int(total or 0)
+
+    async def product_purchase_invoice_lines(
+        self,
+        tenant_id: UUID,
+        product_id: UUID,
+        *,
+        page: PageParams,
+        kind: str,
+        posting_status: str = "ALL",
+        name: str | None = None,
+        sort_by: str = "document_date",
+        sort_order: str = "desc",
+    ) -> tuple[Sequence[Any], int]:
+        warehouse_id_expr = func.coalesce(
+            PurchaseInvoiceLine.warehouse_id,
+            GoodsReceipt.warehouse_id,
+        )
+        criteria: list[ColumnElement[bool]] = [
+            PurchaseInvoice.tenant_id == tenant_id,
+            PurchaseInvoice.deleted_at.is_(None),
+            PurchaseInvoiceLine.tenant_id == tenant_id,
+            PurchaseInvoiceLine.product_id == product_id,
+            PurchaseInvoiceLine.line_type == PurchaseInvoiceLineType.PRODUCT.value,
+        ]
+        if kind == "LOCAL":
+            criteria.append(PurchaseInvoice.bill_type == BillType.GOODS.value)
+        else:
+            criteria.append(PurchaseInvoice.bill_type == BillType.IMPORT.value)
+        if posting_status == "POSTED":
+            criteria.append(PurchaseInvoice.is_posted.is_(True))
+        elif posting_status == "UNPOSTED":
+            criteria.append(PurchaseInvoice.is_posted.is_(False))
+        pattern = self._search_pattern(name)
+        if pattern is not None:
+            criteria.append(column_ilike(Customer.name, pattern))
+        base: Select[tuple[object, ...]] = (
+            select(
+                PurchaseInvoice.id,
+                PurchaseInvoice.document_number,
+                PurchaseInvoice.invoice_date,
+                PurchaseInvoiceLine.product_id,
+                PurchaseInvoiceLine.description,
+                Customer.id,
+                Customer.name,
+                PurchaseInvoiceLine.quantity,
+                PurchaseInvoiceLine.rate,
+                PurchaseInvoiceLine.amount,
+                warehouse_id_expr,
+                Warehouse.name,
+                PurchaseInvoice.supplier_invoice_number,
+                PurchaseInvoice.import_doc_date,
+                PurchaseInvoice.import_doc_number,
+                PurchaseInvoice.exchange_rate,
+                PurchaseInvoice.is_posted,
+                PurchaseInvoice.branch_id,
+                Branch.name,
+            )
+            .select_from(PurchaseInvoiceLine)
+            .join(
+                PurchaseInvoice,
+                PurchaseInvoice.id == PurchaseInvoiceLine.purchase_invoice_id,
+            )
+            .join(Customer, Customer.id == PurchaseInvoice.supplier_id)
+            .outerjoin(
+                GoodsReceipt,
+                GoodsReceipt.id == PurchaseInvoiceLine.goods_receipt_id,
+            )
+            .outerjoin(Warehouse, Warehouse.id == warehouse_id_expr)
+            .outerjoin(Branch, Branch.id == PurchaseInvoice.branch_id)
+            .where(*criteria)
+        )
+        count_statement = select(func.count()).select_from(base.subquery())
+        sort_map = {
+            "document_date": PurchaseInvoice.invoice_date,
+            "document_number": PurchaseInvoice.document_number,
+            "quantity": PurchaseInvoiceLine.quantity,
+            "rate": PurchaseInvoiceLine.rate,
+            "amount": PurchaseInvoiceLine.amount,
+            "party_name": Customer.name,
+        }
+        order_expr = sort_map.get(sort_by, PurchaseInvoice.invoice_date)
+        statement = (
+            base.order_by(_ordered(order_expr, sort_order), PurchaseInvoice.created_at.desc())
             .offset(page.offset)
             .limit(page.page_size)
         )

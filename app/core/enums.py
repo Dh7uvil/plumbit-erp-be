@@ -857,6 +857,11 @@ class PriceBasis(StrEnum):
     PRICE_2 = "PRICE_2"
 
 
+class WarehouseLocationType(StrEnum):
+    SHOP = "SHOP"
+    WAREHOUSE = "WAREHOUSE"
+
+
 class SupplierOrigin(StrEnum):
     LOCAL = "LOCAL"
     IMPORT = "IMPORT"

@@ -858,6 +858,54 @@
           }
         }
       }
+    },
+    "/api/v1/stock-transfers/{transfer_id}/reverse": {
+      "post": {
+        "tags": [
+          "Stock Transfers"
+        ],
+        "summary": "Reverse Stock Transfer",
+        "operationId": "reverse_stock_transfer_api_v1_stock_transfers__transfer_id__reverse_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Transfer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_StockTransferResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1116,6 +1164,30 @@
             ],
             "title": "Reference"
           },
+          "reference_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Date"
+          },
+          "reference_stock_transfer_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Stock Transfer Id"
+          },
           "notes": {
             "anyOf": [
               {
@@ -1175,6 +1247,18 @@
               }
             ],
             "title": "Qty"
+          },
+          "reservation_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reservation Number"
           },
           "notes": {
             "anyOf": [
@@ -1256,6 +1340,17 @@
               }
             ],
             "title": "Qty Dest Before"
+          },
+          "reservation_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reservation Number"
           },
           "notes": {
             "anyOf": [
@@ -1358,6 +1453,30 @@
               }
             ],
             "title": "Reference"
+          },
+          "reference_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Date"
+          },
+          "reference_stock_transfer_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Stock Transfer Id"
           },
           "notes": {
             "anyOf": [
@@ -1588,6 +1707,30 @@
               }
             ],
             "title": "Reference"
+          },
+          "reference_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Date"
+          },
+          "reference_stock_transfer_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Stock Transfer Id"
           },
           "notes": {
             "anyOf": [

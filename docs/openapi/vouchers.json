@@ -2718,7 +2718,9 @@
           "BANK_RECEIPT",
           "BANK_PAYMENT",
           "CONTRA",
-          "JOURNAL"
+          "JOURNAL",
+          "GENERAL_PURCHASE",
+          "PAYMENT_VOUCHER"
         ],
         "title": "VoucherType"
       },

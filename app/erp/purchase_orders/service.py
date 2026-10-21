@@ -27,6 +27,7 @@ from app.auth.catalog import (
 from app.auth.models import Tenant
 from app.auth.org_service import OrganizationService
 from app.auth.schemas import AddressResponse
+from app.common.document_approval import effective_document_requires_approval
 from app.common.idempotency.service import IdempotencyService
 from app.common.print.schemas import PrintDocumentResponse
 from app.common.print.service import PrintService
@@ -167,7 +168,7 @@ class PurchaseOrderService:
         currency_id: UUID | None = None,
         source_sales_order_id: UUID | None = None,
     ) -> tuple[list[PurchaseOrderResponse], int]:
-        requires_approval = await self.org.purchase_order_requires_approval(tenant_id)
+        org_requires = await self.org.purchase_order_requires_approval(tenant_id)
         filters: dict[str, object] = {}
         if status is not None:
             filters["status"] = status
@@ -197,11 +198,26 @@ class PurchaseOrderService:
             filters=filters or None,
             extra_criteria=extra_criteria,
         )
-        return [self._to_response(row, requires_approval=requires_approval) for row in rows], total
+        admin_creator_ids = (
+            await self.org.prefetch_system_admin_creator_ids(
+                tenant_id, (row.created_by for row in rows)
+            )
+            if org_requires
+            else frozenset()
+        )
+        return [
+            self._to_response(
+                row,
+                requires_approval=effective_document_requires_approval(
+                    org_requires, row.created_by, admin_creator_ids
+                ),
+            )
+            for row in rows
+        ], total
 
     async def get(self, tenant_id: UUID, purchase_order_id: UUID) -> PurchaseOrderResponse:
-        requires_approval = await self.org.purchase_order_requires_approval(tenant_id)
         row = await self._require(tenant_id, purchase_order_id)
+        requires_approval = await self._requires_approval(tenant_id, row)
         response = self._to_response(row, requires_approval=requires_approval)
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
@@ -337,7 +353,7 @@ class PurchaseOrderService:
                 new_values=await self._snapshot(tenant_id, row),
             )
             loaded = await self._require(tenant_id, row.id)
-            requires_approval = await self.org.purchase_order_requires_approval(tenant_id)
+            requires_approval = await self._requires_approval(tenant_id, loaded)
             response = self._to_response(loaded, requires_approval=requires_approval)
             if idempotency_key and request_hash and endpoint:
                 await self.idempotency.store(
@@ -357,7 +373,6 @@ class PurchaseOrderService:
         async with transaction(self.session):
             existing = await self._require(tenant_id, purchase_order_id, for_update=True)
             old_values = await self._snapshot(tenant_id, existing)
-            requires_approval = await self.org.purchase_order_requires_approval(tenant_id)
             assert_editable(PurchaseOrderStatus(existing.status))
             self._assert_version(existing, expected_version)
             create_payload = await self._update_to_create(existing, payload)
@@ -381,6 +396,7 @@ class PurchaseOrderService:
                 old_values=old_values,
                 new_values=await self._snapshot(tenant_id, loaded),
             )
+            requires_approval = await self._requires_approval(tenant_id, loaded)
             return self._to_response(loaded, requires_approval=requires_approval)
 
     async def submit(
@@ -452,7 +468,7 @@ class PurchaseOrderService:
         async with transaction(self.session):
             row = await self._require(tenant_id, purchase_order_id, for_update=True)
             old_values = await self._snapshot(tenant_id, row)
-            requires_approval = await self.org.purchase_order_requires_approval(tenant_id)
+            requires_approval = await self._requires_approval(tenant_id, row)
             current = PurchaseOrderStatus(row.status)
             self._assert_version(row, expected_version)
             if current == PurchaseOrderStatus.DRAFT and requires_approval:
@@ -593,7 +609,7 @@ class PurchaseOrderService:
                 new_values=new_values,
             )
             loaded = await self._require(tenant_id, row.id)
-            requires_approval = await self.org.purchase_order_requires_approval(tenant_id)
+            requires_approval = await self._requires_approval(tenant_id, loaded)
             return self._to_response(loaded, requires_approval=requires_approval)
 
     async def coverage_for_sales_order(
@@ -759,7 +775,15 @@ class PurchaseOrderService:
                             }
                         )
 
-            requires_approval = await self.org.purchase_order_requires_approval(tenant_id)
+            org_requires = await self.org.purchase_order_requires_approval(tenant_id)
+            admin_creator_ids = (
+                await self.org.prefetch_system_admin_creator_ids(tenant_id, [actor_user_id])
+                if org_requires
+                else frozenset()
+            )
+            batch_requires_approval = effective_document_requires_approval(
+                org_requires, actor_user_id, admin_creator_ids
+            )
             responses: builtins.list[PurchaseOrderResponse] = []
             for group in payload.groups:
                 create = PurchaseOrderCreate(
@@ -815,7 +839,9 @@ class PurchaseOrderService:
                     new_values=await self._snapshot(tenant_id, row),
                 )
                 loaded = await self._require(tenant_id, row.id)
-                responses.append(self._to_response(loaded, requires_approval=requires_approval))
+                responses.append(
+                    self._to_response(loaded, requires_approval=batch_requires_approval)
+                )
 
             await self.idempotency.store(
                 tenant_id,
@@ -834,7 +860,7 @@ class PurchaseOrderService:
     ) -> PurchaseOrderResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, purchase_order_id, for_update=True)
-            requires_approval = await self.org.purchase_order_requires_approval(tenant_id)
+            requires_approval = await self._requires_approval(tenant_id, row)
             current = PurchaseOrderStatus(row.status)
             if current != PurchaseOrderStatus.DRAFT:
                 raise InvalidStatusTransitionError("Only draft purchase orders can be deleted")
@@ -875,7 +901,7 @@ class PurchaseOrderService:
         async with transaction(self.session):
             row = await self._require(tenant_id, purchase_order_id, for_update=True)
             old_values = await self._snapshot(tenant_id, row)
-            requires_approval = await self.org.purchase_order_requires_approval(tenant_id)
+            requires_approval = await self._requires_approval(tenant_id, row)
             current = PurchaseOrderStatus(row.status)
             self._assert_version(row, expected_version)
             if action == "cancel":
@@ -1387,6 +1413,15 @@ class PurchaseOrderService:
             place_of_supply=values.get("place_of_supply", PlaceOfSupply(existing.place_of_supply)),
             lines=line_inputs,
         )
+
+    async def _requires_approval(self, tenant_id: UUID, row: PurchaseOrder) -> bool:
+        org_requires = await self.org.purchase_order_requires_approval(tenant_id)
+        if not org_requires:
+            return False
+        admin_creator_ids = await self.org.prefetch_system_admin_creator_ids(
+            tenant_id, [row.created_by]
+        )
+        return effective_document_requires_approval(org_requires, row.created_by, admin_creator_ids)
 
     def _available_actions(
         self,

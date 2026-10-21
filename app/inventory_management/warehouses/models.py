@@ -51,3 +51,8 @@ class Warehouse(AuditUserMixin, IsActiveMixin, SoftDeleteTenantModel):
         default=False,
         server_default=text("false"),
     )
+    location_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default=text("'WAREHOUSE'"),
+    )

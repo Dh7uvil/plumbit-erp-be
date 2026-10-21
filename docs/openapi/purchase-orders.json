@@ -1608,6 +1608,14 @@
         ],
         "title": "OrderTrackerRow"
       },
+      "OrderType": {
+        "type": "string",
+        "enum": [
+          "LOCAL",
+          "IMPORT"
+        ],
+        "title": "OrderType"
+      },
       "OutstandingBillLine": {
         "properties": {
           "line_id": {
@@ -2618,6 +2626,22 @@
             ],
             "title": "Expected Delivery Date"
           },
+          "ship_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ship Date"
+          },
+          "order_type": {
+            "$ref": "#/components/schemas/OrderType",
+            "default": "LOCAL"
+          },
           "reference_number": {
             "anyOf": [
               {
@@ -3280,6 +3304,22 @@
             ],
             "title": "Expected Delivery Date"
           },
+          "ship_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ship Date"
+          },
+          "order_type": {
+            "$ref": "#/components/schemas/OrderType",
+            "default": "LOCAL"
+          },
           "branch_id": {
             "anyOf": [
               {
@@ -3768,6 +3808,28 @@
               }
             ],
             "title": "Expected Delivery Date"
+          },
+          "ship_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ship Date"
+          },
+          "order_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderType"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "reference_number": {
             "anyOf": [

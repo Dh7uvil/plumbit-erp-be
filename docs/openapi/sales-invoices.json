@@ -12,6 +12,54 @@
     }
   ],
   "paths": {
+    "/api/v1/sales-invoices/compose-defaults": {
+      "get": {
+        "tags": [
+          "Sales Invoices"
+        ],
+        "summary": "Compose Defaults",
+        "operationId": "compose_defaults_api_v1_sales_invoices_compose_defaults_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CustomerDocumentComposeDefaults_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/sales-invoices": {
       "get": {
         "tags": [
@@ -253,6 +301,70 @@
                 }
               ],
               "title": "Payment Status"
+            }
+          },
+          {
+            "name": "payment_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PaymentMode"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payment Mode"
+            }
+          },
+          {
+            "name": "is_printed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Printed"
+            }
+          },
+          {
+            "name": "reference_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reference Number"
+            }
+          },
+          {
+            "name": "is_export",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Export"
             }
           },
           {
@@ -711,6 +823,70 @@
                 }
               ],
               "title": "Payment Status"
+            }
+          },
+          {
+            "name": "payment_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PaymentMode"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payment Mode"
+            }
+          },
+          {
+            "name": "is_printed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Printed"
+            }
+          },
+          {
+            "name": "reference_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reference Number"
+            }
+          },
+          {
+            "name": "is_export",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Export"
             }
           },
           {
@@ -1797,6 +1973,40 @@
   },
   "components": {
     "schemas": {
+      "ApiResponse_CustomerDocumentComposeDefaults_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/CustomerDocumentComposeDefaults"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[CustomerDocumentComposeDefaults]"
+      },
       "ApiResponse_ImportPreviewResponse_": {
         "properties": {
           "success": {
@@ -2219,6 +2429,151 @@
           "quantity"
         ],
         "title": "ConversionLineInput"
+      },
+      "CustomerDocumentComposeDefaults": {
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Customer Id"
+          },
+          "customer_name": {
+            "type": "string",
+            "title": "Customer Name"
+          },
+          "customer_trn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Trn"
+          },
+          "tax_treatment": {
+            "$ref": "#/components/schemas/TaxTreatment"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "price_list_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price List Id"
+          },
+          "payment_terms_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Terms Id"
+          },
+          "salesperson_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Salesperson Id"
+          },
+          "contact_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Id"
+          },
+          "warehouse_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warehouse Id"
+          },
+          "place_of_supply": {
+            "$ref": "#/components/schemas/PlaceOfSupply"
+          },
+          "bill_to_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bill To Snapshot"
+          },
+          "ship_to_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ship To Snapshot"
+          },
+          "terms_and_conditions": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terms And Conditions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "customer_id",
+          "customer_name",
+          "customer_trn",
+          "tax_treatment",
+          "currency_id",
+          "payment_terms_id",
+          "salesperson_id",
+          "contact_id",
+          "warehouse_id",
+          "place_of_supply",
+          "bill_to_snapshot",
+          "ship_to_snapshot",
+          "terms_and_conditions"
+        ],
+        "title": "CustomerDocumentComposeDefaults"
       },
       "DiscountType": {
         "type": "string",
@@ -3097,6 +3452,15 @@
           "amount"
         ],
         "title": "PaymentAllocationInput"
+      },
+      "PaymentMode": {
+        "type": "string",
+        "enum": [
+          "CASH",
+          "CREDIT",
+          "BANK"
+        ],
+        "title": "PaymentMode"
       },
       "PaymentStatus": {
         "type": "string",
@@ -4185,6 +4549,102 @@
               }
             ],
             "title": "Prices Include Tax"
+          },
+          "payment_mode": {
+            "$ref": "#/components/schemas/PaymentMode",
+            "default": "CREDIT"
+          },
+          "supply_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supply Date"
+          },
+          "reference_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Number"
+          },
+          "reference_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Date"
+          },
+          "marks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marks"
+          },
+          "discount_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discount Account Id"
+          },
+          "freight_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Account Id"
+          },
+          "auto_stock_document": {
+            "type": "boolean",
+            "title": "Auto Stock Document",
+            "default": false
+          },
+          "document_series": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "INV",
+                  "EXP"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Series"
           },
           "lines": {
             "items": {
@@ -5413,6 +5873,90 @@
             ],
             "title": "Cancel Reason"
           },
+          "payment_mode": {
+            "$ref": "#/components/schemas/PaymentMode",
+            "default": "CREDIT"
+          },
+          "supply_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supply Date"
+          },
+          "reference_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Number"
+          },
+          "reference_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Date"
+          },
+          "marks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marks"
+          },
+          "discount_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discount Account Id"
+          },
+          "freight_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Account Id"
+          },
+          "auto_stock_document": {
+            "type": "boolean",
+            "title": "Auto Stock Document",
+            "default": false
+          },
+          "is_printed": {
+            "type": "boolean",
+            "title": "Is Printed",
+            "default": false
+          },
           "is_overdue": {
             "type": "boolean",
             "title": "Is Overdue",
@@ -5787,6 +6331,99 @@
               }
             ],
             "title": "Prices Include Tax"
+          },
+          "payment_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PaymentMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supply_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supply Date"
+          },
+          "reference_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Number"
+          },
+          "reference_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Date"
+          },
+          "marks": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marks"
+          },
+          "discount_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discount Account Id"
+          },
+          "freight_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Account Id"
+          },
+          "auto_stock_document": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Stock Document"
           },
           "lines": {
             "anyOf": [

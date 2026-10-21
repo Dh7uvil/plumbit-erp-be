@@ -12,6 +12,8 @@ from sqlalchemy import select
 from app.common.models.audit_log import AuditLog
 from app.core.enums import AuditAction
 from app.db.session import async_session_factory
+from app.auth.catalog import QUOTATION_CREATE, QUOTATION_READ, QUOTATION_SEND, QUOTATION_UPDATE
+from tests.api.auth.test_rbac_guards import _create_user_with_permissions
 from tests.conftest import login_headers, provision_admin, unique_trn
 
 
@@ -302,6 +304,30 @@ async def test_invalid_status_transition_from_accepted_to_draft(client: AsyncCli
 async def test_send_from_draft_rejected_when_approval_required(client: AsyncClient) -> None:
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)
+    _, limited_email, limited_password = await _create_user_with_permissions(
+        client,
+        headers,
+        permission_codes=[QUOTATION_CREATE, QUOTATION_READ, QUOTATION_UPDATE, QUOTATION_SEND],
+    )
+    limited_headers = await login_headers(client, tenant_id, limited_email, limited_password)
+    ids = await _seeded_ids(client, headers)
+    customer_id = await _create_customer(client, headers)
+    product_id = await _create_product(client, headers, ids)
+    created = await _create_quote(
+        client, limited_headers, customer_id=customer_id, product_id=product_id
+    )
+    quote_id = created["body"]["data"]["id"]
+    sent = await client.post(
+        f"/api/v1/quotations/{quote_id}/send",
+        headers=_if_match(limited_headers, created["body"]["data"]["version"]),
+    )
+    assert sent.status_code == 422, sent.text
+
+
+@pytest.mark.asyncio
+async def test_send_from_draft_allowed_when_created_by_superadmin(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
     ids = await _seeded_ids(client, headers)
     customer_id = await _create_customer(client, headers)
     product_id = await _create_product(client, headers, ids)
@@ -311,7 +337,9 @@ async def test_send_from_draft_rejected_when_approval_required(client: AsyncClie
         f"/api/v1/quotations/{quote_id}/send",
         headers=_if_match(headers, created["body"]["data"]["version"]),
     )
-    assert sent.status_code == 422, sent.text
+    assert sent.status_code == 200, sent.text
+    assert sent.json()["data"]["status"] == "SENT"
+    assert "send" not in sent.json()["data"]["available_actions"]
 
 
 @pytest.mark.asyncio

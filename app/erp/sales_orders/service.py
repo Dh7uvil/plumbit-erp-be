@@ -26,6 +26,7 @@ from app.auth.catalog import (
 )
 from app.auth.models import Tenant
 from app.auth.org_service import OrganizationService
+from app.common.document_approval import effective_document_requires_approval
 from app.common.idempotency.service import IdempotencyService
 from app.common.print.schemas import PrintDocumentResponse
 from app.common.print.service import PrintService
@@ -166,7 +167,7 @@ class SalesOrderService:
         source_proforma_invoice_id: UUID | None = None,
         opportunity_id: UUID | None = None,
     ) -> tuple[list[SalesOrderResponse], int]:
-        requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+        org_requires = await self.org.sales_order_requires_approval(tenant_id)
         filters: dict[str, object] = {}
         if status is not None:
             filters["status"] = status
@@ -196,11 +197,26 @@ class SalesOrderService:
             common_filter=common_filter,
             filters=filters or None,
         )
-        return [self._to_response(row, requires_approval=requires_approval) for row in rows], total
+        admin_creator_ids = (
+            await self.org.prefetch_system_admin_creator_ids(
+                tenant_id, (row.created_by for row in rows)
+            )
+            if org_requires
+            else frozenset()
+        )
+        return [
+            self._to_response(
+                row,
+                requires_approval=effective_document_requires_approval(
+                    org_requires, row.created_by, admin_creator_ids
+                ),
+            )
+            for row in rows
+        ], total
 
     async def get(self, tenant_id: UUID, sales_order_id: UUID) -> SalesOrderResponse:
-        requires_approval = await self.org.sales_order_requires_approval(tenant_id)
         row = await self._require(tenant_id, sales_order_id)
+        requires_approval = await self._requires_approval(tenant_id, row)
         response = self._to_response(row, requires_approval=requires_approval)
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
@@ -301,7 +317,7 @@ class SalesOrderService:
                 new_values=await self._snapshot(tenant_id, row),
             )
             loaded = await self._require(tenant_id, row.id)
-            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            requires_approval = await self._requires_approval(tenant_id, loaded)
             return self._to_response(loaded, requires_approval=requires_approval)
 
     async def create_from_quotation(
@@ -460,7 +476,7 @@ class SalesOrderService:
                 allocations=allocations,
             )
             loaded = await self._require(tenant_id, row.id)
-            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            requires_approval = await self._requires_approval(tenant_id, loaded)
             response = self._to_response(loaded, requires_approval=requires_approval)
             await self.idempotency.store(
                 tenant_id, idempotency_key, response.model_dump(mode="json")
@@ -618,7 +634,7 @@ class SalesOrderService:
                     allocations=quote_allocations or None,
                 )
             loaded = await self._require(tenant_id, row.id)
-            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            requires_approval = await self._requires_approval(tenant_id, loaded)
             response = self._to_response(loaded, requires_approval=requires_approval)
             await self.idempotency.store(
                 tenant_id, idempotency_key, response.model_dump(mode="json")
@@ -637,7 +653,6 @@ class SalesOrderService:
         async with transaction(self.session):
             existing = await self._require(tenant_id, sales_order_id, for_update=True)
             old_values = await self._snapshot(tenant_id, existing)
-            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
             assert_editable(SalesOrderStatus(existing.status))
             self._assert_version(existing, expected_version)
             create_payload = await self._update_to_create(existing, payload)
@@ -665,6 +680,7 @@ class SalesOrderService:
                 old_values=old_values,
                 new_values=await self._snapshot(tenant_id, loaded),
             )
+            requires_approval = await self._requires_approval(tenant_id, loaded)
             return self._to_response(loaded, requires_approval=requires_approval)
 
     async def submit(
@@ -718,7 +734,7 @@ class SalesOrderService:
         async with transaction(self.session):
             row = await self._require(tenant_id, sales_order_id, for_update=True)
             old_values = await self._snapshot(tenant_id, row)
-            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            requires_approval = await self._requires_approval(tenant_id, row)
             current = SalesOrderStatus(row.status)
             self._assert_version(row, expected_version)
             if current == SalesOrderStatus.DRAFT and requires_approval:
@@ -876,7 +892,7 @@ class SalesOrderService:
                 new_values=new_values,
             )
             loaded = await self._require(tenant_id, row.id)
-            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            requires_approval = await self._requires_approval(tenant_id, loaded)
             return self._to_response(loaded, requires_approval=requires_approval)
 
     async def acknowledge(
@@ -889,7 +905,7 @@ class SalesOrderService:
     ) -> SalesOrderResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, sales_order_id, for_update=True)
-            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            requires_approval = await self._requires_approval(tenant_id, row)
             self._assert_version(row, expected_version)
             if SalesOrderStatus(row.status) != SalesOrderStatus.CONFIRMED:
                 raise InvalidStatusTransitionError(
@@ -961,7 +977,7 @@ class SalesOrderService:
     ) -> SalesOrderResponse:
         async with transaction(self.session):
             row = await self._require(tenant_id, sales_order_id, for_update=True)
-            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            requires_approval = await self._requires_approval(tenant_id, row)
             current = SalesOrderStatus(row.status)
             if current != SalesOrderStatus.DRAFT:
                 raise InvalidStatusTransitionError("Only draft sales orders can be deleted")
@@ -1002,7 +1018,7 @@ class SalesOrderService:
         async with transaction(self.session):
             row = await self._require(tenant_id, sales_order_id, for_update=True)
             old_values = await self._snapshot(tenant_id, row)
-            requires_approval = await self.org.sales_order_requires_approval(tenant_id)
+            requires_approval = await self._requires_approval(tenant_id, row)
             current = SalesOrderStatus(row.status)
             self._assert_version(row, expected_version)
             if action == "cancel":
@@ -1986,6 +2002,15 @@ class SalesOrderService:
             prices_include_tax=values.get("prices_include_tax", existing.prices_include_tax),
             lines=line_inputs,
         )
+
+    async def _requires_approval(self, tenant_id: UUID, row: SalesOrder) -> bool:
+        org_requires = await self.org.sales_order_requires_approval(tenant_id)
+        if not org_requires:
+            return False
+        admin_creator_ids = await self.org.prefetch_system_admin_creator_ids(
+            tenant_id, [row.created_by]
+        )
+        return effective_document_requires_approval(org_requires, row.created_by, admin_creator_ids)
 
     def _available_actions(self, row: SalesOrder, *, requires_approval: bool) -> builtins.list[str]:
         status = SalesOrderStatus(row.status)

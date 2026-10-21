@@ -34,6 +34,7 @@ class ProductRepository:
                     "name",
                     "item_type",
                     "selling_rate",
+                    "purchase_rate",
                     "is_active",
                 }
             ),

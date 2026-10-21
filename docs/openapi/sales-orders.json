@@ -2600,6 +2600,14 @@
         ],
         "title": "OrderTrackerRow"
       },
+      "OrderType": {
+        "type": "string",
+        "enum": [
+          "LOCAL",
+          "IMPORT"
+        ],
+        "title": "OrderType"
+      },
       "PackableLineResponse": {
         "properties": {
           "carton_qty": {
@@ -5014,6 +5022,22 @@
               }
             ],
             "title": "Expected Delivery Date"
+          },
+          "ship_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ship Date"
+          },
+          "order_type": {
+            "$ref": "#/components/schemas/OrderType",
+            "default": "LOCAL"
           },
           "branch_id": {
             "anyOf": [

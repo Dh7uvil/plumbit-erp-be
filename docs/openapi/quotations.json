@@ -2867,6 +2867,15 @@
         ],
         "title": "PaymentMilestoneTrigger"
       },
+      "PaymentMode": {
+        "type": "string",
+        "enum": [
+          "CASH",
+          "CREDIT",
+          "BANK"
+        ],
+        "title": "PaymentMode"
+      },
       "PaymentStatus": {
         "type": "string",
         "enum": [
@@ -7193,6 +7202,90 @@
               }
             ],
             "title": "Cancel Reason"
+          },
+          "payment_mode": {
+            "$ref": "#/components/schemas/PaymentMode",
+            "default": "CREDIT"
+          },
+          "supply_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supply Date"
+          },
+          "reference_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Number"
+          },
+          "reference_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Date"
+          },
+          "marks": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marks"
+          },
+          "discount_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discount Account Id"
+          },
+          "freight_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freight Account Id"
+          },
+          "auto_stock_document": {
+            "type": "boolean",
+            "title": "Auto Stock Document",
+            "default": false
+          },
+          "is_printed": {
+            "type": "boolean",
+            "title": "Is Printed",
+            "default": false
           },
           "is_overdue": {
             "type": "boolean",

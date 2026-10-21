@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.auth.schemas import AddressPayload, AddressResponse
 from app.common.schemas.filters import BaseFilter
 from app.common.utils.validators import normalize_required_text
+from app.core.enums import WarehouseLocationType
 
 
 class WarehouseFilter(BaseFilter):
@@ -26,6 +27,7 @@ class WarehouseCreate(BaseModel):
     address: AddressPayload | None = None
     is_default: bool = False
     is_designated_zone: bool = False
+    location_type: WarehouseLocationType = WarehouseLocationType.WAREHOUSE
 
     @field_validator("code")
     @classmethod
@@ -52,6 +54,7 @@ class WarehouseUpdate(BaseModel):
     address: AddressPayload | None = None
     is_default: bool | None = None
     is_designated_zone: bool | None = None
+    location_type: WarehouseLocationType | None = None
     is_active: bool | None = None
 
     @field_validator("name")
@@ -81,6 +84,7 @@ class WarehouseResponse(BaseModel):
     address: AddressResponse | None = None
     is_default: bool
     is_designated_zone: bool
+    location_type: WarehouseLocationType
     is_active: bool
     created_at: datetime
     updated_at: datetime

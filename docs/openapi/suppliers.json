@@ -1023,6 +1023,21 @@
               ],
               "title": "Document Date To"
             }
+          },
+          {
+            "name": "posting_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "POSTED",
+                "ALL",
+                "UNPOSTED"
+              ],
+              "type": "string",
+              "default": "POSTED",
+              "title": "Posting Status"
+            }
           }
         ],
         "responses": {
@@ -1162,6 +1177,129 @@
         }
       }
     },
+    "/api/v1/suppliers/{supplier_id}/pdc-balance": {
+      "get": {
+        "tags": [
+          "Suppliers"
+        ],
+        "summary": "Get Supplier Pdc Balance",
+        "operationId": "get_supplier_pdc_balance_api_v1_suppliers__supplier_id__pdc_balance_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "supplier_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Supplier Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PartyPdcBalanceResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/suppliers/{supplier_id}/period-balances": {
+      "get": {
+        "tags": [
+          "Suppliers"
+        ],
+        "summary": "Get Supplier Period Balances",
+        "operationId": "get_supplier_period_balances_api_v1_suppliers__supplier_id__period_balances_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "supplier_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Supplier Id"
+            }
+          },
+          {
+            "name": "currency_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(home|party)$",
+              "default": "home",
+              "title": "Currency Mode"
+            }
+          },
+          {
+            "name": "fiscal_year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fiscal Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PartyPeriodBalancesResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/suppliers/{supplier_id}/payment-history": {
       "get": {
         "tags": [
@@ -1261,6 +1399,18 @@
             ],
             "title": "Address Line 2"
           },
+          "address_line_3": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 250
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Line 3"
+          },
           "city": {
             "anyOf": [
               {
@@ -1350,6 +1500,18 @@
               }
             ],
             "title": "Address Line 2"
+          },
+          "address_line_3": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 250
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Line 3"
           },
           "city": {
             "anyOf": [
@@ -1524,6 +1686,74 @@
           "data"
         ],
         "title": "ApiResponse[OutstandingSummary]"
+      },
+      "ApiResponse_PartyPdcBalanceResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/PartyPdcBalanceResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[PartyPdcBalanceResponse]"
+      },
+      "ApiResponse_PartyPeriodBalancesResponse_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/PartyPeriodBalancesResponse"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[PartyPeriodBalancesResponse]"
       },
       "ApiResponse_SupplierExtraAddressResponse_": {
         "properties": {
@@ -1833,6 +2063,15 @@
           "address"
         ],
         "title": "CustomerExtraAddressResponse"
+      },
+      "CustomerInvoiceType": {
+        "type": "string",
+        "enum": [
+          "ALL",
+          "CASH",
+          "CREDIT"
+        ],
+        "title": "CustomerInvoiceType"
       },
       "HTTPValidationError": {
         "properties": {
@@ -2173,6 +2412,145 @@
         ],
         "title": "OutstandingSummary"
       },
+      "PartyPdcBalanceResponse": {
+        "properties": {
+          "party_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Party Id"
+          },
+          "cheque_count": {
+            "type": "integer",
+            "title": "Cheque Count"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount"
+          },
+          "base_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Amount"
+          },
+          "currency_code": {
+            "type": "string",
+            "title": "Currency Code"
+          },
+          "base_currency_code": {
+            "type": "string",
+            "title": "Base Currency Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "party_id",
+          "cheque_count",
+          "amount",
+          "base_amount",
+          "currency_code",
+          "base_currency_code"
+        ],
+        "title": "PartyPdcBalanceResponse"
+      },
+      "PartyPeriodBalance": {
+        "properties": {
+          "period": {
+            "type": "integer",
+            "title": "Period"
+          },
+          "from_date": {
+            "type": "string",
+            "format": "date",
+            "title": "From Date"
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "title": "To Date"
+          },
+          "debit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Debit"
+          },
+          "credit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Credit"
+          },
+          "closing": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Closing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "period",
+          "from_date",
+          "to_date",
+          "debit",
+          "credit",
+          "closing"
+        ],
+        "title": "PartyPeriodBalance"
+      },
+      "PartyPeriodBalancesResponse": {
+        "properties": {
+          "party_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Party Id"
+          },
+          "account_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Account Id"
+          },
+          "fiscal_year": {
+            "type": "integer",
+            "title": "Fiscal Year"
+          },
+          "currency_code": {
+            "type": "string",
+            "title": "Currency Code"
+          },
+          "currency_mode": {
+            "type": "string",
+            "title": "Currency Mode"
+          },
+          "opening": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Opening"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/PartyPeriodBalance"
+            },
+            "type": "array",
+            "title": "Periods"
+          },
+          "closing": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Closing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "party_id",
+          "account_id",
+          "fiscal_year",
+          "currency_code",
+          "currency_mode",
+          "opening",
+          "periods",
+          "closing"
+        ],
+        "title": "PartyPeriodBalancesResponse"
+      },
       "PaymentMethod": {
         "type": "string",
         "enum": [
@@ -2420,6 +2798,50 @@
               }
             ],
             "title": "Notes"
+          },
+          "fax": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fax"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "invoice_type": {
+            "$ref": "#/components/schemas/CustomerInvoiceType",
+            "default": "ALL"
+          },
+          "supplier_origin": {
+            "$ref": "#/components/schemas/SupplierOrigin",
+            "default": "LOCAL"
           }
         },
         "type": "object",
@@ -2502,6 +2924,14 @@
           "address"
         ],
         "title": "SupplierExtraAddressResponse"
+      },
+      "SupplierOrigin": {
+        "type": "string",
+        "enum": [
+          "LOCAL",
+          "IMPORT"
+        ],
+        "title": "SupplierOrigin"
       },
       "SupplierPaymentAllocationResponse": {
         "properties": {
@@ -3105,6 +3535,47 @@
             ],
             "title": "Notes"
           },
+          "fax": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fax"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "invoice_type": {
+            "$ref": "#/components/schemas/CustomerInvoiceType",
+            "default": "ALL"
+          },
+          "supplier_origin": {
+            "$ref": "#/components/schemas/SupplierOrigin",
+            "default": "LOCAL"
+          },
           "is_active": {
             "type": "boolean",
             "title": "Is Active"
@@ -3342,6 +3813,62 @@
               }
             ],
             "title": "Notes"
+          },
+          "fax": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fax"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "invoice_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomerInvoiceType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supplier_origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SupplierOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "is_active": {
             "anyOf": [

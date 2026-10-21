@@ -12,6 +12,54 @@
     }
   ],
   "paths": {
+    "/api/v1/supplier-payments/compose-defaults": {
+      "get": {
+        "tags": [
+          "Supplier Payments"
+        ],
+        "summary": "Compose Defaults",
+        "operationId": "compose_defaults_api_v1_supplier_payments_compose_defaults_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "supplier_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Supplier Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupplierPaymentComposeDefaults_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/supplier-payments": {
       "get": {
         "tags": [
@@ -1043,6 +1091,40 @@
         ],
         "title": "ApiResponse[JournalEntryResponse]"
       },
+      "ApiResponse_SupplierPaymentComposeDefaults_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/SupplierPaymentComposeDefaults"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[SupplierPaymentComposeDefaults]"
+      },
       "ApiResponse_SupplierPaymentResponse_": {
         "properties": {
           "success": {
@@ -2025,6 +2107,39 @@
           "amount"
         ],
         "title": "SupplierPaymentAllocationResponse"
+      },
+      "SupplierPaymentComposeDefaults": {
+        "properties": {
+          "supplier_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Supplier Id"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "payable_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payable Account Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "supplier_id",
+          "currency_id",
+          "payable_account_id"
+        ],
+        "title": "SupplierPaymentComposeDefaults"
       },
       "SupplierPaymentCreate": {
         "properties": {

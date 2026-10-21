@@ -34,10 +34,16 @@ from app.inventory_management.history.schemas import (
 from app.erp.common.dependencies import PartyDefaultsServiceDependency
 from app.erp.common.party_defaults_schemas import ProductLineDefaults
 from app.inventory_management.products.dependencies import ProductServiceDependency
+from app.inventory_management.history.schemas import (
+    ProductPurchaseDetailLine,
+    ProductPurchaseDetailsFilter,
+)
 from app.inventory_management.products.schemas import (
+    InventoryListFilter,
     ProductCreate,
     ProductFilter,
     ProductInquiryResponse,
+    ProductInventoryListRow,
     ProductPriceBulkUpdate,
     ProductRenameSkuRequest,
     ProductResponse,
@@ -148,6 +154,22 @@ async def product_export(
         ["sku", "name", "selling_rate", "purchase_rate"],
         [[row.sku, row.name, row.selling_rate, row.purchase_rate] for row in rows],
     )
+
+
+@router.get("/inventory-list", response_model=ApiResponse[list[ProductInventoryListRow]])
+async def list_product_inventory(
+    tenant: TenantContextDependency,
+    page: PaginationDependency,
+    service: ProductServiceDependency,
+    filters: Annotated[InventoryListFilter, Depends()],
+    _: Annotated[CurrentUser, Depends(require_permission(PRODUCT_READ))],
+) -> ApiResponse[list[ProductInventoryListRow]]:
+    rows, total = await service.inventory_list(
+        tenant.tenant_id,
+        page=page,
+        filters=filters,
+    )
+    return paginated_response(rows, params=page, total=total)
 
 
 @router.post("", response_model=ApiResponse[ProductResponse], status_code=status.HTTP_201_CREATED)
@@ -269,6 +291,27 @@ async def list_product_sales_history(
     _: Annotated[CurrentUser, Depends(require_permission(PRODUCT_HISTORY))],
 ) -> ApiResponse[list[TradingHistoryLine]]:
     rows, total = await history.product_sales_history(
+        tenant.tenant_id,
+        product_id,
+        page=page,
+        filters=filters,
+    )
+    return paginated_response(rows, params=page, total=total)
+
+
+@router.get(
+    "/{product_id}/purchase-details",
+    response_model=ApiResponse[list[ProductPurchaseDetailLine]],
+)
+async def list_product_purchase_details(
+    product_id: UUID,
+    tenant: TenantContextDependency,
+    page: PaginationDependency,
+    history: HistoryServiceDependency,
+    filters: Annotated[ProductPurchaseDetailsFilter, Depends()],
+    _: Annotated[CurrentUser, Depends(require_permission(PRODUCT_HISTORY))],
+) -> ApiResponse[list[ProductPurchaseDetailLine]]:
+    rows, total = await history.product_purchase_details(
         tenant.tenant_id,
         product_id,
         page=page,

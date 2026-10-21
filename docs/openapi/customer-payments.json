@@ -12,6 +12,54 @@
     }
   ],
   "paths": {
+    "/api/v1/customer-payments/compose-defaults": {
+      "get": {
+        "tags": [
+          "Customer Payments"
+        ],
+        "summary": "Compose Defaults",
+        "operationId": "compose_defaults_api_v1_customer_payments_compose_defaults_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Customer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CustomerPaymentComposeDefaults_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/customer-payments": {
       "get": {
         "tags": [
@@ -1026,6 +1074,40 @@
   },
   "components": {
     "schemas": {
+      "ApiResponse_CustomerPaymentComposeDefaults_": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "const": true,
+            "title": "Success",
+            "default": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/CustomerPaymentComposeDefaults"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "title": "ApiResponse[CustomerPaymentComposeDefaults]"
+      },
       "ApiResponse_CustomerPaymentResponse_": {
         "properties": {
           "success": {
@@ -1253,6 +1335,39 @@
           "amount"
         ],
         "title": "CustomerPaymentAllocationResponse"
+      },
+      "CustomerPaymentComposeDefaults": {
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Customer Id"
+          },
+          "currency_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Currency Id"
+          },
+          "receivable_account_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receivable Account Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "customer_id",
+          "currency_id",
+          "receivable_account_id"
+        ],
+        "title": "CustomerPaymentComposeDefaults"
       },
       "CustomerPaymentCreate": {
         "properties": {

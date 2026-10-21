@@ -954,6 +954,8 @@ class GoodsReceiptService:
             payload={"goods_receipt_id": str(receipt_id)},
             dedupe_key=f"goods-receipt-posted:{receipt_id}",
         )
+        product_ids = {line.product_id for line in loaded.lines if line.product_id}
+        await self.products.sync_avg_cost_from_fifo(tenant_id, product_ids)
         return loaded
 
     async def post(

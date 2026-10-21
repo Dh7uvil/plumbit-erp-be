@@ -1908,6 +1908,32 @@
               "format": "date",
               "title": "To"
             }
+          },
+          {
+            "name": "include_pdc",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Pdc"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
+            }
           }
         ],
         "responses": {
@@ -1975,6 +2001,32 @@
               "type": "string",
               "format": "date",
               "title": "To"
+            }
+          },
+          {
+            "name": "include_pdc",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Pdc"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Format"
             }
           }
         ],
@@ -7274,6 +7326,17 @@
             "type": "string",
             "title": "Document Type"
           },
+          "type_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type Code"
+          },
           "document_id": {
             "type": "string",
             "format": "uuid",
@@ -7338,6 +7401,17 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Running Balance"
           },
+          "balance_side": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balance Side"
+          },
           "description": {
             "anyOf": [
               {
@@ -7348,6 +7422,29 @@
               }
             ],
             "title": "Description"
+          },
+          "cheque_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cheque Number"
+          },
+          "cheque_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cheque Date"
           }
         },
         "type": "object",
@@ -7397,10 +7494,32 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Opening Balance"
           },
+          "opening_balance_side": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Balance Side"
+          },
           "closing_balance": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Closing Balance"
+          },
+          "closing_balance_side": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closing Balance Side"
           },
           "lines": {
             "items": {

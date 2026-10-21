@@ -390,6 +390,18 @@
             ],
             "title": "Address Line 2"
           },
+          "address_line_3": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 250
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Line 3"
+          },
           "city": {
             "anyOf": [
               {
@@ -479,6 +491,18 @@
               }
             ],
             "title": "Address Line 2"
+          },
+          "address_line_3": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 250
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Line 3"
           },
           "city": {
             "anyOf": [

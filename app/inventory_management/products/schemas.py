@@ -1,8 +1,8 @@
 """Product schemas."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
-from typing import ClassVar
+from typing import ClassVar, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -167,6 +167,21 @@ class ProductWarehouseQty(BaseModel):
     qty_available: Decimal
 
 
+class ProductQuantityUnitBreakdown(BaseModel):
+    """Winsoft-style PCS / PKT / remainder columns for a quantity row."""
+
+    unit_qty: Decimal
+    unit2_qty: Decimal
+    remainder_qty: Decimal
+
+
+class ProductInquiryQuantityRows(BaseModel):
+    on_hand: ProductQuantityUnitBreakdown | None = None
+    opened: ProductQuantityUnitBreakdown | None = None
+    committed: ProductQuantityUnitBreakdown | None = None
+    net_available: ProductQuantityUnitBreakdown | None = None
+
+
 class ProductInquiryResponse(BaseModel):
     product_id: UUID
     packing_label: str | None = None
@@ -174,7 +189,14 @@ class ProductInquiryResponse(BaseModel):
     qty_reserved: Decimal
     qty_available: Decimal
     qty_incoming: Decimal
+    qty_opened: Decimal = Decimal("0")
+    qty_committed: Decimal = Decimal("0")
+    net_available: Decimal = Decimal("0")
+    ordered_qty: Decimal = Decimal("0")
+    shop_qty: Decimal = Decimal("0")
+    warehouse_qty: Decimal = Decimal("0")
     unit2_breakdown: str | None = None
+    quantity_rows: ProductInquiryQuantityRows | None = None
     warehouses: list[ProductWarehouseQty]
     avg_cost: Decimal | None = None
     lc_price: Decimal | None = None
@@ -185,6 +207,68 @@ class ProductInquiryResponse(BaseModel):
     last_purchase_date: str | None = None
     last_purchase_price: Decimal | None = None
     last_purchase_quantity: Decimal | None = None
+    sku: str | None = None
+    name: str | None = None
+    alias_2: str | None = None
+    alias_3: str | None = None
+    alias_4: str | None = None
+    volume: Decimal | None = None
+    brand: str | None = None
+    origin_country_code: str | None = None
+    engine: str | None = None
+    category_name: str | None = None
+    tax_name: str | None = None
+    tax_rate: Decimal | None = None
+    selling_rate: Decimal | None = None
+    price_1: Decimal | None = None
+    price_2: Decimal | None = None
+    purchase_rate: Decimal | None = None
+    net_weight: Decimal | None = None
+    gross_weight: Decimal | None = None
+    rem: str | None = None
+    remarks: str | None = None
+    unit_code: str | None = None
+    unit2_code: str | None = None
+
+
+class InventoryListFilter(BaseFilter):
+    allowed_sort_fields: ClassVar[frozenset[str]] = frozenset(
+        {"sku", "name", "net_available", "volume", "created_at"}
+    )
+    sort_by: str = "sku"
+    category_id: UUID | None = None
+    brand: str | None = None
+    engine: str | None = None
+    search_type: Literal["default", "starts_with"] = "default"
+    tracked_only: bool = True
+
+
+class ProductInventoryListRow(BaseModel):
+    product_id: UUID
+    sku: str
+    name: str
+    net_quantity: Decimal
+    net_available: Decimal
+    volume: Decimal | None = None
+    alias_2: str | None = None
+    alias_3: str | None = None
+    alias_4: str | None = None
+    brand: str | None = None
+    engine: str | None = None
+    packing_label: str | None = None
+    selling_rate: Decimal | None = None
+    price_1: Decimal | None = None
+    price_2: Decimal | None = None
+    purchase_rate: Decimal | None = None
+    lc_price: Decimal | None = None
+    avg_cost: Decimal | None = None
+    last_purchase_price: Decimal | None = None
+    ordered_qty: Decimal = Decimal("0")
+    shop_qty: Decimal = Decimal("0")
+    warehouse_qty: Decimal = Decimal("0")
+    qty_on_hand: Decimal = Decimal("0")
+    qty_opened: Decimal = Decimal("0")
+    qty_committed: Decimal = Decimal("0")
 
 
 class ProductResponse(BaseModel):
@@ -231,3 +315,14 @@ class ProductResponse(BaseModel):
     updated_at: datetime
     created_by: UUID | None = None
     updated_by: UUID | None = None
+    qty_on_hand: Decimal | None = None
+    qty_opened: Decimal | None = None
+    qty_committed: Decimal | None = None
+    net_available: Decimal | None = None
+    shop_qty: Decimal | None = None
+    warehouse_qty: Decimal | None = None
+    ordered_qty: Decimal | None = None
+    last_sale_date: date | None = None
+    last_sale_price: Decimal | None = None
+    last_purchase_date: date | None = None
+    last_purchase_price: Decimal | None = None

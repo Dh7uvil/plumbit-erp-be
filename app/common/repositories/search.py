@@ -147,6 +147,9 @@ def search_clause(
 
 PARTY_FIELDS = frozenset({"name", "code", "trn", "notes"})
 PRODUCT_FIELDS = frozenset({"sku", "name", "sales_description", "purchase_description", "hs_code"})
+PRODUCT_INVENTORY_SEARCH_FIELDS = PRODUCT_FIELDS | frozenset(
+    {"alias_2", "alias_3", "alias_4", "engine", "brand"}
+)
 CONTACT_FIELDS = frozenset({"name", "email", "phone"})
 WAREHOUSE_FIELDS = frozenset({"code", "name", "phone"})
 ADDRESS_FIELDS = frozenset(

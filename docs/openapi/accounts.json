@@ -757,6 +757,30 @@
               }
             ],
             "title": "Currency Id"
+          },
+          "default_tax_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Tax Id"
+          },
+          "financial_category_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Financial Category Id"
           }
         },
         "type": "object",
@@ -959,6 +983,53 @@
               }
             ],
             "title": "Currency Id"
+          },
+          "default_tax_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Tax Id"
+          },
+          "financial_category_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Financial Category Id"
+          },
+          "default_tax_rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Tax Rate"
+          },
+          "financial_category_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Financial Category Name"
           },
           "is_active": {
             "type": "boolean",
@@ -1201,6 +1272,53 @@
             ],
             "title": "Currency Id"
           },
+          "default_tax_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Tax Id"
+          },
+          "financial_category_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Financial Category Id"
+          },
+          "default_tax_rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Tax Rate"
+          },
+          "financial_category_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Financial Category Name"
+          },
           "is_active": {
             "type": "boolean",
             "title": "Is Active"
@@ -1409,6 +1527,30 @@
               }
             ],
             "title": "Currency Id"
+          },
+          "default_tax_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Tax Id"
+          },
+          "financial_category_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Financial Category Id"
           }
         },
         "type": "object",
