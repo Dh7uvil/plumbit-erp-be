@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 
+from app.common.utils.currency import format_quantity_display
 from app.inventory_management.products.schemas import (
     ProductInquiryQuantityRows,
     ProductQuantityUnitBreakdown,
@@ -26,6 +27,23 @@ def quantity_unit_breakdown(
         unit2_qty=Decimal(unit2_count),
         remainder_qty=remainder,
     )
+
+
+def format_unit2_package_text(
+    unit2_qty: Decimal,
+    remainder_qty: Decimal,
+    unit_code: str,
+    unit2_code: str,
+) -> str:
+    u2_qty = format_quantity_display(unit2_qty)
+    rem_qty = format_quantity_display(remainder_qty)
+    if unit2_qty > 0 and remainder_qty > 0:
+        return f"{u2_qty} {unit2_code} & {rem_qty} {unit_code} loose"
+    if unit2_qty > 0:
+        return f"{u2_qty} {unit2_code}"
+    if remainder_qty > 0:
+        return f"{rem_qty} {unit_code} loose"
+    return f"{format_quantity_display(_ZERO)} {unit2_code}"
 
 
 def build_quantity_rows(

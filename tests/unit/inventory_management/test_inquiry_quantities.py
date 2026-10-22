@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from app.inventory_management.products.inquiry_quantities import (
     build_quantity_rows,
+    format_unit2_package_text,
     quantity_unit_breakdown,
 )
 
@@ -14,6 +15,15 @@ def test_quantity_unit_breakdown_with_factor() -> None:
     assert row.unit_qty == Decimal("540")
     assert row.unit2_qty == Decimal("108")
     assert row.remainder_qty == Decimal("0")
+
+
+def test_format_unit2_package_text_loose_only() -> None:
+    assert format_unit2_package_text(Decimal("0"), Decimal("7"), "PCS", "PKT") == "7.00 PCS loose"
+
+
+def test_format_unit2_package_text_full_and_loose() -> None:
+    text = format_unit2_package_text(Decimal("61"), Decimal("15"), "PCS", "CTN")
+    assert text == "61.00 CTN & 15.00 PCS loose"
 
 
 def test_build_quantity_rows_net_available() -> None:

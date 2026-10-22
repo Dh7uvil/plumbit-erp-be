@@ -14,6 +14,7 @@ from app.auth.catalog import INVENTORY_MODULE
 from app.auth.org_service import OrganizationService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
+from app.common.utils.currency import format_quantity_display
 from app.common.services.audit import AuditWriter
 from app.common.services.master_usage import assert_master_not_referenced
 from app.core.enums import AuditAction, ItemType
@@ -22,8 +23,12 @@ from app.db.session import transaction
 from app.erp.accounting.service import TaxService
 from app.inventory_management.categories.service import CategoryService
 from app.inventory_management.products.models import Product
+from app.inventory_management.products.inquiry_quantities import (
+    build_quantity_rows,
+    format_unit2_package_text,
+    quantity_unit_breakdown,
+)
 from app.inventory_management.products.repository import ProductRepository
-from app.inventory_management.products.inquiry_quantities import build_quantity_rows
 from app.inventory_management.products.inventory_list_repository import (
     ProductInventoryListRepository,
 )
@@ -261,6 +266,13 @@ class ProductService:
                 payload.income_account_id,
                 payload.purchase_account_id,
             )
+            if payload.secondary_unit_id is not None:
+                await self._validate_secondary_unit(
+                    tenant_id,
+                    unit_id=payload.unit_id,
+                    secondary_unit_id=payload.secondary_unit_id,
+                    secondary_unit_factor=payload.secondary_unit_factor,
+                )
             values = payload.model_dump()
             values["item_type"] = payload.item_type.value
             if payload.unit_id is None:
@@ -332,6 +344,28 @@ class ProductService:
                 values.get("income_account_id"),
                 values.get("purchase_account_id"),
             )
+            if "secondary_unit_id" in values or "secondary_unit_factor" in values:
+                merged_unit_id = (
+                    values["unit_id"] if "unit_id" in values else existing.unit_id
+                )
+                merged_secondary_id = (
+                    values["secondary_unit_id"]
+                    if "secondary_unit_id" in values
+                    else existing.secondary_unit_id
+                )
+                merged_factor = (
+                    values["secondary_unit_factor"]
+                    if "secondary_unit_factor" in values
+                    else existing.secondary_unit_factor
+                )
+                await self._validate_secondary_unit(
+                    tenant_id,
+                    unit_id=merged_unit_id,
+                    secondary_unit_id=merged_secondary_id,
+                    secondary_unit_factor=merged_factor,
+                )
+            if values.get("secondary_unit_id") is None and "secondary_unit_id" in values:
+                values["secondary_unit_factor"] = None
             try:
                 row = await self.repo.update(tenant_id, product_id, values)
             except IntegrityError as exc:
@@ -402,6 +436,22 @@ class ProductService:
             "requires_qc": row.requires_qc,
             "is_active": row.is_active,
         }
+
+    async def _validate_secondary_unit(
+        self,
+        tenant_id: UUID,
+        *,
+        unit_id: UUID | None,
+        secondary_unit_id: UUID | None,
+        secondary_unit_factor: Decimal | None,
+    ) -> None:
+        if secondary_unit_id is None:
+            return
+        await self.units.require_id(tenant_id, secondary_unit_id)
+        if unit_id is not None and secondary_unit_id == unit_id:
+            raise ValidationError("Unit 2 must differ from the base unit")
+        if secondary_unit_factor is None or secondary_unit_factor <= 0:
+            raise ValidationError("Enter pieces per unit 2 when unit 2 is set")
 
     async def _validate_refs(
         self,
@@ -489,14 +539,20 @@ class ProductService:
         if product.secondary_unit_id and product.secondary_unit_factor:
             factor = product.secondary_unit_factor
             if factor > 0:
-                cartons = int(qty_on_hand // factor)
-                pieces = qty_on_hand - Decimal(cartons) * factor
+                on_hand_breakdown = quantity_unit_breakdown(qty_on_hand, factor)
                 unit_code = ""
                 if product.unit_id:
                     unit_code = (await self.units.get(tenant_id, product.unit_id)).code
                 sec_code = (await self.units.get(tenant_id, product.secondary_unit_id)).code
-                packing_label = f"{factor} {unit_code} / {sec_code}"
-                unit2_breakdown = f"{cartons} {sec_code} & {pieces} {unit_code}"
+                packing_label = (
+                    f"{format_quantity_display(factor)} {unit_code} / {sec_code}"
+                )
+                unit2_breakdown = format_unit2_package_text(
+                    on_hand_breakdown.unit2_qty,
+                    on_hand_breakdown.remainder_qty,
+                    unit_code,
+                    sec_code,
+                )
 
         avg_cost: Decimal | None = None
         lc_price: Decimal | None = None
@@ -630,7 +686,10 @@ class ProductService:
             if row.secondary_unit_id and row.secondary_unit_factor and row.unit_id:
                 unit_code = (await self.units.get(tenant_id, row.unit_id)).code
                 sec_code = (await self.units.get(tenant_id, row.secondary_unit_id)).code
-                packing_label = f"{row.secondary_unit_factor} {unit_code} / {sec_code}"
+                packing_label = (
+                    f"{format_quantity_display(row.secondary_unit_factor)} "
+                    f"{unit_code} / {sec_code}"
+                )
             net_avail = Decimal(row.net_available or 0)
             result.append(
                 ProductInventoryListRow(
