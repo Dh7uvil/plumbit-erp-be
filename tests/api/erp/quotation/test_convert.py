@@ -67,6 +67,30 @@ async def test_convert_accepted_quotation_copies_totals(client: AsyncClient) -> 
 
 
 @pytest.mark.asyncio
+async def test_convert_sent_quotation_without_accept(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    ids = await _seeded_ids(client, headers)
+    customer_id = await _create_customer(client, headers)
+    product_id = await _create_product(client, headers, ids)
+    created = await _create_quote(client, headers, customer_id=customer_id, product_id=product_id)
+    sent = await _send_quote(client, headers, created["body"]["data"])
+    converted = await client.post(
+        f"/api/v1/quotations/{sent['id']}/convert-to-sales-order",
+        headers=_convert_headers(headers, sent["version"]),
+    )
+    assert converted.status_code == 200, converted.text
+    order = converted.json()["data"]
+    assert order["source_quotation_id"] == sent["id"]
+
+    fetched = await client.get(f"/api/v1/quotations/{sent['id']}", headers=headers)
+    assert fetched.status_code == 200, fetched.text
+    data = fetched.json()["data"]
+    assert data["status"] == "CONVERTED"
+    assert data["converted_document_id"] == order["id"]
+
+
+@pytest.mark.asyncio
 async def test_convert_rejects_non_accepted_quotation(client: AsyncClient) -> None:
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)

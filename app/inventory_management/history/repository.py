@@ -6,27 +6,36 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, asc, desc, func, or_, select
+from sqlalchemy import Select, asc, case, desc, exists, func, literal, or_, select, union_all
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.auth.models import Branch
 from app.common.repositories.search import column_ilike, ilike_pattern
 from app.common.schemas.pagination import PageParams
-from app.core.enums import BillType, InvoiceDocumentStatus, PurchaseInvoiceLineType, StockDocumentStatus
+from app.core.enums import (
+    BillType,
+    InvoiceDocumentStatus,
+    OrderType,
+    PurchaseInvoiceLineType,
+    StockDocumentStatus,
+)
 from app.crm.customers.models import Customer
+from app.erp.exchange_rates.models import Currency
 from app.erp.purchase_invoices.models import PurchaseInvoice, PurchaseInvoiceLine
+from app.erp.purchase_orders.models import PurchaseOrder, PurchaseOrderLine
 from app.erp.sales_invoices.models import SalesInvoice, SalesInvoiceLine
 from app.erp.sales_orders.models import SalesOrder
 from app.inventory_management.delivery_notes.models import DeliveryNote, DeliveryNoteLine
 from app.inventory_management.goods_receipts.models import GoodsReceipt, GoodsReceiptLine
-from app.inventory_management.warehouses.models import Warehouse
-from app.auth.models import Branch
 from app.inventory_management.products.models import Product
 from app.inventory_management.purchase_returns.models import PurchaseReturn, PurchaseReturnLine
 from app.inventory_management.sales_returns.models import SalesReturn, SalesReturnLine
 from app.inventory_management.stock.models import StockMovement
 from app.inventory_management.stock.service import SOURCE_DELIVERY_NOTE
+from app.inventory_management.warehouses.models import Warehouse
 
 _ZERO = Decimal("0")
 
@@ -683,21 +692,36 @@ class HistoryRepository:
         sort_by: str = "document_date",
         sort_order: str = "desc",
     ) -> tuple[Sequence[Any], int]:
+        line_receipt = aliased(GoodsReceipt)
+        header_receipt = aliased(GoodsReceipt)
+        invoice_header_order = aliased(PurchaseOrder)
+        invoice_line_link = aliased(PurchaseOrderLine)
+        invoice_line_order = aliased(PurchaseOrder)
         warehouse_id_expr = func.coalesce(
             PurchaseInvoiceLine.warehouse_id,
-            GoodsReceipt.warehouse_id,
+            line_receipt.warehouse_id,
+            header_receipt.warehouse_id,
+        )
+        invoice_order_type = func.coalesce(
+            invoice_header_order.order_type,
+            invoice_line_order.order_type,
+            case(
+                (
+                    PurchaseInvoice.bill_type == BillType.IMPORT.value,
+                    literal(OrderType.IMPORT.value),
+                ),
+                else_=literal(OrderType.LOCAL.value),
+            ),
         )
         criteria: list[ColumnElement[bool]] = [
             PurchaseInvoice.tenant_id == tenant_id,
             PurchaseInvoice.deleted_at.is_(None),
+            PurchaseInvoice.status != InvoiceDocumentStatus.CANCELLED.value,
             PurchaseInvoiceLine.tenant_id == tenant_id,
             PurchaseInvoiceLine.product_id == product_id,
             PurchaseInvoiceLine.line_type == PurchaseInvoiceLineType.PRODUCT.value,
+            invoice_order_type == kind,
         ]
-        if kind == "LOCAL":
-            criteria.append(PurchaseInvoice.bill_type == BillType.GOODS.value)
-        else:
-            criteria.append(PurchaseInvoice.bill_type == BillType.IMPORT.value)
         if posting_status == "POSTED":
             criteria.append(PurchaseInvoice.is_posted.is_(True))
         elif posting_status == "UNPOSTED":
@@ -705,27 +729,30 @@ class HistoryRepository:
         pattern = self._search_pattern(name)
         if pattern is not None:
             criteria.append(column_ilike(Customer.name, pattern))
-        base: Select[tuple[object, ...]] = (
+        invoice_rows: Select[tuple[object, ...]] = (
             select(
-                PurchaseInvoice.id,
-                PurchaseInvoice.document_number,
-                PurchaseInvoice.invoice_date,
-                PurchaseInvoiceLine.product_id,
-                PurchaseInvoiceLine.description,
-                Customer.id,
-                Customer.name,
-                PurchaseInvoiceLine.quantity,
-                PurchaseInvoiceLine.rate,
-                PurchaseInvoiceLine.amount,
-                warehouse_id_expr,
-                Warehouse.name,
-                PurchaseInvoice.supplier_invoice_number,
-                PurchaseInvoice.import_doc_date,
-                PurchaseInvoice.import_doc_number,
-                PurchaseInvoice.exchange_rate,
-                PurchaseInvoice.is_posted,
-                PurchaseInvoice.branch_id,
-                Branch.name,
+                PurchaseInvoiceLine.id.label("line_id"),
+                literal("PURCHASE_INVOICE").label("document_type"),
+                PurchaseInvoice.id.label("document_id"),
+                PurchaseInvoice.document_number.label("document_number"),
+                PurchaseInvoice.invoice_date.label("document_date"),
+                PurchaseInvoiceLine.product_id.label("product_id"),
+                PurchaseInvoiceLine.description.label("description"),
+                Customer.id.label("party_id"),
+                Customer.name.label("party_name"),
+                PurchaseInvoiceLine.quantity.label("quantity"),
+                PurchaseInvoiceLine.rate.label("rate"),
+                PurchaseInvoiceLine.amount.label("amount"),
+                Currency.code.label("currency_code"),
+                warehouse_id_expr.label("warehouse_id"),
+                Warehouse.name.label("warehouse_name"),
+                PurchaseInvoice.supplier_invoice_number.label("supplier_invoice_number"),
+                PurchaseInvoice.import_doc_date.label("lc_date"),
+                PurchaseInvoice.import_doc_number.label("lc_number"),
+                PurchaseInvoice.exchange_rate.label("exchange_rate"),
+                PurchaseInvoice.is_posted.label("is_posted"),
+                PurchaseInvoice.branch_id.label("branch_id"),
+                Branch.name.label("branch_name"),
             )
             .select_from(PurchaseInvoiceLine)
             .join(
@@ -733,29 +760,158 @@ class HistoryRepository:
                 PurchaseInvoice.id == PurchaseInvoiceLine.purchase_invoice_id,
             )
             .join(Customer, Customer.id == PurchaseInvoice.supplier_id)
+            .outerjoin(Currency, Currency.id == PurchaseInvoice.currency_id)
+            .outerjoin(line_receipt, line_receipt.id == PurchaseInvoiceLine.goods_receipt_id)
+            .outerjoin(header_receipt, header_receipt.id == PurchaseInvoice.goods_receipt_id)
             .outerjoin(
-                GoodsReceipt,
-                GoodsReceipt.id == PurchaseInvoiceLine.goods_receipt_id,
+                invoice_header_order,
+                invoice_header_order.id == PurchaseInvoice.purchase_order_id,
+            )
+            .outerjoin(
+                invoice_line_link,
+                invoice_line_link.id == PurchaseInvoiceLine.purchase_order_line_id,
+            )
+            .outerjoin(
+                invoice_line_order,
+                invoice_line_order.id == invoice_line_link.purchase_order_id,
             )
             .outerjoin(Warehouse, Warehouse.id == warehouse_id_expr)
             .outerjoin(Branch, Branch.id == PurchaseInvoice.branch_id)
             .where(*criteria)
         )
-        count_statement = select(func.count()).select_from(base.subquery())
+        receipt_rows = self._product_goods_receipt_lines(
+            tenant_id,
+            product_id,
+            kind=kind,
+            posting_status=posting_status,
+            name=name,
+        )
+        combined = union_all(invoice_rows, receipt_rows).subquery("purchase_details")
+        count_statement = select(func.count()).select_from(combined)
         sort_map = {
-            "document_date": PurchaseInvoice.invoice_date,
-            "document_number": PurchaseInvoice.document_number,
-            "quantity": PurchaseInvoiceLine.quantity,
-            "rate": PurchaseInvoiceLine.rate,
-            "amount": PurchaseInvoiceLine.amount,
-            "party_name": Customer.name,
+            "document_date": combined.c.document_date,
+            "document_number": combined.c.document_number,
+            "quantity": combined.c.quantity,
+            "rate": combined.c.rate,
+            "amount": combined.c.amount,
+            "party_name": combined.c.party_name,
         }
-        order_expr = sort_map.get(sort_by, PurchaseInvoice.invoice_date)
+        order_expr = sort_map.get(sort_by, combined.c.document_date)
         statement = (
-            base.order_by(_ordered(order_expr, sort_order), PurchaseInvoice.created_at.desc())
+            select(combined)
+            .order_by(_ordered(order_expr, sort_order), combined.c.document_number.desc())
             .offset(page.offset)
             .limit(page.page_size)
         )
         rows = (await self.session.execute(statement)).all()
         total = await self.session.scalar(count_statement)
         return rows, int(total or 0)
+
+    def _product_goods_receipt_lines(
+        self,
+        tenant_id: UUID,
+        product_id: UUID,
+        *,
+        kind: str,
+        posting_status: str,
+        name: str | None,
+    ) -> Select[tuple[object, ...]]:
+        """Receipt lines that are not already represented by a live purchase invoice."""
+
+        billed_on_invoice = exists(
+            select(PurchaseInvoiceLine.id)
+            .join(
+                PurchaseInvoice,
+                PurchaseInvoice.id == PurchaseInvoiceLine.purchase_invoice_id,
+            )
+            .where(
+                PurchaseInvoiceLine.goods_receipt_line_id == GoodsReceiptLine.id,
+                PurchaseInvoice.deleted_at.is_(None),
+                PurchaseInvoice.status != InvoiceDocumentStatus.CANCELLED.value,
+            )
+            .correlate(GoodsReceiptLine)
+        )
+        sourced_from_invoice = exists(
+            select(PurchaseInvoiceLine.id)
+            .join(
+                PurchaseInvoice,
+                PurchaseInvoice.id == PurchaseInvoiceLine.purchase_invoice_id,
+            )
+            .where(
+                PurchaseInvoiceLine.id == GoodsReceiptLine.source_purchase_invoice_line_id,
+                PurchaseInvoice.deleted_at.is_(None),
+                PurchaseInvoice.status != InvoiceDocumentStatus.CANCELLED.value,
+            )
+            .correlate(GoodsReceiptLine)
+        )
+        receipt_header_order = aliased(PurchaseOrder)
+        receipt_line_link = aliased(PurchaseOrderLine)
+        receipt_line_order = aliased(PurchaseOrder)
+        receipt_order_type = func.coalesce(
+            receipt_header_order.order_type,
+            receipt_line_order.order_type,
+            literal(OrderType.LOCAL.value),
+        )
+        criteria: list[ColumnElement[bool]] = [
+            GoodsReceipt.tenant_id == tenant_id,
+            GoodsReceipt.deleted_at.is_(None),
+            GoodsReceipt.status != StockDocumentStatus.CANCELLED.value,
+            GoodsReceiptLine.tenant_id == tenant_id,
+            GoodsReceiptLine.product_id == product_id,
+            ~billed_on_invoice,
+            ~sourced_from_invoice,
+            receipt_order_type == kind,
+        ]
+        if posting_status == "POSTED":
+            criteria.append(GoodsReceipt.status == StockDocumentStatus.POSTED.value)
+        elif posting_status == "UNPOSTED":
+            criteria.append(GoodsReceipt.status == StockDocumentStatus.DRAFT.value)
+        pattern = self._search_pattern(name)
+        if pattern is not None:
+            criteria.append(column_ilike(Customer.name, pattern))
+        quantity = GoodsReceiptLine.quantity
+        return (
+            select(
+                GoodsReceiptLine.id.label("line_id"),
+                literal("GOODS_RECEIPT").label("document_type"),
+                GoodsReceipt.id.label("document_id"),
+                GoodsReceipt.document_number.label("document_number"),
+                GoodsReceipt.document_date.label("document_date"),
+                GoodsReceiptLine.product_id.label("product_id"),
+                GoodsReceiptLine.description.label("description"),
+                Customer.id.label("party_id"),
+                Customer.name.label("party_name"),
+                quantity.label("quantity"),
+                GoodsReceiptLine.rate.label("rate"),
+                (quantity * GoodsReceiptLine.rate).label("amount"),
+                Currency.code.label("currency_code"),
+                GoodsReceipt.warehouse_id.label("warehouse_id"),
+                Warehouse.name.label("warehouse_name"),
+                GoodsReceipt.supplier_invoice_number.label("supplier_invoice_number"),
+                GoodsReceipt.bill_of_entry_date.label("lc_date"),
+                GoodsReceipt.bill_of_entry_number.label("lc_number"),
+                GoodsReceipt.exchange_rate.label("exchange_rate"),
+                GoodsReceipt.is_posted.label("is_posted"),
+                GoodsReceipt.branch_id.label("branch_id"),
+                Branch.name.label("branch_name"),
+            )
+            .select_from(GoodsReceiptLine)
+            .join(GoodsReceipt, GoodsReceipt.id == GoodsReceiptLine.goods_receipt_id)
+            .join(Customer, Customer.id == GoodsReceipt.supplier_id)
+            .outerjoin(
+                receipt_header_order,
+                receipt_header_order.id == GoodsReceipt.purchase_order_id,
+            )
+            .outerjoin(
+                receipt_line_link,
+                receipt_line_link.id == GoodsReceiptLine.purchase_order_line_id,
+            )
+            .outerjoin(
+                receipt_line_order,
+                receipt_line_order.id == receipt_line_link.purchase_order_id,
+            )
+            .outerjoin(Currency, Currency.id == GoodsReceipt.currency_id)
+            .outerjoin(Warehouse, Warehouse.id == GoodsReceipt.warehouse_id)
+            .outerjoin(Branch, Branch.id == GoodsReceipt.branch_id)
+            .where(*criteria)
+        )

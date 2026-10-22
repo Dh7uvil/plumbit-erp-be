@@ -418,8 +418,7 @@ async def convert_sales_order_to_proforma_invoice(
     sales_order_id: UUID,
     tenant: TenantContextDependency,
     proforma_invoices: ProformaInvoiceServiceDependency,
-    _: Annotated[CurrentUser, Depends(require_permission(SALES_ORDER_READ))],
-    __: Annotated[CurrentUser, Depends(require_permission(PROFORMA_INVOICE_CREATE))],
+    _: Annotated[CurrentUser, Depends(require_permission(PROFORMA_INVOICE_CREATE))],
     if_match: IfMatch = None,
     payload: Annotated[ConvertSalesOrderToProformaInvoiceRequest | None, Body()] = None,
 ) -> ApiResponse[ProformaInvoiceResponse]:

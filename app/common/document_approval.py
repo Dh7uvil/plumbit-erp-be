@@ -16,3 +16,21 @@ def effective_document_requires_approval(
     if created_by is not None and created_by in admin_creator_ids:
         return False
     return True
+
+
+def hide_unneeded_draft_action(
+    action: str,
+    *,
+    requires_approval: bool,
+    direct_action: str,
+) -> bool:
+    """Hide the draft action that does not match this document's approval rule.
+
+    Approval required: keep submit, hide send/confirm/issue.
+    Approval skipped: keep send/confirm/issue, hide submit.
+    """
+    if action == "submit":
+        return not requires_approval
+    if action == direct_action:
+        return requires_approval
+    return False

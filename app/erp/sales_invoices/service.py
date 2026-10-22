@@ -17,6 +17,7 @@ from app.auth.catalog import (
     CUSTOMER_PAYMENT_CREATE,
     DELIVERY_NOTE_CREATE,
     DUNNING_SEND,
+    SALES_RETURN_CREATE,
     PERIOD_OVERRIDE,
     SALES_INVOICE_CANCEL,
     SALES_INVOICE_DELETE,
@@ -234,7 +235,12 @@ class SalesInvoiceService:
     async def get(self, tenant_id: UUID, invoice_id: UUID) -> SalesInvoiceResponse:
         row = await self._require(tenant_id, invoice_id)
         await self._ensure_policy(tenant_id)
-        response = self._to_response(row, today=await self._today(tenant_id))
+        has_posted_dn = await self._has_posted_delivery_note_for_return(tenant_id, row)
+        response = self._to_response(
+            row,
+            today=await self._today(tenant_id),
+            has_posted_delivery_note=has_posted_dn,
+        )
         response.related_documents = await self._related_documents(tenant_id, row)
         return response
 
@@ -2051,8 +2057,31 @@ class SalesInvoiceService:
         else:
             row.payment_status = PaymentStatus.PARTIALLY_PAID.value
 
+    async def _has_posted_delivery_note_for_return(
+        self, tenant_id: UUID, row: SalesInvoice
+    ) -> bool:
+        from app.inventory_management.delivery_notes.repository import DeliveryNoteRepository
+
+        dn_repo = DeliveryNoteRepository(self.session)
+        linked_ids = {
+            line.delivery_note_id for line in row.lines if line.delivery_note_id is not None
+        }
+        for note_id in linked_ids:
+            note = await dn_repo.get(tenant_id, note_id)
+            if note is not None and note.status == StockDocumentStatus.POSTED.value:
+                return True
+        for note in await dn_repo.list_for_sales_invoice(tenant_id, row.id):
+            if note.status == StockDocumentStatus.POSTED.value:
+                return True
+        return False
+
     def _available_actions(
-        self, row: SalesInvoice, status: InvoiceDocumentStatus, *, period_locked: bool
+        self,
+        row: SalesInvoice,
+        status: InvoiceDocumentStatus,
+        *,
+        period_locked: bool,
+        has_posted_delivery_note: bool = False,
     ) -> builtins.list[str]:
         actions: builtins.list[str] = []
         for action in transition_actions(status):
@@ -2105,6 +2134,12 @@ class SalesInvoiceService:
             )
         ):
             actions.append("create_delivery_note")
+        if (
+            status == InvoiceDocumentStatus.POSTED
+            and has_permission(self.actor_permissions, SALES_RETURN_CREATE)
+            and has_posted_delivery_note
+        ):
+            actions.append("create_sales_return")
         return actions
 
     def _to_response(
@@ -2113,6 +2148,7 @@ class SalesInvoiceService:
         *,
         today: date | None = None,
         warnings: builtins.list[DocumentWarning] | None = None,
+        has_posted_delivery_note: bool = False,
     ) -> SalesInvoiceResponse:
         status = InvoiceDocumentStatus(row.status)
         period_locked = self._date_in_locked_period(row.invoice_date)
@@ -2190,7 +2226,12 @@ class SalesInvoiceService:
             is_overdue=is_overdue,
             is_partially_credited=is_partially_credited,
             is_fully_credited=is_fully_credited,
-            available_actions=self._available_actions(row, status, period_locked=period_locked),
+            available_actions=self._available_actions(
+                row,
+                status,
+                period_locked=period_locked,
+                has_posted_delivery_note=has_posted_delivery_note,
+            ),
             related_documents=[],
             warnings=warnings or [],
             lines=[

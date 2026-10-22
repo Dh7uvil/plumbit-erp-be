@@ -22,6 +22,8 @@ def test_ilike_pattern_escapes_wildcards() -> None:
     assert ilike_pattern("100%") == r"%100\%%"
     assert ilike_pattern("a_b") == r"%a\_b%"
     assert ilike_pattern(r"a\b") == r"%a\\b%"
+    assert ilike_pattern("acme", prefix_only=True) == "acme%"
+    assert ilike_pattern("100%", prefix_only=True) == r"100\%%"
 
 
 def test_search_clause_requires_fields_or_related() -> None:

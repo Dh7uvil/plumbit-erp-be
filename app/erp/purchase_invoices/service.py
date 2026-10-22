@@ -1745,6 +1745,7 @@ class PurchaseInvoiceService:
             actions.append("create_goods_receipt")
         if (
             status == InvoiceDocumentStatus.POSTED
+            and row.bill_type is not None
             and BillType(row.bill_type) == BillType.IMPORT
             and has_permission(self.actor_permissions, COST_SHEET_CREATE)
         ):

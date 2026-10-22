@@ -54,13 +54,16 @@ def test_revise_returns_sent_expired_declined_and_accepted_to_draft() -> None:
     assert next_status(QuotationStatus.ACCEPTED, "revise") == QuotationStatus.DRAFT
 
 
-def test_only_accepted_or_partially_converted_is_convertible() -> None:
+def test_sent_approved_accepted_and_partially_converted_are_convertible() -> None:
+    assert_convertible(QuotationStatus.APPROVED)
+    assert_convertible(QuotationStatus.SENT)
     assert_convertible(QuotationStatus.ACCEPTED)
     assert_convertible(QuotationStatus.PARTIALLY_CONVERTED)
     with pytest.raises(InvalidStatusTransitionError):
-        assert_convertible(QuotationStatus.SENT)
+        assert_convertible(QuotationStatus.DRAFT)
     with pytest.raises(InvalidStatusTransitionError):
         assert_convertible(QuotationStatus.REJECTED)
+    assert next_status(QuotationStatus.SENT, "convert") == QuotationStatus.CONVERTED
     assert next_status(QuotationStatus.ACCEPTED, "convert") == QuotationStatus.CONVERTED
     assert next_status(QuotationStatus.PARTIALLY_CONVERTED, "convert") == (
         QuotationStatus.CONVERTED
@@ -69,3 +72,7 @@ def test_only_accepted_or_partially_converted_is_convertible() -> None:
 
 def test_partially_converted_keeps_convert_action() -> None:
     assert transition_actions(QuotationStatus.PARTIALLY_CONVERTED) == ["convert"]
+
+
+def test_sent_includes_convert_without_accept() -> None:
+    assert "convert" in transition_actions(QuotationStatus.SENT)

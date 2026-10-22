@@ -811,6 +811,22 @@
             }
           },
           {
+            "name": "engine",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Engine"
+            }
+          },
+          {
             "name": "search_type",
             "in": "query",
             "required": false,
@@ -822,6 +838,16 @@
               "type": "string",
               "default": "default",
               "title": "Search Type"
+            }
+          },
+          {
+            "name": "tracked_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Tracked Only"
             }
           }
         ],
@@ -3625,6 +3651,18 @@
             ],
             "title": "Price 2"
           },
+          "purchase_rate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase Rate"
+          },
           "lc_price": {
             "anyOf": [
               {
@@ -3873,6 +3911,20 @@
       },
       "ProductPurchaseDetailLine": {
         "properties": {
+          "line_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Line Id"
+          },
+          "document_type": {
+            "type": "string",
+            "enum": [
+              "PURCHASE_INVOICE",
+              "GOODS_RECEIPT"
+            ],
+            "title": "Document Type",
+            "default": "PURCHASE_INVOICE"
+          },
           "document_id": {
             "type": "string",
             "format": "uuid",
@@ -3919,6 +3971,17 @@
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Amount"
+          },
+          "currency_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Code"
           },
           "warehouse_id": {
             "anyOf": [
@@ -4001,6 +4064,18 @@
             ],
             "title": "Rate Lcy"
           },
+          "amount_lcy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Lcy"
+          },
           "exchange_rate": {
             "anyOf": [
               {
@@ -4044,6 +4119,7 @@
         },
         "type": "object",
         "required": [
+          "line_id",
           "document_id",
           "document_number",
           "document_date",
@@ -4468,6 +4544,138 @@
               }
             ],
             "title": "Updated By"
+          },
+          "qty_on_hand": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty On Hand"
+          },
+          "qty_opened": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty Opened"
+          },
+          "qty_committed": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qty Committed"
+          },
+          "net_available": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Available"
+          },
+          "shop_qty": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shop Qty"
+          },
+          "warehouse_qty": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warehouse Qty"
+          },
+          "ordered_qty": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordered Qty"
+          },
+          "last_sale_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sale Date"
+          },
+          "last_sale_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sale Price"
+          },
+          "last_purchase_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Purchase Date"
+          },
+          "last_purchase_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Purchase Price"
           }
         },
         "type": "object",

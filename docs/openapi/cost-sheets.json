@@ -1442,6 +1442,18 @@
             ],
             "title": "Account Id"
           },
+          "charge_type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Charge Type Id"
+          },
           "party_id": {
             "anyOf": [
               {
@@ -1528,6 +1540,18 @@
               }
             ],
             "title": "Account Id"
+          },
+          "charge_type_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Charge Type Id"
           },
           "party_id": {
             "anyOf": [

@@ -304,7 +304,6 @@ class AccountService:
             await self._validate_ledger_extras(
                 tenant_id,
                 default_tax_id=payload.default_tax_id,
-                financial_category_id=payload.financial_category_id,
             )
             self._validate_ledger_kind(
                 payload.account_subtype,
@@ -329,7 +328,6 @@ class AccountService:
                         "is_system": False,
                         "currency_id": payload.currency_id,
                         "default_tax_id": payload.default_tax_id,
-                        "financial_category_id": payload.financial_category_id,
                         "created_by": actor_user_id,
                         "updated_by": actor_user_id,
                     },
@@ -429,9 +427,6 @@ class AccountService:
             await self._validate_ledger_extras(
                 tenant_id,
                 default_tax_id=values.get("default_tax_id", existing.default_tax_id),
-                financial_category_id=values.get(
-                    "financial_category_id", existing.financial_category_id
-                ),
             )
             next_is_group = bool(values.get("is_group", existing.is_group))
             next_standalone = bool(
@@ -748,18 +743,11 @@ class AccountService:
         tenant_id: UUID,
         *,
         default_tax_id: UUID | None,
-        financial_category_id: UUID | None,
     ) -> None:
         if default_tax_id is not None:
             from app.erp.accounting.service import TaxService
 
             await TaxService(self.session).require_id(tenant_id, default_tax_id)
-        if financial_category_id is not None:
-            from app.erp.accounting.financial_categories.service import (
-                FinancialCategoryService,
-            )
-
-            await FinancialCategoryService(self.session).get(tenant_id, financial_category_id)
 
     def _validate_ledger_kind(
         self,
@@ -866,20 +854,9 @@ class AccountService:
 
             tax = await TaxService(self.session).get(tenant_id, row.default_tax_id)
             default_tax_rate = tax.rate
-        financial_category_name = None
-        if row.financial_category_id is not None:
-            from app.erp.accounting.financial_categories.service import (
-                FinancialCategoryService,
-            )
-
-            category = await FinancialCategoryService(self.session).get(
-                tenant_id, row.financial_category_id
-            )
-            financial_category_name = category.name
         return response.model_copy(
             update={
                 "default_tax_rate": default_tax_rate,
-                "financial_category_name": financial_category_name,
             }
         )
 

@@ -135,7 +135,8 @@ async def test_registered_domestic_order_applies_five_percent_vat(client: AsyncC
     assert data["billing_status"] == "NOT_INVOICED"
     assert data["is_posted"] is False
     assert data["document_date"] == data["order_date"]
-    assert {"confirm", "submit", "cancel", "clone", "delete"}.issubset(data["available_actions"])
+    assert "submit" not in data["available_actions"]
+    assert {"confirm", "cancel", "clone", "delete"}.issubset(data["available_actions"])
 
 
 @pytest.mark.asyncio

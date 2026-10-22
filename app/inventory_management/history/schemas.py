@@ -103,6 +103,8 @@ class ProductPurchaseDetailsFilter(BaseFilter):
 
 
 class ProductPurchaseDetailLine(BaseModel):
+    line_id: UUID
+    document_type: Literal["PURCHASE_INVOICE", "GOODS_RECEIPT"] = "PURCHASE_INVOICE"
     document_id: UUID
     document_number: str
     document_date: date
@@ -113,6 +115,7 @@ class ProductPurchaseDetailLine(BaseModel):
     quantity: Decimal
     rate: Decimal
     amount: Decimal
+    currency_code: str | None = None
     warehouse_id: UUID | None = None
     warehouse_name: str | None = None
     supplier_invoice_number: str | None = None
@@ -120,6 +123,7 @@ class ProductPurchaseDetailLine(BaseModel):
     lc_number: str | None = None
     fc_rate: Decimal | None = None
     rate_lcy: Decimal | None = None
+    amount_lcy: Decimal | None = None
     exchange_rate: Decimal | None = None
     branch_id: UUID | None = None
     branch_name: str | None = None

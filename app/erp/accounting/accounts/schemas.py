@@ -41,7 +41,6 @@ class AccountCreate(BaseModel):
     is_blocked: bool = False
     currency_id: UUID | None = None
     default_tax_id: UUID | None = None
-    financial_category_id: UUID | None = None
     is_standalone_ledger: bool = False
     party_link: AccountPartyLink | None = None
 
@@ -76,7 +75,6 @@ class AccountUpdate(BaseModel):
     is_blocked: bool | None = None
     currency_id: UUID | None = None
     default_tax_id: UUID | None = None
-    financial_category_id: UUID | None = None
     is_standalone_ledger: bool | None = None
     party_link: AccountPartyLink | None = None
 
@@ -114,9 +112,7 @@ class AccountResponse(BaseModel):
     system_role: AccountSystemRole | None
     currency_id: UUID | None
     default_tax_id: UUID | None = None
-    financial_category_id: UUID | None = None
     default_tax_rate: Decimal | None = None
-    financial_category_name: str | None = None
     is_active: bool
     is_blocked: bool = False
     is_standalone_ledger: bool = False

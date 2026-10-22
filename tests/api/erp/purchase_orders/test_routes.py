@@ -143,7 +143,8 @@ async def test_purchase_rate_defaults_onto_line(client: AsyncClient) -> None:
     assert Decimal(data["tax_amount"]) == Decimal("8.0000")
     assert Decimal(data["grand_total"]) == Decimal("168.0000")
     assert data["receipt_status"] == "NOT_RECEIVED"
-    assert {"issue", "submit", "cancel", "clone", "delete"}.issubset(data["available_actions"])
+    assert "submit" not in data["available_actions"]
+    assert {"issue", "cancel", "clone", "delete"}.issubset(data["available_actions"])
 
 
 @pytest.mark.asyncio

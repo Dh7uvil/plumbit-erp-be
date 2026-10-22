@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.catalog import (
     CUSTOMER_PAYMENT_CREATE,
+    DELIVERY_NOTE_CREATE,
     PROFORMA_INVOICE_CREATE,
     SALES_INVOICE_CREATE,
     SALES_MODULE,
@@ -26,7 +27,10 @@ from app.auth.catalog import (
 )
 from app.auth.models import Tenant
 from app.auth.org_service import OrganizationService
-from app.common.document_approval import effective_document_requires_approval
+from app.common.document_approval import (
+    effective_document_requires_approval,
+    hide_unneeded_draft_action,
+)
 from app.common.idempotency.service import IdempotencyService
 from app.common.print.schemas import PrintDocumentResponse
 from app.common.print.service import PrintService
@@ -2016,7 +2020,9 @@ class SalesOrderService:
         status = SalesOrderStatus(row.status)
         actions: builtins.list[str] = []
         for action in transition_actions(status):
-            if action == "confirm" and status == SalesOrderStatus.DRAFT and requires_approval:
+            if status == SalesOrderStatus.DRAFT and hide_unneeded_draft_action(
+                action, requires_approval=requires_approval, direct_action="confirm"
+            ):
                 continue
             required = _ACTION_PERMISSIONS[action]
             if has_permission(self.actor_permissions, required):
@@ -2051,6 +2057,14 @@ class SalesOrderService:
             and has_permission(self.actor_permissions, SALES_INVOICE_CREATE)
         ):
             actions.append("create_sales_invoice")
+        if (
+            status == SalesOrderStatus.CONFIRMED
+            and any(
+                remaining_qty(line.quantity, line.qty_delivered) > _ZERO for line in row.lines
+            )
+            and has_permission(self.actor_permissions, DELIVERY_NOTE_CREATE)
+        ):
+            actions.append("create_delivery_note")
         return actions
 
     def _to_response(

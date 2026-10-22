@@ -52,14 +52,16 @@ def mapped_column(model: type[Any], name: str) -> InstrumentedAttribute[Any]:
     return column
 
 
-def ilike_pattern(term: str) -> str:
-    """Build a case-insensitive partial-match pattern, escaping ``%``, ``_``, and ``\\``."""
+def ilike_pattern(term: str, *, prefix_only: bool = False) -> str:
+    """Build a case-insensitive ILIKE pattern, escaping ``%``, ``_``, and ``\\``."""
 
     escaped = (
         term.replace(_ILIKE_ESCAPE, _ILIKE_ESCAPE + _ILIKE_ESCAPE)
         .replace("%", _ILIKE_ESCAPE + "%")
         .replace("_", _ILIKE_ESCAPE + "_")
     )
+    if prefix_only:
+        return f"{escaped}%"
     return f"%{escaped}%"
 
 

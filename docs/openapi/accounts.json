@@ -184,6 +184,22 @@
               ],
               "title": "Is Active"
             }
+          },
+          {
+            "name": "is_standalone_ledger",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Standalone Ledger"
+            }
           }
         ],
         "responses": {
@@ -770,17 +786,20 @@
             ],
             "title": "Default Tax Id"
           },
-          "financial_category_id": {
+          "is_standalone_ledger": {
+            "type": "boolean",
+            "title": "Is Standalone Ledger",
+            "default": false
+          },
+          "party_link": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "uuid"
+                "$ref": "#/components/schemas/AccountPartyLink"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Financial Category Id"
+            ]
           }
         },
         "type": "object",
@@ -791,6 +810,52 @@
           "account_subtype"
         ],
         "title": "AccountCreate"
+      },
+      "AccountPartyLink": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "new",
+              "existing"
+            ],
+            "title": "Mode"
+          },
+          "party_type": {
+            "$ref": "#/components/schemas/PartyType"
+          },
+          "party_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode",
+          "party_type"
+        ],
+        "title": "AccountPartyLink"
       },
       "AccountPeriodBalance": {
         "properties": {
@@ -996,18 +1061,6 @@
             ],
             "title": "Default Tax Id"
           },
-          "financial_category_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Financial Category Id"
-          },
           "default_tax_rate": {
             "anyOf": [
               {
@@ -1020,17 +1073,6 @@
             ],
             "title": "Default Tax Rate"
           },
-          "financial_category_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Financial Category Name"
-          },
           "is_active": {
             "type": "boolean",
             "title": "Is Active"
@@ -1039,6 +1081,44 @@
             "type": "boolean",
             "title": "Is Blocked",
             "default": false
+          },
+          "is_standalone_ledger": {
+            "type": "boolean",
+            "title": "Is Standalone Ledger",
+            "default": false
+          },
+          "linked_party_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Party Id"
+          },
+          "linked_party_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Party Name"
+          },
+          "linked_party_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PartyType"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "type": "string",
@@ -1284,18 +1364,6 @@
             ],
             "title": "Default Tax Id"
           },
-          "financial_category_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Financial Category Id"
-          },
           "default_tax_rate": {
             "anyOf": [
               {
@@ -1308,17 +1376,6 @@
             ],
             "title": "Default Tax Rate"
           },
-          "financial_category_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Financial Category Name"
-          },
           "is_active": {
             "type": "boolean",
             "title": "Is Active"
@@ -1327,6 +1384,44 @@
             "type": "boolean",
             "title": "Is Blocked",
             "default": false
+          },
+          "is_standalone_ledger": {
+            "type": "boolean",
+            "title": "Is Standalone Ledger",
+            "default": false
+          },
+          "linked_party_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Party Id"
+          },
+          "linked_party_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Party Name"
+          },
+          "linked_party_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PartyType"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "type": "string",
@@ -1540,17 +1635,26 @@
             ],
             "title": "Default Tax Id"
           },
-          "financial_category_id": {
+          "is_standalone_ledger": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "uuid"
+                "type": "boolean"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Financial Category Id"
+            "title": "Is Standalone Ledger"
+          },
+          "party_link": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccountPartyLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1818,6 +1922,14 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "PartyType": {
+        "type": "string",
+        "enum": [
+          "CUSTOMER",
+          "SUPPLIER"
+        ],
+        "title": "PartyType"
       },
       "SystemRoleMapping": {
         "properties": {

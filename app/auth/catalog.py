@@ -58,7 +58,9 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
     SALES_MODULE: {
         "quotation": _with_imex('create', 'read', 'update', 'delete', 'approve', 'send', 'revise'),
         "proforma_invoice": _with_imex('create', 'read', 'update', 'delete', 'send', 'confirm'),
-        "sales_order": _with_imex('create', 'read', 'update', 'delete', 'approve', 'confirm', 'close', 'acknowledge'),
+        "sales_order": _with_imex(
+            'create', 'read', 'update', 'delete', 'approve', 'confirm', 'close', 'acknowledge'
+        ),
         "delivery_note": _with_imex('create', 'read', 'update', 'delete', 'post'),
         "sales_invoice": _with_imex('create', 'read', 'update', 'delete', 'post', 'cancel'),
         "credit_note": _with_imex('create', 'read', 'update', 'delete', 'post', 'cancel'),

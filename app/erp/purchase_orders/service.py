@@ -27,7 +27,10 @@ from app.auth.catalog import (
 from app.auth.models import Tenant
 from app.auth.org_service import OrganizationService
 from app.auth.schemas import AddressResponse
-from app.common.document_approval import effective_document_requires_approval
+from app.common.document_approval import (
+    effective_document_requires_approval,
+    hide_unneeded_draft_action,
+)
 from app.common.idempotency.service import IdempotencyService
 from app.common.print.schemas import PrintDocumentResponse
 from app.common.print.service import PrintService
@@ -1432,7 +1435,9 @@ class PurchaseOrderService:
     ) -> builtins.list[str]:
         actions: builtins.list[str] = []
         for action in transition_actions(status):
-            if action == "issue" and status == PurchaseOrderStatus.DRAFT and requires_approval:
+            if status == PurchaseOrderStatus.DRAFT and hide_unneeded_draft_action(
+                action, requires_approval=requires_approval, direct_action="issue"
+            ):
                 continue
             if (
                 action == "cancel"

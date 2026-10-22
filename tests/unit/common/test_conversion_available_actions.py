@@ -89,12 +89,13 @@ def test_confirmed_sales_order_exposes_conversion_actions() -> None:
 
     service = _actions_service(
         SalesOrderService,
-        frozenset({CUSTOMER_PAYMENT_CREATE, SALES_INVOICE_CREATE}),
+        frozenset({CUSTOMER_PAYMENT_CREATE, SALES_INVOICE_CREATE, DELIVERY_NOTE_CREATE}),
     )
     actions = service._available_actions(row, requires_approval=False)
 
     assert "record_advance" in actions
     assert "create_sales_invoice" in actions
+    assert "create_delivery_note" in actions
 
 
 def test_draft_purchase_order_hides_pay_advance_and_cost_sheet() -> None:
@@ -313,6 +314,94 @@ def test_posted_invoice_documents_expose_note_actions() -> None:
     assert "create_credit_note" in sr_service._available_actions(
         StockDocumentStatus.POSTED, period_locked=False
     )
+
+
+def test_posted_sales_invoice_exposes_sales_return_when_delivery_note_linked() -> None:
+    tenant_id = uuid4()
+    sales_invoice = SalesInvoice(
+        tenant_id=tenant_id,
+        document_number="SI-00003",
+        status=InvoiceDocumentStatus.POSTED.value,
+        version=1,
+        invoice_date=date.today(),
+        customer_id=uuid4(),
+        currency_id=uuid4(),
+        base_currency_id=uuid4(),
+        exchange_rate=Decimal("1"),
+        tax_treatment="STANDARD",
+        place_of_supply="UAE",
+        grand_total=Decimal("100"),
+        base_amount=Decimal("100"),
+        balance_due=Decimal("100"),
+        amount_paid=Decimal("0"),
+        amount_credited=Decimal("0"),
+    )
+    sales_invoice.id = uuid4()
+    line = SalesInvoiceLine(
+        tenant_id=tenant_id,
+        sales_invoice_id=sales_invoice.id,
+        line_number=1,
+        product_id=uuid4(),
+        description="Widget",
+        quantity=Decimal("10"),
+        qty_delivered=Decimal("10"),
+        rate=Decimal("10"),
+    )
+    line.id = uuid4()
+    sales_invoice.lines = [line]
+
+    service = _actions_service(SalesInvoiceService, frozenset({SALES_RETURN_CREATE}))
+    actions = service._available_actions(
+        sales_invoice,
+        InvoiceDocumentStatus.POSTED,
+        period_locked=False,
+        has_posted_delivery_note=True,
+    )
+    assert "create_sales_return" in actions
+
+
+def test_posted_sales_invoice_exposes_sales_return_when_posted_dn_linked_on_header() -> None:
+    tenant_id = uuid4()
+    sales_invoice = SalesInvoice(
+        tenant_id=tenant_id,
+        document_number="SI-00004",
+        status=InvoiceDocumentStatus.POSTED.value,
+        version=1,
+        invoice_date=date.today(),
+        customer_id=uuid4(),
+        currency_id=uuid4(),
+        base_currency_id=uuid4(),
+        exchange_rate=Decimal("1"),
+        tax_treatment="STANDARD",
+        place_of_supply="UAE",
+        grand_total=Decimal("100"),
+        base_amount=Decimal("100"),
+        balance_due=Decimal("100"),
+        amount_paid=Decimal("0"),
+        amount_credited=Decimal("0"),
+    )
+    sales_invoice.id = uuid4()
+    line = SalesInvoiceLine(
+        tenant_id=tenant_id,
+        sales_invoice_id=sales_invoice.id,
+        line_number=1,
+        product_id=uuid4(),
+        description="Widget",
+        quantity=Decimal("10"),
+        qty_delivered=Decimal("10"),
+        rate=Decimal("10"),
+    )
+    line.id = uuid4()
+    sales_invoice.lines = [line]
+
+    service = _actions_service(SalesInvoiceService, frozenset({SALES_RETURN_CREATE}))
+    actions = service._available_actions(
+        sales_invoice,
+        InvoiceDocumentStatus.POSTED,
+        period_locked=False,
+        has_posted_delivery_note=True,
+    )
+    assert "create_sales_return" in actions
 
 
 def test_posted_sales_invoice_exposes_delivery_note_when_qty_remains() -> None:

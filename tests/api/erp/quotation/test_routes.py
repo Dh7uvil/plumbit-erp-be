@@ -152,8 +152,8 @@ async def test_registered_domestic_quote_applies_five_percent_vat(client: AsyncC
     assert data["is_posted"] is False
     assert data["document_number"] == data["quote_number"]
     assert data["document_date"] == data["quote_date"]
-    assert "send" not in data["available_actions"]
-    assert {"submit", "cancel", "clone", "delete"}.issubset(data["available_actions"])
+    assert "submit" not in data["available_actions"]
+    assert {"send", "cancel", "clone", "delete"}.issubset(data["available_actions"])
 
 
 @pytest.mark.asyncio
@@ -316,6 +316,8 @@ async def test_send_from_draft_rejected_when_approval_required(client: AsyncClie
     created = await _create_quote(
         client, limited_headers, customer_id=customer_id, product_id=product_id
     )
+    assert "submit" in created["body"]["data"]["available_actions"]
+    assert "send" not in created["body"]["data"]["available_actions"]
     quote_id = created["body"]["data"]["id"]
     sent = await client.post(
         f"/api/v1/quotations/{quote_id}/send",
@@ -332,6 +334,8 @@ async def test_send_from_draft_allowed_when_created_by_superadmin(client: AsyncC
     customer_id = await _create_customer(client, headers)
     product_id = await _create_product(client, headers, ids)
     created = await _create_quote(client, headers, customer_id=customer_id, product_id=product_id)
+    assert "send" in created["body"]["data"]["available_actions"]
+    assert "submit" not in created["body"]["data"]["available_actions"]
     quote_id = created["body"]["data"]["id"]
     sent = await client.post(
         f"/api/v1/quotations/{quote_id}/send",

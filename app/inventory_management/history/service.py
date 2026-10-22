@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -27,6 +28,48 @@ from app.inventory_management.history.schemas import (
 from app.inventory_management.products.service import ProductService
 
 _ZERO = Decimal("0")
+_ONE = Decimal("1")
+
+
+def purchase_detail_line(row: Mapping[str, Any]) -> ProductPurchaseDetailLine:
+    """Map a purchase-invoice line into local-currency and document-currency amounts.
+
+    Bill rate and amount stay in the invoice currency. Local-currency figures are
+    the same amounts multiplied by the invoice exchange rate. Letter-of-credit
+    date is only the import document date, never the invoice date.
+    """
+
+    rate = row["rate"] or _ZERO
+    amount = quantize_money(row["amount"] or _ZERO)
+    exchange_rate = row["exchange_rate"] or _ZERO
+    fx = exchange_rate if exchange_rate else _ONE
+    return ProductPurchaseDetailLine(
+        line_id=row["line_id"],
+        document_type=row.get("document_type") or "PURCHASE_INVOICE",
+        document_id=row["document_id"],
+        document_number=row["document_number"],
+        document_date=row["document_date"],
+        product_id=row["product_id"],
+        description=row["description"],
+        party_id=row["party_id"],
+        party_name=row["party_name"],
+        quantity=row["quantity"] or _ZERO,
+        rate=rate,
+        amount=amount,
+        currency_code=row["currency_code"],
+        warehouse_id=row["warehouse_id"],
+        warehouse_name=row["warehouse_name"],
+        supplier_invoice_number=row["supplier_invoice_number"],
+        lc_date=row["lc_date"],
+        lc_number=row["lc_number"],
+        fc_rate=rate,
+        rate_lcy=quantize_money(rate * fx),
+        amount_lcy=quantize_money(amount * fx),
+        exchange_rate=exchange_rate,
+        branch_id=row["branch_id"],
+        branch_name=row["branch_name"],
+        is_posted=bool(row["is_posted"]),
+    )
 
 
 class HistoryService:
@@ -122,37 +165,7 @@ class HistoryService:
             sort_by=filters.sort_by,
             sort_order=filters.sort_order,
         )
-        lines: list[ProductPurchaseDetailLine] = []
-        for row in rows:
-            exchange_rate = row[15] or _ZERO
-            rate = row[8] or _ZERO
-            lc_date = row[13] or row[2]
-            lines.append(
-                ProductPurchaseDetailLine(
-                    document_id=row[0],
-                    document_number=row[1],
-                    document_date=row[2],
-                    product_id=row[3],
-                    description=row[4],
-                    party_id=row[5],
-                    party_name=row[6],
-                    quantity=row[7] or _ZERO,
-                    rate=rate,
-                    amount=row[9] or _ZERO,
-                    warehouse_id=row[10],
-                    warehouse_name=row[11],
-                    supplier_invoice_number=row[12],
-                    lc_date=lc_date,
-                    lc_number=row[14],
-                    fc_rate=rate,
-                    rate_lcy=quantize_money(rate * exchange_rate) if exchange_rate else rate,
-                    exchange_rate=exchange_rate,
-                    branch_id=row[17],
-                    branch_name=row[18],
-                    is_posted=bool(row[16]),
-                )
-            )
-        return lines, total
+        return [purchase_detail_line(row._mapping) for row in rows], total
 
     async def product_purchase_history(
         self,
