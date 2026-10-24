@@ -146,7 +146,6 @@ async def _create_voucher(
             "external_reference": journal.external_reference,
             "reference": journal.reference,
             "branch_id": journal.branch_id,
-            "cost_center_id": journal.cost_center_id,
             "narration": journal.narration,
             "journal_entry_id": journal.id,
             "reversal_journal_entry_id": journal.reversed_by_id,
@@ -170,7 +169,6 @@ async def _create_voucher(
                 "party_id": line.party_id,
                 "tax_id": line.tax_id,
                 "branch_id": line.branch_id,
-                "cost_center_id": line.cost_center_id,
                 "description": line.description,
             }
             for line in journal.lines

@@ -49,6 +49,7 @@ class CostSheet(AuditUserMixin, SoftDeleteTenantModel):
     status: Mapped[str] = mapped_column(String(30), nullable=False, server_default=text("'DRAFT'"))
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     document_date: Mapped[date] = mapped_column(Date, nullable=False)
+    fiscal_period: Mapped[int | None] = mapped_column(Integer, nullable=True)
     shipment_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("shipments.id", ondelete="SET NULL"),
@@ -109,6 +110,10 @@ class CostSheet(AuditUserMixin, SoftDeleteTenantModel):
         index=True,
     )
     imp_reference: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    source_document_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_document_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True), nullable=True
+    )
     journal_entry_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("journal_entries.id", ondelete="SET NULL"),

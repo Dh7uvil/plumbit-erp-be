@@ -218,10 +218,6 @@
     "logistics.shipment.import",
     "logistics.shipment.read",
     "logistics.shipment.update",
-    "masters.cost_center.create",
-    "masters.cost_center.delete",
-    "masters.cost_center.read",
-    "masters.cost_center.update",
     "masters.currency.create",
     "masters.currency.delete",
     "masters.currency.read",
@@ -956,12 +952,6 @@
         "delete"
       ],
       "document_sequence": [
-        "create",
-        "read",
-        "update",
-        "delete"
-      ],
-      "cost_center": [
         "create",
         "read",
         "update",

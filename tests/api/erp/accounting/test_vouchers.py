@@ -37,11 +37,20 @@ async def _counter_account(client: AsyncClient, headers: dict[str, str]) -> str:
     raise AssertionError("counter account not found")
 
 
+async def _voucher_source(client: AsyncClient, headers: dict[str, str]) -> dict[str, str]:
+    invoice = await _posted_invoice(client, headers)
+    return {
+        "source_document_type": "SALES_INVOICE",
+        "source_document_id": invoice["id"],
+    }
+
+
 async def _draft_cash_payment(
     client: AsyncClient, headers: dict[str, str], *, amount: str = "100"
 ) -> dict[str, object]:
     cash_account = await _account_by_subtype(client, headers, "CASH")
     counter_account = await _counter_account(client, headers)
+    source = await _voucher_source(client, headers)
     created = await client.post(
         "/api/v1/vouchers",
         headers=headers,
@@ -51,6 +60,7 @@ async def _draft_cash_payment(
             "total_amount": amount,
             "payment_method": "CASH",
             "lines": [{"account_id": counter_account, "amount": amount}],
+            **source,
         },
     )
     assert created.status_code == 201, created.text
@@ -92,6 +102,8 @@ async def test_cash_receipt_voucher_settles_invoice(client: AsyncClient) -> None
                     "amount": str(total),
                 }
             ],
+            "source_document_type": "SALES_INVOICE",
+            "source_document_id": invoice["id"],
         },
     )
     assert created.status_code == 201, created.text
@@ -112,6 +124,7 @@ async def test_ar_line_without_party_rejected(client: AsyncClient) -> None:
     await _enable_books(client, headers)
     ar_account = await _account_by_subtype(client, headers, "ACCOUNTS_RECEIVABLE")
     cash_account = await _account_by_subtype(client, headers, "CASH")
+    source = await _voucher_source(client, headers)
     created = await client.post(
         "/api/v1/vouchers",
         headers=headers,
@@ -120,6 +133,7 @@ async def test_ar_line_without_party_rejected(client: AsyncClient) -> None:
             "payment_account_id": cash_account,
             "total_amount": "100",
             "lines": [{"account_id": ar_account, "amount": "100"}],
+            **source,
         },
     )
     assert created.status_code == 422, created.text
@@ -132,6 +146,7 @@ async def test_contra_voucher_rejected(client: AsyncClient) -> None:
     await _enable_books(client, headers)
     cash_account = await _account_by_subtype(client, headers, "CASH")
     bank_account = await _account_by_subtype(client, headers, "BANK")
+    source = await _voucher_source(client, headers)
     created = await client.post(
         "/api/v1/vouchers",
         headers=headers,
@@ -141,6 +156,7 @@ async def test_contra_voucher_rejected(client: AsyncClient) -> None:
             "counter_account_id": bank_account,
             "total_amount": "250",
             "payment_method": "CASH",
+            **source,
         },
     )
     assert created.status_code == 422, created.text
@@ -216,6 +232,7 @@ async def test_journal_voucher_via_vouchers_endpoint(client: AsyncClient) -> Non
     await _enable_books(client, headers)
     cash_account = await _account_by_subtype(client, headers, "CASH")
     revenue = await _counter_account(client, headers)
+    source = await _voucher_source(client, headers)
     created = await client.post(
         "/api/v1/vouchers",
         headers=headers,
@@ -226,6 +243,7 @@ async def test_journal_voucher_via_vouchers_endpoint(client: AsyncClient) -> Non
                 {"account_id": cash_account, "debit": "80", "credit": "0"},
                 {"account_id": revenue, "debit": "0", "credit": "80"},
             ],
+            **source,
         },
     )
     assert created.status_code == 201, created.text
@@ -245,12 +263,40 @@ async def test_journal_voucher_via_vouchers_endpoint(client: AsyncClient) -> Non
 
 
 @pytest.mark.asyncio
+async def test_voucher_fiscal_period_override(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    cash_account = await _account_by_subtype(client, headers, "CASH")
+    revenue = await _counter_account(client, headers)
+    source = await _voucher_source(client, headers)
+    created = await client.post(
+        "/api/v1/vouchers",
+        headers=headers,
+        json={
+            "voucher_type": "JOURNAL",
+            "fiscal_period": 3,
+            "narration": "Period override",
+            "lines": [
+                {"account_id": cash_account, "debit": "10", "credit": "0"},
+                {"account_id": revenue, "debit": "0", "credit": "10"},
+            ],
+            **source,
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()["data"]
+    assert body["period"] == 3
+
+
+@pytest.mark.asyncio
 async def test_general_purchase_voucher_dr_cr_grid(client: AsyncClient) -> None:
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)
     await _enable_books(client, headers)
     expense = await _counter_account(client, headers)
     ap_account = await _account_by_subtype(client, headers, "ACCOUNTS_PAYABLE")
+    source = await _voucher_source(client, headers)
     created = await client.post(
         "/api/v1/vouchers",
         headers=headers,
@@ -262,6 +308,7 @@ async def test_general_purchase_voucher_dr_cr_grid(client: AsyncClient) -> None:
                 {"account_id": expense, "debit": "120", "credit": "0"},
                 {"account_id": ap_account, "debit": "0", "credit": "120"},
             ],
+            **source,
         },
     )
     assert created.status_code == 201, created.text
@@ -291,6 +338,7 @@ async def test_general_purchase_post_splits_vat_from_account_default_tax(
     assert patched.status_code == 200, patched.text
     ap_account = await _account_by_subtype(client, headers, "ACCOUNTS_PAYABLE")
     gross = Decimal("115")
+    source = await _voucher_source(client, headers)
     created = await client.post(
         "/api/v1/vouchers",
         headers=headers,
@@ -301,6 +349,7 @@ async def test_general_purchase_post_splits_vat_from_account_default_tax(
                 {"account_id": expense, "debit": str(gross), "credit": "0"},
                 {"account_id": ap_account, "debit": "0", "credit": str(gross)},
             ],
+            **source,
         },
     )
     assert created.status_code == 201, created.text
@@ -375,6 +424,8 @@ async def test_bank_receipt_future_cheque_creates_pdc_linkage(client: AsyncClien
                     "amount": str(total),
                 }
             ],
+            "source_document_type": "SALES_INVOICE",
+            "source_document_id": invoice["id"],
         },
     )
     assert created.status_code == 201, created.text

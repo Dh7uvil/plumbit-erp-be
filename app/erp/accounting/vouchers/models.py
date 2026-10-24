@@ -51,6 +51,7 @@ class Voucher(AuditUserMixin, SoftDeleteTenantModel):
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     is_posted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     voucher_date: Mapped[date] = mapped_column(Date, nullable=False)
+    fiscal_period: Mapped[int | None] = mapped_column(Integer, nullable=True)
     payment_account_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("accounts.id", ondelete="RESTRICT"),
@@ -87,15 +88,14 @@ class Voucher(AuditUserMixin, SoftDeleteTenantModel):
     cheque_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     cheque_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     external_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source_document_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_document_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True), nullable=True
+    )
     reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     branch_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("branches.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    cost_center_id: Mapped[UUID | None] = mapped_column(
-        PostgreSQLUUID(as_uuid=True),
-        ForeignKey("cost_centers.id", ondelete="SET NULL"),
         nullable=True,
     )
     narration: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -164,11 +164,6 @@ class VoucherLine(TenantModel):
     branch_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("branches.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    cost_center_id: Mapped[UUID | None] = mapped_column(
-        PostgreSQLUUID(as_uuid=True),
-        ForeignKey("cost_centers.id", ondelete="SET NULL"),
         nullable=True,
     )
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)

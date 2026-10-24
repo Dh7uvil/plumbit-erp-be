@@ -67,7 +67,7 @@ class CostSheetJournalLineInput(BaseModel):
     debit: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     credit: Decimal = Field(default=Decimal("0"), ge=0, max_digits=18, decimal_places=4)
     description: str | None = Field(default=None, max_length=500)
-    capitalize: bool = True
+    capitalize: bool = False
 
     @field_validator("description")
     @classmethod
@@ -90,9 +90,12 @@ class CostSheetChargeInput(BaseModel):
 class CostSheetCreate(BaseModel):
     sheet_type: CostSheetType
     sheet_mode: CostSheetMode = CostSheetMode.PLANNING
+    source_document_type: str | None = Field(default=None, max_length=40)
+    source_document_id: UUID | None = None
     purchase_invoice_id: UUID | None = None
     imp_reference: str | None = Field(default=None, max_length=80)
     document_date: date | None = None
+    fiscal_period: int | None = Field(default=None, ge=1, le=12)
     shipment_id: UUID | None = None
     purchase_order_id: UUID | None = None
     supplier_id: UUID | None = None
@@ -114,6 +117,8 @@ class CostSheetCreate(BaseModel):
         if self.sheet_mode == CostSheetMode.JOURNAL:
             if not self.journal_lines:
                 raise ValueError("Journal mode requires at least one journal line")
+            if not self.source_document_type or not self.source_document_id:
+                raise ValueError("Source document is required for journal cost sheets")
         elif not self.lines:
             raise ValueError("Planning mode requires at least one product line")
         return self
@@ -129,9 +134,12 @@ class CostSheetCreate(BaseModel):
 
 class CostSheetUpdate(BaseModel):
     sheet_mode: CostSheetMode | None = None
+    source_document_type: str | None = Field(default=None, max_length=40)
+    source_document_id: UUID | None = None
     purchase_invoice_id: UUID | None = None
     imp_reference: str | None = Field(default=None, max_length=80)
     document_date: date | None = None
+    fiscal_period: int | None = Field(default=None, ge=1, le=12)
     shipment_id: UUID | None = None
     purchase_order_id: UUID | None = None
     supplier_id: UUID | None = None
@@ -233,6 +241,10 @@ class CostSheetResponse(BaseModel):
     document_date: date
     purchase_invoice_id: UUID | None = None
     imp_reference: str | None = None
+    source_document_type: str | None = None
+    source_document_id: UUID | None = None
+    source_document_number: str | None = None
+    period: int | None = None
     purchase_invoice_number: str | None = None
     journal_entry_id: UUID | None = None
     reversal_journal_entry_id: UUID | None = None

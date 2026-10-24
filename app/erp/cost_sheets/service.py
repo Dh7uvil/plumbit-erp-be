@@ -440,11 +440,6 @@ class CostSheetService:
             if row.journal_entry_id is not None:
                 raise ValidationError("Cost sheet is already posted")
             self._assert_journal_balanced(row.journal_lines)
-            adjustment_id = await self._post_capitalize_charge_adjustment(
-                tenant_id, row, actor_user_id=actor_user_id
-            )
-            if adjustment_id is not None:
-                row.goods_receipt_charge_adjustment_id = adjustment_id
             journal_lines = await self._posting_journal_lines(tenant_id, row)
             journal = await self.posting.post_for_document(
                 tenant_id,
@@ -475,6 +470,17 @@ class CostSheetService:
                 entity_id=cost_sheet_id,
                 new_values={"journal_entry_id": str(journal.id)},
             )
+            if (
+                row.source_document_type == "PURCHASE_INVOICE"
+                and row.source_document_id is not None
+            ):
+                from app.erp.purchase_invoices.landed_cost import (
+                    refresh_purchase_invoice_landed_costs,
+                )
+
+                await refresh_purchase_invoice_landed_costs(
+                    self.session, tenant_id, row.source_document_id
+                )
             return await self._to_response(loaded)
 
     async def cancel_journal(
@@ -495,13 +501,11 @@ class CostSheetService:
                 raise ValidationError("Only journal-mode cost sheets support cancel")
             if row.journal_entry_id is None:
                 raise ValidationError("Cost sheet has no posted journal to cancel")
-            if row.goods_receipt_charge_adjustment_id is not None:
-                await self._reverse_capitalize_charge_adjustment(
-                    tenant_id,
-                    row,
-                    actor_user_id=actor_user_id,
-                )
-                row.goods_receipt_charge_adjustment_id = None
+            pi_id = (
+                row.source_document_id
+                if row.source_document_type == "PURCHASE_INVOICE"
+                else None
+            )
             reversal = await self.posting.reverse(
                 tenant_id,
                 row.journal_entry_id,
@@ -525,6 +529,12 @@ class CostSheetService:
                 entity_id=cost_sheet_id,
                 new_values={"reversal_journal_entry_id": str(reversal.id)},
             )
+            if pi_id is not None:
+                from app.erp.purchase_invoices.landed_cost import (
+                    refresh_purchase_invoice_landed_costs,
+                )
+
+                await refresh_purchase_invoice_landed_costs(self.session, tenant_id, pi_id)
             return await self._to_response(loaded)
 
     async def _transition(
@@ -566,6 +576,29 @@ class CostSheetService:
             )
             return await self._to_response(loaded)
 
+    async def _source_header_fields(
+        self,
+        tenant_id: UUID,
+        *,
+        document_type: str,
+        document_id: UUID,
+    ) -> dict[str, object]:
+        from app.common.document_source import legacy_fk_columns, require_source_document
+
+        normalized = document_type.strip().upper()
+        await require_source_document(
+            self.session,
+            tenant_id,
+            document_type=normalized,
+            document_id=document_id,
+        )
+        header: dict[str, object] = {
+            "source_document_type": normalized,
+            "source_document_id": document_id,
+        }
+        header.update(legacy_fk_columns(normalized, document_id))
+        return header
+
     async def _build_composed(
         self, tenant_id: UUID, payload: CostSheetCreate
     ) -> tuple[
@@ -590,29 +623,35 @@ class CostSheetService:
             rate = resolved.rate
         line_rows = self._line_rows(payload.lines)
         charge_rows = await self._charge_rows(tenant_id, payload.charges, payload.sheet_type)
-        return (
-            {
-                "document_date": document_date,
-                "shipment_id": payload.shipment_id,
-                "purchase_order_id": payload.purchase_order_id,
-                "supplier_id": payload.supplier_id,
-                "customer_id": payload.customer_id,
-                "proforma_invoice_id": payload.proforma_invoice_id,
-                "currency_id": currency_id,
-                "base_currency_id": base_currency_id,
-                "exchange_rate": rate,
-                "incoterm": payload.incoterm,
-                "port_of_loading": payload.port_of_loading,
-                "port_of_discharge": payload.port_of_discharge,
-                "allocation_method": payload.allocation_method.value,
-                "notes": payload.notes,
-                "sheet_mode": payload.sheet_mode.value,
-                "purchase_invoice_id": payload.purchase_invoice_id,
-                "imp_reference": payload.imp_reference,
-            },
-            line_rows,
-            charge_rows,
-        )
+        header: dict[str, object] = {
+            "document_date": document_date,
+            "fiscal_period": payload.fiscal_period,
+            "shipment_id": payload.shipment_id,
+            "purchase_order_id": payload.purchase_order_id,
+            "supplier_id": payload.supplier_id,
+            "customer_id": payload.customer_id,
+            "proforma_invoice_id": payload.proforma_invoice_id,
+            "currency_id": currency_id,
+            "base_currency_id": base_currency_id,
+            "exchange_rate": rate,
+            "incoterm": payload.incoterm,
+            "port_of_loading": payload.port_of_loading,
+            "port_of_discharge": payload.port_of_discharge,
+            "allocation_method": payload.allocation_method.value,
+            "notes": payload.notes,
+            "sheet_mode": payload.sheet_mode.value,
+            "purchase_invoice_id": payload.purchase_invoice_id,
+            "imp_reference": payload.imp_reference,
+        }
+        if payload.source_document_type and payload.source_document_id:
+            header.update(
+                await self._source_header_fields(
+                    tenant_id,
+                    document_type=payload.source_document_type,
+                    document_id=payload.source_document_id,
+                )
+            )
+        return header, line_rows, charge_rows
 
     async def _merge_update(
         self, tenant_id: UUID, row: CostSheet, payload: CostSheetUpdate
@@ -624,6 +663,7 @@ class CostSheetService:
         header: dict[str, object] = {}
         for field in (
             "document_date",
+            "fiscal_period",
             "shipment_id",
             "purchase_order_id",
             "supplier_id",
@@ -639,6 +679,14 @@ class CostSheetService:
             value = getattr(payload, field)
             if value is not None:
                 header[field] = value
+        if payload.source_document_type is not None and payload.source_document_id is not None:
+            header.update(
+                await self._source_header_fields(
+                    tenant_id,
+                    document_type=payload.source_document_type,
+                    document_id=payload.source_document_id,
+                )
+            )
         if payload.sheet_mode is not None:
             header["sheet_mode"] = payload.sheet_mode.value
         if payload.currency_id is not None:
@@ -1083,6 +1131,27 @@ class CostSheetService:
                 self.actor_permissions, COST_SHEET_UPDATE
             ):
                 actions.append("cancel_journal")
+        from app.erp.accounting.fiscal import FiscalYearConfig
+
+        fiscal = await FiscalYearConfig.load(self.session, row.tenant_id)
+        period = (
+            row.fiscal_period
+            if row.fiscal_period is not None
+            else fiscal.fiscal_period_for(row.document_date)
+        )
+        source_document_number = None
+        if row.source_document_type and row.source_document_id:
+            from app.common.document_source import require_source_document
+
+            try:
+                source_document_number = await require_source_document(
+                    self.session,
+                    row.tenant_id,
+                    document_type=row.source_document_type,
+                    document_id=row.source_document_id,
+                )
+            except ValidationError:
+                source_document_number = None
         purchase_invoice_number = None
         if row.purchase_invoice_id is not None:
             from app.erp.purchase_invoices.models import PurchaseInvoice
@@ -1123,6 +1192,10 @@ class CostSheetService:
             document_date=row.document_date,
             purchase_invoice_id=row.purchase_invoice_id,
             imp_reference=row.imp_reference,
+            source_document_type=row.source_document_type,
+            source_document_id=row.source_document_id,
+            source_document_number=source_document_number,
+            period=period,
             purchase_invoice_number=purchase_invoice_number,
             journal_entry_id=row.journal_entry_id,
             reversal_journal_entry_id=row.reversal_journal_entry_id,

@@ -23,7 +23,6 @@ REPORT_EXPORT_EVENT = "accounting.report.export"
 _ALLOWED = {
     "profit-and-loss",
     "balance-sheet",
-    "cost-center-profit-and-loss",
     "fx-exposure",
     "budget-vs-actual",
 }
@@ -131,11 +130,6 @@ class ReportExportService:
         elif row.report_key == "balance-sheet":
             data = await reports.balance_sheet(tenant_id, as_of=_date(params, "as_of"))
             attr = "lines"
-        elif row.report_key == "cost-center-profit-and-loss":
-            data = await reports.cost_center_profit_and_loss(
-                tenant_id, from_date=_date(params, "from"), to_date=_date(params, "to")
-            )
-            attr = "sections"
         elif row.report_key == "budget-vs-actual":
             budget_id = _uuid(params.get("budget_id"))
             if budget_id is None:

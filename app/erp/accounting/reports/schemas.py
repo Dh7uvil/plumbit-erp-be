@@ -481,21 +481,6 @@ class PdcRegisterResponse(ReportCurrencyMixin):
     lines: list[PdcRegisterLine] = Field(default_factory=list)
 
 
-class CostCenterProfitSection(BaseModel):
-    cost_center_id: UUID | None = None
-    cost_center_code: str
-    cost_center_name: str
-    total_income: Decimal
-    total_expense: Decimal
-    net_profit: Decimal
-    lines: list[ProfitAndLossLine] = Field(default_factory=list)
-
-
-class CostCenterProfitAndLossResponse(ReportCurrencyMixin):
-    from_date: date
-    to_date: date
-    sections: list[CostCenterProfitSection] = Field(default_factory=list)
-
 
 class ReportExportCreate(BaseModel):
     report: str = Field(min_length=1, max_length=60)

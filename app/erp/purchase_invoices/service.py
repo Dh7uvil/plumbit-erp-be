@@ -679,6 +679,9 @@ class PurchaseInvoiceService:
                 loaded = await self._require(tenant_id, invoice_id)
             product_ids = {line.product_id for line in loaded.lines if line.product_id}
             await self.products.sync_avg_cost_from_fifo(tenant_id, product_ids)
+            from app.erp.purchase_invoices.landed_cost import refresh_purchase_invoice_landed_costs
+
+            await refresh_purchase_invoice_landed_costs(self.session, tenant_id, invoice_id)
             response = self._to_response(loaded)
             await self.idempotency.store(
                 tenant_id, idempotency_key, response.model_dump(mode="json")

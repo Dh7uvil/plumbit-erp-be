@@ -49,11 +49,6 @@ class BudgetLine(TenantModel):
     )
     period_start: Mapped[date] = mapped_column(Date, nullable=False)
     amount: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
-    cost_center_id: Mapped[UUID | None] = mapped_column(
-        PostgreSQLUUID(as_uuid=True),
-        ForeignKey("cost_centers.id", ondelete="RESTRICT"),
-        nullable=True,
-    )
     branch_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("branches.id", ondelete="RESTRICT"),

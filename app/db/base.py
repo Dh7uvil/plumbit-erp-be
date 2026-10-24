@@ -59,7 +59,6 @@ import app.erp.accounting.bank_reconciliation.models as _bank_reconciliation  # 
 import app.erp.accounting.budgets.models as _budgets  # noqa: E402, F401
 import app.erp.accounting.charge_types.models as _charge_types  # noqa: E402, F401
 import app.erp.accounting.cheques.models as _cheques  # noqa: E402, F401
-import app.erp.accounting.cost_centers.models as _cost_centers  # noqa: E402, F401
 import app.erp.accounting.entry_books.models as _entry_books  # noqa: E402, F401
 import app.erp.accounting.financial_categories.models as _financial_categories  # noqa: E402, F401
 import app.erp.accounting.customer_payments.models as _customer_payments  # noqa: E402, F401

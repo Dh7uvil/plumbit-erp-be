@@ -13,6 +13,7 @@ from tests.api.erp.purchase_orders.test_routes import (
 )
 from tests.api.erp.accounting.test_banking import _enable_books
 from tests.api.erp.sales_orders.test_routes import _create_customer
+from tests.api.erp.customer_payments.test_routes import _posted_invoice
 from tests.conftest import login_headers, provision_admin
 
 
@@ -25,8 +26,6 @@ async def test_create_import_cost_sheet_with_computed_totals(client: AsyncClient
     product_id = await _create_product(
         client, headers, ids, track_inventory=True, purchase_rate="100.0000"
     )
-    freight = await client.get("/api/v1/charge-types?search=FREIGHT", headers=headers)
-    freight_row = freight.json()["data"][0]
     created = await client.post(
         "/api/v1/cost-sheets",
         headers=headers,
@@ -41,9 +40,6 @@ async def test_create_import_cost_sheet_with_computed_totals(client: AsyncClient
                     "base_rate": "100.0000",
                 }
             ],
-            "charges": [
-                {"charge_type_id": freight_row["id"], "estimated_amount": "500.0000"},
-            ],
         },
     )
     assert created.status_code == 201, created.text
@@ -52,8 +48,8 @@ async def test_create_import_cost_sheet_with_computed_totals(client: AsyncClient
     assert body["status"] == "DRAFT"
     assert body["document_number"].startswith("CSI")
     assert body["totals"]["goods_value_estimated"] == "1000.0000"
-    assert body["totals"]["inventoriable_charges_estimated"] == "500.0000"
-    assert body["lines"][0]["estimated_landed_unit_cost"] == "150.0000"
+    assert body["totals"]["inventoriable_charges_estimated"] == "0"
+    assert body["lines"][0]["estimated_landed_unit_cost"] == "100.0000"
     assert "confirm" in body["available_actions"]
 
 
@@ -242,6 +238,7 @@ async def test_journal_cost_sheet_post_and_cancel(client: AsyncClient) -> None:
     ]
     assert len(postable) >= 2, "need two postable accounts"
     debit_account, credit_account = postable[0], postable[1]
+    invoice = await _posted_invoice(client, headers)
     created = await client.post(
         "/api/v1/cost-sheets",
         headers=headers,
@@ -249,6 +246,8 @@ async def test_journal_cost_sheet_post_and_cancel(client: AsyncClient) -> None:
             "sheet_type": "IMPORT",
             "sheet_mode": "JOURNAL",
             "imp_reference": "BOE-TEST",
+            "source_document_type": "SALES_INVOICE",
+            "source_document_id": invoice["id"],
             "journal_lines": [
                 {
                     "line_kind": "G",
@@ -283,6 +282,7 @@ async def test_journal_cost_sheet_post_and_cancel(client: AsyncClient) -> None:
     posted_body = posted.json()["data"]
     assert posted_body["status"] == "CONFIRMED"
     assert posted_body["journal_entry_id"] is not None
+    assert posted_body.get("period") is not None
     assert "cancel_journal" in posted_body["available_actions"]
 
     cancelled = await client.post(

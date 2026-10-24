@@ -815,17 +815,9 @@ class GoodsReceiptService:
         movement_type = self._movement_type(row)
         received_this_doc: dict[UUID, Decimal] = {}
         inventory_value = _ZERO
-        allocated_by_line, charge_credits = await self._compute_charge_allocations(
-            tenant_id, row
-        )
-        stockable_lines: builtins.list[GoodsReceiptLine] = []
-        for line in row.lines:
-            stockable = await self._is_stockable(tenant_id, line.product_id)
-            if stockable and line.product_id is not None and line.quantity > _ZERO:
-                stockable_lines.append(line)
-        charge_per_unit_by_line = self._charge_per_unit_by_line(
-            stockable_lines, allocated_by_line
-        )
+        allocated_by_line: dict[UUID, Decimal] = {}
+        charge_credits: dict[UUID, Decimal] = {}
+        charge_per_unit_by_line: dict[UUID, Decimal] = {}
         for line in row.lines:
             await self._assert_supplier_sku_mapped(tenant_id, row.supplier_id, line)
             stockable = await self._is_stockable(tenant_id, line.product_id)
@@ -857,10 +849,8 @@ class GoodsReceiptService:
                 continue
             product = await self.products.require_active(tenant_id, line.product_id)
             unit_cost = quantize_money(line.rate * row.exchange_rate)
-            allocated_charge = allocated_by_line.get(line.id, _ZERO)
-            line.allocated_charge_amount = allocated_charge
-            charge_per_unit = charge_per_unit_by_line.get(line.id, _ZERO)
-            landed_unit_cost = quantize_money(unit_cost + charge_per_unit)
+            line.allocated_charge_amount = _ZERO
+            landed_unit_cost = unit_cost
             hold_delta = line.quantity if product.requires_qc else _ZERO
             if product.requires_qc:
                 needs_qc = True
@@ -1386,39 +1376,8 @@ class GoodsReceiptService:
         tenant_id: UUID,
         charges: Sequence[GoodsReceiptChargeInput],
     ) -> builtins.list[dict[str, Any]]:
-        if not charges:
-            return []
-        charge_type_ids = [item.charge_type_id for item in charges]
-        if len(set(charge_type_ids)) != len(charge_type_ids):
-            raise ValidationError("Duplicate charge types are not allowed on a goods receipt")
-        built: builtins.list[dict[str, Any]] = []
-        for index, charge in enumerate(charges, start=1):
-            charge_type = await self.charge_types.require_active(tenant_id, charge.charge_type_id)
-            if not charge_type.is_inventoriable:
-                raise ValidationError(
-                    f"Charge {charge_type.code} must be inventoriable for goods receipt charges"
-                )
-            applies = charge_type.applies_to
-            if applies == ChargeAppliesTo.EXPORT.value:
-                raise ValidationError(
-                    f"Charge {charge_type.code} does not apply to goods receipt import charges"
-                )
-            basis = charge_type.allocation_basis or ChargeAllocationMethod.VALUE.value
-            # Import charges are entered in base currency; do not apply the document FX rate.
-            charge_amount = quantize_money(charge.amount)
-            built.append(
-                {
-                    "line_number": index,
-                    "charge_type_id": charge.charge_type_id,
-                    "description": charge.description or charge_type.name,
-                    "amount": charge_amount,
-                    "base_amount": charge_amount,
-                    "allocation_basis": basis,
-                    "supplier_id": charge.supplier_id,
-                    "notes": charge.notes,
-                }
-            )
-        return built
+        _ = tenant_id, charges
+        return []
 
     async def _compute_charge_allocations(
         self,

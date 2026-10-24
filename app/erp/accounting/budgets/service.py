@@ -31,7 +31,6 @@ from app.erp.accounting.budgets.schemas import (
 )
 from app.auth.org_service import OrganizationService
 from app.core.enums import AccountType
-from app.erp.accounting.cost_centers.service import CostCenterService
 from app.erp.exchange_rates.service import CurrencyService
 
 _ZERO = Decimal("0")
@@ -61,7 +60,6 @@ class BudgetService:
         self.session = session
         self.repo = BudgetRepository(session)
         self.accounts = AccountService(session)
-        self.cost_centers = CostCenterService(session)
         self.currencies = CurrencyService(session)
         self.org = OrganizationService(session)
         self.audit = AuditWriter(session)
@@ -101,7 +99,6 @@ class BudgetService:
         *,
         from_date: date,
         to_date: date,
-        cost_center_id: UUID | None = None,
         branch_id: UUID | None = None,
     ) -> dict[UUID, Decimal]:
         row = await self._require(tenant_id, budget_id)
@@ -111,9 +108,6 @@ class BudgetService:
         for line in await self.repo.lines_for(tenant_id, budget_id):
             if line.period_start < month_start(from_date) or line.period_start > to_date:
                 continue
-            if cost_center_id is not None:
-                if line.cost_center_id is None or line.cost_center_id != cost_center_id:
-                    continue
             if branch_id is not None:
                 if line.branch_id is None or line.branch_id != branch_id:
                     continue
@@ -287,21 +281,19 @@ class BudgetService:
     async def _prepare_lines(
         self, tenant_id: UUID, lines: _List[BudgetLineInput]
     ) -> _List[dict[str, object]]:
-        seen: set[tuple[UUID, date, UUID | None, UUID | None]] = set()
+        seen: set[tuple[UUID, date, UUID | None]] = set()
         prepared: _List[dict[str, object]] = []
         for line in lines:
             if line.amount == _ZERO:
                 continue
             period = month_start(line.period_start)
-            key = (line.account_id, period, line.cost_center_id, line.branch_id)
+            key = (line.account_id, period, line.branch_id)
             if key in seen:
                 raise ValidationError(
                     "Duplicate budget line for the same account, period, and dimension"
                 )
             seen.add(key)
             await self.accounts.require_postable(tenant_id, line.account_id)
-            if line.cost_center_id is not None:
-                await self.cost_centers.require_id(tenant_id, line.cost_center_id)
             if line.branch_id is not None:
                 branches = await self.org.get_branches_by_ids(tenant_id, [line.branch_id])
                 if line.branch_id not in branches:
@@ -311,7 +303,6 @@ class BudgetService:
                     "account_id": line.account_id,
                     "period_start": period,
                     "amount": quantize_money(line.amount),
-                    "cost_center_id": line.cost_center_id,
                     "branch_id": line.branch_id,
                 }
             )

@@ -32,6 +32,8 @@ class VoucherFilter(BaseFilter):
     payment_method: PaymentMethod | None = None
     voucher_date_from: date | None = None
     voucher_date_to: date | None = None
+    source_document_type: str | None = None
+    source_document_id: UUID | None = None
 
     @model_validator(mode="after")
     def validate_date_range(self) -> "VoucherFilter":
@@ -53,7 +55,6 @@ class VoucherLineInput(BaseModel):
     party_id: UUID | None = None
     tax_id: UUID | None = None
     branch_id: UUID | None = None
-    cost_center_id: UUID | None = None
     description: str | None = Field(default=None, max_length=255)
 
     @field_validator("description")
@@ -92,7 +93,6 @@ class VoucherLineResponse(BaseModel):
     party_id: UUID | None
     tax_id: UUID | None
     branch_id: UUID | None
-    cost_center_id: UUID | None
     description: str | None
 
 
@@ -116,6 +116,7 @@ _JOURNAL_LIKE_VOUCHER_TYPES = frozenset(
 class VoucherCreate(BaseModel):
     voucher_type: VoucherType
     voucher_date: date | None = None
+    fiscal_period: int | None = Field(default=None, ge=1, le=12)
     payment_account_id: UUID | None = None
     counter_account_id: UUID | None = None
     total_amount: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=4)
@@ -126,9 +127,10 @@ class VoucherCreate(BaseModel):
     cheque_number: str | None = Field(default=None, max_length=50)
     cheque_date: date | None = None
     external_reference: str | None = Field(default=None, max_length=100)
+    source_document_type: str = Field(min_length=1, max_length=40)
+    source_document_id: UUID
     reference: str | None = Field(default=None, max_length=100)
     branch_id: UUID | None = None
-    cost_center_id: UUID | None = None
     narration: str | None = None
     lines: list[VoucherLineInput] = Field(default_factory=list)
     allocations: list[PaymentAllocationInput] = Field(default_factory=list)
@@ -168,7 +170,10 @@ class VoucherCreate(BaseModel):
 
 
 class VoucherUpdate(BaseModel):
+    source_document_type: str | None = Field(default=None, max_length=40)
+    source_document_id: UUID | None = None
     voucher_date: date | None = None
+    fiscal_period: int | None = Field(default=None, ge=1, le=12)
     payment_account_id: UUID | None = None
     counter_account_id: UUID | None = None
     total_amount: Decimal | None = Field(default=None, gt=0, max_digits=18, decimal_places=4)
@@ -181,7 +186,6 @@ class VoucherUpdate(BaseModel):
     external_reference: str | None = Field(default=None, max_length=100)
     reference: str | None = Field(default=None, max_length=100)
     branch_id: UUID | None = None
-    cost_center_id: UUID | None = None
     narration: str | None = None
     lines: list[VoucherLineInput] | None = None
     allocations: list[PaymentAllocationInput] | None = None
@@ -224,9 +228,11 @@ class VoucherResponse(BaseModel):
     cheque_number: str | None = None
     cheque_date: date | None = None
     external_reference: str | None = None
+    source_document_type: str | None = None
+    source_document_id: UUID | None = None
+    source_document_number: str | None = None
     reference: str | None
     branch_id: UUID | None
-    cost_center_id: UUID | None
     narration: str | None
     journal_entry_id: UUID | None
     reversal_journal_entry_id: UUID | None

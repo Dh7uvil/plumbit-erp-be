@@ -93,12 +93,6 @@ class JournalEntry(AuditUserMixin, SoftDeleteTenantModel):
         nullable=True,
         index=True,
     )
-    cost_center_id: Mapped[UUID | None] = mapped_column(
-        PostgreSQLUUID(as_uuid=True),
-        ForeignKey("cost_centers.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
     narration: Mapped[str | None] = mapped_column(Text, nullable=True)
     reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     external_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -190,11 +184,6 @@ class JournalEntryLine(TenantModel):
     branch_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         ForeignKey("branches.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    cost_center_id: Mapped[UUID | None] = mapped_column(
-        PostgreSQLUUID(as_uuid=True),
-        ForeignKey("cost_centers.id", ondelete="SET NULL"),
         nullable=True,
     )
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)

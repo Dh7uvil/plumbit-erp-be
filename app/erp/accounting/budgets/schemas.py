@@ -24,7 +24,6 @@ class BudgetLineInput(BaseModel):
     account_id: UUID
     period_start: date
     amount: Decimal = Field(ge=0, max_digits=18, decimal_places=4)
-    cost_center_id: UUID | None = None
     branch_id: UUID | None = None
 
 
@@ -35,7 +34,6 @@ class BudgetLineResponse(BaseModel):
     account_id: UUID
     period_start: date
     amount: Decimal
-    cost_center_id: UUID | None
     branch_id: UUID | None
 
 
@@ -89,7 +87,6 @@ class BudgetVsActualLine(BaseModel):
     account_name: str
     account_type: str
     period_start: date
-    cost_center_id: UUID | None = None
     branch_id: UUID | None = None
     budget_amount: Decimal
     actual_amount: Decimal

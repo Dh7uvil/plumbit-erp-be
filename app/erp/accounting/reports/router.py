@@ -39,7 +39,6 @@ from app.erp.accounting.reports.schemas import (
     AgingResponse,
     BalanceSheetResponse,
     CashFlowResponse,
-    CostCenterProfitAndLossResponse,
     DashboardResponse,
     DayBookResponse,
     ExportEvidenceExceptionResponse,
@@ -110,7 +109,6 @@ async def get_trial_balance(
     from_date: Annotated[date, Query(alias="from")],
     to_date: Annotated[date, Query(alias="to")],
     branch_id: UUID | None = None,
-    cost_center_id: UUID | None = None,
     include_zero: bool = False,
 ) -> ApiResponse[TrialBalanceResponse]:
     return ApiResponse(
@@ -119,7 +117,6 @@ async def get_trial_balance(
             from_date=from_date,
             to_date=to_date,
             branch_id=branch_id,
-            cost_center_id=cost_center_id,
             include_zero=include_zero,
         )
     )
@@ -135,7 +132,6 @@ async def get_general_ledger(
     to_date: Annotated[date, Query(alias="to")],
     party_id: UUID | None = None,
     branch_id: UUID | None = None,
-    cost_center_id: UUID | None = None,
     source_type: str | None = None,
     side: str | None = None,
     page: int = Query(default=1, ge=1),
@@ -149,7 +145,6 @@ async def get_general_ledger(
             to_date=to_date,
             party_id=party_id,
             branch_id=branch_id,
-            cost_center_id=cost_center_id,
             source_type=source_type,
             side=side,
             page=page,
@@ -168,7 +163,6 @@ async def get_cash_book(
     to_date: Annotated[date, Query(alias="to")],
     account_id: UUID | None = None,
     branch_id: UUID | None = None,
-    cost_center_id: UUID | None = None,
     source_type: str | None = None,
     side: str | None = None,
     export_format: FormatQuery = None,
@@ -179,7 +173,6 @@ async def get_cash_book(
         to_date=to_date,
         account_id=account_id,
         branch_id=branch_id,
-        cost_center_id=cost_center_id,
         source_type=source_type,
         side=side,
     )
@@ -197,7 +190,6 @@ async def get_day_book(
     account_id: UUID | None = None,
     party_id: UUID | None = None,
     branch_id: UUID | None = None,
-    cost_center_id: UUID | None = None,
     source_type: str | None = None,
     voucher_type: str | None = None,
     side: str | None = None,
@@ -210,7 +202,6 @@ async def get_day_book(
         account_id=account_id,
         party_id=party_id,
         branch_id=branch_id,
-        cost_center_id=cost_center_id,
         source_type=source_type,
         voucher_type=voucher_type,
         side=side,
@@ -228,7 +219,6 @@ async def get_bank_book(
     to_date: Annotated[date, Query(alias="to")],
     account_id: UUID | None = None,
     branch_id: UUID | None = None,
-    cost_center_id: UUID | None = None,
     source_type: str | None = None,
     side: str | None = None,
     export_format: FormatQuery = None,
@@ -239,7 +229,6 @@ async def get_bank_book(
         to_date=to_date,
         account_id=account_id,
         branch_id=branch_id,
-        cost_center_id=cost_center_id,
         source_type=source_type,
         side=side,
     )
@@ -545,7 +534,6 @@ async def get_profit_and_loss(
     from_date: Annotated[date, Query(alias="from")],
     to_date: Annotated[date, Query(alias="to")],
     branch_id: UUID | None = None,
-    cost_center_id: UUID | None = None,
     include_ytd: bool = False,
     period_count: int = Query(default=1, ge=1, le=12),
     budget_id: UUID | None = None,
@@ -556,39 +544,11 @@ async def get_profit_and_loss(
         from_date=from_date,
         to_date=to_date,
         branch_id=branch_id,
-        cost_center_id=cost_center_id,
         include_ytd=include_ytd,
         period_count=period_count,
         budget_id=budget_id,
     )
     return _maybe_csv(request, export_format, data, user, filename="profit-and-loss.csv")
-
-
-@router.get(
-    "/cost-center-profit-and-loss",
-    response_model=ApiResponse[CostCenterProfitAndLossResponse],
-)
-async def get_cost_center_profit_and_loss(
-    request: Request,
-    tenant: TenantContextDependency,
-    service: ReportServiceDependency,
-    user: Annotated[CurrentUser, Depends(require_permission(REPORT_FINANCIAL))],
-    from_date: Annotated[date, Query(alias="from")],
-    to_date: Annotated[date, Query(alias="to")],
-    branch_id: UUID | None = None,
-    export_format: FormatQuery = None,
-) -> Any:
-    data = await service.cost_center_profit_and_loss(
-        tenant.tenant_id, from_date=from_date, to_date=to_date, branch_id=branch_id
-    )
-    return _maybe_csv(
-        request,
-        export_format,
-        data,
-        user,
-        filename="cost-center-profit-and-loss.csv",
-        line_attr="sections",
-    )
 
 
 @router.get("/balance-sheet", response_model=ApiResponse[BalanceSheetResponse])
@@ -599,11 +559,10 @@ async def get_balance_sheet(
     user: Annotated[CurrentUser, Depends(require_permission(REPORT_FINANCIAL))],
     as_of: date,
     branch_id: UUID | None = None,
-    cost_center_id: UUID | None = None,
     export_format: FormatQuery = None,
 ) -> Any:
     data = await service.balance_sheet(
-        tenant.tenant_id, as_of=as_of, branch_id=branch_id, cost_center_id=cost_center_id
+        tenant.tenant_id, as_of=as_of, branch_id=branch_id
     )
     return _maybe_csv(request, export_format, data, user, filename="balance-sheet.csv")
 

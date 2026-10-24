@@ -168,21 +168,19 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         from_date: date,
         to_date: date,
         branch_id: UUID | None = None,
-        cost_center_id: UUID | None = None,
         include_zero: bool = False,
     ) -> TrialBalanceResponse:
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
         accounts = await self.accounts.repo.list_all(tenant_id)
         opening_map = await self._sum_by_account(
-            tenant_id, before=from_date, branch_id=branch_id, cost_center_id=cost_center_id
+            tenant_id, before=from_date, branch_id=branch_id
         )
         period_map = await self._sum_by_account(
             tenant_id,
             start=from_date,
             end=to_date,
             branch_id=branch_id,
-            cost_center_id=cost_center_id,
         )
         lines: list[TrialBalanceLine] = []
         tot_od = tot_oc = tot_pd = tot_pc = tot_cd = tot_cc = tot_nd = tot_nc = _ZERO
@@ -256,7 +254,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         to_date: date,
         party_id: UUID | None = None,
         branch_id: UUID | None = None,
-        cost_center_id: UUID | None = None,
         source_type: str | None = None,
         side: str | None = None,
         page: int = 1,
@@ -271,7 +268,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             account_id=account_id,
             party_id=party_id,
             branch_id=branch_id,
-            cost_center_id=cost_center_id,
         )
         opening_d, opening_c = opening_map.get(account_id, (_ZERO, _ZERO))
         running = self._signed(account.account_type, opening_d, opening_c)
@@ -291,11 +287,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         if branch_id is not None:
             statement = statement.where(
                 (JournalEntryLine.branch_id == branch_id) | (JournalEntry.branch_id == branch_id)
-            )
-        if cost_center_id is not None:
-            statement = statement.where(
-                (JournalEntryLine.cost_center_id == cost_center_id)
-                | (JournalEntry.cost_center_id == cost_center_id)
             )
         if source_type:
             statement = statement.where(JournalEntry.source_type == source_type)
@@ -356,7 +347,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         to_date: date,
         account_id: UUID | None = None,
         branch_id: UUID | None = None,
-        cost_center_id: UUID | None = None,
         source_type: str | None = None,
         side: str | None = None,
     ) -> DayBookResponse:
@@ -368,7 +358,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             to_date=to_date,
             account_id=account_id,
             branch_id=branch_id,
-            cost_center_id=cost_center_id,
             source_type=source_type,
             side=side,
         )
@@ -381,7 +370,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         to_date: date,
         account_id: UUID | None = None,
         branch_id: UUID | None = None,
-        cost_center_id: UUID | None = None,
         source_type: str | None = None,
         side: str | None = None,
     ) -> DayBookResponse:
@@ -393,7 +381,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             to_date=to_date,
             account_id=account_id,
             branch_id=branch_id,
-            cost_center_id=cost_center_id,
             source_type=source_type,
             side=side,
         )
@@ -407,7 +394,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         account_id: UUID | None = None,
         party_id: UUID | None = None,
         branch_id: UUID | None = None,
-        cost_center_id: UUID | None = None,
         source_type: str | None = None,
         voucher_type: str | None = None,
         side: str | None = None,
@@ -430,7 +416,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             to_date=to_date,
             account_id=account_id,
             branch_id=branch_id,
-            cost_center_id=cost_center_id,
             source_type=resolved_source,
             side=side,
             party_id=party_id,
@@ -446,7 +431,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         to_date: date,
         account_id: UUID | None,
         branch_id: UUID | None,
-        cost_center_id: UUID | None,
         source_type: str | None,
         side: str | None,
         party_id: UUID | None = None,
@@ -493,7 +477,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 before=from_date,
                 account_id=account.id,
                 branch_id=branch_id,
-                cost_center_id=cost_center_id,
             )
             opening_d, opening_c = opening_map.get(account.id, (_ZERO, _ZERO))
             opening_signed = self._signed(account.account_type, opening_d, opening_c)
@@ -503,7 +486,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 from_date=from_date,
                 to_date=to_date,
                 branch_id=branch_id,
-                cost_center_id=cost_center_id,
                 source_type=source_type,
                 side=side,
                 party_id=party_id,
@@ -558,7 +540,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         from_date: date,
         to_date: date,
         branch_id: UUID | None,
-        cost_center_id: UUID | None,
         source_type: str | None,
         side: str | None,
         party_id: UUID | None = None,
@@ -580,11 +561,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         if branch_id is not None:
             statement = statement.where(
                 (JournalEntryLine.branch_id == branch_id) | (JournalEntry.branch_id == branch_id)
-            )
-        if cost_center_id is not None:
-            statement = statement.where(
-                (JournalEntryLine.cost_center_id == cost_center_id)
-                | (JournalEntry.cost_center_id == cost_center_id)
             )
         if source_type:
             statement = statement.where(JournalEntry.source_type == source_type)
@@ -1393,7 +1369,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         account_id: UUID | None = None,
         party_id: UUID | None = None,
         branch_id: UUID | None = None,
-        cost_center_id: UUID | None = None,
         exclude_source_types: Sequence[str] | None = None,
     ) -> dict[UUID, tuple[Decimal, Decimal]]:
         statement = (
@@ -1420,11 +1395,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             statement = statement.where(
                 (JournalEntryLine.branch_id == branch_id) | (JournalEntry.branch_id == branch_id)
             )
-        if cost_center_id is not None:
-            statement = statement.where(
-                (JournalEntryLine.cost_center_id == cost_center_id)
-                | (JournalEntry.cost_center_id == cost_center_id)
-            )
         if exclude_source_types:
             statement = statement.where(JournalEntry.source_type.notin_(exclude_source_types))
         result: dict[UUID, tuple[Decimal, Decimal]] = {}
@@ -1435,42 +1405,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             )
         return result
 
-    async def _sum_by_account_and_cost_center(
-        self,
-        tenant_id: UUID,
-        *,
-        start: date,
-        end: date,
-        branch_id: UUID | None = None,
-    ) -> dict[tuple[UUID | None, UUID], tuple[Decimal, Decimal]]:
-        center = func.coalesce(JournalEntryLine.cost_center_id, JournalEntry.cost_center_id)
-        statement = (
-            select(
-                center,
-                JournalEntryLine.account_id,
-                func.coalesce(func.sum(JournalEntryLine.debit_base), 0),
-                func.coalesce(func.sum(JournalEntryLine.credit_base), 0),
-            )
-            .join(JournalEntry, _posted_join())
-            .where(
-                JournalEntryLine.tenant_id == tenant_id,
-                JournalEntry.entry_date >= start,
-                JournalEntry.entry_date <= end,
-            )
-            .group_by(center, JournalEntryLine.account_id)
-        )
-        if branch_id is not None:
-            statement = statement.where(
-                (JournalEntryLine.branch_id == branch_id) | (JournalEntry.branch_id == branch_id)
-            )
-        rows = (await self.session.execute(statement)).all()
-        result: dict[tuple[UUID | None, UUID], tuple[Decimal, Decimal]] = {}
-        for center_id, account_id_row, debit, credit in rows:
-            result[(center_id, account_id_row)] = (
-                quantize_money(Decimal(debit)),
-                quantize_money(Decimal(credit)),
-            )
-        return result
 
     async def budget_vs_actual(
         self,
@@ -1494,7 +1428,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         budget = await BudgetService(self.session).get(tenant_id, budget_id)
         accounts = {account.id: account for account in await self.accounts.repo.list_all(tenant_id)}
         actual_cache: dict[
-            tuple[date, date, UUID | None, UUID | None], dict[UUID, tuple[Decimal, Decimal]]
+            tuple[date, date, UUID | None], dict[UUID, tuple[Decimal, Decimal]]
         ] = {}
         lines: list[BudgetVsActualLine] = []
         for line in budget.lines:
@@ -1504,7 +1438,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             if account is None:
                 continue
             end = min(month_end(line.period_start), to_date)
-            cache_key = (line.period_start, end, line.cost_center_id, line.branch_id)
+            cache_key = (line.period_start, end, line.branch_id)
             actual_map = actual_cache.get(cache_key)
             if actual_map is None:
                 actual_map = await self._sum_by_account(
@@ -1512,7 +1446,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                     start=line.period_start,
                     end=end,
                     branch_id=line.branch_id,
-                    cost_center_id=line.cost_center_id,
                 )
                 actual_cache[cache_key] = actual_map
             actual = self._signed(
@@ -1525,7 +1458,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                     account_name=account.name,
                     account_type=account.account_type,
                     period_start=line.period_start,
-                    cost_center_id=line.cost_center_id,
                     branch_id=line.branch_id,
                     budget_amount=line.amount,
                     actual_amount=actual,

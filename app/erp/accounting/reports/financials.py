@@ -17,8 +17,6 @@ from app.erp.accounting.reports.schemas import (
     BalanceSheetResponse,
     CashFlowLine,
     CashFlowResponse,
-    CostCenterProfitAndLossResponse,
-    CostCenterProfitSection,
     PeriodAmount,
     ProfitAndLossLine,
     ProfitAndLossResponse,
@@ -41,7 +39,6 @@ class FinancialReports:
         from_date: date,
         to_date: date,
         branch_id: UUID | None = None,
-        cost_center_id: UUID | None = None,
         include_ytd: bool = False,
         period_count: int = 1,
         budget_id: UUID | None = None,
@@ -60,7 +57,6 @@ class FinancialReports:
             start=from_date,
             end=to_date,
             branch_id=branch_id,
-            cost_center_id=cost_center_id,
             exclude_source_types=_PL_EXCLUDE_SOURCES,
         )
         comparative_map = await self._sum_by_account(
@@ -68,7 +64,6 @@ class FinancialReports:
             start=comparative_from,
             end=comparative_to,
             branch_id=branch_id,
-            cost_center_id=cost_center_id,
             exclude_source_types=_PL_EXCLUDE_SOURCES,
         )
         ytd_map = (
@@ -77,7 +72,6 @@ class FinancialReports:
                 start=ytd_from,
                 end=to_date,
                 branch_id=branch_id,
-                cost_center_id=cost_center_id,
                 exclude_source_types=_PL_EXCLUDE_SOURCES,
             )
             if ytd_from is not None
@@ -96,7 +90,6 @@ class FinancialReports:
                         start=start,
                         end=end,
                         branch_id=branch_id,
-                        cost_center_id=cost_center_id,
                         exclude_source_types=_PL_EXCLUDE_SOURCES,
                     ),
                 )
@@ -110,7 +103,6 @@ class FinancialReports:
                 budget_id,
                 from_date=from_date,
                 to_date=to_date,
-                cost_center_id=cost_center_id,
                 branch_id=branch_id,
             )
         accounts = await self.accounts.repo.list_all(tenant_id)
@@ -233,11 +225,10 @@ class FinancialReports:
         *,
         as_of: date,
         branch_id: UUID | None = None,
-        cost_center_id: UUID | None = None,
         include_comparative: bool = True,
     ) -> BalanceSheetResponse:
         current = await self._balance_sheet_at(
-            tenant_id, as_of=as_of, branch_id=branch_id, cost_center_id=cost_center_id
+            tenant_id, as_of=as_of, branch_id=branch_id
         )
         comparative_as_of: date | None = None
         prior: BalanceSheetResponse | None = None
@@ -250,7 +241,6 @@ class FinancialReports:
                 tenant_id,
                 as_of=comparative_as_of,
                 branch_id=branch_id,
-                cost_center_id=cost_center_id,
             )
             prior_by_id = {line.account_id: line.amount for line in prior.lines}
             for line in current.lines:
@@ -268,11 +258,10 @@ class FinancialReports:
         *,
         as_of: date,
         branch_id: UUID | None = None,
-        cost_center_id: UUID | None = None,
     ) -> BalanceSheetResponse:
         accounts = await self.accounts.repo.list_all(tenant_id)
         closing = await self._sum_by_account(
-            tenant_id, end=as_of, branch_id=branch_id, cost_center_id=cost_center_id
+            tenant_id, end=as_of, branch_id=branch_id
         )
         pl_start = await self._open_pl_start(tenant_id, as_of=as_of)
         open_pl_map = (
@@ -281,7 +270,6 @@ class FinancialReports:
                 start=pl_start,
                 end=as_of,
                 branch_id=branch_id,
-                cost_center_id=cost_center_id,
             )
             if pl_start is not None
             else closing
@@ -533,110 +521,6 @@ class FinancialReports:
             net_change=net_change,
             comparative_net_change=comparative_net_change,
             lines=lines,
-        )
-
-    async def cost_center_profit_and_loss(
-        self,
-        tenant_id: UUID,
-        *,
-        from_date: date,
-        to_date: date,
-        branch_id: UUID | None = None,
-    ) -> CostCenterProfitAndLossResponse:
-        if from_date > to_date:
-            raise ValidationError("from_date must be on or before to_date")
-        from sqlalchemy import select
-
-        from app.erp.accounting.cost_centers.models import CostCenter
-
-        grouped = await self._sum_by_account_and_cost_center(
-            tenant_id, start=from_date, end=to_date, branch_id=branch_id
-        )
-        center_rows = list(
-            (
-                await self.session.execute(
-                    select(CostCenter).where(
-                        CostCenter.tenant_id == tenant_id,
-                        CostCenter.deleted_at.is_(None),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        names = {row.id: row for row in center_rows}
-        accounts = {
-            account.id: account
-            for account in await self.accounts.repo.list_all(tenant_id)
-            if not account.is_group and account.account_type in _PL_TYPES
-        }
-        by_center: dict[UUID | None, list[ProfitAndLossLine]] = {}
-        for (center_id, account_id), (debit, credit) in grouped.items():
-            account = accounts.get(account_id)
-            if account is None:
-                continue
-            amount = self._signed(account.account_type, debit, credit)
-            if amount == _ZERO:
-                continue
-            if account.account_type == AccountType.INCOME.value:
-                group_label = "Income"
-            elif account.account_subtype == AccountSubtype.COGS.value:
-                group_label = "Cost of goods sold"
-            else:
-                group_label = "Operating expenses"
-            by_center.setdefault(center_id, []).append(
-                ProfitAndLossLine(
-                    account_id=account.id,
-                    account_code=account.code,
-                    account_name=account.name,
-                    account_type=account.account_type,
-                    account_subtype=account.account_subtype,
-                    amount=amount,
-                    group_label=group_label,
-                    source_type="account",
-                    source_id=account.id,
-                )
-            )
-        sections: list[CostCenterProfitSection] = []
-        ordered = sorted(by_center.items(), key=lambda item: (item[0] is None, str(item[0] or "")))
-        for center_id, section_lines in ordered:
-            center = names.get(center_id) if center_id is not None else None
-            income = quantize_money(
-                sum(
-                    (
-                        line.amount
-                        for line in section_lines
-                        if line.account_type == AccountType.INCOME.value
-                    ),
-                    _ZERO,
-                )
-            )
-            expense = quantize_money(
-                sum(
-                    (
-                        line.amount
-                        for line in section_lines
-                        if line.account_type == AccountType.EXPENSE.value
-                    ),
-                    _ZERO,
-                )
-            )
-            sections.append(
-                CostCenterProfitSection(
-                    cost_center_id=center_id,
-                    cost_center_code=center.code if center is not None else "UNASSIGNED",
-                    cost_center_name=center.name if center is not None else "Unassigned",
-                    total_income=income,
-                    total_expense=expense,
-                    net_profit=quantize_money(income - expense),
-                    lines=section_lines,
-                )
-            )
-        return CostCenterProfitAndLossResponse(
-            currency_code=await self._report_currency_code(tenant_id),
-            from_date=from_date,
-            to_date=to_date,
-            sections=sections,
         )
 
     async def ratio_analysis(

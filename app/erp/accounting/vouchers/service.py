@@ -352,6 +352,7 @@ class VoucherService:
             old_values = await self._snapshot(tenant_id, row)
             merged = self._merged_update(row, payload)
             values = await self._draft_values(tenant_id, merged)
+            values.update(await self._resolve_source_document(tenant_id, payload))
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(
                 cast(date, values["voucher_date"]), can_override=self._can_override
@@ -526,6 +527,17 @@ class VoucherService:
                 payload={"voucher_id": str(voucher_id)},
                 dedupe_key=f"voucher-posted:{voucher_id}",
             )
+            if (
+                loaded.source_document_type == "PURCHASE_INVOICE"
+                and loaded.source_document_id is not None
+            ):
+                from app.erp.purchase_invoices.landed_cost import (
+                    refresh_purchase_invoice_landed_costs,
+                )
+
+                await refresh_purchase_invoice_landed_costs(
+                    self.session, tenant_id, loaded.source_document_id
+                )
             response = await self._to_response(tenant_id, loaded)
             await self.idempotency.store(
                 tenant_id, idempotency_key, response.model_dump(mode="json")
@@ -585,10 +597,20 @@ class VoucherService:
                 tenant_id,
                 event_type="accounting.voucher.cancelled",
                 aggregate_type="voucher",
-                aggregate_id=voucher_id,
                 payload={"voucher_id": str(voucher_id)},
                 dedupe_key=f"voucher-cancelled:{voucher_id}",
             )
+            if (
+                loaded.source_document_type == "PURCHASE_INVOICE"
+                and loaded.source_document_id is not None
+            ):
+                from app.erp.purchase_invoices.landed_cost import (
+                    refresh_purchase_invoice_landed_costs,
+                )
+
+                await refresh_purchase_invoice_landed_costs(
+                    self.session, tenant_id, loaded.source_document_id
+                )
             response = await self._to_response(tenant_id, loaded)
             await self.idempotency.store(
                 tenant_id, idempotency_key, response.model_dump(mode="json")
@@ -628,23 +650,50 @@ class VoucherService:
             updated_at=row.updated_at,
         )
 
+    async def _resolve_source_document(
+        self,
+        tenant_id: UUID,
+        payload: VoucherCreate | VoucherUpdate | Voucher,
+    ) -> dict[str, object]:
+        if isinstance(payload, Voucher):
+            return {
+                "source_document_type": payload.source_document_type,
+                "source_document_id": payload.source_document_id,
+            }
+        doc_type = getattr(payload, "source_document_type", None)
+        doc_id = getattr(payload, "source_document_id", None)
+        if isinstance(payload, VoucherUpdate):
+            if doc_type is None and doc_id is None:
+                return {}
+            if doc_type is None or doc_id is None:
+                raise ValidationError("Both source document type and id are required")
+        elif doc_type is None or doc_id is None:
+            raise ValidationError("Source document is required")
+        from app.common.document_source import require_source_document
+
+        normalized = doc_type.strip().upper()
+        await require_source_document(
+            self.session,
+            tenant_id,
+            document_type=normalized,
+            document_id=doc_id,
+        )
+        return {
+            "source_document_type": normalized,
+            "source_document_id": doc_id,
+        }
+
     async def _persist_create(
         self, tenant_id: UUID, payload: VoucherCreate, *, actor_user_id: UUID
     ) -> VoucherResponse:
         await self._validate_payload(tenant_id, payload)
         values = await self._draft_values(tenant_id, payload)
+        values.update(await self._resolve_source_document(tenant_id, payload))
         policy = await self._ensure_policy(tenant_id)
         policy.assert_open(
             cast(date, values["voucher_date"]), can_override=self._can_override
         )
         doc_type, series, _, _ = _VOUCHER_META[payload.voucher_type]
-        from app.erp.accounting.entry_books.service import EntryBookService
-
-        entry_prefix = await EntryBookService(self.session).resolve_series_prefix(
-            tenant_id, payload.voucher_type
-        )
-        if entry_prefix:
-            series = entry_prefix
         document_number = await self.sequences.allocate(
             tenant_id,
             document_type=doc_type,
@@ -697,8 +746,10 @@ class VoucherService:
                 "external_reference": payload.external_reference,
                 "reference": payload.reference,
                 "branch_id": payload.branch_id,
-                "cost_center_id": payload.cost_center_id,
                 "narration": payload.narration,
+                "source_document_type": payload.source_document_type,
+                "source_document_id": payload.source_document_id,
+                "fiscal_period": payload.fiscal_period,
             }
         voucher_type = payload.voucher_type if isinstance(payload, VoucherCreate) else None
         if voucher_type is None:
@@ -769,8 +820,8 @@ class VoucherService:
             "external_reference": payload.external_reference,
             "reference": payload.reference,
             "branch_id": payload.branch_id,
-            "cost_center_id": payload.cost_center_id,
             "narration": payload.narration,
+            "fiscal_period": getattr(payload, "fiscal_period", None),
         }
 
     async def _line_rows(
@@ -790,7 +841,6 @@ class VoucherService:
                     party_id=line.party_id,
                     tax_id=line.tax_id,
                     branch_id=line.branch_id,
-                    cost_center_id=line.cost_center_id,
                     description=line.description,
                 )
                 for line in payload.lines
@@ -857,7 +907,6 @@ class VoucherService:
                     "party_id": resolved_id,
                     "tax_id": tax_id,
                     "branch_id": line.branch_id,
-                    "cost_center_id": line.cost_center_id,
                     "description": line.description,
                 }
             )
@@ -920,7 +969,6 @@ class VoucherService:
             external_reference=row.external_reference,
             reference=row.reference,
             branch_id=row.branch_id,
-            cost_center_id=row.cost_center_id,
             narration=row.narration,
             lines=[
                 VoucherLineInput(
@@ -932,7 +980,6 @@ class VoucherService:
                     party_id=line.party_id,
                     tax_id=line.tax_id,
                     branch_id=line.branch_id,
-                    cost_center_id=line.cost_center_id,
                     description=line.description,
                 )
                 for line in row.lines
@@ -1023,7 +1070,6 @@ class VoucherService:
                     exchange_rate=line.exchange_rate,
                     tax_id=line.tax_id,
                     branch_id=line.branch_id,
-                    cost_center_id=line.cost_center_id,
                     description=line.description or f"Input VAT {row.document_number}",
                 )
             )
@@ -1047,7 +1093,6 @@ class VoucherService:
                         party_id=line.party_id,
                         tax_id=line.tax_id,
                         branch_id=line.branch_id or row.branch_id,
-                        cost_center_id=line.cost_center_id or row.cost_center_id,
                         description=line.description,
                     )
                 )
@@ -1150,7 +1195,6 @@ class VoucherService:
                         party_id=line.party_id,
                         tax_id=line.tax_id,
                         branch_id=line.branch_id or row.branch_id,
-                        cost_center_id=line.cost_center_id or row.cost_center_id,
                         description=line.description,
                     )
                 )
@@ -1165,7 +1209,6 @@ class VoucherService:
                         party_id=line.party_id,
                         tax_id=line.tax_id,
                         branch_id=line.branch_id or row.branch_id,
-                        cost_center_id=line.cost_center_id or row.cost_center_id,
                         description=line.description,
                     )
                 )
@@ -1670,6 +1713,21 @@ class VoucherService:
                 actor_user_id=actor_user_id,
             )
 
+    async def _source_document_number(self, tenant_id: UUID, row: Voucher) -> str | None:
+        if row.source_document_type is None or row.source_document_id is None:
+            return None
+        from app.common.document_source import require_source_document
+
+        try:
+            return await require_source_document(
+                self.session,
+                tenant_id,
+                document_type=row.source_document_type,
+                document_id=row.source_document_id,
+            )
+        except ValidationError:
+            return None
+
     async def _to_response(self, tenant_id: UUID, row: Voucher) -> VoucherResponse:
         status = InvoiceDocumentStatus(row.status)
         period_locked = self._date_in_locked_period(row.voucher_date)
@@ -1704,11 +1762,17 @@ class VoucherService:
             cheque_number=row.cheque_number,
             cheque_date=row.cheque_date,
             external_reference=row.external_reference,
+            source_document_type=row.source_document_type,
+            source_document_id=row.source_document_id,
+            source_document_number=await self._source_document_number(tenant_id, row),
             reference=row.reference,
             branch_id=row.branch_id,
-            cost_center_id=row.cost_center_id,
             narration=row.narration,
-            period=fiscal.fiscal_period_for(row.voucher_date),
+            period=(
+                row.fiscal_period
+                if row.fiscal_period is not None
+                else fiscal.fiscal_period_for(row.voucher_date)
+            ),
             journal_entry_id=row.journal_entry_id,
             reversal_journal_entry_id=row.reversal_journal_entry_id,
             posted_at=row.posted_at,
@@ -1749,6 +1813,7 @@ class VoucherService:
         return VoucherCreate(
             voucher_type=VoucherType(row.voucher_type),
             voucher_date=values.get("voucher_date", row.voucher_date),
+            fiscal_period=values.get("fiscal_period", row.fiscal_period),
             payment_account_id=values.get("payment_account_id", row.payment_account_id),
             counter_account_id=values.get("counter_account_id", row.counter_account_id),
             total_amount=values.get("total_amount", row.total_amount),
@@ -1764,9 +1829,10 @@ class VoucherService:
             cheque_number=values.get("cheque_number", row.cheque_number),
             cheque_date=values.get("cheque_date", row.cheque_date),
             external_reference=values.get("external_reference", row.external_reference),
+            source_document_type=values.get("source_document_type", row.source_document_type),
+            source_document_id=values.get("source_document_id", row.source_document_id),
             reference=values.get("reference", row.reference),
             branch_id=values.get("branch_id", row.branch_id),
-            cost_center_id=values.get("cost_center_id", row.cost_center_id),
             narration=values.get("narration", row.narration),
             lines=values.get(
                 "lines",
@@ -1780,7 +1846,6 @@ class VoucherService:
                         party_id=line.party_id,
                         tax_id=line.tax_id,
                         branch_id=line.branch_id,
-                        cost_center_id=line.cost_center_id,
                         description=line.description,
                     )
                     for line in row.lines

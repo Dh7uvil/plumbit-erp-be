@@ -177,7 +177,6 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "payment_term": ('create', 'read', 'update', 'delete'),
         "terms_template": ('create', 'read', 'update', 'delete'),
         "document_sequence": ('create', 'read', 'update', 'delete'),
-        "cost_center": ('create', 'read', 'update', 'delete'),
     },
     TASKS_MODULE: {
         "task": ('create', 'read', 'update', 'delete', 'assign', 'move'),
@@ -613,10 +612,6 @@ DOCUMENT_SEQUENCE_CREATE = build_permission(MASTERS_MODULE, "document_sequence",
 DOCUMENT_SEQUENCE_READ = build_permission(MASTERS_MODULE, "document_sequence", "read")
 DOCUMENT_SEQUENCE_UPDATE = build_permission(MASTERS_MODULE, "document_sequence", "update")
 DOCUMENT_SEQUENCE_DELETE = build_permission(MASTERS_MODULE, "document_sequence", "delete")
-COST_CENTER_CREATE = build_permission(MASTERS_MODULE, "cost_center", "create")
-COST_CENTER_READ = build_permission(MASTERS_MODULE, "cost_center", "read")
-COST_CENTER_UPDATE = build_permission(MASTERS_MODULE, "cost_center", "update")
-COST_CENTER_DELETE = build_permission(MASTERS_MODULE, "cost_center", "delete")
 FINANCIAL_CATEGORY_CREATE = build_permission(
     ACCOUNTING_MODULE, "financial_category", "create"
 )

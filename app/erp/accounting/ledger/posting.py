@@ -127,7 +127,6 @@ class LedgerPostingService:
         exchange_rate: Decimal,
         narration: str | None,
         branch_id: UUID | None = None,
-        cost_center_id: UUID | None = None,
         actor_id: UUID,
         journal_type: JournalType = JournalType.SYSTEM,
         reference: str | None = None,
@@ -175,7 +174,6 @@ class LedgerPostingService:
                         "currency_id": currency_id,
                         "exchange_rate": exchange_rate,
                         "branch_id": branch_id,
-                        "cost_center_id": cost_center_id,
                         "narration": narration,
                         "reference": reference,
                         "created_by": actor_id,
@@ -237,7 +235,6 @@ class LedgerPostingService:
                 external_reference=line.external_reference,
                 tax_id=line.tax_id,
                 branch_id=line.branch_id,
-                cost_center_id=line.cost_center_id,
                 description=line.description,
             )
             for line in original.lines
@@ -252,7 +249,6 @@ class LedgerPostingService:
             exchange_rate=original.exchange_rate,
             narration=reason or f"Reversal of {original.document_number}",
             branch_id=original.branch_id,
-            cost_center_id=original.cost_center_id,
             actor_id=actor_id,
             journal_type=JournalType.REVERSAL,
             reference=original.document_number,
@@ -345,7 +341,6 @@ class LedgerPostingService:
             external_reference = line.external_reference
             tax_id = line.tax_id
             branch_id = line.branch_id
-            cost_center_id = line.cost_center_id
             description = line.description
         else:
             account_id = line.account_id
@@ -359,7 +354,6 @@ class LedgerPostingService:
             external_reference = line.external_reference
             tax_id = line.tax_id
             branch_id = line.branch_id
-            cost_center_id = line.cost_center_id
             description = line.description
         debit_nonzero = debit != _ZERO
         credit_nonzero = credit != _ZERO
@@ -414,7 +408,6 @@ class LedgerPostingService:
                 "external_reference": external_reference,
                 "tax_id": tax_id,
                 "branch_id": branch_id,
-                "cost_center_id": cost_center_id,
                 "description": description,
             },
             debit_base=debit_base,
