@@ -4158,7 +4158,7 @@
           "remainder_qty"
         ],
         "title": "ProductQuantityUnitBreakdown",
-        "description": "Winsoft-style PCS / PKT / remainder columns for a quantity row."
+        "description": "PCS / PKT / remainder columns for a quantity row."
       },
       "ProductRenameSkuRequest": {
         "properties": {

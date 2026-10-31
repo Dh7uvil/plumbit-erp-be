@@ -198,6 +198,25 @@ class SalesOrder(AuditUserMixin, SoftDeleteTenantModel):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
+    payment_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'CREDIT'")
+    )
+    reference_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    marks: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    discount_account_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    freight_account_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    price_basis: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'DEFAULT'")
+    )
+    fiscal_period: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     lines: Mapped[list["SalesOrderLine"]] = relationship(
         back_populates="sales_order",
@@ -272,5 +291,12 @@ class SalesOrderLine(TenantModel):
     cbm: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     item_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    warehouse_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("warehouses.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     sales_order: Mapped[SalesOrder] = relationship(back_populates="lines")

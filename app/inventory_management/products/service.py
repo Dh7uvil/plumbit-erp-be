@@ -117,7 +117,7 @@ class ProductService:
     async def sync_avg_cost_from_fifo(
         self, tenant_id: UUID, product_ids: set[UUID] | frozenset[UUID]
     ) -> None:
-        """Refresh product purchase_rate from weighted FIFO avg (Winsoft avg cost)."""
+        """Refresh product purchase_rate from weighted FIFO average cost."""
         from app.common.utils.currency import quantize_money
         from app.inventory_management.costing.repository import CostingRepository
         from app.inventory_management.stock.repository import StockBalanceRepository

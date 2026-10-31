@@ -1,4 +1,4 @@
-"""Aggregate inventory list queries for Winsoft-style grids."""
+"""Aggregate inventory list queries for legacy-style grids."""
 
 from __future__ import annotations
 

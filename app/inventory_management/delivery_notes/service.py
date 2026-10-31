@@ -521,8 +521,17 @@ class DeliveryNoteService:
             )
             for line_id, qty in allocations
         ]
-        warehouse_id = None
-        if invoice.sales_order_id is not None:
+        line_warehouse_ids = {
+            line.warehouse_id
+            for line in product_lines
+            if line.warehouse_id is not None
+        }
+        if len(line_warehouse_ids) > 1:
+            raise ValidationError(
+                "All invoice lines must use the same Loc when Update invoice is enabled"
+            )
+        warehouse_id = next(iter(line_warehouse_ids)) if line_warehouse_ids else None
+        if warehouse_id is None and invoice.sales_order_id is not None:
             order = await self.sales_orders.get(tenant_id, invoice.sales_order_id)
             warehouse_id = order.warehouse_id if order is not None else None
         if warehouse_id is None:

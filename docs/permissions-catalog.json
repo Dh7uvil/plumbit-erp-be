@@ -46,10 +46,6 @@
     "accounting.dunning.manage",
     "accounting.dunning.read",
     "accounting.dunning.send",
-    "accounting.financial_category.create",
-    "accounting.financial_category.delete",
-    "accounting.financial_category.read",
-    "accounting.financial_category.update",
     "accounting.fx_revaluation.read",
     "accounting.fx_revaluation.reverse",
     "accounting.fx_revaluation.run",
@@ -832,12 +828,6 @@
         "send"
       ],
       "charge_type": [
-        "create",
-        "read",
-        "update",
-        "delete"
-      ],
-      "financial_category": [
         "create",
         "read",
         "update",

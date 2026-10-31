@@ -180,6 +180,26 @@ class Quotation(AuditUserMixin, SoftDeleteTenantModel):
         DateTime(timezone=True),
         nullable=True,
     )
+    payment_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'CREDIT'")
+    )
+    reference_number: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    reference_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    marks: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    discount_account_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    freight_account_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    price_basis: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'DEFAULT'")
+    )
+    fiscal_period: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     lines: Mapped[list["QuotationLine"]] = relationship(
         back_populates="quotation",
@@ -271,6 +291,13 @@ class QuotationLine(TenantModel):
         Numeric(QUANTITY_PRECISION, QUANTITY_SCALE), nullable=True
     )
     item_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    warehouse_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("warehouses.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     quotation: Mapped[Quotation] = relationship(back_populates="lines")
 

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.discount_fields import DiscountFieldsMixin
 from app.common.schemas.packing import PackingFields
+from app.common.schemas.sales_line_loc import SalesLineLocFields
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.related_documents import QuantityProgress, RelatedDocumentRef
 from app.common.schemas.warnings import DocumentWarning
@@ -17,7 +18,9 @@ from app.core.enums import (
     BillingStatus,
     DiscountType,
     FulfillmentStatus,
+    PaymentMode,
     PlaceOfSupply,
+    PriceBasis,
     SalesOrderStatus,
     TaxTreatment,
 )
@@ -47,7 +50,7 @@ class SalesOrderFilter(BaseFilter):
     opportunity_id: UUID | None = None
 
 
-class SalesOrderLineInput(PackingFields, DiscountFieldsMixin):
+class SalesOrderLineInput(PackingFields, SalesLineLocFields, DiscountFieldsMixin):
     product_id: UUID | None = None
     description: str | None = None
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
@@ -70,7 +73,7 @@ class SalesOrderLineInput(PackingFields, DiscountFieldsMixin):
         return self
 
 
-class SalesOrderLineResponse(PackingFields):
+class SalesOrderLineResponse(PackingFields, SalesLineLocFields):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -96,6 +99,9 @@ class SalesOrderLineResponse(PackingFields):
     qty_remaining_to_invoice: Decimal = Decimal("0")
     source_quotation_line_id: UUID | None
     source_proforma_invoice_line_id: UUID | None = None
+    warehouse_id: UUID | None = None
+    remarks: str | None = None
+    source_invoice_number: str | None = None
 
     @model_validator(mode="after")
     def compute_remaining(self) -> "SalesOrderLineResponse":
@@ -128,9 +134,16 @@ class SalesOrderCreate(DiscountFieldsMixin):
     adjustment_amount: Decimal = Field(default=Decimal("0"), max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
     prices_include_tax: bool | None = None
+    payment_mode: PaymentMode = PaymentMode.CREDIT
+    reference_date: date | None = None
+    marks: str | None = Field(default=None, max_length=500)
+    discount_account_id: UUID | None = None
+    freight_account_id: UUID | None = None
+    price_basis: PriceBasis = PriceBasis.DEFAULT
+    fiscal_period: int | None = Field(default=None, ge=1, le=12)
     lines: list[SalesOrderLineInput] = Field(default_factory=list)
 
-    @field_validator("reference_number", "customer_po_number")
+    @field_validator("reference_number", "customer_po_number", "marks")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -158,10 +171,17 @@ class SalesOrderUpdate(DiscountFieldsMixin):
     adjustment_amount: Decimal | None = Field(default=None, max_digits=18, decimal_places=4)
     place_of_supply: PlaceOfSupply | None = None
     prices_include_tax: bool | None = None
+    payment_mode: PaymentMode | None = None
+    reference_date: date | None = None
+    marks: str | None = Field(default=None, max_length=500)
+    discount_account_id: UUID | None = None
+    freight_account_id: UUID | None = None
+    price_basis: PriceBasis | None = None
+    fiscal_period: int | None = Field(default=None, ge=1, le=12)
     lines: list[SalesOrderLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
-    @field_validator("reference_number", "customer_po_number")
+    @field_validator("reference_number", "customer_po_number", "marks")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -237,6 +257,18 @@ class SalesOrderResponse(BaseModel):
     tax_amount: Decimal
     grand_total: Decimal
     prices_include_tax: bool = False
+    payment_mode: PaymentMode = PaymentMode.CREDIT
+    reference_date: date | None = None
+    marks: str | None = None
+    discount_account_id: UUID | None = None
+    freight_account_id: UUID | None = None
+    price_basis: PriceBasis = PriceBasis.DEFAULT
+    fiscal_period: int | None = None
+    registration_type: str | None = None
+    account_code: str | None = None
+    account_name: str | None = None
+    terms_days: int | None = None
+    is_invoiced: bool = False
     foreign_amount: Decimal
     base_amount: Decimal
     fulfillment_status: FulfillmentStatus

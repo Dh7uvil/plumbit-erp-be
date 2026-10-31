@@ -24,6 +24,9 @@ class CustomerDocumentComposeDefaults(BaseModel):
     bill_to_snapshot: str | None
     ship_to_snapshot: str | None
     terms_and_conditions: str | None
+    receivable_account_id: UUID | None = None
+    account_code: str | None = None
+    account_name: str | None = None
 
 
 class SupplierDocumentComposeDefaults(BaseModel):

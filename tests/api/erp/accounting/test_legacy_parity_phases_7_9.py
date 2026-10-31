@@ -1,4 +1,4 @@
-"""Winsoft parity phases 7–9: print, PDC register, projection, credit hold."""
+"""Legacy parity phases 7–9: print, PDC register, projection, credit hold."""
 
 from __future__ import annotations
 

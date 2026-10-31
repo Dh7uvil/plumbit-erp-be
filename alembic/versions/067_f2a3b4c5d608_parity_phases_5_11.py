@@ -1,4 +1,4 @@
-"""Winsoft parity: year-end, VAT-inclusive pricing, PO charges/metrics.
+"""Legacy parity: year-end, VAT-inclusive pricing, PO charges/metrics.
 
 Revision ID: f2a3b4c5d608
 Revises: e1f2a3b4c507

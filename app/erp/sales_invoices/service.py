@@ -35,7 +35,9 @@ from app.common.print.service import PrintService
 from app.common.registries.sales_invoice_dependents import registered_probes
 from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.filters import BaseFilter
+from app.common.utils.sales_commercial import registration_type_label, taxable_amount_from_lines
 from app.common.schemas.packing import packing_persist
+from app.common.schemas.sales_line_loc import fiscal_period_from_date
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.schemas.warnings import DocumentWarning
@@ -122,6 +124,7 @@ from app.inventory_management.costing.service import CostingService
 from app.inventory_management.delivery_notes.service import DeliveryNoteService
 from app.inventory_management.price_lists.service import PriceListService
 from app.inventory_management.products.service import ProductService
+from app.inventory_management.warehouses.service import WarehouseService
 from app.inventory_management.units.service import UnitService
 
 _ZERO = Decimal("0")
@@ -167,6 +170,7 @@ class SalesInvoiceService:
         self.idempotency = IdempotencyService(session)
         self.outbox = OutboxService(session)
         self.audit = AuditWriter(session)
+        self.warehouses = WarehouseService(session)
         self._can_override = has_permission(actor_permissions, PERIOD_OVERRIDE)
         self._period_policy: PeriodLockPolicy | None = None
 
@@ -1803,6 +1807,9 @@ class SalesInvoiceService:
             "discount_account_id": payload.discount_account_id,
             "freight_account_id": payload.freight_account_id,
             "auto_stock_document": payload.auto_stock_document,
+            "fiscal_period": payload.fiscal_period
+            if payload.fiscal_period is not None
+            else fiscal_period_from_date(invoice_date),
         }
         return header, line_rows
 
@@ -1844,6 +1851,8 @@ class SalesInvoiceService:
             unit_id = line.unit_id or (product.unit_id if product else None)
             if unit_id is not None:
                 await self.units.require_id(tenant_id, unit_id)
+            if line.warehouse_id is not None:
+                await self.warehouses.require_id(tenant_id, line.warehouse_id)
             if product is None:
                 if line.rate is None:
                     raise ValidationError("Custom lines require a rate")
@@ -1902,6 +1911,7 @@ class SalesInvoiceService:
                     "cogs_status": CogsStatus.NOT_APPLICABLE.value,
                     "qty_credited": _ZERO,
                     "hs_code": hs_code,
+                    "warehouse_id": line.warehouse_id,
                     **packing_persist(line),
                 }
             )
@@ -1932,6 +1942,7 @@ class SalesInvoiceService:
                     discount_value=line.discount_value,
                     tax_id=line.tax_id,
                     hs_code=line.hs_code,
+                    warehouse_id=line.warehouse_id,
                 )
                 for line in existing.lines
             ]
@@ -2032,6 +2043,7 @@ class SalesInvoiceService:
                     discount_value=line.discount_value,
                     tax_id=line.tax_id,
                     hs_code=line.hs_code,
+                    warehouse_id=line.warehouse_id,
                 )
                 for line in row.lines
             ],
@@ -2223,9 +2235,21 @@ class SalesInvoiceService:
             cancelled_at=row.cancelled_at,
             cancelled_by=row.cancelled_by,
             cancel_reason=row.cancel_reason,
+            payment_mode=PaymentMode(row.payment_mode),
+            supply_date=row.supply_date,
+            reference_number=row.reference_number,
+            reference_date=row.reference_date,
+            marks=row.marks,
+            discount_account_id=row.discount_account_id,
+            freight_account_id=row.freight_account_id,
+            auto_stock_document=row.auto_stock_document,
+            is_printed=row.is_printed,
             is_overdue=is_overdue,
             is_partially_credited=is_partially_credited,
             is_fully_credited=is_fully_credited,
+            fiscal_period=row.fiscal_period,
+            taxable_amount=taxable_amount_from_lines(list(row.lines)),
+            registration_type=registration_type_label(TaxTreatment(row.tax_treatment)),
             available_actions=self._available_actions(
                 row,
                 status,
@@ -2266,6 +2290,7 @@ class SalesInvoiceService:
                     cbm=line.cbm,
                     weight=line.weight,
                     item_code=line.item_code,
+                    warehouse_id=line.warehouse_id,
                 )
                 for line in row.lines
             ],

@@ -76,6 +76,7 @@ class SalesInvoiceLineInput(PackingFields, DiscountFieldsMixin):
     delivery_note_line_id: UUID | None = None
     tax_id: UUID | None = None
     hs_code: str | None = Field(default=None, max_length=20)
+    warehouse_id: UUID | None = None
 
     @field_validator("description", "hs_code")
     @classmethod
@@ -126,6 +127,7 @@ class SalesInvoiceLineResponse(PackingFields):
     qty_credited: Decimal
     qty_delivered: Decimal = Decimal("0")
     hs_code: str | None = None
+    warehouse_id: UUID | None = None
 
 
 class SalesInvoiceCreate(DiscountFieldsMixin):
@@ -160,6 +162,7 @@ class SalesInvoiceCreate(DiscountFieldsMixin):
     freight_account_id: UUID | None = None
     auto_stock_document: bool = False
     document_series: Literal["INV", "EXP"] | None = None
+    fiscal_period: int | None = Field(default=None, ge=1, le=12)
     lines: list[SalesInvoiceLineInput] = Field(min_length=1)
 
     @field_validator("notes", "terms_and_conditions")
@@ -204,6 +207,7 @@ class SalesInvoiceUpdate(DiscountFieldsMixin):
     discount_account_id: UUID | None = None
     freight_account_id: UUID | None = None
     auto_stock_document: bool | None = None
+    fiscal_period: int | None = Field(default=None, ge=1, le=12)
     lines: list[SalesInvoiceLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
 
@@ -322,6 +326,13 @@ class SalesInvoiceResponse(BaseModel):
     freight_account_id: UUID | None = None
     auto_stock_document: bool = False
     is_printed: bool = False
+    fiscal_period: int | None = None
+    taxable_amount: Decimal | None = None
+    registration_type: str | None = None
+    account_code: str | None = None
+    account_name: str | None = None
+    terms_days: int | None = None
+    delivery_note_number: str | None = None
     is_overdue: bool = False
     is_partially_credited: bool = False
     is_fully_credited: bool = False

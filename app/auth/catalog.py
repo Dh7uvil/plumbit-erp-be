@@ -131,7 +131,6 @@ _CATALOG_ACTIONS: dict[str, dict[str, tuple[str, ...]]] = {
         "write_off": ('create', 'reverse'),
         "dunning": ('read', 'manage', 'send'),
         "charge_type": ('create', 'read', 'update', 'delete'),
-        "financial_category": ('create', 'read', 'update', 'delete'),
         "cost_sheet": _with_imex(
             "create",
             "read",
@@ -612,16 +611,6 @@ DOCUMENT_SEQUENCE_CREATE = build_permission(MASTERS_MODULE, "document_sequence",
 DOCUMENT_SEQUENCE_READ = build_permission(MASTERS_MODULE, "document_sequence", "read")
 DOCUMENT_SEQUENCE_UPDATE = build_permission(MASTERS_MODULE, "document_sequence", "update")
 DOCUMENT_SEQUENCE_DELETE = build_permission(MASTERS_MODULE, "document_sequence", "delete")
-FINANCIAL_CATEGORY_CREATE = build_permission(
-    ACCOUNTING_MODULE, "financial_category", "create"
-)
-FINANCIAL_CATEGORY_READ = build_permission(ACCOUNTING_MODULE, "financial_category", "read")
-FINANCIAL_CATEGORY_UPDATE = build_permission(
-    ACCOUNTING_MODULE, "financial_category", "update"
-)
-FINANCIAL_CATEGORY_DELETE = build_permission(
-    ACCOUNTING_MODULE, "financial_category", "delete"
-)
 SALESMAN_READ = build_permission(SALES_MODULE, "salesman", "read")
 SALESMAN_UPDATE = build_permission(SALES_MODULE, "salesman", "update")
 CHARGE_TYPE_CREATE = build_permission(ACCOUNTING_MODULE, "charge_type", "create")

@@ -1,4 +1,4 @@
-"""Winsoft legacy parity: masters and commercial header fields.
+"""Legacy parity: masters and commercial header fields.
 
 Revision ID: a1b2c3d4e080
 Revises: q2r3s4t5u678

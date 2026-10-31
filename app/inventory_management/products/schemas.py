@@ -168,7 +168,7 @@ class ProductWarehouseQty(BaseModel):
 
 
 class ProductQuantityUnitBreakdown(BaseModel):
-    """Winsoft-style PCS / PKT / remainder columns for a quantity row."""
+    """PCS / PKT / remainder columns for a quantity row."""
 
     unit_qty: Decimal
     unit2_qty: Decimal

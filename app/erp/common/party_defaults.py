@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.utils.document_totals import format_address_snapshot, place_of_supply_from_address
 from app.crm.contacts.service import ContactService
 from app.crm.customers.service import CustomerService
+from app.erp.accounting.accounts.service import AccountService
 from app.erp.accounting.service import TermsTemplateService
 from app.erp.common.party_defaults_schemas import (
     CustomerDocumentComposeDefaults,
@@ -36,6 +37,7 @@ class PartyDefaultsService:
         self.warehouses = WarehouseService(session)
         self.products = ProductService(session)
         self.price_lists = PriceListService(session)
+        self.accounts = AccountService(session)
 
     async def customer_document_defaults(
         self, tenant_id: UUID, customer_id: UUID, *, include_price_list: bool = True
@@ -45,6 +47,13 @@ class PartyDefaultsService:
         default_terms = await self.terms.get_default(tenant_id)
         default_warehouse = await self.warehouses.get_default(tenant_id)
         place = place_of_supply_from_address(customer.shipping_address)
+        account_code: str | None = None
+        account_name: str | None = None
+        if customer.receivable_account_id is not None:
+            account = await self.accounts.get(tenant_id, customer.receivable_account_id)
+            if account is not None:
+                account_code = account.code
+                account_name = account.name
         return CustomerDocumentComposeDefaults(
             customer_id=customer.id,
             customer_name=customer.name,
@@ -60,6 +69,9 @@ class PartyDefaultsService:
             bill_to_snapshot=format_address_snapshot(customer.billing_address),
             ship_to_snapshot=format_address_snapshot(customer.shipping_address),
             terms_and_conditions=default_terms.body if default_terms else None,
+            receivable_account_id=customer.receivable_account_id,
+            account_code=account_code,
+            account_name=account_name,
         )
 
     async def supplier_document_defaults(

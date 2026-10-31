@@ -11,9 +11,18 @@ from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.discount_fields import DiscountFieldsMixin
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.packing import PackingFields
+from app.common.schemas.sales_line_loc import SalesLineLocFields
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.schemas.warnings import DocumentWarning
-from app.core.enums import DiscountType, Incoterm, PlaceOfSupply, QuotationStatus, TaxTreatment
+from app.core.enums import (
+    DiscountType,
+    Incoterm,
+    PaymentMode,
+    PlaceOfSupply,
+    PriceBasis,
+    QuotationStatus,
+    TaxTreatment,
+)
 
 
 class QuotationFilter(BaseFilter):
@@ -34,7 +43,7 @@ class QuotationFilter(BaseFilter):
     currency_id: UUID | None = None
 
 
-class QuotationLineInput(PackingFields, DiscountFieldsMixin):
+class QuotationLineInput(PackingFields, SalesLineLocFields, DiscountFieldsMixin):
     product_id: UUID | None = None
     description: str | None = None
     quantity: Decimal = Field(gt=0, max_digits=18, decimal_places=6)
@@ -57,7 +66,7 @@ class QuotationLineInput(PackingFields, DiscountFieldsMixin):
         return self
 
 
-class QuotationLineResponse(PackingFields):
+class QuotationLineResponse(PackingFields, SalesLineLocFields):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -76,6 +85,9 @@ class QuotationLineResponse(PackingFields):
     amount: Decimal
     qty_converted: Decimal = Decimal("0")
     qty_remaining: Decimal = Decimal("0")
+    warehouse_id: UUID | None = None
+    remarks: str | None = None
+    source_invoice_number: str | None = None
 
     @model_validator(mode="after")
     def compute_remaining(self) -> "QuotationLineResponse":
@@ -104,7 +116,23 @@ class QuotationCreate(DiscountFieldsMixin):
     prices_include_tax: bool | None = None
     incoterm: Incoterm | None = None
     incoterm_place: str | None = Field(default=None, max_length=120)
+    payment_mode: PaymentMode = PaymentMode.CREDIT
+    reference_number: str | None = Field(default=None, max_length=80)
+    reference_date: date | None = None
+    marks: str | None = Field(default=None, max_length=500)
+    discount_account_id: UUID | None = None
+    freight_account_id: UUID | None = None
+    price_basis: PriceBasis = PriceBasis.DEFAULT
+    fiscal_period: int | None = Field(default=None, ge=1, le=12)
     lines: list[QuotationLineInput] = Field(default_factory=list)
+
+    @field_validator("reference_number", "marks")
+    @classmethod
+    def normalize_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
 
 class QuotationUpdate(DiscountFieldsMixin):
@@ -124,8 +152,24 @@ class QuotationUpdate(DiscountFieldsMixin):
     prices_include_tax: bool | None = None
     incoterm: Incoterm | None = None
     incoterm_place: str | None = Field(default=None, max_length=120)
+    payment_mode: PaymentMode | None = None
+    reference_number: str | None = Field(default=None, max_length=80)
+    reference_date: date | None = None
+    marks: str | None = Field(default=None, max_length=500)
+    discount_account_id: UUID | None = None
+    freight_account_id: UUID | None = None
+    price_basis: PriceBasis | None = None
+    fiscal_period: int | None = Field(default=None, ge=1, le=12)
     lines: list[QuotationLineInput] | None = None
     version: int | None = Field(default=None, ge=1)
+
+    @field_validator("reference_number", "marks")
+    @classmethod
+    def normalize_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
 
 class QuotationRejectRequest(BaseModel):
@@ -202,6 +246,19 @@ class QuotationResponse(BaseModel):
     tax_amount: Decimal
     grand_total: Decimal
     prices_include_tax: bool = False
+    payment_mode: PaymentMode = PaymentMode.CREDIT
+    reference_number: str | None = None
+    reference_date: date | None = None
+    marks: str | None = None
+    discount_account_id: UUID | None = None
+    freight_account_id: UUID | None = None
+    price_basis: PriceBasis = PriceBasis.DEFAULT
+    fiscal_period: int | None = None
+    registration_type: str | None = None
+    account_code: str | None = None
+    account_name: str | None = None
+    terms_days: int | None = None
+    is_invoiced: bool = False
     foreign_amount: Decimal
     base_amount: Decimal
     converted_at: datetime | None

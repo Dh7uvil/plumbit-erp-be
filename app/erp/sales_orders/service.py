@@ -37,10 +37,12 @@ from app.common.print.service import PrintService
 from app.common.outbox.service import OutboxService
 from app.common.schemas.conversion import ConversionLineInput
 from app.common.schemas.packing import packing_persist
+from app.common.schemas.sales_line_loc import fiscal_period_from_date, sales_line_loc_persist
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import QuantityProgress, RelatedDocumentRef
 from app.common.services.audit import AuditWriter
+from app.common.utils.sales_commercial import registration_type_label, sales_order_is_invoiced
 from app.common.utils.conversion import (
     allocate_conversion_qty,
     copy_source_commercial_header,
@@ -63,7 +65,9 @@ from app.core.enums import (
     DocumentType,
     FulfillmentStatus,
     ItemType,
+    PaymentMode,
     PlaceOfSupply,
+    PriceBasis,
     SalesOrderStatus,
     TaxCategory,
     TaxTreatment,
@@ -394,7 +398,7 @@ class SalesOrderService:
                 warehouse_id=warehouse_id,
                 order_date=order_date,
                 expected_shipment_date=expected_shipment_date,
-                reference_number=reference_number,
+                reference_number=reference_number or quotation.reference_number,
                 customer_po_number=customer_po_number,
                 customer_po_date=customer_po_date,
                 currency_id=quotation.currency_id,
@@ -409,6 +413,12 @@ class SalesOrderService:
                 adjustment_amount=adjustment_amount,
                 place_of_supply=quotation.place_of_supply,
                 prices_include_tax=quotation.prices_include_tax,
+                payment_mode=PaymentMode(quotation.payment_mode),
+                reference_date=quotation.reference_date,
+                marks=quotation.marks,
+                discount_account_id=quotation.discount_account_id,
+                freight_account_id=quotation.freight_account_id,
+                price_basis=PriceBasis(quotation.price_basis),
                 lines=[
                     SalesOrderLineInput(
                         product_id=source.product_id,
@@ -846,6 +856,12 @@ class SalesOrderService:
                 adjustment_amount=source.adjustment_amount,
                 place_of_supply=PlaceOfSupply(source.place_of_supply),
                 prices_include_tax=source.prices_include_tax,
+                payment_mode=PaymentMode(source.payment_mode),
+                reference_date=source.reference_date,
+                marks=source.marks,
+                discount_account_id=source.discount_account_id,
+                freight_account_id=source.freight_account_id,
+                price_basis=PriceBasis(source.price_basis),
                 lines=[
                     SalesOrderLineInput(
                         product_id=line.product_id,
@@ -1804,6 +1820,7 @@ class SalesOrderService:
             price_list_id=price_list_id,
             currency_id=currency_id,
             prices_include_tax=prices_include_tax,
+            price_basis=payload.price_basis,
         )
         subtotal, doc_discount, tax_total, grand, adjusted_taxes, adjustment_amount = (
             compute_header_totals(
@@ -1852,6 +1869,15 @@ class SalesOrderService:
             "base_amount": quantize_money(grand * resolved.rate),
             "fulfillment_status": FulfillmentStatus.NOT_DELIVERED.value,
             "billing_status": BillingStatus.NOT_INVOICED.value,
+            "payment_mode": payload.payment_mode.value,
+            "reference_date": payload.reference_date,
+            "marks": payload.marks,
+            "discount_account_id": payload.discount_account_id,
+            "freight_account_id": payload.freight_account_id,
+            "price_basis": payload.price_basis.value,
+            "fiscal_period": payload.fiscal_period
+            if payload.fiscal_period is not None
+            else fiscal_period_from_date(order_date),
         }
         return header, line_rows
 
@@ -1873,6 +1899,7 @@ class SalesOrderService:
         price_list_id: UUID | None,
         currency_id: UUID,
         prices_include_tax: bool = False,
+        price_basis: PriceBasis = PriceBasis.DEFAULT,
     ) -> tuple[builtins.list[dict[str, object]], builtins.list[Decimal], builtins.list[Decimal]]:
         built: builtins.list[dict[str, object]] = []
         nets: builtins.list[Decimal] = []
@@ -1892,10 +1919,16 @@ class SalesOrderService:
             unit_id = line.unit_id or (product.unit_id if product else None)
             if unit_id is not None:
                 await self.units.require_id(tenant_id, unit_id)
+            if line.warehouse_id is not None:
+                await self.warehouses.require_id(tenant_id, line.warehouse_id)
             if product is None:
                 if line.rate is None:
                     raise ValidationError("Custom lines require a rate")
                 rate = quantize_money(line.rate)
+            elif price_basis == PriceBasis.PRICE_1 and line.rate is None:
+                rate = quantize_money(product.price_1)
+            elif price_basis == PriceBasis.PRICE_2 and line.rate is None:
+                rate = quantize_money(product.price_2)
             else:
                 rate = await self.price_lists.resolve_rate(
                     tenant_id,
@@ -1949,6 +1982,7 @@ class SalesOrderService:
                     "qty_invoiced": _ZERO,
                     "qty_converted": _ZERO,
                     **packing_persist(line),
+                    **sales_line_loc_persist(line),
                 }
             )
             nets.append(net)
@@ -2004,6 +2038,21 @@ class SalesOrderService:
             adjustment_amount=values.get("adjustment_amount", existing.adjustment_amount),
             place_of_supply=values.get("place_of_supply", PlaceOfSupply(existing.place_of_supply)),
             prices_include_tax=values.get("prices_include_tax", existing.prices_include_tax),
+            payment_mode=values.get(
+                "payment_mode",
+                PaymentMode(existing.payment_mode),
+            ),
+            reference_date=values.get("reference_date", existing.reference_date),
+            marks=values.get("marks", existing.marks),
+            discount_account_id=values.get(
+                "discount_account_id", existing.discount_account_id
+            ),
+            freight_account_id=values.get("freight_account_id", existing.freight_account_id),
+            price_basis=values.get(
+                "price_basis",
+                PriceBasis(existing.price_basis),
+            ),
+            fiscal_period=values.get("fiscal_period", existing.fiscal_period),
             lines=line_inputs,
         )
 
@@ -2114,6 +2163,16 @@ class SalesOrderService:
             subtotal=row.subtotal,
             tax_amount=row.tax_amount,
             grand_total=row.grand_total,
+            prices_include_tax=row.prices_include_tax,
+            payment_mode=PaymentMode(row.payment_mode),
+            reference_date=row.reference_date,
+            marks=row.marks,
+            discount_account_id=row.discount_account_id,
+            freight_account_id=row.freight_account_id,
+            price_basis=PriceBasis(row.price_basis),
+            fiscal_period=row.fiscal_period,
+            registration_type=registration_type_label(TaxTreatment(row.tax_treatment)),
+            is_invoiced=sales_order_is_invoiced(row.billing_status),
             foreign_amount=row.foreign_amount,
             base_amount=row.base_amount,
             fulfillment_status=FulfillmentStatus(row.fulfillment_status),
@@ -2345,6 +2404,16 @@ class SalesOrderService:
             "fulfillment_status": row.fulfillment_status,
             "billing_status": row.billing_status,
             "customer_po_number": row.customer_po_number,
+            "payment_mode": row.payment_mode,
+            "reference_date": row.reference_date,
+            "marks": row.marks,
+            "discount_account_id": str(row.discount_account_id)
+            if row.discount_account_id
+            else None,
+            "freight_account_id": str(row.freight_account_id)
+            if row.freight_account_id
+            else None,
+            "price_basis": row.price_basis,
         }
 
     async def _require(

@@ -1,4 +1,4 @@
-"""Winsoft quantity breakdown helpers."""
+"""Quantity breakdown helpers (PCS / PKT / remainder)."""
 
 from decimal import Decimal
 

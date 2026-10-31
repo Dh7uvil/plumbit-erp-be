@@ -36,6 +36,7 @@ from app.common.print.service import PrintService
 from app.common.registries.quotation_dependents import registered_probes
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.packing import packing_persist
+from app.common.schemas.sales_line_loc import fiscal_period_from_date, sales_line_loc_persist
 from app.common.schemas.pagination import PageParams
 from app.common.schemas.related_documents import RelatedDocumentRef
 from app.common.services.audit import AuditWriter
@@ -47,6 +48,10 @@ from app.common.utils.conversion import (
 )
 from app.common.utils.currency import quantize_money, quantize_quantity
 from app.common.utils.datetime import today_in_timezone, utcnow
+from app.common.utils.sales_commercial import (
+    quotation_is_invoiced,
+    registration_type_label,
+)
 from app.common.utils.document_totals import (
     apply_adjusted_line_taxes,
     compute_header_totals,
@@ -60,7 +65,9 @@ from app.core.enums import (
     DiscountType,
     DocumentType,
     Incoterm,
+    PaymentMode,
     PlaceOfSupply,
+    PriceBasis,
     QuotationStatus,
     TaxCategory,
     TaxTreatment,
@@ -105,6 +112,7 @@ from app.erp.quotation.workflow import (
 )
 from app.inventory_management.price_lists.service import PriceListService
 from app.inventory_management.products.service import ProductService
+from app.inventory_management.warehouses.service import WarehouseService
 from app.inventory_management.units.service import UnitService
 
 _ZERO = Decimal("0")
@@ -148,6 +156,7 @@ class QuotationService:
         self.audit = AuditWriter(session)
         self.outbox = OutboxService(session)
         self.idempotency = IdempotencyService(session)
+        self.warehouses = WarehouseService(session)
 
     async def list(
         self,
@@ -203,7 +212,7 @@ class QuotationService:
         today, requires_approval = await self._response_context(tenant_id, row)
         response = self._to_response(row, today, requires_approval=requires_approval)
         response.related_documents = await self._related_documents(tenant_id, row)
-        return response
+        return await self._enrich_commercial_response(tenant_id, row, response)
 
     async def print_document(
         self,
@@ -751,6 +760,13 @@ class QuotationService:
                 adjustment_amount=source.adjustment_amount,
                 place_of_supply=PlaceOfSupply(source.place_of_supply),
                 prices_include_tax=source.prices_include_tax,
+                payment_mode=PaymentMode(source.payment_mode),
+                reference_number=source.reference_number,
+                reference_date=source.reference_date,
+                marks=source.marks,
+                discount_account_id=source.discount_account_id,
+                freight_account_id=source.freight_account_id,
+                price_basis=PriceBasis(source.price_basis),
                 lines=[
                     QuotationLineInput(
                         product_id=line.product_id,
@@ -1069,6 +1085,7 @@ class QuotationService:
             price_list_id=price_list_id,
             currency_id=currency_id,
             prices_include_tax=prices_include_tax,
+            price_basis=payload.price_basis,
         )
         subtotal, doc_discount, tax_total, grand, adjusted_taxes, adjustment_amount = (
             compute_header_totals(
@@ -1114,6 +1131,16 @@ class QuotationService:
             "prices_include_tax": prices_include_tax,
             "foreign_amount": grand,
             "base_amount": quantize_money(grand * resolved.rate),
+            "payment_mode": payload.payment_mode.value,
+            "reference_number": payload.reference_number,
+            "reference_date": payload.reference_date,
+            "marks": payload.marks,
+            "discount_account_id": payload.discount_account_id,
+            "freight_account_id": payload.freight_account_id,
+            "price_basis": payload.price_basis.value,
+            "fiscal_period": payload.fiscal_period
+            if payload.fiscal_period is not None
+            else fiscal_period_from_date(quote_date),
         }
         return header, line_rows
 
@@ -1135,6 +1162,7 @@ class QuotationService:
         price_list_id: UUID | None,
         currency_id: UUID,
         prices_include_tax: bool = False,
+        price_basis: PriceBasis = PriceBasis.DEFAULT,
     ) -> tuple[builtins.list[dict[str, object]], builtins.list[Decimal], builtins.list[Decimal]]:
         built: builtins.list[dict[str, object]] = []
         nets: builtins.list[Decimal] = []
@@ -1154,10 +1182,16 @@ class QuotationService:
             unit_id = line.unit_id or (product.unit_id if product else None)
             if unit_id is not None:
                 await self.units.require_id(tenant_id, unit_id)
+            if line.warehouse_id is not None:
+                await self.warehouses.require_id(tenant_id, line.warehouse_id)
             if product is None:
                 if line.rate is None:
                     raise ValidationError("Custom lines require a rate")
                 rate = quantize_money(line.rate)
+            elif price_basis == PriceBasis.PRICE_1 and line.rate is None:
+                rate = quantize_money(product.price_1)
+            elif price_basis == PriceBasis.PRICE_2 and line.rate is None:
+                rate = quantize_money(product.price_2)
             else:
                 rate = await self.price_lists.resolve_rate(
                     tenant_id,
@@ -1207,6 +1241,7 @@ class QuotationService:
                     "amount": net,
                     "qty_converted": _ZERO,
                     **packing_persist(line),
+                    **sales_line_loc_persist(line),
                 }
             )
             nets.append(net)
@@ -1236,6 +1271,8 @@ class QuotationService:
                     cbm=line.cbm,
                     weight=line.weight,
                     item_code=line.item_code,
+                    warehouse_id=line.warehouse_id,
+                    remarks=line.remarks,
                 )
                 for line in existing.lines
             ]
@@ -1265,6 +1302,22 @@ class QuotationService:
             adjustment_amount=values.get("adjustment_amount", existing.adjustment_amount),
             place_of_supply=values.get("place_of_supply", PlaceOfSupply(existing.place_of_supply)),
             prices_include_tax=values.get("prices_include_tax", existing.prices_include_tax),
+            payment_mode=values.get(
+                "payment_mode",
+                PaymentMode(existing.payment_mode),
+            ),
+            reference_number=values.get("reference_number", existing.reference_number),
+            reference_date=values.get("reference_date", existing.reference_date),
+            marks=values.get("marks", existing.marks),
+            discount_account_id=values.get(
+                "discount_account_id", existing.discount_account_id
+            ),
+            freight_account_id=values.get("freight_account_id", existing.freight_account_id),
+            price_basis=values.get(
+                "price_basis",
+                PriceBasis(existing.price_basis),
+            ),
+            fiscal_period=values.get("fiscal_period", existing.fiscal_period),
             lines=line_inputs,
         )
 
@@ -1374,6 +1427,20 @@ class QuotationService:
             subtotal=row.subtotal,
             tax_amount=row.tax_amount,
             grand_total=row.grand_total,
+            prices_include_tax=row.prices_include_tax,
+            payment_mode=PaymentMode(row.payment_mode),
+            reference_number=row.reference_number,
+            reference_date=row.reference_date,
+            marks=row.marks,
+            discount_account_id=row.discount_account_id,
+            freight_account_id=row.freight_account_id,
+            price_basis=PriceBasis(row.price_basis),
+            fiscal_period=row.fiscal_period,
+            registration_type=registration_type_label(TaxTreatment(row.tax_treatment)),
+            is_invoiced=quotation_is_invoiced(
+                converted_document_id=row.converted_document_id,
+                status=row.status,
+            ),
             foreign_amount=row.foreign_amount,
             base_amount=row.base_amount,
             converted_at=row.converted_at,
@@ -1470,6 +1537,33 @@ class QuotationService:
             )
         return related
 
+    async def _enrich_commercial_response(
+        self, tenant_id: UUID, row: Quotation, response: QuotationResponse
+    ) -> QuotationResponse:
+        customer = await self.customers.get(tenant_id, row.customer_id)
+        account_code: str | None = None
+        account_name: str | None = None
+        if customer.receivable_account_id is not None:
+            from app.erp.accounting.accounts.service import AccountService
+
+            account = await AccountService(self.session).get(
+                tenant_id, customer.receivable_account_id
+            )
+            if account is not None:
+                account_code = account.code
+                account_name = account.name
+        terms_days: int | None = None
+        if row.payment_terms_id is not None:
+            term = await self.payment_terms.get(tenant_id, row.payment_terms_id)
+            terms_days = term.days
+        return response.model_copy(
+            update={
+                "account_code": account_code,
+                "account_name": account_name,
+                "terms_days": terms_days,
+            }
+        )
+
     async def _quotation_snapshot(self, tenant_id: UUID, row: Quotation) -> dict[str, object]:
         branch_name: str | None = None
         if row.branch_id is not None:
@@ -1514,6 +1608,17 @@ class QuotationService:
             "foreign_amount": row.foreign_amount,
             "base_amount": row.base_amount,
             "revision_number": row.revision_number,
+            "payment_mode": row.payment_mode,
+            "reference_number": row.reference_number,
+            "reference_date": row.reference_date,
+            "marks": row.marks,
+            "discount_account_id": str(row.discount_account_id)
+            if row.discount_account_id
+            else None,
+            "freight_account_id": str(row.freight_account_id)
+            if row.freight_account_id
+            else None,
+            "price_basis": row.price_basis,
         }
 
     async def _require(

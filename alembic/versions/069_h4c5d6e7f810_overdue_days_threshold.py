@@ -1,4 +1,4 @@
-"""Winsoft parity: overdue-days credit policy threshold.
+"""Legacy parity: overdue-days credit policy threshold.
 
 Revision ID: h4c5d6e7f810
 Revises: g3b4c5d6e709

@@ -221,6 +221,7 @@ class SalesInvoice(AuditUserMixin, SoftDeleteTenantModel):
     is_printed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+    fiscal_period: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     lines: Mapped[list["SalesInvoiceLine"]] = relationship(
         back_populates="sales_invoice",
@@ -322,5 +323,11 @@ class SalesInvoiceLine(TenantModel):
     weight: Mapped[Decimal | None] = mapped_column(_QTY, nullable=True)
     item_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
     hs_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    warehouse_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        ForeignKey("warehouses.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     sales_invoice: Mapped[SalesInvoice] = relationship(back_populates="lines")

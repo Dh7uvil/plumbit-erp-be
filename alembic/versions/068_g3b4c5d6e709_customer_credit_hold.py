@@ -1,4 +1,4 @@
-"""Winsoft parity: customer credit hold flag.
+"""Legacy parity: customer credit hold flag.
 
 Revision ID: g3b4c5d6e709
 Revises: f2a3b4c5d608
