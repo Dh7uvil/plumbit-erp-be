@@ -14,7 +14,6 @@ from app.auth.catalog import INVENTORY_MODULE
 from app.auth.org_service import OrganizationService
 from app.common.schemas.filters import BaseFilter
 from app.common.schemas.pagination import PageParams
-from app.common.utils.currency import format_quantity_display
 from app.common.services.audit import AuditWriter
 from app.common.services.master_usage import assert_master_not_referenced
 from app.core.enums import AuditAction, ItemType
@@ -25,7 +24,9 @@ from app.inventory_management.categories.service import CategoryService
 from app.inventory_management.products.models import Product
 from app.inventory_management.products.inquiry_quantities import (
     build_quantity_rows,
+    format_secondary_packing_label,
     format_unit2_package_text,
+    inquiry_secondary_display,
     quantity_unit_breakdown,
 )
 from app.inventory_management.products.repository import ProductRepository
@@ -45,6 +46,11 @@ from app.inventory_management.products.schemas import (
     ProductWarehouseQty,
 )
 from app.core.enums import WarehouseLocationType
+from app.inventory_management.products.line_units import (
+    normalize_product_line_for_storage,
+    quantity_in_pieces as line_quantity_in_pieces,
+    resolve_line_to_stock_quantity,
+)
 from app.inventory_management.units.service import UnitService
 
 
@@ -437,6 +443,96 @@ class ProductService:
             "is_active": row.is_active,
         }
 
+    async def _unit_code(self, tenant_id: UUID, unit_id: UUID | None) -> str | None:
+        if unit_id is None:
+            return None
+        row = await self.units.get(tenant_id, unit_id)
+        return row.code if row is not None else None
+
+    async def _line_unit_codes(
+        self,
+        tenant_id: UUID,
+        product: ProductResponse | None,
+        line_unit_id: UUID | None,
+    ) -> tuple[str | None, str | None, str | None]:
+        if product is None:
+            line_code = await self._unit_code(tenant_id, line_unit_id)
+            return None, None, line_code
+        base_code = await self._unit_code(tenant_id, product.unit_id)
+        sec_code = await self._unit_code(tenant_id, product.secondary_unit_id)
+        line_code = await self._unit_code(tenant_id, line_unit_id)
+        return base_code, sec_code, line_code
+
+    async def normalize_line_storage(
+        self,
+        tenant_id: UUID,
+        product: ProductResponse | None,
+        *,
+        unit_id: UUID | None,
+        quantity: Decimal,
+        rate: Decimal | None = None,
+        unit_cost: Decimal | None = None,
+    ) -> tuple[UUID | None, Decimal, Decimal | None, Decimal | None]:
+        base_code, sec_code, line_code = await self._line_unit_codes(
+            tenant_id, product, unit_id
+        )
+        return normalize_product_line_for_storage(
+            product,
+            unit_id=unit_id,
+            quantity=quantity,
+            rate=rate,
+            unit_cost=unit_cost,
+            base_unit_code=base_code,
+            secondary_unit_code=sec_code,
+            line_unit_code=line_code,
+        )
+
+    async def resolve_line_for_stock(
+        self,
+        tenant_id: UUID,
+        product: ProductResponse,
+        *,
+        unit_id: UUID | None,
+        quantity: Decimal,
+        unit_cost: Decimal | None = None,
+        landed_unit_cost: Decimal | None = None,
+        quality_hold_delta: Decimal | None = None,
+    ):
+        base_code, sec_code, line_code = await self._line_unit_codes(
+            tenant_id, product, unit_id
+        )
+        return resolve_line_to_stock_quantity(
+            product,
+            unit_id=unit_id,
+            quantity=quantity,
+            unit_cost=unit_cost,
+            landed_unit_cost=landed_unit_cost,
+            quality_hold_delta=quality_hold_delta,
+            base_unit_code=base_code,
+            secondary_unit_code=sec_code,
+            line_unit_code=line_code,
+        )
+
+    async def quantity_in_pieces_for_stock(
+        self,
+        tenant_id: UUID,
+        product: ProductResponse,
+        *,
+        unit_id: UUID | None,
+        quantity: Decimal,
+    ) -> Decimal:
+        base_code, sec_code, line_code = await self._line_unit_codes(
+            tenant_id, product, unit_id
+        )
+        return line_quantity_in_pieces(
+            product,
+            unit_id=unit_id,
+            quantity=quantity,
+            base_unit_code=base_code,
+            secondary_unit_code=sec_code,
+            line_unit_code=line_code,
+        )
+
     async def _validate_secondary_unit(
         self,
         tenant_id: UUID,
@@ -534,25 +630,27 @@ class ProductService:
         net_available = qty_on_hand - qty_opened - qty_committed
         if net_available < 0:
             net_available = Decimal("0")
-        packing_label: str | None = None
+        unit_code: str | None = None
+        unit2_code: str | None = None
+        if product.unit_id:
+            unit_code = (await self.units.get(tenant_id, product.unit_id)).code
+        if product.secondary_unit_id:
+            unit2_code = (await self.units.get(tenant_id, product.secondary_unit_id)).code
+
+        display_factor, display_unit2_code = inquiry_secondary_display(
+            secondary_unit_factor=product.secondary_unit_factor,
+            unit2_code=unit2_code,
+        )
+        packing_label = format_secondary_packing_label(display_factor, display_unit2_code)
+        on_hand_breakdown = quantity_unit_breakdown(qty_on_hand, display_factor)
         unit2_breakdown: str | None = None
-        if product.secondary_unit_id and product.secondary_unit_factor:
-            factor = product.secondary_unit_factor
-            if factor > 0:
-                on_hand_breakdown = quantity_unit_breakdown(qty_on_hand, factor)
-                unit_code = ""
-                if product.unit_id:
-                    unit_code = (await self.units.get(tenant_id, product.unit_id)).code
-                sec_code = (await self.units.get(tenant_id, product.secondary_unit_id)).code
-                packing_label = (
-                    f"{format_quantity_display(factor)} {unit_code} / {sec_code}"
-                )
-                unit2_breakdown = format_unit2_package_text(
-                    on_hand_breakdown.unit2_qty,
-                    on_hand_breakdown.remainder_qty,
-                    unit_code,
-                    sec_code,
-                )
+        if unit_code:
+            unit2_breakdown = format_unit2_package_text(
+                on_hand_breakdown.unit2_qty,
+                on_hand_breakdown.remainder_qty,
+                unit_code,
+                display_unit2_code,
+            )
 
         avg_cost: Decimal | None = None
         lc_price: Decimal | None = None
@@ -588,13 +686,12 @@ class ProductService:
         last_sale = sales[0] if sales else None
         last_purchase = purchases[0] if purchases else None
 
-        factor = product.secondary_unit_factor if product.secondary_unit_factor else None
         quantity_rows = build_quantity_rows(
             qty_on_hand=qty_on_hand,
             qty_opened=qty_opened,
             qty_committed=qty_committed,
             net_available=net_available,
-            factor=factor,
+            factor=display_factor,
         )
         category_name: str | None = None
         if product.category_id:
@@ -605,12 +702,7 @@ class ProductService:
             tax_row = await self.taxes.get(tenant_id, product.tax_id)
             tax_name = tax_row.name
             tax_rate = tax_row.rate
-        unit_code: str | None = None
-        unit2_code: str | None = None
-        if product.unit_id:
-            unit_code = (await self.units.get(tenant_id, product.unit_id)).code
-        if product.secondary_unit_id:
-            unit2_code = (await self.units.get(tenant_id, product.secondary_unit_id)).code
+        inquiry_unit2_code = unit2_code if unit2_code else display_unit2_code
 
         return ProductInquiryResponse(
             product_id=product_id,
@@ -658,7 +750,7 @@ class ProductService:
             rem=product.rem,
             remarks=product.remarks,
             unit_code=unit_code,
-            unit2_code=unit2_code,
+            unit2_code=inquiry_unit2_code,
         )
 
     async def inventory_list(
@@ -683,13 +775,14 @@ class ProductService:
         result: list[ProductInventoryListRow] = []
         for row in rows:
             packing_label: str | None = None
-            if row.secondary_unit_id and row.secondary_unit_factor and row.unit_id:
-                unit_code = (await self.units.get(tenant_id, row.unit_id)).code
+            sec_code: str | None = None
+            if row.secondary_unit_id:
                 sec_code = (await self.units.get(tenant_id, row.secondary_unit_id)).code
-                packing_label = (
-                    f"{format_quantity_display(row.secondary_unit_factor)} "
-                    f"{unit_code} / {sec_code}"
-                )
+            display_factor, display_u2 = inquiry_secondary_display(
+                secondary_unit_factor=row.secondary_unit_factor,
+                unit2_code=sec_code,
+            )
+            packing_label = format_secondary_packing_label(display_factor, display_u2)
             net_avail = Decimal(row.net_available or 0)
             result.append(
                 ProductInventoryListRow(

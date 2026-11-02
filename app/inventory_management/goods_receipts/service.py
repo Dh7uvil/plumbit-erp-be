@@ -849,12 +849,22 @@ class GoodsReceiptService:
                 continue
             product = await self.products.require_active(tenant_id, line.product_id)
             unit_cost = quantize_money(line.rate * row.exchange_rate)
+            resolved_qty = await self.products.resolve_line_for_stock(
+                tenant_id,
+                product,
+                unit_id=line.unit_id,
+                quantity=line.quantity,
+                unit_cost=unit_cost,
+            )
+            line_qty = resolved_qty.quantity
+            if resolved_qty.unit_cost is not None:
+                unit_cost = resolved_qty.unit_cost
             line.allocated_charge_amount = _ZERO
             landed_unit_cost = unit_cost
-            hold_delta = line.quantity if product.requires_qc else _ZERO
+            hold_delta = line_qty if product.requires_qc else _ZERO
             if product.requires_qc:
                 needs_qc = True
-                line.qty_on_hold = line.quantity
+                line.qty_on_hold = line_qty
             locked = await self.stock.lock_balance(
                 tenant_id,
                 warehouse_id=row.warehouse_id,
@@ -865,7 +875,7 @@ class GoodsReceiptService:
             result = await self.stock.apply_locked(
                 tenant_id,
                 locked,
-                qty=line.quantity,
+                qty=line_qty,
                 movement_type=movement_type,
                 source_type=SOURCE_GOODS_RECEIPT,
                 source_id=row.id,
@@ -873,7 +883,7 @@ class GoodsReceiptService:
                 document_date=row.document_date,
                 notes=line.description or row.notes,
                 occurred_at=occurred_at,
-                unit_id=line.unit_id,
+                unit_id=resolved_qty.unit_id,
                 unit_cost=unit_cost,
                 landed_unit_cost=landed_unit_cost,
                 quality_hold_delta=hold_delta,
@@ -881,13 +891,13 @@ class GoodsReceiptService:
             if result.movement.value is not None:
                 inventory_value += result.movement.value
             if row.purchase_order_id is not None:
-                consumed = min(locked.row.qty_incoming, line.quantity)
+                consumed = min(locked.row.qty_incoming, line_qty)
                 line.incoming_consumed = consumed
                 await self.stock.adjust_incoming_locked(locked, qty=-consumed)
             if line.source_purchase_invoice_line_id is not None:
                 invoice_receipts[line.source_purchase_invoice_line_id] = (
                     invoice_receipts.get(line.source_purchase_invoice_line_id, _ZERO)
-                    + line.quantity
+                    + line_qty
                 )
         if invoice_receipts and row.source_purchase_invoice_id is not None:
             await self._apply_invoice_line_receipts(invoice, invoice_receipts)
@@ -1314,12 +1324,21 @@ class GoodsReceiptService:
                 )
             description = line.description
             unit_id = line.unit_id
+            product = None
             if line.product_id is not None:
                 product = await self.products.require_active(tenant_id, line.product_id)
                 description = description or product.name
                 unit_id = unit_id if unit_id is not None else product.unit_id
             if not description:
                 raise ValidationError("Line description is required")
+            rate = quantize_money(line.rate)
+            unit_id, quantity, rate, _ = await self.products.normalize_line_storage(
+                tenant_id,
+                product,
+                unit_id=unit_id,
+                quantity=line.quantity,
+                rate=rate,
+            )
             built.append(
                 {
                     "line_number": index,
@@ -1329,9 +1348,9 @@ class GoodsReceiptService:
                     "supplier_product_id": line.supplier_product_id,
                     "supplier_sku": line.supplier_sku,
                     "description": description,
-                    "quantity": quantize_quantity(line.quantity),
+                    "quantity": quantity,
                     "unit_id": unit_id,
-                    "rate": quantize_money(line.rate),
+                    "rate": rate,
                     "net_weight": line.net_weight,
                     "volume": line.volume,
                     "gross_weight": line.gross_weight,
@@ -1462,20 +1481,29 @@ class GoodsReceiptService:
             if pi_line is None:
                 raise ValidationError("Purchase invoice line not found on this invoice")
             quantity = quantize_quantity(line.quantity)
-            outstanding = remaining_qty(pi_line.quantity, pi_line.qty_received)
-            if quantity > outstanding:
-                raise ValidationError(
-                    "Receipt quantity exceeds outstanding quantity on the purchase invoice line"
-                )
             description = line.description or pi_line.description
             product_id = line.product_id if line.product_id is not None else pi_line.product_id
             unit_id = line.unit_id if line.unit_id is not None else pi_line.unit_id
+            product = None
             if product_id is not None:
                 product = await self.products.require_active(tenant_id, product_id)
                 description = description or product.name
                 unit_id = unit_id if unit_id is not None else product.unit_id
             if not description:
                 raise ValidationError("Line description is required")
+            rate = quantize_money(line.rate if line.rate else pi_line.rate)
+            unit_id, quantity, rate, _ = await self.products.normalize_line_storage(
+                tenant_id,
+                product,
+                unit_id=unit_id,
+                quantity=quantity,
+                rate=rate,
+            )
+            outstanding = remaining_qty(pi_line.quantity, pi_line.qty_received)
+            if quantity > outstanding:
+                raise ValidationError(
+                    "Receipt quantity exceeds outstanding quantity on the purchase invoice line"
+                )
             built.append(
                 {
                     "line_number": index,
@@ -1489,7 +1517,7 @@ class GoodsReceiptService:
                     "description": description,
                     "quantity": quantity,
                     "unit_id": unit_id,
-                    "rate": quantize_money(line.rate if line.rate else pi_line.rate),
+                    "rate": rate,
                     "net_weight": line.net_weight,
                     "volume": line.volume,
                     "gross_weight": line.gross_weight,

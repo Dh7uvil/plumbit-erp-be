@@ -12,8 +12,37 @@ from pydantic import ValidationError as PydanticValidationError
 from app.core.enums import StockMovementType
 from app.core.exceptions import InsufficientStockError, ValidationError
 from app.inventory_management.costing.repository import CostingRepository
+from app.common.utils.currency import quantize_quantity
 from app.inventory_management.stock.service import StockService
 from app.inventory_management.stock_adjustments.schemas import StockAdjustmentLineInput
+
+
+def _stub_product_resolver(service: StockService) -> None:
+    """StockService resolves line units via ProductService; stub for __new__ tests."""
+
+    async def _resolve_line_for_stock(
+        _tenant_id,
+        product,
+        *,
+        unit_id=None,
+        quantity,
+        unit_cost=None,
+        landed_unit_cost=None,
+        quality_hold_delta=None,
+    ):
+        hold = (
+            quantize_quantity(quality_hold_delta)
+            if quality_hold_delta is not None
+            else None
+        )
+        resolved_unit = unit_id if unit_id is not None else product.unit_id
+        return SimpleNamespace(
+            unit_id=resolved_unit,
+            quantity=quantize_quantity(quantity),
+            quality_hold_delta=hold,
+        )
+
+    service.products = SimpleNamespace(resolve_line_for_stock=_resolve_line_for_stock)
 
 
 def _locked(
@@ -56,6 +85,7 @@ async def test_delete_layers_for_source_rejects_partially_consumed() -> None:
 @pytest.mark.asyncio
 async def test_apply_quality_hold_cannot_exceed_on_hand() -> None:
     service = StockService.__new__(StockService)
+    _stub_product_resolver(service)
     service.session = SimpleNamespace(flush=lambda: None)
     service.movements = SimpleNamespace(create=lambda *_a, **_k: None)
 
@@ -87,6 +117,7 @@ async def test_reserve_locked_checks_available_qty() -> None:
 @pytest.mark.asyncio
 async def test_reverse_inbound_locked_checks_available_qty() -> None:
     service = StockService.__new__(StockService)
+    _stub_product_resolver(service)
     service.costing = SimpleNamespace(
         delete_layers_for_source=lambda *_a, **_k: None,
         assert_balanced=lambda *_a, **_k: None,
@@ -112,6 +143,7 @@ async def test_reverse_inbound_locked_checks_available_qty() -> None:
 @pytest.mark.asyncio
 async def test_reconsume_outbound_locked_checks_available_qty() -> None:
     service = StockService.__new__(StockService)
+    _stub_product_resolver(service)
     service.movements = SimpleNamespace(
         list_for_source=lambda *_a, **_k: [SimpleNamespace(qty=Decimal("-1"))],
         create=lambda *_a, **_k: SimpleNamespace(),

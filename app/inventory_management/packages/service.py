@@ -529,17 +529,27 @@ class PackageService:
             if so_line is None:
                 raise ValidationError("Sales order line not found on this order")
             already = packed.get(line.sales_order_line_id, _ZERO)
-            if already + line.quantity > so_line.quantity:
-                raise ValidationError("Packed quantity cannot exceed the ordered quantity")
-            packed[line.sales_order_line_id] = already + line.quantity
             product_id = line.product_id if line.product_id is not None else so_line.product_id
             unit_id = line.unit_id if line.unit_id is not None else so_line.unit_id
+            product = None
+            if product_id is not None:
+                product = await self.products.require_active(tenant_id, product_id)
+                unit_id = unit_id if unit_id is not None else product.unit_id
+            unit_id, quantity, _, _ = await self.products.normalize_line_storage(
+                tenant_id,
+                product,
+                unit_id=unit_id,
+                quantity=line.quantity,
+            )
+            if already + quantity > so_line.quantity:
+                raise ValidationError("Packed quantity cannot exceed the ordered quantity")
+            packed[line.sales_order_line_id] = already + quantity
             line_rows.append(
                 {
                     "line_number": index,
                     "sales_order_line_id": line.sales_order_line_id,
                     "product_id": product_id,
-                    "quantity": quantize_quantity(line.quantity),
+                    "quantity": quantity,
                     "unit_id": unit_id,
                     **packing_persist(line),
                 }

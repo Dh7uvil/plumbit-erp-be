@@ -572,18 +572,18 @@ class StockTransferService:
             seen.add(line.product_id)
             product = await self.products.require_stockable(tenant_id, line.product_id)
             unit_id = line.unit_id if line.unit_id is not None else product.unit_id
-            if (
-                line.unit_id is not None
-                and product.unit_id is not None
-                and line.unit_id != product.unit_id
-            ):
-                raise ValidationError("Unit must match the product unit")
+            unit_id, qty, _, _ = await self.products.normalize_line_storage(
+                tenant_id,
+                product,
+                unit_id=unit_id,
+                quantity=line.qty,
+            )
             built.append(
                 {
                     "line_number": index,
                     "product_id": line.product_id,
                     "unit_id": unit_id,
-                    "qty": line.qty,
+                    "qty": qty,
                     "qty_transferred": _ZERO,
                     "qty_source_before": None,
                     "qty_dest_before": None,

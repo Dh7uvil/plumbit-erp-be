@@ -1334,8 +1334,15 @@ class ProformaInvoiceService:
             if resolved_category != (item_category or TaxCategory.STANDARD):
                 chosen_tax = await self.taxes.get_by_category(tenant_id, resolved_category)
 
-            qty, line_discount, tax_amount, net = compute_line_amounts(
+            unit_id, line_quantity, rate, _ = await self.products.normalize_line_storage(
+                tenant_id,
+                product,
+                unit_id=unit_id,
                 quantity=line.quantity,
+                rate=rate,
+            )
+            qty, line_discount, tax_amount, net = compute_line_amounts(
+                quantity=line_quantity,
                 rate=rate,
                 discount_type=line.discount_type,
                 discount_value=line.discount_value,

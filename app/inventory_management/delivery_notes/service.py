@@ -768,6 +768,19 @@ class DeliveryNoteService:
                 raise ValidationError("Delivery note line is missing a source document line")
             if line.quantity > _ZERO and line.product_id is None:
                 raise ValidationError("Stock-moving delivery note lines require a product")
+            line_qty = line.quantity
+            if line.product_id is not None:
+                product = await self.products.require_active(tenant_id, line.product_id)
+                line_qty = await self.products.quantity_in_pieces_for_stock(
+                    tenant_id,
+                    product,
+                    unit_id=line.unit_id,
+                    quantity=line.quantity,
+                )
+                if line.sales_order_line_id is not None:
+                    release_qty = min(
+                        quantize_quantity(so_line.qty_reserved), line_qty
+                    )
             stockable = await self._is_stockable(tenant_id, line.product_id)
             if stockable and line.product_id is not None:
                 locked = await self.stock.lock_balance(
@@ -784,7 +797,7 @@ class DeliveryNoteService:
                 result = await self.stock.apply_locked(
                     tenant_id,
                     locked,
-                    qty=-line.quantity,
+                    qty=-line_qty,
                     movement_type=movement_type,
                     source_type=SOURCE_DELIVERY_NOTE,
                     source_id=row.id,
@@ -792,18 +805,18 @@ class DeliveryNoteService:
                     document_date=row.document_date,
                     notes=line.description or row.notes,
                     occurred_at=occurred_at,
-                    unit_id=line.unit_id,
+                    unit_id=product.unit_id,
                 )
                 if result.movement.value is not None:
                     cogs_value += abs(result.movement.value)
             if line.sales_order_line_id is not None:
                 deliveries[line.sales_order_line_id] = (
-                    deliveries.get(line.sales_order_line_id, _ZERO) + line.quantity
+                    deliveries.get(line.sales_order_line_id, _ZERO) + line_qty
                 )
             if line.source_sales_invoice_line_id is not None:
                 invoice_deliveries[line.source_sales_invoice_line_id] = (
                     invoice_deliveries.get(line.source_sales_invoice_line_id, _ZERO)
-                    + line.quantity
+                    + line_qty
                 )
         if deliveries and row.sales_order_id is not None:
             await self.sales_orders.apply_line_deliveries(tenant_id, row.sales_order_id, deliveries)
@@ -1159,20 +1172,29 @@ class DeliveryNoteService:
             if si_line is None:
                 raise ValidationError("Sales invoice line not found on this invoice")
             quantity = quantize_quantity(line.quantity)
-            outstanding = remaining_qty(si_line.quantity, si_line.qty_delivered)
-            if quantity > outstanding:
-                raise ValidationError(
-                    "Delivery quantity exceeds outstanding quantity on the sales invoice line"
-                )
             description = line.description or si_line.description
             product_id = line.product_id if line.product_id is not None else si_line.product_id
             unit_id = line.unit_id if line.unit_id is not None else si_line.unit_id
+            product = None
             if product_id is not None:
                 product = await self.products.require_active(tenant_id, product_id)
                 description = description or product.name
                 unit_id = unit_id if unit_id is not None else product.unit_id
             if not description:
                 raise ValidationError("Line description is required")
+            rate = quantize_money(line.rate if line.rate else si_line.rate)
+            unit_id, quantity, rate, _ = await self.products.normalize_line_storage(
+                tenant_id,
+                product,
+                unit_id=unit_id,
+                quantity=quantity,
+                rate=rate,
+            )
+            outstanding = remaining_qty(si_line.quantity, si_line.qty_delivered)
+            if quantity > outstanding:
+                raise ValidationError(
+                    "Delivery quantity exceeds outstanding quantity on the sales invoice line"
+                )
             built.append(
                 {
                     "line_number": index,
@@ -1182,7 +1204,7 @@ class DeliveryNoteService:
                     "description": description,
                     "quantity": quantity,
                     "unit_id": unit_id,
-                    "rate": quantize_money(line.rate if line.rate else si_line.rate),
+                    "rate": rate,
                 }
             )
         foreign = quantize_money(
@@ -1226,20 +1248,29 @@ class DeliveryNoteService:
             if so_line is None:
                 raise ValidationError("Sales order line not found on this order")
             quantity = quantize_quantity(line.quantity)
-            outstanding = self.sales_orders.outstanding_delivery(so_line)
-            if quantity > outstanding:
-                raise ValidationError(
-                    "Delivery quantity exceeds outstanding quantity on the sales order line"
-                )
             description = line.description or so_line.description
             product_id = line.product_id if line.product_id is not None else so_line.product_id
             unit_id = line.unit_id if line.unit_id is not None else so_line.unit_id
+            product = None
             if product_id is not None:
                 product = await self.products.require_active(tenant_id, product_id)
                 description = description or product.name
                 unit_id = unit_id if unit_id is not None else product.unit_id
             if not description:
                 raise ValidationError("Line description is required")
+            rate = quantize_money(line.rate if line.rate else so_line.rate)
+            unit_id, quantity, rate, _ = await self.products.normalize_line_storage(
+                tenant_id,
+                product,
+                unit_id=unit_id,
+                quantity=quantity,
+                rate=rate,
+            )
+            outstanding = self.sales_orders.outstanding_delivery(so_line)
+            if quantity > outstanding:
+                raise ValidationError(
+                    "Delivery quantity exceeds outstanding quantity on the sales order line"
+                )
             built.append(
                 {
                     "line_number": index,
@@ -1248,7 +1279,7 @@ class DeliveryNoteService:
                     "description": description,
                     "quantity": quantity,
                     "unit_id": unit_id,
-                    "rate": quantize_money(line.rate if line.rate else so_line.rate),
+                    "rate": rate,
                 }
             )
         return built

@@ -94,6 +94,29 @@ class StockService:
         self.audit = AuditWriter(session)
         self._can_read_cost = has_permission(actor_permissions, COST_READ)
 
+    async def _resolve_movement_qty(
+        self,
+        tenant_id: UUID,
+        product: ProductResponse,
+        *,
+        unit_id: UUID | None,
+        qty: Decimal,
+        quality_hold_delta: Decimal | None = None,
+    ) -> tuple[Decimal, Decimal, UUID | None]:
+        resolved = await self.products.resolve_line_for_stock(
+            tenant_id,
+            product,
+            unit_id=unit_id,
+            quantity=qty,
+            quality_hold_delta=quality_hold_delta,
+        )
+        hold = (
+            resolved.quality_hold_delta
+            if resolved.quality_hold_delta is not None
+            else quantize_quantity(quality_hold_delta or _ZERO)
+        )
+        return resolved.quantity, hold, resolved.unit_id
+
     async def list_balances(
         self,
         tenant_id: UUID,
@@ -312,14 +335,28 @@ class StockService:
                 "Back-dated inbound is not allowed when a later outbound movement "
                 "exists for this product and warehouse"
             )
-        if (
-            unit_id is not None
-            and locked.product.unit_id is not None
-            and unit_id != locked.product.unit_id
-        ):
-            raise ValidationError("Unit must match the product unit")
-        resolved_unit = unit_id if unit_id is not None else locked.product.unit_id
-        hold_delta = quantize_quantity(quality_hold_delta)
+        resolved_line = await self.products.resolve_line_for_stock(
+            tenant_id,
+            locked.product,
+            unit_id=unit_id,
+            quantity=qty,
+            unit_cost=unit_cost,
+            landed_unit_cost=landed_unit_cost,
+            quality_hold_delta=quality_hold_delta,
+        )
+        qty = resolved_line.quantity
+        unit_cost = resolved_line.unit_cost
+        landed_unit_cost = resolved_line.landed_unit_cost
+        resolved_unit = (
+            resolved_line.unit_id
+            if resolved_line.unit_id is not None
+            else locked.product.unit_id
+        )
+        hold_delta = (
+            resolved_line.quality_hold_delta
+            if resolved_line.quality_hold_delta is not None
+            else quantize_quantity(quality_hold_delta)
+        )
         available = available_qty(
             locked.row.qty_on_hand,
             locked.row.qty_reserved,
@@ -436,9 +473,15 @@ class StockService:
 
         if movement_type not in _HOLD_AUDIT_TYPES:
             raise ValidationError("Quality-hold audit movements must be QC_HOLD or QC_RELEASE")
-        delta = quantize_quantity(qty)
+        delta, _, resolved_unit_id = await self._resolve_movement_qty(
+            tenant_id, locked.product, unit_id=unit_id, qty=qty
+        )
+        delta = quantize_quantity(delta)
         if delta == _ZERO:
             raise ValidationError("Quality hold quantity cannot be zero")
+        movement_unit = (
+            resolved_unit_id if resolved_unit_id is not None else locked.product.unit_id
+        )
         new_hold = quantize_quantity(locked.row.qty_quality_hold + delta)
         if new_hold < _ZERO:
             raise ValidationError("Quality hold cannot be negative")
@@ -454,7 +497,7 @@ class StockService:
                 "movement_type": movement_type.value,
                 "warehouse_id": locked.warehouse.id,
                 "product_id": locked.product.id,
-                "unit_id": unit_id if unit_id is not None else locked.product.unit_id,
+                "unit_id": movement_unit,
                 "qty": delta,
                 "qty_before": locked.row.qty_on_hand,
                 "qty_after": locked.row.qty_on_hand,
@@ -486,10 +529,20 @@ class StockService:
     ) -> StockMovement:
         """Reverse an inbound write without FIFO consume. Deletes layers for this source line."""
 
-        inbound_qty = quantize_quantity(qty)
+        inbound_qty, hold, resolved_unit_id = await self._resolve_movement_qty(
+            tenant_id,
+            locked.product,
+            unit_id=unit_id,
+            qty=qty,
+            quality_hold_delta=quality_hold_delta,
+        )
+        inbound_qty = quantize_quantity(inbound_qty)
+        hold = quantize_quantity(hold)
+        movement_unit = (
+            resolved_unit_id if resolved_unit_id is not None else locked.product.unit_id
+        )
         if inbound_qty <= _ZERO:
             raise ValidationError("Reverse quantity must be positive")
-        hold = quantize_quantity(quality_hold_delta)
         available = available_qty(
             locked.row.qty_on_hand,
             locked.row.qty_reserved,
@@ -524,7 +577,7 @@ class StockService:
                 "movement_type": movement_type.value,
                 "warehouse_id": locked.warehouse.id,
                 "product_id": locked.product.id,
-                "unit_id": unit_id if unit_id is not None else locked.product.unit_id,
+                "unit_id": movement_unit,
                 "qty": -inbound_qty,
                 "qty_before": qty_before,
                 "qty_after": locked.row.qty_on_hand,
@@ -566,7 +619,18 @@ class StockService:
     ) -> StockMovement:
         """Reverse an outbound write by restoring original-cost layers, not today's cost."""
 
-        outbound_qty = quantize_quantity(qty)
+        outbound_qty, hold, resolved_unit_id = await self._resolve_movement_qty(
+            tenant_id,
+            locked.product,
+            unit_id=unit_id,
+            qty=qty,
+            quality_hold_delta=quality_hold_delta,
+        )
+        outbound_qty = quantize_quantity(outbound_qty)
+        hold = quantize_quantity(hold)
+        movement_unit = (
+            resolved_unit_id if resolved_unit_id is not None else locked.product.unit_id
+        )
         if outbound_qty <= _ZERO:
             raise ValidationError("Reverse quantity must be positive")
         original_type = original_source_type or source_type
@@ -584,7 +648,6 @@ class StockService:
         if original is None:
             raise ValidationError("Original outbound movement not found for restore")
         restorations = await self.costing.restore_partial(tenant_id, original.id, outbound_qty)
-        hold = quantize_quantity(quality_hold_delta)
         qty_before = locked.row.qty_on_hand
         locked.row.qty_on_hand = quantize_quantity(qty_before + outbound_qty)
         new_hold = quantize_quantity(locked.row.qty_quality_hold + hold)
@@ -601,7 +664,7 @@ class StockService:
                 "movement_type": movement_type.value,
                 "warehouse_id": locked.warehouse.id,
                 "product_id": locked.product.id,
-                "unit_id": unit_id if unit_id is not None else locked.product.unit_id,
+                "unit_id": movement_unit,
                 "qty": outbound_qty,
                 "qty_before": qty_before,
                 "qty_after": locked.row.qty_on_hand,

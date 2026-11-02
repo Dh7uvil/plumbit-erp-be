@@ -29,6 +29,29 @@ def quantity_unit_breakdown(
     )
 
 
+def format_secondary_packing_label(
+    factor: Decimal,
+    unit2_code: str,
+) -> str:
+    """Display label: pieces per unit 2, e.g. ``200.00 PCS / CTN``."""
+    u2 = (unit2_code or "PCS").strip() or "PCS"
+    qty = factor if factor > 0 else Decimal("1")
+    return f"{format_quantity_display(qty)} PCS / {u2}"
+
+
+def inquiry_secondary_display(
+    *,
+    secondary_unit_factor: Decimal | None,
+    unit2_code: str | None,
+) -> tuple[Decimal, str]:
+    """Effective factor and unit-2 code for inquiry UI when unit 2 is unset."""
+    factor = secondary_unit_factor if secondary_unit_factor and secondary_unit_factor > 0 else Decimal(
+        "1"
+    )
+    u2 = (unit2_code or "PCS").strip() or "PCS"
+    return factor, u2
+
+
 def format_unit2_package_text(
     unit2_qty: Decimal,
     remainder_qty: Decimal,

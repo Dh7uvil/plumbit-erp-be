@@ -470,23 +470,29 @@ class StockAdjustmentService:
             seen.add(line.product_id)
             product = await self.products.require_stockable(tenant_id, line.product_id)
             unit_id = line.unit_id if line.unit_id is not None else product.unit_id
-            if (
-                line.unit_id is not None
-                and product.unit_id is not None
-                and line.unit_id != product.unit_id
-            ):
-                raise ValidationError("Unit must match the product unit")
             qty_counted: Decimal | None = None
             qty_delta: Decimal | None = None
+            unit_cost = line.unit_cost
             if reason == StockAdjustmentReason.COUNT:
                 if line.qty_counted is None:
                     raise ValidationError("qty_counted is required when reason is COUNT")
-                qty_counted = line.qty_counted
+                unit_id, qty_counted, _, _ = await self.products.normalize_line_storage(
+                    tenant_id,
+                    product,
+                    unit_id=unit_id,
+                    quantity=line.qty_counted,
+                )
             else:
                 if line.qty_delta is None or line.qty_delta == _ZERO:
                     raise ValidationError("qty_delta must be non-zero")
-                qty_delta = line.qty_delta
-                if qty_delta > _ZERO and line.unit_cost is None:
+                unit_id, qty_delta, _, unit_cost = await self.products.normalize_line_storage(
+                    tenant_id,
+                    product,
+                    unit_id=unit_id,
+                    quantity=line.qty_delta,
+                    unit_cost=line.unit_cost,
+                )
+                if qty_delta > _ZERO and unit_cost is None:
                     raise ValidationError("unit_cost is required for positive adjustments")
             built.append(
                 {
@@ -496,7 +502,7 @@ class StockAdjustmentService:
                     "qty_counted": qty_counted,
                     "qty_booked": None,
                     "qty_delta": qty_delta,
-                    "unit_cost": line.unit_cost,
+                    "unit_cost": unit_cost,
                     "notes": line.notes,
                 }
             )

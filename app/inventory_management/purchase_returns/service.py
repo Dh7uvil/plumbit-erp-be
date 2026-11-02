@@ -553,18 +553,30 @@ class PurchaseReturnService:
                 tenant_id, line.goods_receipt_line_id, exclude_return_id=exclude_return_id
             )
             returnable = self._returnable_qty(dn_line, already)
-            if line.quantity > returnable:
-                raise ValidationError("Return quantity exceeds returnable quantity")
             product_id = line.product_id if line.product_id is not None else dn_line.product_id
             unit_id = line.unit_id if line.unit_id is not None else dn_line.unit_id
+            product = None
+            if product_id is not None:
+                product = await self.products.require_active(tenant_id, product_id)
+                unit_id = unit_id if unit_id is not None else product.unit_id
+            rate = quantize_money(line.rate if line.rate else dn_line.rate)
+            unit_id, quantity, rate, _ = await self.products.normalize_line_storage(
+                tenant_id,
+                product,
+                unit_id=unit_id,
+                quantity=line.quantity,
+                rate=rate,
+            )
+            if quantity > returnable:
+                raise ValidationError("Return quantity exceeds returnable quantity")
             line_rows.append(
                 {
                     "line_number": index,
                     "goods_receipt_line_id": line.goods_receipt_line_id,
                     "product_id": product_id,
-                    "quantity": quantize_quantity(line.quantity),
+                    "quantity": quantity,
                     "unit_id": unit_id,
-                    "rate": quantize_money(line.rate if line.rate else dn_line.rate),
+                    "rate": rate,
                     "disposition": line.disposition.value,
                     "notes": line.notes,
                 }
