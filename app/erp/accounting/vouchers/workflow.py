@@ -9,7 +9,7 @@ _TRANSITIONS: dict[tuple[InvoiceDocumentStatus, str], InvoiceDocumentStatus] = {
     (InvoiceDocumentStatus.POSTED, "cancel"): InvoiceDocumentStatus.CANCELLED,
 }
 
-_EDITABLE = frozenset({InvoiceDocumentStatus.DRAFT})
+_EDITABLE = frozenset({InvoiceDocumentStatus.DRAFT, InvoiceDocumentStatus.POSTED})
 
 
 def next_status(current: InvoiceDocumentStatus, action: str) -> InvoiceDocumentStatus:

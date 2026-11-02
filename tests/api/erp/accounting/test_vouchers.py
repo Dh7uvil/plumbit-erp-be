@@ -108,11 +108,7 @@ async def test_cash_receipt_voucher_settles_invoice(client: AsyncClient) -> None
     )
     assert created.status_code == 201, created.text
     voucher = created.json()["data"]
-    posted = await client.post(
-        f"/api/v1/vouchers/{voucher['id']}/post",
-        headers=_idempotent(headers, voucher["version"]),
-    )
-    assert posted.status_code == 200, posted.text
+    assert voucher["status"] == "POSTED"
     invoice_after = await client.get(f"/api/v1/sales-invoices/{invoice['id']}", headers=headers)
     assert Decimal(invoice_after.json()["data"]["balance_due"]) == Decimal("0")
 
@@ -210,11 +206,12 @@ async def test_day_book_endpoint(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_delete_draft_voucher(client: AsyncClient) -> None:
+async def test_posted_voucher_can_delete(client: AsyncClient) -> None:
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)
     await _enable_books(client, headers)
     voucher = await _draft_cash_payment(client, headers, amount="75")
+    assert voucher["status"] == "POSTED"
     assert "delete" in voucher["available_actions"]
     deleted = await client.delete(
         f"/api/v1/vouchers/{voucher['id']}",
@@ -222,7 +219,75 @@ async def test_delete_draft_voucher(client: AsyncClient) -> None:
     )
     assert deleted.status_code == 200, deleted.text
     missing = await client.get(f"/api/v1/vouchers/{voucher['id']}", headers=headers)
-    assert missing.status_code == 404
+    assert missing.status_code == 404, missing.text
+
+
+@pytest.mark.asyncio
+async def test_journal_voucher_unbalanced_auto_posts(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    cash_account = await _account_by_subtype(client, headers, "CASH")
+    revenue = await _counter_account(client, headers)
+    source = await _voucher_source(client, headers)
+    created = await client.post(
+        "/api/v1/vouchers",
+        headers=headers,
+        json={
+            "voucher_type": "JOURNAL",
+            "narration": "Unbalanced accrual",
+            "lines": [
+                {"account_id": cash_account, "debit": "80", "credit": "0"},
+                {"account_id": revenue, "debit": "0", "credit": "40"},
+            ],
+            **source,
+        },
+    )
+    assert created.status_code == 201, created.text
+    voucher = created.json()["data"]
+    assert voucher["status"] == "POSTED"
+    assert voucher["journal_entry_id"] is not None
+
+
+@pytest.mark.asyncio
+async def test_journal_voucher_unbalanced_update_reposts(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    cash_account = await _account_by_subtype(client, headers, "CASH")
+    revenue = await _counter_account(client, headers)
+    source = await _voucher_source(client, headers)
+    created = await client.post(
+        "/api/v1/vouchers",
+        headers=headers,
+        json={
+            "voucher_type": "JOURNAL",
+            "narration": "Unbalanced initial",
+            "lines": [
+                {"account_id": cash_account, "debit": "80", "credit": "0"},
+                {"account_id": revenue, "debit": "0", "credit": "40"},
+            ],
+            **source,
+        },
+    )
+    assert created.status_code == 201, created.text
+    voucher = created.json()["data"]
+    updated = await client.put(
+        f"/api/v1/vouchers/{voucher['id']}",
+        headers={**headers, "If-Match": str(voucher["version"])},
+        json={
+            "version": voucher["version"],
+            "narration": "Unbalanced after edit",
+            "lines": [
+                {"account_id": cash_account, "debit": "100", "credit": "0"},
+                {"account_id": revenue, "debit": "0", "credit": "30"},
+            ],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    body = updated.json()["data"]
+    assert body["status"] == "POSTED"
+    assert body["journal_entry_id"] is not None
 
 
 @pytest.mark.asyncio
@@ -249,17 +314,54 @@ async def test_journal_voucher_via_vouchers_endpoint(client: AsyncClient) -> Non
     assert created.status_code == 201, created.text
     voucher = created.json()["data"]
     assert voucher["voucher_type"] == "JOURNAL"
-    posted = await client.post(
-        f"/api/v1/vouchers/{voucher['id']}/post",
-        headers=_idempotent(headers, voucher["version"]),
-    )
-    assert posted.status_code == 200, posted.text
-    journal = await client.get(
-        f"/api/v1/vouchers/{voucher['id']}",
+    assert voucher["status"] == "POSTED"
+    assert voucher["journal_entry_id"] is not None
+    assert "post" not in voucher["available_actions"]
+
+
+@pytest.mark.asyncio
+async def test_voucher_update_reposts_ledger(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    cash_account = await _account_by_subtype(client, headers, "CASH")
+    revenue = await _counter_account(client, headers)
+    source = await _voucher_source(client, headers)
+    created = await client.post(
+        "/api/v1/vouchers",
         headers=headers,
+        json={
+            "voucher_type": "JOURNAL",
+            "narration": "Before edit",
+            "lines": [
+                {"account_id": cash_account, "debit": "80", "credit": "0"},
+                {"account_id": revenue, "debit": "0", "credit": "80"},
+            ],
+            **source,
+        },
     )
-    assert journal.status_code == 200, journal.text
-    assert journal.json()["data"]["journal_entry_id"] is not None
+    assert created.status_code == 201, created.text
+    voucher = created.json()["data"]
+    assert voucher["status"] == "POSTED"
+    assert voucher["journal_entry_id"] is not None
+
+    updated = await client.put(
+        f"/api/v1/vouchers/{voucher['id']}",
+        headers={**headers, "If-Match": str(voucher["version"])},
+        json={
+            "version": voucher["version"],
+            "narration": "After edit",
+            "lines": [
+                {"account_id": cash_account, "debit": "90", "credit": "0"},
+                {"account_id": revenue, "debit": "0", "credit": "90"},
+            ],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    body = updated.json()["data"]
+    assert body["status"] == "POSTED"
+    assert body["journal_entry_id"] is not None
+    assert body["reversal_journal_entry_id"] is not None
 
 
 @pytest.mark.asyncio
@@ -354,12 +456,8 @@ async def test_general_purchase_post_splits_vat_from_account_default_tax(
     )
     assert created.status_code == 201, created.text
     voucher = created.json()["data"]
-    posted = await client.post(
-        f"/api/v1/vouchers/{voucher['id']}/post",
-        headers=_idempotent(headers, voucher["version"]),
-    )
-    assert posted.status_code == 200, posted.text
-    journal_id = posted.json()["data"]["journal_entry_id"]
+    assert voucher["status"] == "POSTED"
+    journal_id = voucher["journal_entry_id"]
     assert journal_id is not None
     journal = await client.get(f"/api/v1/journals/{journal_id}", headers=headers)
     assert journal.status_code == 200, journal.text
@@ -430,11 +528,7 @@ async def test_bank_receipt_future_cheque_creates_pdc_linkage(client: AsyncClien
     )
     assert created.status_code == 201, created.text
     voucher = created.json()["data"]
-    posted = await client.post(
-        f"/api/v1/vouchers/{voucher['id']}/post",
-        headers=_idempotent(headers, voucher["version"]),
-    )
-    assert posted.status_code == 200, posted.text
+    assert voucher["status"] == "POSTED"
     cheques = await client.get(
         "/api/v1/cheques",
         headers=headers,

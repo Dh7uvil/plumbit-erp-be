@@ -4,10 +4,13 @@ from decimal import Decimal
 
 from app.inventory_management.products.inquiry_quantities import (
     build_quantity_rows,
+    build_quantity_rows_inverted,
+    format_base_packing_label,
     format_secondary_packing_label,
     format_unit2_package_text,
     inquiry_secondary_display,
     quantity_unit_breakdown,
+    quantity_unit_breakdown_inverted,
 )
 
 
@@ -56,6 +59,39 @@ def test_format_unit2_package_text_loose_only() -> None:
 def test_format_unit2_package_text_full_and_loose() -> None:
     text = format_unit2_package_text(Decimal("61"), Decimal("15"), "PCS", "CTN")
     assert text == "61.00 CTN & 15.00 PCS loose"
+
+
+def test_format_base_packing_label_ctn() -> None:
+    assert format_base_packing_label(Decimal("100"), "CTN") == "100.00 PCS / CTN"
+
+
+def test_quantity_unit_breakdown_inverted_cartons() -> None:
+    row = quantity_unit_breakdown_inverted(Decimal("50"), Decimal("100"))
+    assert row is not None
+    assert row.unit_qty == Decimal("50")
+    assert row.unit2_qty == Decimal("5000")
+    assert row.remainder_qty == Decimal("0")
+
+
+def test_quantity_unit_breakdown_inverted_legacy_piece_balance() -> None:
+    """Balances posted before piece→carton conversion stored piece count in the CTN field."""
+    row = quantity_unit_breakdown_inverted(Decimal("5000"), Decimal("100"))
+    assert row is not None
+    assert row.unit_qty == Decimal("50")
+    assert row.unit2_qty == Decimal("5000")
+    assert row.remainder_qty == Decimal("0")
+
+
+def test_build_quantity_rows_inverted() -> None:
+    rows = build_quantity_rows_inverted(
+        qty_on_hand=Decimal("50"),
+        qty_opened=Decimal("0"),
+        qty_committed=Decimal("0"),
+        net_available=Decimal("50"),
+        pieces_per_base=Decimal("100"),
+    )
+    assert rows.on_hand is not None
+    assert rows.on_hand.unit2_qty == Decimal("5000")
 
 
 def test_build_quantity_rows_net_available() -> None:

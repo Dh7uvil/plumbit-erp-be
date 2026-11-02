@@ -49,7 +49,8 @@ class JournalEntry(AuditUserMixin, SoftDeleteTenantModel):
             unique=True,
             postgresql_where=text(
                 "status = 'POSTED' AND deleted_at IS NULL "
-                "AND source_type IS NOT NULL AND source_id IS NOT NULL"
+                "AND source_type IS NOT NULL AND source_id IS NOT NULL "
+                "AND reversed_by_id IS NULL"
             ),
         ),
         Index(

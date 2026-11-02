@@ -225,7 +225,17 @@ class CostSheetService:
         async with transaction(self.session):
             row = await self._require(tenant_id, cost_sheet_id, for_update=True)
             self._assert_version(row, expected_version, payload.version)
-            assert_editable(CostSheetStatus(row.status))
+            self._assert_cost_sheet_editable(row)
+            if (
+                CostSheetMode(row.sheet_mode) == CostSheetMode.JOURNAL
+                and row.journal_entry_id is not None
+            ):
+                await self._reverse_posted_journal(
+                    tenant_id,
+                    row,
+                    actor_user_id=actor_user_id,
+                    reason=f"Edit cost sheet {row.document_number}",
+                )
             header, lines, charges = await self._merge_update(tenant_id, row, payload)
             await self.repo.update(
                 tenant_id,
@@ -251,6 +261,11 @@ class CostSheetService:
             loaded = await self._require(tenant_id, cost_sheet_id)
             await self._sync_base_amounts(loaded)
             loaded = await self._require(tenant_id, cost_sheet_id)
+            if CostSheetMode(loaded.sheet_mode) == CostSheetMode.JOURNAL:
+                await self._post_journal_internal(
+                    tenant_id, loaded, actor_user_id=actor_user_id
+                )
+                loaded = await self._require(tenant_id, cost_sheet_id)
             await self.audit.write(
                 tenant_id=tenant_id,
                 user_id=actor_user_id,
@@ -273,8 +288,20 @@ class CostSheetService:
         async with transaction(self.session):
             row = await self._require(tenant_id, cost_sheet_id, for_update=True)
             self._assert_version(row, expected_version, None)
-            if row.status != CostSheetStatus.DRAFT.value:
+            status = CostSheetStatus(row.status)
+            sheet_mode = CostSheetMode(row.sheet_mode)
+            if sheet_mode == CostSheetMode.JOURNAL:
+                if status == CostSheetStatus.CLOSED:
+                    raise ValidationError("Closed cost sheets cannot be deleted")
+            elif status != CostSheetStatus.DRAFT:
                 raise ValidationError("Only draft cost sheets can be deleted")
+            if sheet_mode == CostSheetMode.JOURNAL and row.journal_entry_id is not None:
+                await self._reverse_posted_journal(
+                    tenant_id,
+                    row,
+                    actor_user_id=actor_user_id,
+                    reason=f"Delete cost sheet {row.document_number}",
+                )
             response = await self._to_response(row)
             await self.repo.soft_delete(tenant_id, cost_sheet_id)
             await self.audit.write(
@@ -417,6 +444,11 @@ class CostSheetService:
             entity_id=row.id,
             new_values={"document_number": number, "sheet_type": payload.sheet_type.value},
         )
+        if CostSheetMode(loaded.sheet_mode) == CostSheetMode.JOURNAL:
+            await self._post_journal_internal(
+                tenant_id, loaded, actor_user_id=actor_user_id
+            )
+            loaded = await self._require(tenant_id, row.id)
         return await self._to_response(loaded)
 
     async def post_journal(
@@ -435,28 +467,14 @@ class CostSheetService:
             self._assert_version(row, expected_version, version)
             if CostSheetMode(row.sheet_mode) != CostSheetMode.JOURNAL:
                 raise ValidationError("Only journal-mode cost sheets can be posted")
+            if row.journal_entry_id is not None:
+                loaded = await self._require(tenant_id, cost_sheet_id)
+                return await self._to_response(loaded)
             if CostSheetStatus(row.status) != CostSheetStatus.DRAFT:
                 raise ValidationError("Only draft cost sheets can be posted")
-            if row.journal_entry_id is not None:
-                raise ValidationError("Cost sheet is already posted")
-            self._assert_journal_balanced(row.journal_lines)
-            journal_lines = await self._posting_journal_lines(tenant_id, row)
-            journal = await self.posting.post_for_document(
-                tenant_id,
-                source_type=_SOURCE_COST_SHEET,
-                source_id=row.id,
-                entry_date=row.document_date,
-                lines=journal_lines,
-                currency_id=row.currency_id,
-                exchange_rate=row.exchange_rate,
-                narration=row.notes or f"Cost sheet {row.document_number}",
-                branch_id=None,
-                actor_id=actor_user_id,
-                journal_type=JournalType.SYSTEM,
-                reference=row.document_number,
+            await self._post_journal_internal(
+                tenant_id, row, actor_user_id=actor_user_id
             )
-            row.journal_entry_id = journal.id
-            row.status = CostSheetStatus.CONFIRMED.value
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
@@ -468,19 +486,8 @@ class CostSheetService:
                 module=ACCOUNTING_MODULE,
                 entity_type="cost_sheet",
                 entity_id=cost_sheet_id,
-                new_values={"journal_entry_id": str(journal.id)},
+                new_values={"journal_entry_id": str(loaded.journal_entry_id)},
             )
-            if (
-                row.source_document_type == "PURCHASE_INVOICE"
-                and row.source_document_id is not None
-            ):
-                from app.erp.purchase_invoices.landed_cost import (
-                    refresh_purchase_invoice_landed_costs,
-                )
-
-                await refresh_purchase_invoice_landed_costs(
-                    self.session, tenant_id, row.source_document_id
-                )
             return await self._to_response(loaded)
 
     async def cancel_journal(
@@ -739,13 +746,81 @@ class CostSheetService:
         }
 
     @staticmethod
-    def _assert_journal_balanced(lines: Sequence[CostSheetJournalLine]) -> None:
+    def _assert_journal_has_amount(lines: Sequence[CostSheetJournalLine]) -> None:
         debit = sum((quantize_money(line.debit) for line in lines), _ZERO)
         credit = sum((quantize_money(line.credit) for line in lines), _ZERO)
-        if debit != credit:
-            raise ValidationError("Journal lines must balance before posting")
-        if debit <= _ZERO:
+        if debit <= _ZERO and credit <= _ZERO:
             raise ValidationError("Journal lines must have a non-zero total")
+
+    def _assert_cost_sheet_editable(self, row: CostSheet) -> None:
+        status = CostSheetStatus(row.status)
+        if CostSheetMode(row.sheet_mode) == CostSheetMode.JOURNAL:
+            if status in {CostSheetStatus.DRAFT, CostSheetStatus.CONFIRMED}:
+                return
+            raise ValidationError("Journal cost sheet cannot be edited in this status")
+        assert_editable(status)
+
+    async def _reverse_posted_journal(
+        self,
+        tenant_id: UUID,
+        row: CostSheet,
+        *,
+        actor_user_id: UUID,
+        reason: str,
+    ) -> None:
+        if row.journal_entry_id is None:
+            return
+        reversal = await self.posting.reverse(
+            tenant_id,
+            row.journal_entry_id,
+            reversal_date=row.document_date,
+            reason=reason,
+            actor_id=actor_user_id,
+        )
+        row.reversal_journal_entry_id = reversal.id
+        row.journal_entry_id = None
+        await self.session.flush()
+
+    async def _post_journal_internal(
+        self,
+        tenant_id: UUID,
+        row: CostSheet,
+        *,
+        actor_user_id: UUID,
+    ) -> None:
+        if CostSheetMode(row.sheet_mode) != CostSheetMode.JOURNAL:
+            return
+        if row.journal_entry_id is not None:
+            return
+        self._assert_journal_has_amount(row.journal_lines)
+        journal_lines = await self._posting_journal_lines(tenant_id, row)
+        journal = await self.posting.post_for_document(
+            tenant_id,
+            source_type=_SOURCE_COST_SHEET,
+            source_id=row.id,
+            entry_date=row.document_date,
+            lines=journal_lines,
+            currency_id=row.currency_id,
+            exchange_rate=row.exchange_rate,
+            narration=row.notes or f"Cost sheet {row.document_number}",
+            branch_id=None,
+            actor_id=actor_user_id,
+            journal_type=JournalType.SYSTEM,
+            reference=row.document_number,
+            allow_unbalanced=True,
+        )
+        row.journal_entry_id = journal.id
+        row.status = CostSheetStatus.CONFIRMED.value
+        await self.session.flush()
+        if (
+            row.source_document_type == "PURCHASE_INVOICE"
+            and row.source_document_id is not None
+        ):
+            from app.erp.purchase_invoices.landed_cost import refresh_purchase_invoice_landed_costs
+
+            await refresh_purchase_invoice_landed_costs(
+                self.session, tenant_id, row.source_document_id
+            )
 
     def _capitalize_debit_total(self, row: CostSheet) -> Decimal:
         total = _ZERO
@@ -1112,25 +1187,23 @@ class CostSheetService:
         sheet_mode = CostSheetMode(row.sheet_mode)
         actions = transition_actions(status)
         if sheet_mode == CostSheetMode.JOURNAL:
-            actions = [action for action in actions if action not in {"confirm", "close"}]
-        if status != CostSheetStatus.CLOSED:
+            actions = [
+                action
+                for action in actions
+                if action
+                not in {"confirm", "close", "reopen", "post", "cancel_journal"}
+            ]
+        if sheet_mode == CostSheetMode.PLANNING and status != CostSheetStatus.CLOSED:
             if has_permission(self.actor_permissions, COST_SHEET_UPDATE):
                 actions = [*actions, "pull_actuals"]
-        if status == CostSheetStatus.DRAFT and has_permission(
-            self.actor_permissions, COST_SHEET_DELETE
-        ):
-            actions.append("delete")
-        if sheet_mode == CostSheetMode.JOURNAL:
-            if (
-                status == CostSheetStatus.DRAFT
-                and row.journal_entry_id is None
-                and has_permission(self.actor_permissions, COST_SHEET_CONFIRM)
-            ):
-                actions.append("post")
-            if row.journal_entry_id is not None and has_permission(
-                self.actor_permissions, COST_SHEET_UPDATE
-            ):
-                actions.append("cancel_journal")
+        if has_permission(self.actor_permissions, COST_SHEET_DELETE):
+            if sheet_mode == CostSheetMode.JOURNAL and status in {
+                CostSheetStatus.DRAFT,
+                CostSheetStatus.CONFIRMED,
+            }:
+                actions.append("delete")
+            elif sheet_mode == CostSheetMode.PLANNING and status == CostSheetStatus.DRAFT:
+                actions.append("delete")
         from app.erp.accounting.fiscal import FiscalYearConfig
 
         fiscal = await FiscalYearConfig.load(self.session, row.tenant_id)

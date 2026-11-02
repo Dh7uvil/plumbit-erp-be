@@ -24,10 +24,15 @@ from app.inventory_management.categories.service import CategoryService
 from app.inventory_management.products.models import Product
 from app.inventory_management.products.inquiry_quantities import (
     build_quantity_rows,
+    build_quantity_rows_inverted,
+    format_base_packing_label,
     format_secondary_packing_label,
     format_unit2_package_text,
     inquiry_secondary_display,
+    is_inverted_packaging,
+    pieces_per_for_inverted,
     quantity_unit_breakdown,
+    quantity_unit_breakdown_inverted,
 )
 from app.inventory_management.products.repository import ProductRepository
 from app.inventory_management.products.inventory_list_repository import (
@@ -637,20 +642,44 @@ class ProductService:
         if product.secondary_unit_id:
             unit2_code = (await self.units.get(tenant_id, product.secondary_unit_id)).code
 
-        display_factor, display_unit2_code = inquiry_secondary_display(
-            secondary_unit_factor=product.secondary_unit_factor,
-            unit2_code=unit2_code,
-        )
-        packing_label = format_secondary_packing_label(display_factor, display_unit2_code)
-        on_hand_breakdown = quantity_unit_breakdown(qty_on_hand, display_factor)
-        unit2_breakdown: str | None = None
-        if unit_code:
-            unit2_breakdown = format_unit2_package_text(
-                on_hand_breakdown.unit2_qty,
-                on_hand_breakdown.remainder_qty,
-                unit_code,
-                display_unit2_code,
+        inverted = is_inverted_packaging(unit_code, unit2_code)
+        if inverted:
+            pieces_per_base = pieces_per_for_inverted(
+                pieces_per_unit=product.pieces_per_unit,
+                secondary_unit_factor=product.secondary_unit_factor,
             )
+            packing_label = format_base_packing_label(pieces_per_base, unit_code or "Unit")
+            on_hand_breakdown = quantity_unit_breakdown_inverted(
+                qty_on_hand, pieces_per_base
+            )
+        else:
+            display_factor, display_unit2_code = inquiry_secondary_display(
+                secondary_unit_factor=product.secondary_unit_factor,
+                unit2_code=unit2_code,
+            )
+            packing_label = format_secondary_packing_label(display_factor, display_unit2_code)
+            on_hand_breakdown = quantity_unit_breakdown(qty_on_hand, display_factor)
+        unit2_breakdown: str | None = None
+        if unit_code and on_hand_breakdown is not None:
+            if inverted and unit2_code:
+                from app.common.utils.currency import format_quantity_display
+
+                rem = on_hand_breakdown.remainder_qty
+                u2_qty = on_hand_breakdown.unit2_qty
+                if rem > 0:
+                    unit2_breakdown = (
+                        f"{format_quantity_display(u2_qty)} {unit2_code} "
+                        f"& {format_quantity_display(rem)} loose"
+                    )
+                else:
+                    unit2_breakdown = f"{format_quantity_display(u2_qty)} {unit2_code}"
+            elif not inverted:
+                unit2_breakdown = format_unit2_package_text(
+                    on_hand_breakdown.unit2_qty,
+                    on_hand_breakdown.remainder_qty,
+                    unit_code,
+                    display_unit2_code,
+                )
 
         avg_cost: Decimal | None = None
         lc_price: Decimal | None = None
@@ -686,13 +715,22 @@ class ProductService:
         last_sale = sales[0] if sales else None
         last_purchase = purchases[0] if purchases else None
 
-        quantity_rows = build_quantity_rows(
-            qty_on_hand=qty_on_hand,
-            qty_opened=qty_opened,
-            qty_committed=qty_committed,
-            net_available=net_available,
-            factor=display_factor,
-        )
+        if inverted:
+            quantity_rows = build_quantity_rows_inverted(
+                qty_on_hand=qty_on_hand,
+                qty_opened=qty_opened,
+                qty_committed=qty_committed,
+                net_available=net_available,
+                pieces_per_base=pieces_per_base,
+            )
+        else:
+            quantity_rows = build_quantity_rows(
+                qty_on_hand=qty_on_hand,
+                qty_opened=qty_opened,
+                qty_committed=qty_committed,
+                net_available=net_available,
+                factor=display_factor,
+            )
         category_name: str | None = None
         if product.category_id:
             category_name = (await self.categories.get(tenant_id, product.category_id)).name
@@ -702,7 +740,25 @@ class ProductService:
             tax_row = await self.taxes.get(tenant_id, product.tax_id)
             tax_name = tax_row.name
             tax_rate = tax_row.rate
-        inquiry_unit2_code = unit2_code if unit2_code else display_unit2_code
+        if inverted:
+            inquiry_unit2_code = unit2_code if unit2_code else "PCS"
+        else:
+            inquiry_unit2_code = unit2_code if unit2_code else display_unit2_code
+
+        fc_price: Decimal | None = None
+        fc_currency_code: str | None = None
+        from app.inventory_management.history.repository import HistoryRepository
+
+        from app.erp.exchange_rates.service import CurrencyService
+
+        base_currency = await CurrencyService(self.session).get_base(tenant_id)
+        fcy = await HistoryRepository(self.session).latest_foreign_purchase_invoice_rate(
+            tenant_id,
+            product_id,
+            base_currency_id=base_currency.id,
+        )
+        if fcy is not None:
+            fc_price, fc_currency_code = fcy
 
         return ProductInquiryResponse(
             product_id=product_id,
@@ -721,6 +777,8 @@ class ProductService:
             quantity_rows=quantity_rows,
             warehouses=warehouses,
             avg_cost=avg_cost,
+            fc_price=fc_price,
+            fc_currency_code=fc_currency_code,
             lc_price=lc_price,
             lc_currency_code=lc_currency,
             last_sale_date=str(last_sale.document_date) if last_sale else None,
@@ -775,14 +833,24 @@ class ProductService:
         result: list[ProductInventoryListRow] = []
         for row in rows:
             packing_label: str | None = None
+            base_code: str | None = None
             sec_code: str | None = None
+            if row.unit_id:
+                base_code = (await self.units.get(tenant_id, row.unit_id)).code
             if row.secondary_unit_id:
                 sec_code = (await self.units.get(tenant_id, row.secondary_unit_id)).code
-            display_factor, display_u2 = inquiry_secondary_display(
-                secondary_unit_factor=row.secondary_unit_factor,
-                unit2_code=sec_code,
-            )
-            packing_label = format_secondary_packing_label(display_factor, display_u2)
+            if is_inverted_packaging(base_code, sec_code):
+                ppc = pieces_per_for_inverted(
+                    pieces_per_unit=row.pieces_per_unit,
+                    secondary_unit_factor=row.secondary_unit_factor,
+                )
+                packing_label = format_base_packing_label(ppc, base_code or "Unit")
+            else:
+                display_factor, display_u2 = inquiry_secondary_display(
+                    secondary_unit_factor=row.secondary_unit_factor,
+                    unit2_code=sec_code,
+                )
+                packing_label = format_secondary_packing_label(display_factor, display_u2)
             net_avail = Decimal(row.net_available or 0)
             result.append(
                 ProductInventoryListRow(

@@ -89,6 +89,23 @@ def test_stock_converts_pieces_unit2_to_base() -> None:
     assert resolved.quantity == Decimal("10.000000")
 
 
+def test_stock_uses_pieces_per_unit_when_unit2_is_pieces() -> None:
+    class CartonProduct(_Product):
+        secondary_unit_factor = Decimal("1")
+        pieces_per_unit = Decimal("100")
+
+    resolved = resolve_line_to_stock_quantity(
+        CartonProduct(),
+        unit_id=_Product.secondary_unit_id,
+        quantity=Decimal("5000"),
+        base_unit_code="CTN",
+        secondary_unit_code="PCS",
+        line_unit_code="PCS",
+    )
+    assert resolved.unit_id == CartonProduct.unit_id
+    assert resolved.quantity == Decimal("50.000000")
+
+
 def test_foreign_unit_rejected() -> None:
     foreign = UUID("33333333-3333-4333-8333-333333333333")
     with pytest.raises(ValidationError, match="Unit must match the product unit or unit 2"):

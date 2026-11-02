@@ -915,3 +915,43 @@ class HistoryRepository:
             .outerjoin(Branch, Branch.id == GoodsReceipt.branch_id)
             .where(*criteria)
         )
+
+    async def latest_foreign_purchase_invoice_rate(
+        self,
+        tenant_id: UUID,
+        product_id: UUID,
+        *,
+        base_currency_id: UUID,
+    ) -> tuple[Decimal, str] | None:
+        """Latest posted purchase-invoice line rate in a non-base currency."""
+        row = (
+            await self.session.execute(
+                select(PurchaseInvoiceLine.rate, Currency.code)
+                .join(
+                    PurchaseInvoice,
+                    PurchaseInvoice.id == PurchaseInvoiceLine.purchase_invoice_id,
+                )
+                .join(Currency, Currency.id == PurchaseInvoice.currency_id)
+                .where(
+                    PurchaseInvoiceLine.tenant_id == tenant_id,
+                    PurchaseInvoice.tenant_id == tenant_id,
+                    PurchaseInvoiceLine.product_id == product_id,
+                    PurchaseInvoiceLine.line_type == PurchaseInvoiceLineType.PRODUCT.value,
+                    PurchaseInvoice.deleted_at.is_(None),
+                    PurchaseInvoice.is_posted.is_(True),
+                    PurchaseInvoice.currency_id != base_currency_id,
+                )
+                .order_by(
+                    PurchaseInvoice.invoice_date.desc(),
+                    PurchaseInvoice.created_at.desc(),
+                    PurchaseInvoiceLine.line_number.asc(),
+                )
+                .limit(1)
+            )
+        ).first()
+        if row is None:
+            return None
+        rate, code = row
+        if rate is None or not code:
+            return None
+        return Decimal(rate), str(code)

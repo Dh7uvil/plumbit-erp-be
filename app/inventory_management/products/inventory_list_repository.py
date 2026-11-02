@@ -146,6 +146,7 @@ class ProductInventoryListRepository:
                 Product.purchase_rate,
                 Product.secondary_unit_id,
                 Product.secondary_unit_factor,
+                Product.pieces_per_unit,
                 Product.unit_id,
                 on_hand_expr.label("qty_on_hand"),
                 reserved_expr.label("qty_committed"),

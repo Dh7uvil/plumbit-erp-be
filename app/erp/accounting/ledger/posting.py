@@ -131,6 +131,7 @@ class LedgerPostingService:
         journal_type: JournalType = JournalType.SYSTEM,
         reference: str | None = None,
         relax_control_party: bool = False,
+        allow_unbalanced: bool = False,
     ) -> JournalEntry:
         existing = await self.repo.get_posted_for_source(
             tenant_id, source_type, source_id, for_update=True
@@ -149,6 +150,7 @@ class LedgerPostingService:
             entry_date=entry_date,
             journal_type=journal_type,
             relax_control_party=relax_control_party,
+            allow_unbalanced=allow_unbalanced,
         )
         number = await self.sequences.allocate(
             tenant_id,
@@ -252,6 +254,7 @@ class LedgerPostingService:
             actor_id=actor_id,
             journal_type=JournalType.REVERSAL,
             reference=original.document_number,
+            allow_unbalanced=True,
         )
         reversal.reversal_of_id = original.id
         original.reversed_by_id = reversal.id
@@ -293,6 +296,7 @@ class LedgerPostingService:
         entry_date: date,
         journal_type: JournalType = JournalType.MANUAL,
         relax_control_party: bool = False,
+        allow_unbalanced: bool = False,
     ) -> list[PreparedLine]:
         if len(lines) < 2:
             raise JournalLineInvalidError(details={"reason": "at_least_two_lines"})
@@ -311,7 +315,7 @@ class LedgerPostingService:
                 )
             )
         debit_base, credit_base = _totals(prepared)
-        if debit_base != credit_base:
+        if not allow_unbalanced and debit_base != credit_base:
             raise JournalUnbalancedError(
                 details={"total_debit_base": str(debit_base), "total_credit_base": str(credit_base)}
             )

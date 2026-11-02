@@ -224,7 +224,62 @@ async def test_delete_draft_cost_sheet(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_journal_cost_sheet_post_and_cancel(client: AsyncClient) -> None:
+async def test_journal_cost_sheet_posted_can_delete(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    listed = await client.get("/api/v1/accounts", headers=headers)
+    assert listed.status_code == 200, listed.text
+    skip = {"ACCOUNTS_RECEIVABLE", "ACCOUNTS_PAYABLE", "CASH", "BANK"}
+    postable = [
+        row["id"]
+        for row in listed.json()["data"]
+        if not row.get("is_group") and row.get("account_subtype") not in skip
+    ]
+    assert len(postable) >= 2, "need two postable accounts"
+    debit_account, credit_account = postable[0], postable[1]
+    invoice = await _posted_invoice(client, headers)
+    created = await client.post(
+        "/api/v1/cost-sheets",
+        headers=headers,
+        json={
+            "sheet_type": "IMPORT",
+            "sheet_mode": "JOURNAL",
+            "source_document_type": "SALES_INVOICE",
+            "source_document_id": invoice["id"],
+            "journal_lines": [
+                {
+                    "line_kind": "G",
+                    "account_id": debit_account,
+                    "debit": "100.0000",
+                    "credit": "0",
+                    "capitalize": False,
+                },
+                {
+                    "line_kind": "G",
+                    "account_id": credit_account,
+                    "debit": "0",
+                    "credit": "100.0000",
+                    "capitalize": False,
+                },
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()["data"]
+    assert body["status"] == "CONFIRMED"
+    assert "delete" in body["available_actions"]
+    deleted = await client.delete(
+        f"/api/v1/cost-sheets/{body['id']}",
+        headers=_if_match(headers, body["version"]),
+    )
+    assert deleted.status_code == 200, deleted.text
+    missing = await client.get(f"/api/v1/cost-sheets/{body['id']}", headers=headers)
+    assert missing.status_code == 404, missing.text
+
+
+@pytest.mark.asyncio
+async def test_journal_cost_sheet_auto_post_and_edit_reposts(client: AsyncClient) -> None:
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)
     await _enable_books(client, headers)
@@ -267,31 +322,231 @@ async def test_journal_cost_sheet_post_and_cancel(client: AsyncClient) -> None:
         },
     )
     assert created.status_code == 201, created.text
-    draft = created.json()["data"]
-    assert draft["sheet_mode"] == "JOURNAL"
-    assert draft["status"] == "DRAFT"
-    assert len(draft["journal_lines"]) == 2
-    assert "post" in draft["available_actions"]
-
-    posted = await client.post(
-        f"/api/v1/cost-sheets/{draft['id']}/post",
-        headers=_if_match(headers, draft["version"]),
-        json={"version": draft["version"]},
-    )
-    assert posted.status_code == 200, posted.text
-    posted_body = posted.json()["data"]
+    posted_body = created.json()["data"]
+    assert posted_body["sheet_mode"] == "JOURNAL"
     assert posted_body["status"] == "CONFIRMED"
+    assert len(posted_body["journal_lines"]) == 2
     assert posted_body["journal_entry_id"] is not None
     assert posted_body.get("period") is not None
-    assert "cancel_journal" in posted_body["available_actions"]
+    assert posted_body["available_actions"] == ["delete"]
 
-    cancelled = await client.post(
-        f"/api/v1/cost-sheets/{posted_body['id']}/cancel-journal",
+    updated = await client.put(
+        f"/api/v1/cost-sheets/{posted_body['id']}",
         headers=_if_match(headers, posted_body["version"]),
-        json={"version": posted_body["version"]},
+        json={
+            "version": posted_body["version"],
+            "sheet_mode": "JOURNAL",
+            "journal_lines": [
+                {
+                    "line_kind": "G",
+                    "account_id": debit_account,
+                    "debit": "150.0000",
+                    "credit": "0",
+                    "capitalize": False,
+                },
+                {
+                    "line_kind": "G",
+                    "account_id": credit_account,
+                    "debit": "0",
+                    "credit": "150.0000",
+                    "capitalize": False,
+                },
+            ],
+        },
     )
-    assert cancelled.status_code == 200, cancelled.text
-    cancelled_body = cancelled.json()["data"]
-    assert cancelled_body["status"] == "DRAFT"
-    assert cancelled_body["journal_entry_id"] is None
-    assert cancelled_body["reversal_journal_entry_id"] is not None
+    assert updated.status_code == 200, updated.text
+    updated_body = updated.json()["data"]
+    assert updated_body["status"] == "CONFIRMED"
+    assert updated_body["journal_entry_id"] is not None
+    assert updated_body["reversal_journal_entry_id"] is not None
+
+
+@pytest.mark.asyncio
+async def test_journal_cost_sheet_reopen_then_save_reposts(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    listed = await client.get("/api/v1/accounts", headers=headers)
+    assert listed.status_code == 200, listed.text
+    skip = {"ACCOUNTS_RECEIVABLE", "ACCOUNTS_PAYABLE", "CASH", "BANK"}
+    postable = [
+        row["id"]
+        for row in listed.json()["data"]
+        if not row.get("is_group") and row.get("account_subtype") not in skip
+    ]
+    assert len(postable) >= 2, "need two postable accounts"
+    debit_account, credit_account = postable[0], postable[1]
+    invoice = await _posted_invoice(client, headers)
+    created = await client.post(
+        "/api/v1/cost-sheets",
+        headers=headers,
+        json={
+            "sheet_type": "IMPORT",
+            "sheet_mode": "JOURNAL",
+            "source_document_type": "SALES_INVOICE",
+            "source_document_id": invoice["id"],
+            "journal_lines": [
+                {
+                    "line_kind": "G",
+                    "account_id": debit_account,
+                    "debit": "100.0000",
+                    "credit": "0",
+                    "capitalize": False,
+                },
+                {
+                    "line_kind": "G",
+                    "account_id": credit_account,
+                    "debit": "0",
+                    "credit": "100.0000",
+                    "capitalize": False,
+                },
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()["data"]
+    assert body["status"] == "CONFIRMED"
+    reopened = await client.post(
+        f"/api/v1/cost-sheets/{body['id']}/reopen",
+        headers=_if_match(headers, body["version"]),
+        json={"version": body["version"]},
+    )
+    assert reopened.status_code == 200, reopened.text
+    draft = reopened.json()["data"]
+    assert draft["status"] == "DRAFT"
+    assert draft["journal_entry_id"] is not None
+
+    saved = await client.put(
+        f"/api/v1/cost-sheets/{draft['id']}",
+        headers=_if_match(headers, draft["version"]),
+        json={
+            "version": draft["version"],
+            "sheet_mode": "JOURNAL",
+            "journal_lines": [
+                {
+                    "line_kind": "G",
+                    "account_id": debit_account,
+                    "debit": "100.0000",
+                    "credit": "0",
+                    "capitalize": False,
+                },
+                {
+                    "line_kind": "G",
+                    "account_id": credit_account,
+                    "debit": "0",
+                    "credit": "100.0000",
+                    "capitalize": False,
+                },
+            ],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    saved_body = saved.json()["data"]
+    assert saved_body["status"] == "CONFIRMED"
+    assert saved_body["journal_entry_id"] is not None
+
+
+@pytest.mark.asyncio
+async def test_journal_cost_sheet_unbalanced_auto_posts(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    listed = await client.get("/api/v1/accounts", headers=headers)
+    assert listed.status_code == 200, listed.text
+    skip = {"ACCOUNTS_RECEIVABLE", "ACCOUNTS_PAYABLE", "CASH", "BANK"}
+    postable = [
+        row["id"]
+        for row in listed.json()["data"]
+        if not row.get("is_group") and row.get("account_subtype") not in skip
+    ]
+    assert len(postable) >= 2, "need two postable accounts"
+    debit_account, credit_account = postable[0], postable[1]
+    invoice = await _posted_invoice(client, headers)
+    created = await client.post(
+        "/api/v1/cost-sheets",
+        headers=headers,
+        json={
+            "sheet_type": "IMPORT",
+            "sheet_mode": "JOURNAL",
+            "source_document_type": "SALES_INVOICE",
+            "source_document_id": invoice["id"],
+            "journal_lines": [
+                {
+                    "line_kind": "G",
+                    "account_id": debit_account,
+                    "debit": "100.0000",
+                    "credit": "0",
+                    "capitalize": False,
+                },
+                {
+                    "line_kind": "G",
+                    "account_id": credit_account,
+                    "debit": "0",
+                    "credit": "50.0000",
+                    "capitalize": False,
+                },
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()["data"]
+    assert body["status"] == "CONFIRMED"
+    assert body["journal_entry_id"] is not None
+
+    updated = await client.put(
+        f"/api/v1/cost-sheets/{body['id']}",
+        headers=_if_match(headers, body["version"]),
+        json={
+            "version": body["version"],
+            "sheet_mode": "JOURNAL",
+            "journal_lines": [
+                {
+                    "line_kind": "G",
+                    "account_id": debit_account,
+                    "debit": "120.0000",
+                    "credit": "0",
+                    "capitalize": False,
+                },
+                {
+                    "line_kind": "G",
+                    "account_id": credit_account,
+                    "debit": "0",
+                    "credit": "70.0000",
+                    "capitalize": False,
+                },
+            ],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    updated_body = updated.json()["data"]
+    assert updated_body["status"] == "CONFIRMED"
+    assert updated_body["journal_entry_id"] is not None
+
+    updated = await client.put(
+        f"/api/v1/cost-sheets/{body['id']}",
+        headers=_if_match(headers, body["version"]),
+        json={
+            "version": body["version"],
+            "sheet_mode": "JOURNAL",
+            "journal_lines": [
+                {
+                    "line_kind": "G",
+                    "account_id": debit_account,
+                    "debit": "120.0000",
+                    "credit": "0",
+                    "capitalize": False,
+                },
+                {
+                    "line_kind": "G",
+                    "account_id": credit_account,
+                    "debit": "0",
+                    "credit": "70.0000",
+                    "capitalize": False,
+                },
+            ],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    updated_body = updated.json()["data"]
+    assert updated_body["status"] == "CONFIRMED"
+    assert updated_body["journal_entry_id"] is not None

@@ -199,6 +199,8 @@ class ProductInquiryResponse(BaseModel):
     quantity_rows: ProductInquiryQuantityRows | None = None
     warehouses: list[ProductWarehouseQty]
     avg_cost: Decimal | None = None
+    fc_price: Decimal | None = None
+    fc_currency_code: str | None = None
     lc_price: Decimal | None = None
     lc_currency_code: str | None = None
     last_sale_date: str | None = None

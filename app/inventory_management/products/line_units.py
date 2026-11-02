@@ -53,7 +53,28 @@ def _is_pcs(code: str | None) -> bool:
     return (code or "").strip().upper() == "PCS"
 
 
-def _pieces_per_base_unit(product: ProductUnitFields) -> Decimal | None:
+def _pieces_per_base_unit(
+    product: ProductUnitFields,
+    *,
+    base_unit_code: str | None = None,
+    secondary_unit_code: str | None = None,
+) -> Decimal | None:
+    base_pcs = _is_pcs(base_unit_code)
+    sec_pcs = _is_pcs(secondary_unit_code)
+    has_codes = bool((base_unit_code or "").strip() or (secondary_unit_code or "").strip())
+
+    if has_codes and sec_pcs and not base_pcs:
+        if product.pieces_per_unit is not None and product.pieces_per_unit > 0:
+            return product.pieces_per_unit
+        if product.secondary_unit_factor is not None and product.secondary_unit_factor > 0:
+            return product.secondary_unit_factor
+        return Decimal("1")
+
+    if has_codes and base_pcs and not sec_pcs:
+        if product.secondary_unit_factor is not None and product.secondary_unit_factor > 0:
+            return product.secondary_unit_factor
+        return None
+
     if product.secondary_unit_factor is not None and product.secondary_unit_factor > 0:
         return product.secondary_unit_factor
     if product.pieces_per_unit is not None and product.pieces_per_unit > 0:
@@ -109,7 +130,11 @@ def resolve_line_to_pieces(
         return _resolved(base_unit, qty)
 
     if secondary_unit is not None and unit_id == secondary_unit:
-        factor = _pieces_per_base_unit(product)
+        factor = _pieces_per_base_unit(
+            product,
+            base_unit_code=base_unit_code,
+            secondary_unit_code=secondary_unit_code,
+        )
         if factor is None:
             raise ValidationError(
                 "Product unit 2 is not configured with a valid pieces-per-package factor"
@@ -223,7 +248,11 @@ def resolve_line_to_stock_quantity(
         return doc
     base_pcs = _is_pcs(base_unit_code)
     sec_pcs = _is_pcs(secondary_unit_code)
-    factor = _pieces_per_base_unit(product)
+    factor = _pieces_per_base_unit(
+        product,
+        base_unit_code=base_unit_code,
+        secondary_unit_code=secondary_unit_code,
+    )
     if factor is None:
         raise ValidationError(
             "Product unit 2 is not configured with a valid pieces-per-package factor"

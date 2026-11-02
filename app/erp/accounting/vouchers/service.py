@@ -40,6 +40,7 @@ from app.core.enums import (
     AccountSystemRole,
     AuditAction,
     ChequeDirection,
+    ChequeStatus,
     DocumentType,
     InvoiceDocumentStatus,
     JournalType,
@@ -51,6 +52,7 @@ from app.core.enums import (
 )
 from app.core.exceptions import (
     DocumentStaleError,
+    InvalidStatusTransitionError,
     PaymentAccountInvalidError,
     PaymentOverAllocatedError,
     PermissionDeniedError,
@@ -106,7 +108,6 @@ from app.erp.accounting.vouchers.schemas import (
 from app.erp.accounting.vouchers.workflow import (
     assert_editable,
     next_status,
-    transition_actions,
 )
 from app.erp.exchange_rates.service import CurrencyService, ExchangeRateService
 
@@ -348,7 +349,16 @@ class VoucherService:
             row = await self._require(tenant_id, voucher_id, for_update=True)
             self._assert_voucher_permission("update", VoucherType(row.voucher_type))
             self._assert_version(row, expected_version)
-            assert_editable(InvoiceDocumentStatus(row.status))
+            status = InvoiceDocumentStatus(row.status)
+            assert_editable(status)
+            was_repost = row.journal_entry_id is not None
+            if was_repost:
+                await self._assert_voucher_edit_allowed(tenant_id, row)
+                await self._cancel_voucher_cheques_for_repost(
+                    tenant_id, row, actor_user_id=actor_user_id
+                )
+                row.cancel_reason = f"Edit voucher {row.document_number}"
+                await self._cancel_posted(tenant_id, row, actor_user_id=actor_user_id)
             old_values = await self._snapshot(tenant_id, row)
             merged = self._merged_update(row, payload)
             values = await self._draft_values(tenant_id, merged)
@@ -368,6 +378,10 @@ class VoucherService:
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
+            loaded = await self._require(tenant_id, voucher_id)
+            await self._post_voucher_ledger(
+                tenant_id, loaded, actor_user_id=actor_user_id, was_repost=was_repost
+            )
             loaded = await self._require(tenant_id, voucher_id)
             await self.audit.write(
                 tenant_id=tenant_id,
@@ -393,12 +407,21 @@ class VoucherService:
             row = await self._require(tenant_id, voucher_id, for_update=True)
             self._assert_voucher_permission("delete", VoucherType(row.voucher_type))
             self._assert_version(row, expected_version)
-            assert_editable(InvoiceDocumentStatus(row.status))
+            status = InvoiceDocumentStatus(row.status)
+            if status == InvoiceDocumentStatus.CANCELLED:
+                raise InvalidStatusTransitionError("Cancelled vouchers cannot be deleted")
             old_values = await self._snapshot(tenant_id, row)
-            response = await self._to_response(tenant_id, row)
+            if status == InvoiceDocumentStatus.POSTED:
+                await self._assert_voucher_edit_allowed(tenant_id, row)
+                await self._cancel_voucher_cheques_for_repost(
+                    tenant_id, row, actor_user_id=actor_user_id
+                )
+                row.cancel_reason = f"Delete voucher {row.document_number}"
+                await self._cancel_posted(tenant_id, row, actor_user_id=actor_user_id)
             await self.allocations.delete_live_for_payment(
                 tenant_id, PaymentAllocationSource.VOUCHER.value, voucher_id
             )
+            response = await self._to_response(tenant_id, row)
             deleted = await self.repo.soft_delete(tenant_id, voucher_id)
             if deleted is None:
                 raise ResourceNotFoundError("Voucher not found")
@@ -440,71 +463,12 @@ class VoucherService:
                 )
                 return response
             self._assert_version(row, expected_version)
-            target = next_status(InvoiceDocumentStatus(row.status), "post")
             policy = await self._ensure_policy(tenant_id)
             policy.assert_open(row.voucher_date, can_override=self._can_override)
             old_values = await self._snapshot(tenant_id, row)
-            await self._apply_rate(tenant_id, row)
-            await self._apply_draft_note_netting(tenant_id, row, actor_user_id=actor_user_id)
-            await self._validate_for_post(tenant_id, row)
-            lines = await self._post_journal_lines(tenant_id, row)
-            if (
-                voucher_type != VoucherType.CONTRA
-                and not _is_journal_like(voucher_type)
-                and not self._is_receipt(voucher_type)
-            ):
-                if row.payment_account_id is None:
-                    raise ValidationError("payment_account_id is required")
-                outflow = quantize_money(sum((line.credit for line in lines), _ZERO))
-                outflow_base = quantize_money(
-                    sum(
-                        (
-                            quantize_money(
-                                line.credit * (line.exchange_rate or row.exchange_rate)
-                            )
-                            for line in lines
-                        ),
-                        _ZERO,
-                    )
-                )
-                if outflow_base <= _ZERO:
-                    outflow_base = quantize_money(outflow * row.exchange_rate)
-                settings = await self.org.get_money_movement_settings(tenant_id)
-                await assert_cash_available(
-                    self.session,
-                    tenant_id,
-                    account_id=row.payment_account_id,
-                    outflow_base=outflow_base,
-                    allow_negative_cash=settings.allow_negative_cash,
-                )
-            source_type = self._source_type(VoucherType(row.voucher_type))
-            journal = await self.posting.post_for_document(
-                tenant_id,
-                source_type=source_type,
-                source_id=row.id,
-                entry_date=row.voucher_date,
-                lines=lines,
-                currency_id=row.currency_id,
-                exchange_rate=row.exchange_rate,
-                narration=row.narration or f"Voucher {row.document_number}",
-                branch_id=row.branch_id,
-                actor_id=actor_user_id,
-                journal_type=(
-                    JournalType.MANUAL
-                    if _is_journal_like(voucher_type)
-                    else JournalType.SYSTEM
-                ),
-                reference=row.document_number,
-                relax_control_party=(voucher_type == VoucherType.GENERAL_PURCHASE),
+            await self._post_voucher_ledger(
+                tenant_id, row, actor_user_id=actor_user_id, was_repost=False
             )
-            row.journal_entry_id = journal.id
-            if voucher_type != VoucherType.CONTRA and not _is_journal_like(voucher_type):
-                await self._apply_live_allocations(tenant_id, row, actor_user_id=actor_user_id)
-            await self._ensure_pdc_cheque(tenant_id, row, actor_user_id=actor_user_id)
-            row.status = target.value
-            row.is_posted = True
-            row.posted_at = utcnow()
-            row.posted_by = actor_user_id
             row.version += 1
             row.updated_by = actor_user_id
             await self.session.flush()
@@ -519,25 +483,6 @@ class VoucherService:
                 old_values=old_values,
                 new_values=await self._snapshot(tenant_id, loaded),
             )
-            await self.outbox.enqueue(
-                tenant_id,
-                event_type="accounting.voucher.posted",
-                aggregate_type="voucher",
-                aggregate_id=voucher_id,
-                payload={"voucher_id": str(voucher_id)},
-                dedupe_key=f"voucher-posted:{voucher_id}",
-            )
-            if (
-                loaded.source_document_type == "PURCHASE_INVOICE"
-                and loaded.source_document_id is not None
-            ):
-                from app.erp.purchase_invoices.landed_cost import (
-                    refresh_purchase_invoice_landed_costs,
-                )
-
-                await refresh_purchase_invoice_landed_costs(
-                    self.session, tenant_id, loaded.source_document_id
-                )
             response = await self._to_response(tenant_id, loaded)
             await self.idempotency.store(
                 tenant_id, idempotency_key, response.model_dump(mode="json")
@@ -725,6 +670,10 @@ class VoucherService:
             entity_id=loaded.id,
             new_values=await self._snapshot(tenant_id, loaded),
         )
+        await self._post_voucher_ledger(
+            tenant_id, loaded, actor_user_id=actor_user_id, was_repost=False
+        )
+        loaded = await self._require(tenant_id, row.id)
         return await self._to_response(tenant_id, loaded)
 
     async def _draft_values(
@@ -929,13 +878,8 @@ class VoucherService:
             credit_total = quantize_money(
                 sum((line.credit or _ZERO for line in payload.lines), _ZERO)
             )
-            if debit_total == _ZERO:
-                raise ValidationError("Journal vouchers require at least one debit line")
-            if debit_total != credit_total:
-                raise ValidationError(
-                    "Journal debits must equal credits",
-                    details={"debit_total": str(debit_total), "credit_total": str(credit_total)},
-                )
+            if debit_total == _ZERO and credit_total == _ZERO:
+                raise ValidationError("Journal vouchers require at least one line with an amount")
             return
         line_total = quantize_money(
             sum((cast(Decimal, line.amount) for line in payload.lines), _ZERO)
@@ -1439,6 +1383,148 @@ class VoucherService:
                     amount=allocation.amount,
                 )
 
+    async def _assert_voucher_edit_allowed(self, tenant_id: UUID, row: Voucher) -> None:
+        from sqlalchemy import select
+
+        blocked = frozenset(
+            {
+                ChequeStatus.DEPOSITED.value,
+                ChequeStatus.CLEARED.value,
+                ChequeStatus.BOUNCED.value,
+            }
+        )
+        statuses = (
+            await self.session.execute(
+                select(Cheque.status).where(
+                    Cheque.tenant_id == tenant_id,
+                    Cheque.voucher_id == row.id,
+                    Cheque.deleted_at.is_(None),
+                )
+            )
+        ).scalars().all()
+        for status in statuses:
+            if status in blocked:
+                raise ValidationError(
+                    "Voucher cannot be edited while a linked cheque is deposited, cleared, or bounced"
+                )
+
+    async def _cancel_voucher_cheques_for_repost(
+        self, tenant_id: UUID, row: Voucher, *, actor_user_id: UUID
+    ) -> None:
+        from sqlalchemy import select
+
+        cheques = (
+            await self.session.execute(
+                select(Cheque).where(
+                    Cheque.tenant_id == tenant_id,
+                    Cheque.voucher_id == row.id,
+                    Cheque.deleted_at.is_(None),
+                )
+            )
+        ).scalars().all()
+        editable = frozenset({ChequeStatus.DRAFT.value, ChequeStatus.ISSUED.value})
+        service = ChequeService(self.session, actor_permissions=self.actor_permissions)
+        for cheque in cheques:
+            if cheque.status not in editable:
+                continue
+            await service.cancel(
+                tenant_id,
+                cheque.id,
+                actor_user_id=actor_user_id,
+                expected_version=cheque.version,
+                reason=f"Edit voucher {row.document_number}",
+            )
+
+    async def _post_voucher_ledger(
+        self,
+        tenant_id: UUID,
+        row: Voucher,
+        *,
+        actor_user_id: UUID,
+        was_repost: bool,
+    ) -> None:
+        voucher_type = VoucherType(row.voucher_type)
+        if row.journal_entry_id is not None and not was_repost:
+            if InvoiceDocumentStatus(row.status) == InvoiceDocumentStatus.POSTED:
+                return
+        await self._apply_rate(tenant_id, row)
+        if not was_repost:
+            await self._apply_draft_note_netting(tenant_id, row, actor_user_id=actor_user_id)
+        await self._validate_for_post(tenant_id, row)
+        lines = await self._post_journal_lines(tenant_id, row)
+        if (
+            voucher_type != VoucherType.CONTRA
+            and not _is_journal_like(voucher_type)
+            and not self._is_receipt(voucher_type)
+        ):
+            if row.payment_account_id is None:
+                raise ValidationError("payment_account_id is required")
+            outflow = quantize_money(sum((line.credit for line in lines), _ZERO))
+            outflow_base = quantize_money(
+                sum(
+                    (
+                        quantize_money(line.credit * (line.exchange_rate or row.exchange_rate))
+                        for line in lines
+                    ),
+                    _ZERO,
+                )
+            )
+            if outflow_base <= _ZERO:
+                outflow_base = quantize_money(outflow * row.exchange_rate)
+            settings = await self.org.get_money_movement_settings(tenant_id)
+            await assert_cash_available(
+                self.session,
+                tenant_id,
+                account_id=row.payment_account_id,
+                outflow_base=outflow_base,
+                allow_negative_cash=settings.allow_negative_cash,
+            )
+        source_type = self._source_type(voucher_type)
+        journal = await self.posting.post_for_document(
+            tenant_id,
+            source_type=source_type,
+            source_id=row.id,
+            entry_date=row.voucher_date,
+            lines=lines,
+            currency_id=row.currency_id,
+            exchange_rate=row.exchange_rate,
+            narration=row.narration or f"Voucher {row.document_number}",
+            branch_id=row.branch_id,
+            actor_id=actor_user_id,
+            journal_type=(
+                JournalType.MANUAL if _is_journal_like(voucher_type) else JournalType.SYSTEM
+            ),
+            reference=row.document_number,
+            relax_control_party=(voucher_type == VoucherType.GENERAL_PURCHASE),
+            allow_unbalanced=True,
+        )
+        row.journal_entry_id = journal.id
+        if voucher_type != VoucherType.CONTRA and not _is_journal_like(voucher_type):
+            await self._apply_live_allocations(tenant_id, row, actor_user_id=actor_user_id)
+        await self._ensure_pdc_cheque(tenant_id, row, actor_user_id=actor_user_id)
+        row.status = InvoiceDocumentStatus.POSTED.value
+        row.is_posted = True
+        row.posted_at = utcnow()
+        row.posted_by = actor_user_id
+        await self.session.flush()
+        await self.outbox.enqueue(
+            tenant_id,
+            event_type="accounting.voucher.posted",
+            aggregate_type="voucher",
+            aggregate_id=row.id,
+            payload={"voucher_id": str(row.id)},
+            dedupe_key=f"voucher-posted:{row.id}",
+        )
+        if (
+            row.source_document_type == "PURCHASE_INVOICE"
+            and row.source_document_id is not None
+        ):
+            from app.erp.purchase_invoices.landed_cost import refresh_purchase_invoice_landed_costs
+
+            await refresh_purchase_invoice_landed_costs(
+                self.session, tenant_id, row.source_document_id
+            )
+
     async def _cancel_posted(self, tenant_id: UUID, row: Voucher, *, actor_user_id: UUID) -> None:
         live = await self.allocations.list_live_for_payment(
             tenant_id, PaymentAllocationSource.VOUCHER.value, row.id
@@ -1470,6 +1556,7 @@ class VoucherService:
                 actor_id=actor_user_id,
             )
             row.reversal_journal_entry_id = reversal.id
+            row.journal_entry_id = None
         row.amount_unapplied = _ZERO
         row.is_posted = False
 
@@ -1579,16 +1666,13 @@ class VoucherService:
     def _available_actions(
         self, row: Voucher, status: InvoiceDocumentStatus, *, period_locked: bool
     ) -> builtins.list[str]:
+        del period_locked
         actions: builtins.list[str] = []
         voucher_type = VoucherType(row.voucher_type)
-        for action in transition_actions(status):
-            if action in {"post", "cancel"} and period_locked:
-                continue
-            if self._has_voucher_permission(action, voucher_type):
-                actions.append(action)
-        if status == InvoiceDocumentStatus.DRAFT and self._has_voucher_permission(
-            "delete", voucher_type
-        ):
+        if status in {
+            InvoiceDocumentStatus.DRAFT,
+            InvoiceDocumentStatus.POSTED,
+        } and self._has_voucher_permission("delete", voucher_type):
             actions.append("delete")
         return actions
 
