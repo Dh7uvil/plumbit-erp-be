@@ -260,61 +260,52 @@ async def _upsert_document_sequences(session: AsyncSession, tenant_id: UUID) -> 
             existing.padding = _SEQUENCE_PADDING
 
 
-async def seed_chart_of_accounts(session: AsyncSession, tenant_id: UUID) -> None:
-    """Insert the UAE default chart when the tenant has no accounts yet."""
+def _deleted_chart_account(rows: list[Account], code: str) -> Account | None:
+    """Prefer the latest soft-deleted system row for a chart code."""
 
-    existing = (
-        await session.execute(
-            select(Account.id)
-            .where(Account.tenant_id == tenant_id, Account.deleted_at.is_(None))
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        return
-    by_code: dict[str, Account] = {}
-    for row in UAE_CHART:
-        parent = by_code.get(row.parent_code) if row.parent_code else None
-        depth = 0 if parent is None else parent.depth + 1
-        account = Account(
-            tenant_id=tenant_id,
-            code=row.code,
-            name=row.name,
-            account_type=row.account_type.value,
-            account_subtype=row.account_subtype.value,
-            parent_id=None if parent is None else parent.id,
-            depth=depth,
-            is_group=row.is_group,
-            is_system=True,
-            system_role=None if row.system_role is None else row.system_role.value,
-        )
-        session.add(account)
-        await session.flush()
-        by_code[row.code] = account
+    deleted = [row for row in rows if row.code == code and row.deleted_at is not None]
+    if not deleted:
+        return None
+    system = [row for row in deleted if row.is_system]
+    pool = system or deleted
+    return max(pool, key=lambda row: row.deleted_at or datetime.min.replace(tzinfo=UTC))
 
 
-async def reconcile_chart_of_accounts(session: AsyncSession, tenant_id: UUID) -> None:
-    """Insert missing seeded rows and map unmapped system roles without resetting counters."""
+async def _ensure_chart_of_accounts(session: AsyncSession, tenant_id: UUID) -> None:
+    """Insert missing UAE chart rows, or restore the soft-deleted row for that code."""
 
     existing = list(
-        (
-            await session.execute(
-                select(Account).where(Account.tenant_id == tenant_id, Account.deleted_at.is_(None))
-            )
-        ).scalars().all()
+        (await session.execute(select(Account).where(Account.tenant_id == tenant_id)))
+        .scalars()
+        .all()
     )
-    if not existing:
-        return
-    by_code = {row.code: row for row in existing}
-    mapped_roles = {row.system_role for row in existing if row.system_role}
+    by_code = {row.code: row for row in existing if row.deleted_at is None}
+    mapped_roles = {row.system_role for row in by_code.values() if row.system_role}
     for row in UAE_CHART:
+        role_value = None if row.system_role is None else row.system_role.value
         account = by_code.get(row.code)
         if account is None:
-            parent = by_code.get(row.parent_code) if row.parent_code else None
-            depth = 0 if parent is None else parent.depth + 1
-            role_value = None if row.system_role is None else row.system_role.value
+            deleted = _deleted_chart_account(existing, row.code)
+            if deleted is not None:
+                if deleted.system_role is not None and deleted.system_role in mapped_roles:
+                    deleted.system_role = None
+                elif (
+                    role_value is not None
+                    and deleted.system_role is None
+                    and role_value not in mapped_roles
+                ):
+                    deleted.system_role = role_value
+                    deleted.is_system = True
+                deleted.deleted_at = None
+                deleted.is_active = True
+                if deleted.system_role is not None:
+                    mapped_roles.add(deleted.system_role)
+                by_code[row.code] = deleted
+                continue
             if role_value is not None and role_value in mapped_roles:
                 role_value = None
+            parent = by_code.get(row.parent_code) if row.parent_code else None
+            depth = 0 if parent is None else parent.depth + 1
             account = Account(
                 tenant_id=tenant_id,
                 code=row.code,
@@ -329,17 +320,25 @@ async def reconcile_chart_of_accounts(session: AsyncSession, tenant_id: UUID) ->
             )
             session.add(account)
             await session.flush()
+            existing.append(account)
             by_code[row.code] = account
             if role_value is not None:
                 mapped_roles.add(role_value)
             continue
-        if row.system_role is None:
+        if role_value is None or role_value in mapped_roles or account.system_role is not None:
             continue
-        role_value = row.system_role.value
-        if role_value in mapped_roles:
-            continue
-        if account.system_role is None:
-            account.system_role = role_value
-            account.is_system = True
-            mapped_roles.add(role_value)
+        account.system_role = role_value
+        account.is_system = True
+        mapped_roles.add(role_value)
 
+
+async def seed_chart_of_accounts(session: AsyncSession, tenant_id: UUID) -> None:
+    """Ensure the UAE default chart exists for a new or existing tenant."""
+
+    await _ensure_chart_of_accounts(session, tenant_id)
+
+
+async def reconcile_chart_of_accounts(session: AsyncSession, tenant_id: UUID) -> None:
+    """Restore or insert missing seeded rows and map unmapped system roles."""
+
+    await _ensure_chart_of_accounts(session, tenant_id)

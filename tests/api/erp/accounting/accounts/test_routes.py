@@ -24,6 +24,10 @@ async def test_fresh_tenant_has_mapped_uae_chart(client: AsyncClient) -> None:
     listed = await client.get("/api/v1/accounts?page_size=100", headers=headers)
     assert listed.status_code == 200, listed.text
     assert listed.json()["meta"]["total"] > 0
+    hidden = await client.get("/api/v1/accounts?is_system=false&page_size=100", headers=headers)
+    assert hidden.status_code == 200, hidden.text
+    assert hidden.json()["meta"]["total"] == 0
+    assert hidden.json()["data"] == []
     mapped = await _role_map(client, headers)
     assert set(mapped) == {role.value for role in AccountSystemRole}
     assert all(item["account_id"] is not None for item in mapped.values())

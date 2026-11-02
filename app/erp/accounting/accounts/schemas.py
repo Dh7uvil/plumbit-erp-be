@@ -20,6 +20,7 @@ class AccountFilter(BaseFilter):
     account_subtype: AccountSubtype | None = None
     is_group: bool | None = None
     is_active: bool | None = None
+    is_system: bool | None = None
     is_standalone_ledger: bool | None = None
 
 

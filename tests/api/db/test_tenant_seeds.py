@@ -7,11 +7,13 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 
 from app.cli.seed_tenants import seed_existing_tenants
 from app.db.seeds.common import seed_common_data
 from app.db.seeds.required import seed_required_masters
 from app.db.session import async_session_factory, transaction
+from app.erp.accounting.accounts.models import Account
 from app.erp.exchange_rates.catalog import ISO_4217_CURRENCIES
 from tests.conftest import login_headers, provision_admin
 
@@ -229,6 +231,66 @@ async def test_seed_required_masters_restores_prefix_without_resetting_next_numb
     assert data["padding"] == 6
     assert data["next_number"] == 42
     _assert_canonical_sequences(await _list_sequences(client, headers))
+
+
+@pytest.mark.asyncio
+async def test_seed_restores_soft_deleted_default_chart(client: AsyncClient) -> None:
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    listed = await client.get("/api/v1/accounts?page_size=100", headers=headers)
+    assert listed.status_code == 200, listed.text
+    before = {item["code"]: item["id"] for item in listed.json()["data"]}
+    assert before["1100"]
+    assert before["2010"]
+
+    created = await client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={
+            "code": "2500",
+            "name": "PAYBLES & PROVISIONS",
+            "account_type": "LIABILITY",
+            "account_subtype": "OTHER_CURRENT_LIABILITY",
+            "is_group": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    manual_id = created.json()["data"]["id"]
+
+    async with async_session_factory() as session, transaction(session):
+        rows = (
+            (
+                await session.execute(
+                    select(Account).where(
+                        Account.tenant_id == UUID(tenant_id),
+                        Account.deleted_at.is_(None),
+                        Account.code != "2500",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        deleted_at = datetime.now(UTC)
+        for row in rows:
+            row.deleted_at = deleted_at
+
+    async with async_session_factory() as session, transaction(session):
+        await seed_required_masters(session, UUID(tenant_id))
+
+    restored = await client.get("/api/v1/accounts?page_size=100", headers=headers)
+    assert restored.status_code == 200, restored.text
+    after = {item["code"]: item["id"] for item in restored.json()["data"]}
+    assert after["1100"] == before["1100"]
+    assert after["2010"] == before["2010"]
+    assert after["1010"] == before["1010"]
+    assert after["2500"] == manual_id
+
+    roles = await client.get("/api/v1/accounts/system-roles", headers=headers)
+    assert roles.status_code == 200, roles.text
+    by_role = {item["role"]: item["account_id"] for item in roles.json()["data"]}
+    assert by_role["ACCOUNTS_RECEIVABLE"] == before["1100"]
+    assert by_role["ACCOUNTS_PAYABLE"] == before["2010"]
 
 
 @pytest.mark.asyncio

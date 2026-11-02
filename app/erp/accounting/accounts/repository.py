@@ -33,6 +33,7 @@ class AccountRepository:
                     "account_subtype",
                     "is_group",
                     "is_active",
+                    "is_system",
                     "is_standalone_ledger",
                     "parent_id",
                 }

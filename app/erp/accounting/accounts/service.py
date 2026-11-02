@@ -175,6 +175,7 @@ class AccountService:
         account_subtype: str | None = None,
         is_group: bool | None = None,
         is_active: bool | None = None,
+        is_system: bool | None = None,
         is_standalone_ledger: bool | None = None,
     ) -> tuple[list[AccountResponse], int]:
         filters: dict[str, object] = {}
@@ -186,6 +187,8 @@ class AccountService:
             filters["is_group"] = is_group
         if is_active is not None:
             filters["is_active"] = is_active
+        if is_system is not None:
+            filters["is_system"] = is_system
         if is_standalone_ledger is not None:
             filters["is_standalone_ledger"] = is_standalone_ledger
         rows, total = await self.repo.list(
