@@ -7,6 +7,7 @@ import pytest
 
 from app.core.exceptions import ValidationError
 from app.inventory_management.products.line_units import (
+    default_document_line_unit_id,
     normalize_product_line_for_storage,
     resolve_line_to_pieces,
     resolve_line_to_stock_quantity,
@@ -18,6 +19,28 @@ class _Product:
     secondary_unit_id = UUID("22222222-2222-4222-8222-222222222222")
     secondary_unit_factor = Decimal("10")
     pieces_per_unit = None
+
+
+def test_default_document_line_unit_id_prefers_pcs_unit2() -> None:
+    assert (
+        default_document_line_unit_id(
+            _Product(),
+            base_unit_code="CTN",
+            secondary_unit_code="PCS",
+        )
+        == _Product.secondary_unit_id
+    )
+
+
+def test_default_document_line_unit_id_base_pcs() -> None:
+    assert (
+        default_document_line_unit_id(
+            _Product(),
+            base_unit_code="PCS",
+            secondary_unit_code="CTN",
+        )
+        == _Product.unit_id
+    )
 
 
 def test_base_unit_unchanged() -> None:

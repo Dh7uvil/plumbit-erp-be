@@ -380,6 +380,7 @@ async def get_customer_statement(
     customer_id: UUID,
     from_date: Annotated[date, Query(alias="from")],
     to_date: Annotated[date, Query(alias="to")],
+    include_opening: bool = True,
     include_pdc: bool = False,
     export_format: FormatQuery = None,
 ) -> Any:
@@ -388,6 +389,7 @@ async def get_customer_statement(
         customer_id,
         from_date=from_date,
         to_date=to_date,
+        include_opening=include_opening,
         include_pdc=include_pdc,
     )
     return _maybe_csv(request, export_format, data, user, filename="customer-statement.csv")
@@ -402,6 +404,7 @@ async def get_supplier_statement(
     supplier_id: UUID,
     from_date: Annotated[date, Query(alias="from")],
     to_date: Annotated[date, Query(alias="to")],
+    include_opening: bool = True,
     include_pdc: bool = False,
     export_format: FormatQuery = None,
 ) -> Any:
@@ -410,6 +413,7 @@ async def get_supplier_statement(
         supplier_id,
         from_date=from_date,
         to_date=to_date,
+        include_opening=include_opening,
         include_pdc=include_pdc,
     )
     return _maybe_csv(request, export_format, data, user, filename="supplier-statement.csv")

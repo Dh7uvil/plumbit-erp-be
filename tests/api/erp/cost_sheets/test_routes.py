@@ -447,6 +447,109 @@ async def test_journal_cost_sheet_reopen_then_save_reposts(client: AsyncClient) 
 
 
 @pytest.mark.asyncio
+async def test_journal_cost_sheet_credit_lines_sync_to_posted_journal(
+    client: AsyncClient,
+) -> None:
+    """Posted GL must match cost sheet journal_lines (debit/credit columns)."""
+    from decimal import Decimal
+
+    tenant_id, email, password = await provision_admin()
+    headers = await login_headers(client, tenant_id, email, password)
+    await _enable_books(client, headers)
+    supplier_id = await _create_supplier(client, headers)
+    invoice = await _posted_invoice(client, headers)
+    listed = await client.get("/api/v1/accounts", headers=headers)
+    skip = {"ACCOUNTS_RECEIVABLE", "ACCOUNTS_PAYABLE", "CASH", "BANK"}
+    postable = [
+        row["id"]
+        for row in listed.json()["data"]
+        if not row.get("is_group") and row.get("account_subtype") not in skip
+    ]
+    assert len(postable) >= 2
+    expense_a, expense_b = postable[0], postable[1]
+    created = await client.post(
+        "/api/v1/cost-sheets",
+        headers=headers,
+        json={
+            "sheet_type": "IMPORT",
+            "sheet_mode": "JOURNAL",
+            "supplier_id": supplier_id,
+            "source_document_type": "SALES_INVOICE",
+            "source_document_id": invoice["id"],
+            "journal_lines": [
+                {
+                    "line_kind": "G",
+                    "account_id": expense_a,
+                    "debit": "0",
+                    "credit": "1000.0000",
+                    "capitalize": False,
+                },
+                {
+                    "line_kind": "G",
+                    "account_id": expense_b,
+                    "debit": "0",
+                    "credit": "500.0000",
+                    "capitalize": False,
+                },
+                {
+                    "line_kind": "S",
+                    "party_id": supplier_id,
+                    "debit": "1500.0000",
+                    "credit": "0",
+                },
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()["data"]
+    assert body["journal_entry_id"] is not None
+    journal = await client.get(
+        f"/api/v1/journals/{body['journal_entry_id']}", headers=headers
+    )
+    assert journal.status_code == 200, journal.text
+    journal_body = journal.json()["data"]
+    assert journal_body["document_number"] == body["document_number"]
+    assert journal_body["document_number"].startswith("CSI")
+    assert journal_body["source_type"] == "cost_sheet"
+    assert journal_body["source_id"] == body["id"]
+    assert not journal_body["document_number"].startswith("JV")
+    sheet_g_lines = [line for line in body["journal_lines"] if line["line_kind"] == "G"]
+    assert len(sheet_g_lines) == 2
+    credits = sorted(Decimal(line["credit"]) for line in sheet_g_lines)
+    assert credits == [Decimal("500.0000"), Decimal("1000.0000")]
+
+    journal = await client.get(
+        f"/api/v1/journals/{body['journal_entry_id']}", headers=headers
+    )
+    assert journal.status_code == 200, journal.text
+    journal_credits = sorted(
+        Decimal(line["credit"])
+        for line in journal.json()["data"]["lines"]
+        if line["account_id"] in {expense_a, expense_b}
+    )
+    assert journal_credits == [Decimal("500.0000"), Decimal("1000.0000")]
+
+    statement = await client.get(
+        "/api/v1/reports/account-statement",
+        headers=headers,
+        params={
+            "account_id": expense_a,
+            "from": body["document_date"],
+            "to": body["document_date"],
+        },
+    )
+    assert statement.status_code == 200, statement.text
+    cs_lines = [
+        line
+        for line in statement.json()["data"]["lines"]
+        if line.get("source_type") == "cost_sheet"
+    ]
+    assert len(cs_lines) == 1
+    assert Decimal(cs_lines[0]["credit"]) == Decimal("1000.0000")
+    assert Decimal(cs_lines[0]["debit"]) == Decimal("0")
+
+
+@pytest.mark.asyncio
 async def test_journal_cost_sheet_unbalanced_auto_posts(client: AsyncClient) -> None:
     tenant_id, email, password = await provision_admin()
     headers = await login_headers(client, tenant_id, email, password)

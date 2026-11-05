@@ -127,6 +127,7 @@ async def test_account_statement_includes_party_open_item(client: AsyncClient) -
         "/api/v1/reports/account-statement",
         headers=headers,
         params={
+            "account_id": accounts["ACCOUNTS_RECEIVABLE"],
             "party_type": "CUSTOMER",
             "party_id": customer_id,
             "from": entry_date,

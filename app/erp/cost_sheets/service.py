@@ -34,6 +34,7 @@ from app.core.enums import (
     CostSheetType,
     DocumentType,
     ChargeAllocationMethod,
+    JournalEntryStatus,
     JournalType,
     LedgerLineKind,
     PartyType,
@@ -203,8 +204,28 @@ class CostSheetService:
         )
         return [await self._to_response(row) for row in rows], total
 
-    async def get(self, tenant_id: UUID, cost_sheet_id: UUID) -> CostSheetResponse:
+    async def get(
+        self,
+        tenant_id: UUID,
+        cost_sheet_id: UUID,
+        *,
+        actor_user_id: UUID | None = None,
+    ) -> CostSheetResponse:
         row = await self._require(tenant_id, cost_sheet_id)
+        if (
+            actor_user_id is not None
+            and CostSheetMode(row.sheet_mode) == CostSheetMode.JOURNAL
+            and row.journal_entry_id is not None
+            and not await self._posted_journal_matches_cost_sheet(
+                tenant_id, row.journal_entry_id, row
+            )
+        ):
+            async with transaction(self.session):
+                row = await self._require(tenant_id, cost_sheet_id, for_update=True)
+                await self._post_journal_internal(
+                    tenant_id, row, actor_user_id=actor_user_id
+                )
+                row = await self._require(tenant_id, cost_sheet_id)
         return await self._to_response(row)
 
     async def create(
@@ -468,6 +489,17 @@ class CostSheetService:
             if CostSheetMode(row.sheet_mode) != CostSheetMode.JOURNAL:
                 raise ValidationError("Only journal-mode cost sheets can be posted")
             if row.journal_entry_id is not None:
+                if await self._posted_journal_matches_cost_sheet(
+                    tenant_id, row.journal_entry_id, row
+                ):
+                    loaded = await self._require(tenant_id, cost_sheet_id)
+                    return await self._to_response(loaded)
+                await self._post_journal_internal(
+                    tenant_id, row, actor_user_id=actor_user_id
+                )
+                row.version += 1
+                row.updated_by = actor_user_id
+                await self.session.flush()
                 loaded = await self._require(tenant_id, cost_sheet_id)
                 return await self._to_response(loaded)
             if CostSheetStatus(row.status) != CostSheetStatus.DRAFT:
@@ -781,6 +813,29 @@ class CostSheetService:
         row.journal_entry_id = None
         await self.session.flush()
 
+    async def _posted_journal_matches_cost_sheet(
+        self, tenant_id: UUID, journal_id: UUID, row: CostSheet
+    ) -> bool:
+        journal = await self.posting.repo.get(tenant_id, journal_id)
+        if journal is None:
+            return False
+        if JournalEntryStatus(journal.status) != JournalEntryStatus.POSTED:
+            return False
+        if journal.reversed_by_id is not None:
+            return False
+        expected = await self._posting_journal_lines(tenant_id, row)
+        actual = sorted(journal.lines, key=lambda line: line.line_number)
+        if len(expected) != len(actual):
+            return False
+        for exp, act in zip(expected, actual, strict=True):
+            if exp.account_id != act.account_id:
+                return False
+            if quantize_money(exp.debit) != quantize_money(act.debit):
+                return False
+            if quantize_money(exp.credit) != quantize_money(act.credit):
+                return False
+        return True
+
     async def _post_journal_internal(
         self,
         tenant_id: UUID,
@@ -790,9 +845,45 @@ class CostSheetService:
     ) -> None:
         if CostSheetMode(row.sheet_mode) != CostSheetMode.JOURNAL:
             return
-        if row.journal_entry_id is not None:
-            return
         self._assert_journal_has_amount(row.journal_lines)
+
+        if row.journal_entry_id is not None:
+            if await self._posted_journal_matches_cost_sheet(
+                tenant_id, row.journal_entry_id, row
+            ):
+                return
+            await self._reverse_posted_journal(
+                tenant_id,
+                row,
+                actor_user_id=actor_user_id,
+                reason=f"Repost cost sheet {row.document_number}",
+            )
+            await self.session.flush()
+
+        orphaned = await self.posting.repo.get_posted_for_source(
+            tenant_id, _SOURCE_COST_SHEET, row.id
+        )
+        if orphaned is not None:
+            if await self._posted_journal_matches_cost_sheet(tenant_id, orphaned.id, row):
+                row.journal_entry_id = orphaned.id
+                row.status = CostSheetStatus.CONFIRMED.value
+                await self.session.flush()
+                return
+            await self.posting.reverse(
+                tenant_id,
+                orphaned.id,
+                reversal_date=row.document_date,
+                reason=f"Replace stale journal for cost sheet {row.document_number}",
+                actor_id=actor_user_id,
+            )
+            await self.session.flush()
+
+        if row.journal_entry_id is not None:
+            if await self._posted_journal_matches_cost_sheet(
+                tenant_id, row.journal_entry_id, row
+            ):
+                return
+
         journal_lines = await self._posting_journal_lines(tenant_id, row)
         journal = await self.posting.post_for_document(
             tenant_id,

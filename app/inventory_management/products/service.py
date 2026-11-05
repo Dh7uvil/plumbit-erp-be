@@ -454,6 +454,19 @@ class ProductService:
         row = await self.units.get(tenant_id, unit_id)
         return row.code if row is not None else None
 
+    async def document_line_default_unit_id(
+        self, tenant_id: UUID, product: ProductResponse
+    ) -> UUID | None:
+        from app.inventory_management.products.line_units import default_document_line_unit_id
+
+        base_code = await self._unit_code(tenant_id, product.unit_id)
+        sec_code = await self._unit_code(tenant_id, product.secondary_unit_id)
+        return default_document_line_unit_id(
+            product,
+            base_unit_code=base_code,
+            secondary_unit_code=sec_code,
+        )
+
     async def _line_unit_codes(
         self,
         tenant_id: UUID,
@@ -852,6 +865,35 @@ class ProductService:
                 )
                 packing_label = format_secondary_packing_label(display_factor, display_u2)
             net_avail = Decimal(row.net_available or 0)
+            if is_inverted_packaging(base_code, sec_code):
+                pieces_per_base = pieces_per_for_inverted(
+                    pieces_per_unit=row.pieces_per_unit,
+                    secondary_unit_factor=row.secondary_unit_factor,
+                )
+                net_rows = build_quantity_rows_inverted(
+                    qty_on_hand=Decimal("0"),
+                    qty_opened=Decimal("0"),
+                    qty_committed=Decimal("0"),
+                    net_available=net_avail,
+                    pieces_per_base=pieces_per_base,
+                )
+            else:
+                display_factor, _display_u2 = inquiry_secondary_display(
+                    secondary_unit_factor=row.secondary_unit_factor,
+                    unit2_code=sec_code,
+                )
+                net_rows = build_quantity_rows(
+                    qty_on_hand=Decimal("0"),
+                    qty_opened=Decimal("0"),
+                    qty_committed=Decimal("0"),
+                    net_available=net_avail,
+                    factor=display_factor,
+                )
+            net_unit2 = (
+                net_rows.net_available.unit2_qty
+                if net_rows.net_available is not None
+                else net_avail
+            )
             result.append(
                 ProductInventoryListRow(
                     product_id=row.id,
@@ -859,6 +901,7 @@ class ProductService:
                     name=row.name,
                     net_quantity=net_avail,
                     net_available=net_avail,
+                    net_available_unit2=net_unit2,
                     volume=row.volume,
                     alias_2=row.alias_2,
                     alias_3=row.alias_3,

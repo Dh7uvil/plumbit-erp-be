@@ -163,7 +163,7 @@ _VOUCHER_META: dict[VoucherType, tuple[DocumentType, str, str, AccountSubtype | 
     VoucherType.JOURNAL: (
         DocumentType.JOURNAL_ENTRY,
         "JV",
-        "journal_entry",
+        "journal_voucher",
         None,
     ),
     VoucherType.GENERAL_PURCHASE: (

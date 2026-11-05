@@ -251,6 +251,7 @@ class ProductInventoryListRow(BaseModel):
     name: str
     net_quantity: Decimal
     net_available: Decimal
+    net_available_unit2: Decimal
     volume: Decimal | None = None
     alias_2: str | None = None
     alias_3: str | None = None

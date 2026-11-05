@@ -168,8 +168,11 @@ class PartyDefaultsService:
                 return None
             return format(value, "f")
 
+        default_unit_id = await self.products.document_line_default_unit_id(
+            tenant_id, product
+        )
         return ProductLineDefaults(
-            unit_id=product.unit_id,
+            unit_id=default_unit_id,
             tax_id=product.tax_id,
             rate=_fmt(rate),
             available_qty=_fmt(qty),

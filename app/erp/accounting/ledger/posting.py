@@ -50,6 +50,19 @@ _CONTROL_SUBTYPES = frozenset(
 )
 SOURCE_OPENING_BALANCE = "OPENING_BALANCE"
 SOURCE_JOURNAL_ENTRY = "journal_entry"
+SOURCE_COST_SHEET = "cost_sheet"
+VOUCHER_GL_SOURCE_TYPES = frozenset(
+    {
+        "cash_receipt_voucher",
+        "cash_payment_voucher",
+        "bank_receipt_voucher",
+        "bank_payment_voucher",
+        "contra_voucher",
+        "journal_voucher",
+        "general_purchase_voucher",
+        "payment_voucher",
+    }
+)
 SOURCE_INVENTORY_CATCH_UP = "INVENTORY_CATCH_UP"
 SOURCE_YEAR_END_CLOSING = "year_end_closing"
 _SOURCE_POSTED_CONSTRAINT = "uq_journal_entries_tenant_source_posted"
@@ -152,13 +165,28 @@ class LedgerPostingService:
             relax_control_party=relax_control_party,
             allow_unbalanced=allow_unbalanced,
         )
-        number = await self.sequences.allocate(
-            tenant_id,
-            document_type=DocumentType.JOURNAL_ENTRY,
-            series=_SERIES,
-            fiscal_year=await year_for(self.session, tenant_id, entry_date),
-            prefix=_SERIES,
-        )
+        if source_type == SOURCE_COST_SHEET:
+            from app.erp.cost_sheets.models import CostSheet
+
+            sheet = await self.session.get(CostSheet, source_id)
+            if sheet is None or sheet.tenant_id != tenant_id or sheet.deleted_at is not None:
+                raise ResourceNotFoundError("Cost sheet not found")
+            number = sheet.document_number
+        elif source_type in VOUCHER_GL_SOURCE_TYPES:
+            from app.erp.accounting.vouchers.models import Voucher
+
+            voucher = await self.session.get(Voucher, source_id)
+            if voucher is None or voucher.tenant_id != tenant_id or voucher.deleted_at is not None:
+                raise ResourceNotFoundError("Voucher not found")
+            number = voucher.document_number
+        else:
+            number = await self.sequences.allocate(
+                tenant_id,
+                document_type=DocumentType.JOURNAL_ENTRY,
+                series=_SERIES,
+                fiscal_year=await year_for(self.session, tenant_id, entry_date),
+                prefix=_SERIES,
+            )
         debit_base, credit_base = _totals(prepared)
         try:
             async with self.session.begin_nested():

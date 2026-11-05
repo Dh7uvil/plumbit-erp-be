@@ -53,6 +53,22 @@ def _is_pcs(code: str | None) -> bool:
     return (code or "").strip().upper() == "PCS"
 
 
+def default_document_line_unit_id(
+    product: ProductUnitFields,
+    *,
+    base_unit_code: str | None = None,
+    secondary_unit_code: str | None = None,
+) -> UUID | None:
+    """Prefer pieces on new document lines when unit 2 (or base unit) is PCS."""
+    secondary = product.secondary_unit_id
+    if secondary is not None and _is_pcs(secondary_unit_code):
+        return secondary
+    base = product.unit_id
+    if base is not None and _is_pcs(base_unit_code):
+        return base
+    return product.unit_id
+
+
 def _pieces_per_base_unit(
     product: ProductUnitFields,
     *,

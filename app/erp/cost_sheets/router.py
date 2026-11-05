@@ -81,7 +81,11 @@ async def get_cost_sheet(
     service: CostSheetServiceDependency,
     _: Annotated[CurrentUser, Depends(require_permission(COST_SHEET_READ))],
 ) -> ApiResponse[CostSheetResponse]:
-    return ApiResponse(data=await service.get(tenant.tenant_id, cost_sheet_id))
+    return ApiResponse(
+        data=await service.get(
+            tenant.tenant_id, cost_sheet_id, actor_user_id=tenant.user_id
+        )
+    )
 
 
 @router.patch("/{cost_sheet_id}", response_model=ApiResponse[CostSheetResponse])

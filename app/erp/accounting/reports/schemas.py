@@ -77,6 +77,8 @@ class GeneralLedgerResponse(ReportCurrencyMixin):
     to_date: date
     opening_balance: Decimal
     closing_balance: Decimal
+    total_debit: Decimal = Decimal("0")
+    total_credit: Decimal = Decimal("0")
     page: int = 1
     page_size: int | None = None
     total_lines: int = 0
@@ -133,6 +135,7 @@ class AccountStatementOpening(BaseModel):
 
 class AccountStatementLine(BaseModel):
     journal_entry_id: UUID | None = None
+    journal_line_number: int | None = None
     document_number: str
     entry_date: date
     due_date: date | None
@@ -145,6 +148,7 @@ class AccountStatementLine(BaseModel):
     source_type: str | None = None
     source_id: UUID | None = None
     cheque_number: str | None = None
+    cheque_date: date | None = None
     cheque_clearing_date: date | None = None
     balance_side: str | None = None
     narration: str | None = None
@@ -263,12 +267,16 @@ class PartyStatementResponse(ReportCurrencyMixin):
     party_type: str
     party_id: UUID
     party_name: str
+    account_code: str | None = None
+    account_name: str | None = None
     from_date: date
     to_date: date
     opening_balance: Decimal
     opening_balance_side: str | None = None
     closing_balance: Decimal
     closing_balance_side: str | None = None
+    total_debit: Decimal = Decimal("0")
+    total_credit: Decimal = Decimal("0")
     lines: list[PartyStatementLine] = Field(default_factory=list)
 
 

@@ -8,7 +8,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -38,6 +38,18 @@ from app.crm.customers.models import Customer
 from app.erp.accounting.accounts.service import AccountService
 from app.erp.accounting.budgets.schemas import BudgetVsActualResponse
 from app.erp.accounting.ledger.models import JournalEntry, JournalEntryLine
+from app.erp.accounting.reports.account_statement_consolidation import (
+    ACCOUNT_STATEMENT_HIDDEN_SOURCES,
+    DOCUMENT_LINE_SOURCES,
+    PARTY_JOURNAL_LINE_SOURCES,
+    STATEMENT_LINE_LEVEL_SOURCES,
+    SUPPLIER_STATEMENT_PRESENTATION_SOURCES,
+    STATEMENT_DOCUMENT_SOURCES,
+    VOUCHER_JOURNAL_SOURCE_TYPES,
+    consolidate_account_statement_lines,
+    net_statement_debit_credit,
+    net_supplier_statement_debit_credit,
+)
 from app.erp.accounting.reports.amounts import (
     document_base_grand,
     open_item_base_amount,
@@ -91,6 +103,58 @@ EXPORT_EVIDENCE_WINDOW_DAYS = 90
 _UNCLEARED_CHEQUE_STATUSES = frozenset(
     {ChequeStatus.ISSUED.value, ChequeStatus.DEPOSITED.value}
 )
+def _statement_ref_number(
+    header: JournalEntry,
+    *,
+    cost_sheet_document_numbers: dict[UUID, str],
+    vouchers_by_id: dict[UUID, object],
+    source_type: str | None = None,
+    source_id: UUID | None = None,
+) -> str:
+    resolved_type = source_type if source_type is not None else header.source_type
+    resolved_id = source_id if source_id is not None else header.source_id
+    if resolved_type == "cost_sheet" and resolved_id is not None:
+        return cost_sheet_document_numbers.get(resolved_id, header.document_number)
+    if resolved_type in VOUCHER_JOURNAL_SOURCE_TYPES and resolved_id is not None:
+        voucher = vouchers_by_id.get(resolved_id)
+        if voucher is not None:
+            return getattr(voucher, "document_number", header.document_number)
+    if resolved_type == "general_purchase_voucher" and resolved_id is not None:
+        voucher = vouchers_by_id.get(resolved_id)
+        if voucher is not None:
+            return getattr(voucher, "document_number", header.document_number)
+    return header.document_number
+
+
+def _account_statement_line_visible(line: AccountStatementLine) -> bool:
+    if line.source_type in ACCOUNT_STATEMENT_HIDDEN_SOURCES:
+        return False
+    if line.source_type is None:
+        return False
+    if line.voucher_code == "PD" or line.source_type == "cheque":
+        return True
+    if line.source_type in DOCUMENT_LINE_SOURCES:
+        return True
+    if line.source_type in STATEMENT_DOCUMENT_SOURCES:
+        return True
+    return False
+
+
+def _statement_cheque_number(
+    *,
+    cheque: object | None,
+    entry_line: JournalEntryLine | None = None,
+) -> str | None:
+    """Cheque column: real cheque metadata only (never cost sheet / voucher document refs)."""
+
+    if cheque is not None:
+        return getattr(cheque, "cheque_number", None)
+    if entry_line is not None and entry_line.external_reference:
+        ref = entry_line.external_reference.strip()
+        return ref or None
+    return None
+
+
 _SOURCE_VOUCHER_CODES: dict[str, str] = {
     "journal_entry": "JV",
     "cash_receipt_voucher": "CR",
@@ -117,9 +181,28 @@ _SOURCE_VOUCHER_CODES: dict[str, str] = {
     "fx_revaluation": "FX",
     "sales_invoice_write_off": "WO",
     "purchase_invoice_write_off": "WO",
+    "cost_sheet": "CS",
+    "journal_voucher": "JV",
+    "contra_voucher": "CV",
+    "cash_receipt_voucher": "CR",
+    "cash_payment_voucher": "CP",
+    "bank_receipt_voucher": "BR",
+    "bank_payment_voucher": "BP",
+    "payment_voucher": "PV",
+    "general_purchase_voucher": "GP",
 }
-
-
+_JOURNAL_LIKE_VOUCHER_TYPES = frozenset(
+    {
+        VoucherType.JOURNAL,
+        VoucherType.GENERAL_PURCHASE,
+        VoucherType.CONTRA,
+    }
+)
+_COST_SHEET_TYPE_CODES: dict[str, str] = {
+    "IMPORT": "CSI",
+    "EXPORT": "CSE",
+    "OTHER": "CSO",
+}
 def _net_sides(debit: Decimal, credit: Decimal) -> tuple[Decimal, Decimal]:
     net = quantize_money(debit - credit)
     if net >= _ZERO:
@@ -319,6 +402,8 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                     narration=header.narration,
                 )
             )
+        period_debit = sum((line.debit_base for line in lines), _ZERO)
+        period_credit = sum((line.credit_base for line in lines), _ZERO)
         total_lines = len(lines)
         page_size_value = page_size
         if page_size is not None:
@@ -333,6 +418,8 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             to_date=to_date,
             opening_balance=self._signed(account.account_type, opening_d, opening_c),
             closing_balance=running,
+            total_debit=quantize_money(period_debit),
+            total_credit=quantize_money(period_credit),
             page=page,
             page_size=page_size_value,
             total_lines=total_lines,
@@ -683,6 +770,22 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             account = await self.accounts.get(tenant_id, account_id)
             account_type = account.account_type
 
+        if party_type is not None and party_id is not None and account_id is None:
+            party_stmt = await self._party_document_statement(
+                tenant_id,
+                party_type,
+                party_id,
+                from_date=from_date,
+                to_date=to_date,
+                include_opening=include_opening,
+                include_pdc=include_pdc,
+            )
+            return self._account_statement_from_party(
+                party_stmt,
+                account=None,
+                include_opening=include_opening,
+            )
+
         party_type_value = party_type.value if party_type is not None else None
         opening_d, opening_c = await self._sum_statement_opening(
             tenant_id,
@@ -692,12 +795,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             account_id=account_id,
             currency_id=currency_id,
         )
-        if account_type is not None:
-            opening_signed = self._signed(account_type, opening_d, opening_c)
-        else:
-            opening_signed = quantize_money(opening_d - opening_c)
-
-        running = opening_signed if include_opening else _ZERO
         statement = (
             select(JournalEntryLine, JournalEntry)
             .join(JournalEntry, _posted_join())
@@ -722,6 +819,79 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             statement = statement.where(JournalEntryLine.currency_id == currency_id)
 
         rows = (await self.session.execute(statement)).all()
+        cost_sheet_ids_for_filter = {
+            header.source_id
+            for _, header in rows
+            if header.source_type == "cost_sheet" and header.source_id is not None
+        }
+        cost_sheet_active_journals = await self._cost_sheet_active_journal_ids(
+            tenant_id, cost_sheet_ids_for_filter
+        )
+        if cost_sheet_active_journals:
+            rows = [
+                pair
+                for pair in rows
+                if not (
+                    pair[1].source_type == "cost_sheet"
+                    and pair[1].source_id is not None
+                    and (active := cost_sheet_active_journals.get(pair[1].source_id))
+                    is not None
+                    and pair[1].id != active
+                )
+            ]
+        journal_ids_pre = {header.id for _, header in rows}
+        vouchers_by_journal = await self._vouchers_for_journals(
+            tenant_id, journal_ids_pre
+        )
+        voucher_active_journals = {
+            voucher.id: voucher.journal_entry_id
+            for voucher in vouchers_by_journal.values()
+            if voucher.journal_entry_id is not None
+        }
+        if voucher_active_journals:
+            rows = [
+                pair
+                for pair in rows
+                if not self._orphan_voucher_journal(pair[1], voucher_active_journals)
+            ]
+        use_supplier_balance = party_type == PartyType.SUPPLIER or any(
+            header.source_type in SUPPLIER_STATEMENT_PRESENTATION_SOURCES
+            for _, header in rows
+        )
+        if use_supplier_balance:
+            opening_signed = quantize_money(opening_d - opening_c)
+        elif account_type is not None:
+            opening_signed = self._signed(account_type, opening_d, opening_c)
+        else:
+            opening_signed = quantize_money(opening_d - opening_c)
+        running = opening_signed if include_opening else _ZERO
+
+        journal_ids = {header.id for _, header in rows}
+        lines_by_journal = await self._journal_entry_lines_grouped(tenant_id, journal_ids)
+        cost_sheet_ids = {
+            header.source_id
+            for _, header in rows
+            if header.source_type == "cost_sheet" and header.source_id is not None
+        }
+        cost_sheet_type_codes, cost_sheet_document_numbers = (
+            await self._cost_sheet_statement_meta(tenant_id, cost_sheet_ids)
+        )
+        voucher_ids = {
+            header.source_id
+            for _, header in rows
+            if header.source_type in VOUCHER_JOURNAL_SOURCE_TYPES
+            and header.source_id is not None
+        }
+        voucher_ids |= {
+            header.source_id
+            for _, header in rows
+            if header.source_type == "journal_entry" and header.source_id is not None
+        }
+        voucher_ids |= set(vouchers_by_journal.keys())
+        vouchers_by_id = await self._vouchers_for_statement(tenant_id, voucher_ids)
+        for voucher_id, voucher in vouchers_by_journal.items():
+            vouchers_by_id.setdefault(voucher_id, voucher)
+
         cheque_meta = await self._cheque_meta_for_journals(
             tenant_id,
             [
@@ -732,32 +902,109 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         )
 
         pending: list[AccountStatementLine] = []
-        total_debit = _ZERO
-        total_credit = _ZERO
-        for line, header in rows:
-            debit, credit = self._statement_line_amounts(line, currency_id=currency_id)
-            total_debit = quantize_money(total_debit + debit)
-            total_credit = quantize_money(total_credit + credit)
+        journal_ids_on_statement: set[UUID] = set()
+        supplier_presentation_keys: set[tuple[UUID, int | None]] = set()
+        for journal_id, pairs in self._group_journal_lines_by_entry(rows):
+            journal_ids_on_statement.add(journal_id)
+            header = pairs[0][1]
+            statement_source_type, statement_source_id = self._statement_document_source(
+                header, vouchers_by_id
+            )
+            if statement_source_type in STATEMENT_LINE_LEVEL_SOURCES:
+                for entry_line, _entry_header in pairs:
+                    pending.append(
+                        self._account_statement_line_from_journal_line(
+                            entry_line,
+                            header,
+                            statement_source_type=statement_source_type,
+                            statement_source_id=statement_source_id,
+                            account_type=account_type,
+                            party_type=party_type,
+                            party_id=party_id,
+                            currency_id=currency_id,
+                            lines_by_journal=lines_by_journal,
+                            vouchers_by_id=vouchers_by_id,
+                            cost_sheet_type_codes=cost_sheet_type_codes,
+                            cost_sheet_document_numbers=cost_sheet_document_numbers,
+                            cheque_meta=cheque_meta,
+                            supplier_presentation_keys=supplier_presentation_keys,
+                        )
+                    )
+                continue
+            # Reversal/storno journals: per-line rows for consolidation only (not shown on SOA).
+            if header.source_type == "journal_entry":
+                for entry_line, _entry_header in pairs:
+                    pending.append(
+                        self._account_statement_line_from_journal_line(
+                            entry_line,
+                            header,
+                            account_type=account_type,
+                            party_type=party_type,
+                            party_id=party_id,
+                            currency_id=currency_id,
+                            lines_by_journal=lines_by_journal,
+                            vouchers_by_id=vouchers_by_id,
+                            cost_sheet_type_codes=cost_sheet_type_codes,
+                            cost_sheet_document_numbers=cost_sheet_document_numbers,
+                            cheque_meta=cheque_meta,
+                            supplier_presentation_keys=supplier_presentation_keys,
+                        )
+                    )
+                continue
+            line, _ = pairs[0]
+            debit = _ZERO
+            credit = _ZERO
+            due: date | None = None
+            description: str | None = None
+            external_reference: str | None = None
+            for entry_line, _entry_header in pairs:
+                line_debit, line_credit = self._statement_line_amounts(
+                    entry_line, currency_id=currency_id
+                )
+                debit = quantize_money(debit + line_debit)
+                credit = quantize_money(credit + line_credit)
+                if due is None and entry_line.due_date is not None:
+                    due = entry_line.due_date
+                if description is None and entry_line.description:
+                    description = entry_line.description
+                if external_reference is None and entry_line.external_reference:
+                    external_reference = entry_line.external_reference
+            supplier_amounts = self._supplier_statement_journal_amounts(
+                header,
+                lines_by_journal.get(journal_id, []),
+                vouchers_by_id=vouchers_by_id,
+                party_type=party_type,
+                party_id=party_id,
+                currency_id=currency_id,
+            )
+            if supplier_amounts is not None:
+                debit, credit = supplier_amounts
+                supplier_presentation_keys.add((journal_id, None))
+            voucher_code = _voucher_code(
+                header.source_type, journal_type=header.journal_type
+            )
             cheque = cheque_meta.get(header.source_id) if header.source_id else None
             pending.append(
                 AccountStatementLine(
                     journal_entry_id=header.id,
-                    document_number=header.document_number,
+                    journal_line_number=None,
+                    document_number=_statement_ref_number(
+                        header,
+                        cost_sheet_document_numbers=cost_sheet_document_numbers,
+                        vouchers_by_id=vouchers_by_id,
+                    ),
                     entry_date=header.entry_date,
-                    due_date=line.due_date,
-                    external_reference=line.external_reference,
+                    due_date=due,
+                    external_reference=external_reference,
                     debit=debit,
                     credit=credit,
                     running_balance=_ZERO,
-                    description=line.description,
-                    voucher_code=_voucher_code(
-                        header.source_type, journal_type=header.journal_type
-                    ),
+                    description=description or header.narration,
+                    voucher_code=voucher_code,
                     source_type=header.source_type,
                     source_id=header.source_id,
-                    cheque_number=(
-                        cheque.cheque_number if cheque is not None else header.reference
-                    ),
+                    cheque_number=_statement_cheque_number(cheque=cheque),
+                    cheque_date=cheque.cheque_date if cheque is not None else None,
                     cheque_clearing_date=self._cheque_clearing_date(cheque),
                     balance_side=None,
                     narration=header.narration,
@@ -775,9 +1022,12 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 currency_id=currency_id,
             )
             for cheque in pdc_rows:
+                if (
+                    cheque.journal_entry_id is not None
+                    and cheque.journal_entry_id in journal_ids_on_statement
+                ):
+                    continue
                 debit, credit = self._pdc_amounts(cheque, currency_id=currency_id)
-                total_debit = quantize_money(total_debit + debit)
-                total_credit = quantize_money(total_credit + credit)
                 entry_date = cheque.due_date or cheque.cheque_date
                 pending.append(
                     AccountStatementLine(
@@ -794,11 +1044,22 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                         source_type="cheque",
                         source_id=cheque.id,
                         cheque_number=cheque.cheque_number,
+                        cheque_date=cheque.cheque_date,
                         cheque_clearing_date=cheque.due_date,
                         balance_side=None,
                         narration=cheque.narration,
                     )
                 )
+
+        reversal_of: dict[UUID, UUID] = {}
+        for _, header in rows:
+            if header.reversal_of_id is not None:
+                reversal_of[header.id] = header.reversal_of_id
+        pending = consolidate_account_statement_lines(
+            pending,
+            account_type=account_type,
+            reversal_of=reversal_of,
+        )
 
         pending.sort(
             key=lambda row: (
@@ -810,7 +1071,13 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         lines: list[AccountStatementLine] = []
         running = opening_signed if include_opening else _ZERO
         for row in pending:
-            if account_type is not None:
+            if row.journal_entry_id is not None and (
+                (row.journal_entry_id, row.journal_line_number)
+                in supplier_presentation_keys
+                or (row.journal_entry_id, None) in supplier_presentation_keys
+            ):
+                running = quantize_money(running + row.debit - row.credit)
+            elif account_type is not None:
                 running = quantize_money(
                     running + self._delta(account_type, row.debit, row.credit)
                 )
@@ -825,13 +1092,18 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 )
             )
 
+        visible_lines = [line for line in lines if _account_statement_line_visible(line)]
+        total_debit = sum((line.debit for line in visible_lines), _ZERO)
+        total_credit = sum((line.credit for line in visible_lines), _ZERO)
+        lines = visible_lines
+
         currency_code = await self._statement_currency_code(tenant_id, currency_id)
         opening_row = None
-        if include_opening:
+        if include_opening and opening_signed != _ZERO:
             opening_row = AccountStatementOpening(
                 entry_date=from_date,
-                debit=opening_d,
-                credit=opening_c,
+                debit=_ZERO,
+                credit=_ZERO,
                 running_balance=opening_signed,
                 balance_side=_balance_side(opening_signed),
             )
@@ -1474,12 +1746,314 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             lines=lines,
         )
 
+    @staticmethod
+    def _group_journal_lines_by_entry(
+        rows: Sequence[tuple[JournalEntryLine, JournalEntry]],
+    ) -> list[tuple[UUID, list[tuple[JournalEntryLine, JournalEntry]]]]:
+        """One statement row per journal entry (legacy SOA), preserving entry order."""
+
+        grouped: dict[UUID, list[tuple[JournalEntryLine, JournalEntry]]] = defaultdict(list)
+        order: list[UUID] = []
+        for line, header in rows:
+            if header.id not in grouped:
+                order.append(header.id)
+            grouped[header.id].append((line, header))
+        return [(journal_id, grouped[journal_id]) for journal_id in order]
+
     async def _statement_currency_code(
         self, tenant_id: UUID, currency_id: UUID | None
     ) -> str:
         if currency_id is None:
             return await self._report_currency_code(tenant_id)
         return (await self.currencies.get(tenant_id, currency_id)).code
+
+    async def _journal_entry_lines_grouped(
+        self, tenant_id: UUID, journal_ids: set[UUID]
+    ) -> dict[UUID, list[JournalEntryLine]]:
+        if not journal_ids:
+            return {}
+        rows = (
+            await self.session.execute(
+                select(JournalEntryLine).where(
+                    JournalEntryLine.tenant_id == tenant_id,
+                    JournalEntryLine.journal_entry_id.in_(journal_ids),
+                )
+            )
+        ).scalars().all()
+        grouped: dict[UUID, list[JournalEntryLine]] = defaultdict(list)
+        for line in rows:
+            grouped[line.journal_entry_id].append(line)
+        return grouped
+
+    async def _cost_sheet_statement_meta(
+        self, tenant_id: UUID, sheet_ids: set[UUID]
+    ) -> tuple[dict[UUID, str], dict[UUID, str]]:
+        if not sheet_ids:
+            return {}, {}
+        from app.erp.cost_sheets.models import CostSheet
+
+        rows = (
+            await self.session.execute(
+                select(CostSheet.id, CostSheet.sheet_type, CostSheet.document_number).where(
+                    CostSheet.tenant_id == tenant_id,
+                    CostSheet.id.in_(sheet_ids),
+                    CostSheet.deleted_at.is_(None),
+                )
+            )
+        ).all()
+        type_codes = {
+            row_id: _COST_SHEET_TYPE_CODES.get(sheet_type, "CS")
+            for row_id, sheet_type, _ in rows
+        }
+        document_numbers = {row_id: doc_number for row_id, _, doc_number in rows}
+        return type_codes, document_numbers
+
+    async def _cost_sheet_active_journal_ids(
+        self, tenant_id: UUID, sheet_ids: set[UUID]
+    ) -> dict[UUID, UUID]:
+        if not sheet_ids:
+            return {}
+        from app.erp.cost_sheets.models import CostSheet
+
+        rows = (
+            await self.session.execute(
+                select(CostSheet.id, CostSheet.journal_entry_id).where(
+                    CostSheet.tenant_id == tenant_id,
+                    CostSheet.id.in_(sheet_ids),
+                    CostSheet.deleted_at.is_(None),
+                    CostSheet.journal_entry_id.is_not(None),
+                )
+            )
+        ).all()
+        return {sheet_id: journal_id for sheet_id, journal_id in rows}
+
+    async def _vouchers_for_statement(
+        self, tenant_id: UUID, voucher_ids: set[UUID]
+    ) -> dict[UUID, object]:
+        if not voucher_ids:
+            return {}
+        from app.erp.accounting.vouchers.models import Voucher
+
+        rows = (
+            (
+                await self.session.execute(
+                    select(Voucher)
+                    .options(selectinload(Voucher.lines))
+                    .where(
+                        Voucher.tenant_id == tenant_id,
+                        Voucher.id.in_(voucher_ids),
+                        Voucher.deleted_at.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return {row.id: row for row in rows}
+
+    @staticmethod
+    def _orphan_voucher_journal(
+        header: JournalEntry, active_by_voucher: dict[UUID, UUID]
+    ) -> bool:
+        voucher_id: UUID | None = None
+        if header.source_type in VOUCHER_JOURNAL_SOURCE_TYPES and header.source_id is not None:
+            voucher_id = header.source_id
+        elif header.source_type == "general_purchase_voucher" and header.source_id is not None:
+            voucher_id = header.source_id
+        elif header.source_type == "journal_entry" and header.source_id is not None:
+            voucher_id = header.source_id
+        if voucher_id is None:
+            return False
+        active = active_by_voucher.get(voucher_id)
+        return active is not None and header.id != active
+
+    @staticmethod
+    def _statement_document_source(
+        header: JournalEntry, vouchers_by_id: dict[UUID, object]
+    ) -> tuple[str | None, UUID | None]:
+        if header.source_type in STATEMENT_LINE_LEVEL_SOURCES:
+            return header.source_type, header.source_id
+        if header.source_type != "journal_entry":
+            return header.source_type, header.source_id
+        voucher = None
+        if header.source_id is not None:
+            voucher = vouchers_by_id.get(header.source_id)
+        if voucher is None:
+            for candidate in vouchers_by_id.values():
+                if getattr(candidate, "journal_entry_id", None) == header.id:
+                    voucher = candidate
+                    break
+        if voucher is None:
+            return header.source_type, header.source_id
+        from app.core.enums import VoucherType
+        from app.erp.accounting.vouchers.service import _VOUCHER_META
+
+        voucher_type = VoucherType(voucher.voucher_type)
+        source_type = _VOUCHER_META[voucher_type][2]
+        return source_type, voucher.id
+
+    async def _vouchers_for_journals(
+        self, tenant_id: UUID, journal_ids: set[UUID]
+    ) -> dict[UUID, object]:
+        if not journal_ids:
+            return {}
+        from app.erp.accounting.vouchers.models import Voucher
+
+        rows = (
+            (
+                await self.session.execute(
+                    select(Voucher).where(
+                        Voucher.tenant_id == tenant_id,
+                        Voucher.journal_entry_id.in_(journal_ids),
+                        Voucher.deleted_at.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return {row.id: row for row in rows}
+
+    def _account_statement_line_from_journal_line(
+        self,
+        entry_line: JournalEntryLine,
+        header: JournalEntry,
+        *,
+        statement_source_type: str | None = None,
+        statement_source_id: UUID | None = None,
+        account_type: str | None,
+        party_type: PartyType | None,
+        party_id: UUID | None,
+        currency_id: UUID | None,
+        lines_by_journal: dict[UUID, list[JournalEntryLine]],
+        vouchers_by_id: dict[UUID, object],
+        cost_sheet_type_codes: dict[UUID, str],
+        cost_sheet_document_numbers: dict[UUID, str],
+        cheque_meta: dict,
+        supplier_presentation_keys: set[tuple[UUID, int | None]],
+    ) -> AccountStatementLine:
+        if statement_source_type is None or statement_source_id is None:
+            statement_source_type, statement_source_id = self._statement_document_source(
+                header, vouchers_by_id
+            )
+        debit, credit = self._statement_line_amounts(entry_line, currency_id=currency_id)
+        if statement_source_type not in DOCUMENT_LINE_SOURCES:
+            if entry_line.party_type == PartyType.SUPPLIER.value and (
+                party_id is None or entry_line.party_id == party_id
+            ):
+                debit, credit = net_supplier_statement_debit_credit(debit, credit)
+                supplier_presentation_keys.add((header.id, entry_line.line_number))
+            elif entry_line.party_type == PartyType.CUSTOMER.value and (
+                party_id is None or entry_line.party_id == party_id
+            ):
+                net = quantize_money(debit - credit)
+                if net >= _ZERO:
+                    debit, credit = net, _ZERO
+                else:
+                    debit, credit = _ZERO, quantize_money(-net)
+                supplier_presentation_keys.add((header.id, entry_line.line_number))
+            elif account_type is not None:
+                debit, credit = net_statement_debit_credit(account_type, debit, credit)
+        voucher_code = _voucher_code(
+            statement_source_type, journal_type=header.journal_type
+        )
+        if statement_source_type == "cost_sheet" and statement_source_id is not None:
+            voucher_code = cost_sheet_type_codes.get(statement_source_id, voucher_code)
+        cheque = cheque_meta.get(header.source_id) if header.source_id else None
+        return AccountStatementLine(
+            journal_entry_id=header.id,
+            journal_line_number=entry_line.line_number,
+            document_number=_statement_ref_number(
+                header,
+                cost_sheet_document_numbers=cost_sheet_document_numbers,
+                vouchers_by_id=vouchers_by_id,
+                source_type=statement_source_type,
+                source_id=statement_source_id,
+            ),
+            entry_date=header.entry_date,
+            due_date=entry_line.due_date,
+            external_reference=entry_line.external_reference,
+            debit=debit,
+            credit=credit,
+            running_balance=_ZERO,
+            description=entry_line.description or header.narration,
+            voucher_code=voucher_code,
+            source_type=statement_source_type,
+            source_id=statement_source_id,
+            cheque_number=_statement_cheque_number(cheque=cheque, entry_line=entry_line),
+            cheque_date=cheque.cheque_date if cheque is not None else None,
+            cheque_clearing_date=self._cheque_clearing_date(cheque),
+            balance_side=None,
+            narration=header.narration,
+        )
+
+    def _supplier_party_line_amounts(
+        self,
+        journal_lines: list[JournalEntryLine],
+        *,
+        party_id: UUID | None,
+        currency_id: UUID | None,
+    ) -> tuple[Decimal, Decimal] | None:
+        supplier_lines = [
+            line
+            for line in journal_lines
+            if line.party_type == PartyType.SUPPLIER.value
+            and (party_id is None or line.party_id == party_id)
+        ]
+        if not supplier_lines:
+            return None
+        debit = _ZERO
+        credit = _ZERO
+        for line in supplier_lines:
+            line_debit, line_credit = self._statement_line_amounts(
+                line, currency_id=currency_id
+            )
+            debit = quantize_money(debit + line_debit)
+            credit = quantize_money(credit + line_credit)
+        return debit, credit
+
+    def _supplier_statement_journal_amounts(
+        self,
+        header: JournalEntry,
+        journal_lines: list[JournalEntryLine],
+        *,
+        vouchers_by_id: dict[UUID, object],
+        party_type: PartyType | None,
+        party_id: UUID | None,
+        currency_id: UUID | None,
+    ) -> tuple[Decimal, Decimal] | None:
+        if party_type == PartyType.CUSTOMER:
+            return None
+        if header.source_type in {"cost_sheet", "supplier_payment"}:
+            return self._supplier_party_line_amounts(
+                journal_lines, party_id=party_id, currency_id=currency_id
+            )
+        if (
+            header.source_type in VOUCHER_JOURNAL_SOURCE_TYPES
+            and header.source_id is not None
+        ):
+            voucher = vouchers_by_id.get(header.source_id)
+            if voucher is None:
+                return None
+            party_type_value = PartyType.SUPPLIER.value
+            target_party = party_id
+            if target_party is None and getattr(voucher, "party_type", None) == party_type_value:
+                target_party = voucher.party_id
+            if target_party is None:
+                for line in getattr(voucher, "lines", []):
+                    if line.party_type == party_type_value and line.party_id is not None:
+                        target_party = line.party_id
+                        break
+            if target_party is None:
+                return None
+            debit, credit, _ = self._party_voucher_amounts(
+                voucher,
+                party_type=PartyType.SUPPLIER,
+                party_id=target_party,
+                party_type_value=party_type_value,
+            )
+            return debit, credit
+        return None
 
     @staticmethod
     def _statement_line_amounts(
@@ -1655,6 +2229,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         *,
         from_date: date,
         to_date: date,
+        include_opening: bool = True,
         include_pdc: bool = False,
     ) -> PartyStatementResponse:
         return await self._party_document_statement(
@@ -1663,6 +2238,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             customer_id,
             from_date=from_date,
             to_date=to_date,
+            include_opening=include_opening,
             include_pdc=include_pdc,
         )
 
@@ -1673,6 +2249,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         *,
         from_date: date,
         to_date: date,
+        include_opening: bool = True,
         include_pdc: bool = False,
     ) -> PartyStatementResponse:
         return await self._party_document_statement(
@@ -1681,6 +2258,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             supplier_id,
             from_date=from_date,
             to_date=to_date,
+            include_opening=include_opening,
             include_pdc=include_pdc,
         )
 
@@ -1959,6 +2537,79 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         )
 
     @staticmethod
+    def _document_type_as_source_type(document_type: str) -> str:
+        if document_type.startswith("VOUCHER_"):
+            kind = document_type.removeprefix("VOUCHER_").lower()
+            if kind == "journal":
+                return "journal_voucher"
+            if kind == "general_purchase":
+                return "journal_voucher"
+            if kind == "contra":
+                return "contra_voucher"
+            if kind == "payment_voucher":
+                return "bank_payment_voucher"
+            if kind in {"cash_receipt", "cash_payment", "bank_receipt", "bank_payment"}:
+                return f"{kind}_voucher"
+            return kind
+        return document_type.lower()
+
+    def _account_statement_from_party(
+        self,
+        party_stmt: PartyStatementResponse,
+        *,
+        account,
+        include_opening: bool,
+    ) -> AccountStatementResponse:
+        opening_row = None
+        if include_opening and party_stmt.opening_balance != _ZERO:
+            opening_row = AccountStatementOpening(
+                entry_date=party_stmt.from_date,
+                debit=_ZERO,
+                credit=_ZERO,
+                running_balance=party_stmt.opening_balance,
+                balance_side=party_stmt.opening_balance_side or _balance_side(party_stmt.opening_balance),
+            )
+        lines: list[AccountStatementLine] = []
+        for row in party_stmt.lines:
+            source_type = self._document_type_as_source_type(row.document_type)
+            lines.append(
+                AccountStatementLine(
+                    journal_entry_id=None,
+                    document_number=row.document_number,
+                    entry_date=row.document_date,
+                    due_date=row.due_date,
+                    external_reference=None,
+                    debit=row.debit,
+                    credit=row.credit,
+                    running_balance=row.running_balance,
+                    description=row.description,
+                    voucher_code=row.type_code,
+                    source_type=source_type,
+                    source_id=row.document_id,
+                    cheque_number=row.cheque_number,
+                    cheque_date=row.cheque_date,
+                    balance_side=row.balance_side,
+                    narration=None,
+                )
+            )
+        return AccountStatementResponse(
+            currency_code=party_stmt.currency_code,
+            party_type=party_stmt.party_type,
+            party_id=party_stmt.party_id,
+            account_id=account.id if account is not None else None,
+            account_code=account.code if account is not None else party_stmt.account_code,
+            account_name=account.name if account is not None else party_stmt.account_name,
+            from_date=party_stmt.from_date,
+            to_date=party_stmt.to_date,
+            opening_balance=party_stmt.opening_balance,
+            closing_balance=party_stmt.closing_balance,
+            total_debit=party_stmt.total_debit,
+            total_credit=party_stmt.total_credit,
+            opening=opening_row,
+            lines=lines,
+        )
+
+    @staticmethod
     def _legacy_party_type_code(document_type: str) -> str:
         mapping = {
             "SALES_INVOICE": "SI",
@@ -1974,8 +2625,256 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             "VOUCHER_JOURNAL": "JV",
             "VOUCHER_GENERAL_PURCHASE": "GP",
             "VOUCHER_PAYMENT_VOUCHER": "PV",
+            "VOUCHER_CONTRA": "CV",
+            "COST_SHEET": "CS",
+            "PURCHASE_ORDER": "PO",
+            "SALES_ORDER": "SO",
+            "OPENING_AR": "OB",
+            "OPENING_AP": "OB",
+            "SALES_INVOICE_WRITE_OFF": "WO",
+            "PURCHASE_INVOICE_WRITE_OFF": "WO",
+            "CUSTOMER_PAYMENT_REFUND": "RR",
+            "SUPPLIER_PAYMENT_REFUND": "SR",
         }
         return mapping.get(document_type, document_type.replace("_", "")[:4])
+
+    async def _append_party_journal_line_events(
+        self,
+        tenant_id: UUID,
+        party_id: UUID,
+        party_type: PartyType,
+        events: list,
+    ) -> set[UUID]:
+        """One party statement row per cost sheet / voucher journal line (net per line slot)."""
+
+        from app.erp.accounting.vouchers.models import Voucher
+        from app.erp.cost_sheets.models import CostSheet
+
+        party_type_value = (
+            PartyType.CUSTOMER.value
+            if party_type == PartyType.CUSTOMER
+            else PartyType.SUPPLIER.value
+        )
+        journal_rows = (
+            await self.session.execute(
+                select(JournalEntryLine, JournalEntry)
+                .join(JournalEntry, _posted_join())
+                .where(
+                    JournalEntryLine.tenant_id == tenant_id,
+                    JournalEntry.source_type.in_(tuple(PARTY_JOURNAL_LINE_SOURCES)),
+                    JournalEntry.source_id.is_not(None),
+                    JournalEntryLine.party_id == party_id,
+                    JournalEntryLine.party_type == party_type_value,
+                )
+                .order_by(
+                    JournalEntry.entry_date.asc(),
+                    JournalEntry.document_number.asc(),
+                    JournalEntryLine.line_number.asc(),
+                )
+            )
+        ).all()
+        emitted_voucher_ids: set[UUID] = set()
+        if not journal_rows:
+            return emitted_voucher_ids
+        by_document_line: dict[
+            tuple[str, UUID, int], list[tuple[JournalEntryLine, JournalEntry]]
+        ] = defaultdict(list)
+        for line, header in journal_rows:
+            if header.source_id is None:
+                continue
+            by_document_line[
+                (header.source_type, header.source_id, line.line_number)
+            ].append((line, header))
+        sheet_ids = {
+            source_id
+            for source_type, source_id, _ in by_document_line
+            if source_type == "cost_sheet"
+        }
+        voucher_ids = {
+            source_id
+            for source_type, source_id, _ in by_document_line
+            if source_type in VOUCHER_JOURNAL_SOURCE_TYPES
+        }
+        sheets_by_id: dict[UUID, CostSheet] = {}
+        if sheet_ids:
+            sheets = (
+                await self.session.execute(
+                    select(CostSheet).where(
+                        CostSheet.tenant_id == tenant_id,
+                        CostSheet.id.in_(sheet_ids),
+                        CostSheet.deleted_at.is_(None),
+                    )
+                )
+            ).scalars().all()
+            sheets_by_id = {row.id: row for row in sheets}
+        vouchers_by_id: dict[UUID, Voucher] = {}
+        if voucher_ids:
+            vouchers = (
+                await self.session.execute(
+                    select(Voucher).where(
+                        Voucher.tenant_id == tenant_id,
+                        Voucher.id.in_(voucher_ids),
+                        Voucher.deleted_at.is_(None),
+                    )
+                )
+            ).scalars().all()
+            vouchers_by_id = {row.id: row for row in vouchers}
+        for (source_type, source_id, _line_number), pairs in by_document_line.items():
+            debit = _ZERO
+            credit = _ZERO
+            description: str | None = None
+            latest_date: date | None = None
+            latest_doc: str | None = None
+            for line, header in pairs:
+                debit = quantize_money(debit + line.debit)
+                credit = quantize_money(credit + line.credit)
+                if description is None and line.description:
+                    description = line.description
+                if latest_date is None or header.entry_date >= latest_date:
+                    latest_date = header.entry_date
+                    latest_doc = header.document_number
+            if party_type == PartyType.SUPPLIER:
+                debit, credit = net_supplier_statement_debit_credit(debit, credit)
+            elif party_type == PartyType.CUSTOMER:
+                net = quantize_money(debit - credit)
+                if net >= _ZERO:
+                    debit, credit = net, _ZERO
+                else:
+                    debit, credit = _ZERO, quantize_money(-net)
+            if debit == _ZERO and credit == _ZERO:
+                continue
+            if source_type == "cost_sheet":
+                sheet = sheets_by_id.get(source_id)
+                doc_type = "COST_SHEET"
+                type_code = (
+                    _COST_SHEET_TYPE_CODES.get(sheet.sheet_type, "CS")
+                    if sheet is not None
+                    else "CS"
+                )
+                ref_number = sheet.document_number if sheet is not None else latest_doc
+                currency_id = sheet.currency_id if sheet is not None else pairs[0][1].currency_id
+                exchange_rate = (
+                    sheet.exchange_rate if sheet is not None else pairs[0][1].exchange_rate
+                )
+                notes = sheet.notes if sheet is not None else None
+            else:
+                voucher = vouchers_by_id.get(source_id)
+                if voucher is None:
+                    continue
+                emitted_voucher_ids.add(source_id)
+                voucher_type = VoucherType(voucher.voucher_type)
+                doc_type = f"VOUCHER_{voucher_type.value}"
+                type_code = self._legacy_party_type_code(doc_type)
+                ref_number = voucher.document_number
+                currency_id = voucher.currency_id
+                exchange_rate = voucher.exchange_rate
+                notes = voucher.reference or voucher.narration
+            event_date = latest_date
+            if event_date is None and source_type == "cost_sheet":
+                sheet = sheets_by_id.get(source_id)
+                if sheet is not None:
+                    event_date = sheet.document_date
+            if event_date is None:
+                event_date = pairs[0][1].entry_date
+            events.append(
+                (
+                    event_date,
+                    doc_type,
+                    source_id,
+                    ref_number or "—",
+                    debit,
+                    credit,
+                    None,
+                    description or notes,
+                    currency_id,
+                    exchange_rate,
+                    type_code,
+                    vouchers_by_id.get(source_id).cheque_number
+                    if source_id in vouchers_by_id
+                    else None,
+                    vouchers_by_id.get(source_id).cheque_date
+                    if source_id in vouchers_by_id
+                    else None,
+                )
+            )
+        return emitted_voucher_ids
+
+    @staticmethod
+    def _party_voucher_amounts(
+        row,
+        *,
+        party_type: PartyType,
+        party_id: UUID,
+        party_type_value: str,
+    ) -> tuple[Decimal, Decimal, str | None]:
+        voucher_type = VoucherType(row.voucher_type)
+        amount = payment_base_amount(row.total_amount, row.exchange_rate)
+        debit = _ZERO
+        credit = _ZERO
+        description: str | None = row.reference or row.narration
+        if voucher_type in _JOURNAL_LIKE_VOUCHER_TYPES:
+            party_lines = [
+                line
+                for line in row.lines
+                if line.party_id == party_id and line.party_type == party_type_value
+            ]
+            if party_lines:
+                debit = sum((quantize_money(line.debit) for line in party_lines), _ZERO)
+                credit = sum(
+                    (quantize_money(line.credit) for line in party_lines), _ZERO
+                )
+                description = next(
+                    (line.description for line in party_lines if line.description),
+                    description,
+                )
+            elif row.party_id == party_id and row.party_type == party_type_value:
+                if party_type == PartyType.SUPPLIER:
+                    credit = amount
+                else:
+                    debit = amount
+            return debit, credit, description
+        party_lines = [
+            line
+            for line in row.lines
+            if line.party_id == party_id and line.party_type == party_type_value
+        ]
+        if party_lines:
+            debit = sum((quantize_money(line.debit) for line in party_lines), _ZERO)
+            credit = sum(
+                (quantize_money(line.credit) for line in party_lines), _ZERO
+            )
+            description = next(
+                (line.description for line in party_lines if line.description),
+                description,
+            )
+            return debit, credit, description
+        if row.party_id != party_id or row.party_type != party_type_value:
+            return _ZERO, _ZERO, description
+        if party_type == PartyType.CUSTOMER:
+            if voucher_type in {
+                VoucherType.CASH_RECEIPT,
+                VoucherType.BANK_RECEIPT,
+            }:
+                credit = amount
+            elif voucher_type in {
+                VoucherType.CASH_PAYMENT,
+                VoucherType.BANK_PAYMENT,
+                VoucherType.PAYMENT_VOUCHER,
+            }:
+                debit = amount
+        else:
+            if voucher_type in {
+                VoucherType.CASH_PAYMENT,
+                VoucherType.BANK_PAYMENT,
+                VoucherType.PAYMENT_VOUCHER,
+            }:
+                debit = amount
+            elif voucher_type in {
+                VoucherType.CASH_RECEIPT,
+                VoucherType.BANK_RECEIPT,
+            }:
+                credit = amount
+        return debit, credit, description
 
     async def _party_document_statement(
         self,
@@ -1985,6 +2884,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
         *,
         from_date: date,
         to_date: date,
+        include_opening: bool = True,
         include_pdc: bool = False,
     ) -> PartyStatementResponse:
         from app.crm.customers.service import (
@@ -1993,60 +2893,30 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             CustomerService,
         )
         from app.erp.accounting.customer_payments.models import CustomerPayment
+        from app.erp.accounting.reports.party_statement_events import (
+            append_party_invoice_events,
+            append_party_opening_events,
+            append_party_order_events,
+            append_party_payment_refund_events,
+            append_party_write_off_events,
+        )
         from app.erp.accounting.supplier_payments.models import SupplierPayment
         from app.erp.credit_notes.models import CreditNote
         from app.erp.debit_notes.models import DebitNote
-        from app.erp.accounting.vouchers.models import Voucher
-        from app.erp.purchase_invoices.models import PurchaseInvoice
+        from app.erp.accounting.vouchers.models import Voucher, VoucherLine
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
         role = CUSTOMER_PARTY_ROLE if party_type == PartyType.CUSTOMER else SUPPLIER_PARTY_ROLE
         party = await CustomerService(self.session, role=role).get(tenant_id, party_id)
-        events: list[
-            tuple[
-                date,
-                str,
-                UUID,
-                str,
-                Decimal,
-                Decimal,
-                date | None,
-                str | None,
-                UUID,
-                Decimal,
-            ]
-        ] = []
+        events: list[tuple] = []
+        journal_ids_on_statement: set[UUID] = set()
+        await append_party_order_events(
+            self.session, tenant_id, party_id, party_type, events
+        )
+        await append_party_invoice_events(
+            self.session, tenant_id, party_id, party_type, events
+        )
         if party_type == PartyType.CUSTOMER:
-            invoices = (
-                (
-                    await self.session.execute(
-                        select(SalesInvoice).where(
-                            SalesInvoice.tenant_id == tenant_id,
-                            SalesInvoice.customer_id == party_id,
-                            SalesInvoice.deleted_at.is_(None),
-                            SalesInvoice.status == InvoiceDocumentStatus.POSTED.value,
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            for row in invoices:
-                amount = document_base_grand(row)
-                events.append(
-                    (
-                        row.invoice_date,
-                        "SALES_INVOICE",
-                        row.id,
-                        row.document_number,
-                        amount,
-                        _ZERO,
-                        row.due_date,
-                        None,
-                        row.currency_id,
-                        row.exchange_rate,
-                    )
-                )
             notes = (
                 (
                     await self.session.execute(
@@ -2092,6 +2962,10 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 .all()
             )
             for row in payments:
+                if row.journal_entry_id is not None:
+                    journal_ids_on_statement.add(row.journal_entry_id)
+                if row.refund_journal_entry_id is not None:
+                    journal_ids_on_statement.add(row.refund_journal_entry_id)
                 amount = payment_base_amount(row.amount_received, row.exchange_rate)
                 events.append(
                     (
@@ -2108,36 +2982,6 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                     )
                 )
         else:
-            invoices = (
-                (
-                    await self.session.execute(
-                        select(PurchaseInvoice).where(
-                            PurchaseInvoice.tenant_id == tenant_id,
-                            PurchaseInvoice.supplier_id == party_id,
-                            PurchaseInvoice.deleted_at.is_(None),
-                            PurchaseInvoice.status == InvoiceDocumentStatus.POSTED.value,
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            for row in invoices:
-                amount = document_base_grand(row)
-                events.append(
-                    (
-                        row.invoice_date,
-                        "PURCHASE_INVOICE",
-                        row.id,
-                        row.document_number,
-                        _ZERO,
-                        amount,
-                        row.due_date,
-                        None,
-                        row.currency_id,
-                        row.exchange_rate,
-                    )
-                )
             notes = (
                 (
                     await self.session.execute(
@@ -2183,6 +3027,10 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 .all()
             )
             for row in payments:
+                if row.journal_entry_id is not None:
+                    journal_ids_on_statement.add(row.journal_entry_id)
+                if row.refund_journal_entry_id is not None:
+                    journal_ids_on_statement.add(row.refund_journal_entry_id)
                 amount = payment_base_amount(row.amount_paid, row.exchange_rate)
                 events.append(
                     (
@@ -2198,16 +3046,40 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                         row.exchange_rate,
                     )
                 )
+        await append_party_opening_events(
+            self.session, tenant_id, party_id, party_type, events
+        )
+        await append_party_write_off_events(
+            self.session, tenant_id, party_id, party_type, events
+        )
+        await append_party_payment_refund_events(
+            self.session, tenant_id, party_id, party_type, events
+        )
+        voucher_ids_from_journals = await self._append_party_journal_line_events(
+            tenant_id, party_id, party_type, events
+        )
         party_type_value = PartyType.CUSTOMER.value if party_type == PartyType.CUSTOMER else PartyType.SUPPLIER.value
+        party_on_header = and_(
+            Voucher.party_id == party_id,
+            Voucher.party_type == party_type_value,
+        )
+        party_on_line = exists(
+            select(VoucherLine.voucher_id).where(
+                VoucherLine.voucher_id == Voucher.id,
+                VoucherLine.party_id == party_id,
+                VoucherLine.party_type == party_type_value,
+            )
+        )
         vouchers = (
             (
                 await self.session.execute(
-                    select(Voucher).where(
+                    select(Voucher)
+                    .options(selectinload(Voucher.lines))
+                    .where(
                         Voucher.tenant_id == tenant_id,
-                        Voucher.party_id == party_id,
-                        Voucher.party_type == party_type_value,
                         Voucher.deleted_at.is_(None),
                         Voucher.status == InvoiceDocumentStatus.POSTED.value,
+                        or_(party_on_header, party_on_line),
                     )
                 )
             )
@@ -2215,36 +3087,21 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             .all()
         )
         for row in vouchers:
-            amount = payment_base_amount(row.total_amount, row.exchange_rate)
-            voucher_type = VoucherType(row.voucher_type)
-            debit = _ZERO
-            credit = _ZERO
-            if party_type == PartyType.CUSTOMER:
-                if voucher_type in {
-                    VoucherType.CASH_RECEIPT,
-                    VoucherType.BANK_RECEIPT,
-                }:
-                    credit = amount
-                elif voucher_type in {
-                    VoucherType.CASH_PAYMENT,
-                    VoucherType.BANK_PAYMENT,
-                    VoucherType.PAYMENT_VOUCHER,
-                }:
-                    debit = amount
-            else:
-                if voucher_type in {
-                    VoucherType.CASH_PAYMENT,
-                    VoucherType.BANK_PAYMENT,
-                    VoucherType.PAYMENT_VOUCHER,
-                }:
-                    debit = amount
-                elif voucher_type in {
-                    VoucherType.CASH_RECEIPT,
-                    VoucherType.BANK_RECEIPT,
-                }:
-                    credit = amount
+            if row.id in voucher_ids_from_journals:
+                if row.journal_entry_id is not None:
+                    journal_ids_on_statement.add(row.journal_entry_id)
+                continue
+            if row.journal_entry_id is not None:
+                journal_ids_on_statement.add(row.journal_entry_id)
+            debit, credit, description = self._party_voucher_amounts(
+                row,
+                party_type=party_type,
+                party_id=party_id,
+                party_type_value=party_type_value,
+            )
             if debit == _ZERO and credit == _ZERO:
                 continue
+            voucher_type = VoucherType(row.voucher_type)
             doc_type = f"VOUCHER_{voucher_type.value}"
             events.append(
                 (
@@ -2255,7 +3112,7 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                     debit,
                     credit,
                     None,
-                    row.reference or row.narration,
+                    description,
                     row.currency_id,
                     row.exchange_rate,
                     self._legacy_party_type_code(doc_type),
@@ -2274,6 +3131,11 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 currency_id=None,
             )
             for cheque in pdc_rows:
+                if (
+                    cheque.journal_entry_id is not None
+                    and cheque.journal_entry_id in journal_ids_on_statement
+                ):
+                    continue
                 debit, credit = self._pdc_amounts(cheque, currency_id=None)
                 entry_date = cheque.due_date or cheque.cheque_date
                 events.append(
@@ -2325,12 +3187,13 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
             ) = raw
             signed = quantize_money(debit - credit)
             if doc_date < from_date:
-                opening = quantize_money(opening + signed)
+                if include_opening:
+                    opening = quantize_money(opening + signed)
                 continue
             if doc_date > to_date:
                 continue
             if not lines:
-                running = opening
+                running = opening if include_opening else _ZERO
             running = quantize_money(running + signed)
             lines.append(
                 PartyStatementLine(
@@ -2352,17 +3215,26 @@ class ReportService(InventoryReports, FinancialReports, TaxRegisters, Analytical
                 )
             )
         if not lines:
-            running = opening
+            running = opening if include_opening else _ZERO
+        total_debit = sum((line.debit for line in lines), _ZERO)
+        total_credit = sum((line.credit for line in lines), _ZERO)
+        opening_reported = opening if include_opening else _ZERO
         return PartyStatementResponse(
             currency_code=await self._report_currency_code(tenant_id),
             party_type=party_type.value,
             party_id=party_id,
             party_name=party.name,
+            account_code=party.code,
+            account_name=party.name,
             from_date=from_date,
             to_date=to_date,
-            opening_balance=opening,
-            opening_balance_side=_balance_side(opening) if opening != _ZERO else None,
+            opening_balance=opening_reported,
+            opening_balance_side=_balance_side(opening_reported)
+            if opening_reported != _ZERO
+            else None,
             closing_balance=running,
             closing_balance_side=_balance_side(running) if running != _ZERO else None,
+            total_debit=quantize_money(total_debit),
+            total_credit=quantize_money(total_credit),
             lines=lines,
         )
